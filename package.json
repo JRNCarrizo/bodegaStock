@@ -53,6 +53,7 @@
       "package.json"
     ],
     "win": {
+      "signAndEditExecutable": false,
       "target": [
         {
           "target": "nsis",
@@ -66,9 +67,7 @@
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
       "installerLanguages": [
-        "es-AR",
-        "es",
-        "en"
+        "es"
       ]
     }
   }

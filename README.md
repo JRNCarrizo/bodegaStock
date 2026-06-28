@@ -17,7 +17,7 @@ Toda la especificación del proyecto está en la carpeta [`docs/`](docs/):
 
 ## Estado del proyecto
 
-**En desarrollo por secciones** — Base, Login, Usuarios, Productos, Sectores, Consulta y Camioneros implementados en PC.
+**v0.1.0** — Productos, sectores, consulta, ingresos, planillas, retornos, roturas, reportes, usuarios y camioneros en PC.
 
 ## Desarrollo local
 
@@ -35,6 +35,22 @@ npm run dist
 ```
 
 Genera el instalador en `release/` (NSIS x64).
+
+## Publicar release en GitHub
+
+### Opción A — Script local (sube el `.exe` ya generado)
+
+```powershell
+gh auth login
+.\scripts\publish-release.ps1
+```
+
+### Opción B — GitHub Actions (genera el instalador en la nube)
+
+1. Creá y subí un tag: `git tag v0.1.0` → `git push origin v0.1.0`
+2. O en GitHub: **Actions → Release → Run workflow**
+
+Los instaladores quedan en [Releases](https://github.com/JRNCarrizo/bodegaStock/releases).
 
 ## Repositorio
 

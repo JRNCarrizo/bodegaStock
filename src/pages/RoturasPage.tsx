@@ -13,10 +13,16 @@ import {
   Plus,
   Search,
   Trash2,
+  User,
   X
 } from 'lucide-react'
 import { BarcodeScannerModal } from '@/components/BarcodeScannerModal'
 import { DayTabsRow } from '@/components/DayTabsRow'
+import {
+  RegistroDetalleMetaChip,
+  RegistroDetalleObsChip,
+  RegistroDetallePanel
+} from '@/components/RegistroDetallePanel'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { Badge, Card, CardBody, CardHeader } from '@/components/ui/Card'
@@ -509,58 +515,37 @@ export function RoturasPage() {
 
   if (view === 'detail' && detalle) {
     return (
-      <div className="mx-auto max-w-4xl space-y-6">
-        <Button variant="ghost" size="sm" onClick={volverAlListadoDesdeDetalle}>
-          <ChevronLeft className="h-4 w-4" />
-          Volver al listado
-        </Button>
-        <div className="flex flex-wrap items-center gap-3">
-          <h1 className="text-2xl font-bold text-slate-900">Rotura / pérdida #{detalle.rotura.id}</h1>
-          <Badge variant="muted">Descuento aplicado</Badge>
-        </div>
-        {error && (
-          <div className="rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>
-        )}
-        <Card>
-          <CardBody className="grid gap-4 sm:grid-cols-2 text-sm">
-            <div>
-              <p className="text-slate-500">Fecha</p>
-              <p className="font-medium">{detalle.rotura.fecha}</p>
-            </div>
-            <div>
-              <p className="text-slate-500">Registrado por</p>
-              <p className="font-medium">{detalle.rotura.usuario_nombre}</p>
-            </div>
+      <RegistroDetallePanel
+        onVolver={volverAlListadoDesdeDetalle}
+        titulo={`Rotura #${detalle.rotura.id}`}
+        fecha={detalle.rotura.fecha}
+        totalEtiqueta="Total"
+        total={detalle.total_cajas}
+        encabezadoExtra={<Badge variant="muted">Descuento aplicado</Badge>}
+        meta={
+          <>
+            <RegistroDetalleMetaChip icon={<User className="h-3.5 w-3.5 shrink-0 text-slate-400" />}>
+              {detalle.rotura.usuario_nombre}
+            </RegistroDetalleMetaChip>
             {detalle.rotura.observacion && (
-              <div className="sm:col-span-2">
-                <p className="text-slate-500">Observación</p>
-                <p className="font-medium">{detalle.rotura.observacion}</p>
-              </div>
+              <RegistroDetalleObsChip>{detalle.rotura.observacion}</RegistroDetalleObsChip>
             )}
-          </CardBody>
-        </Card>
-        <Card>
-          <CardHeader
-            title="Productos descontados"
-            description={formatTotalCajas(detalle.total_cajas)}
-          />
-          <CardBody className="space-y-2">
-            {detalle.lineas.map((l) => (
-              <div
-                key={l.id}
-                className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-surface-border px-4 py-3 text-sm"
-              >
-                <div>
-                  <p className="font-mono font-semibold">{l.codigo_interno}</p>
-                  <p className="text-slate-700">{l.nombre}</p>
-                  <p className="text-xs text-slate-500">{l.sector_nombre}</p>
-                </div>
-                <p className="font-semibold text-brand-700">{formatTotalCajas(l.cantidad_cajas)}</p>
-              </div>
-            ))}
-          </CardBody>
-        </Card>
-      </div>
+          </>
+        }
+        antesProductos={
+          error ? (
+            <div className="rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>
+          ) : undefined
+        }
+        lineas={detalle.lineas.map((l) => ({
+          id: l.id,
+          producto_id: l.producto_id,
+          codigo_interno: l.codigo_interno,
+          nombre: l.nombre,
+          etiqueta: l.sector_nombre,
+          cantidad: l.cantidad_cajas
+        }))}
+      />
     )
   }
 

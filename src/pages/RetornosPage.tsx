@@ -13,10 +13,17 @@ import {
   Trash2,
   Truck,
   Eye,
+  User,
+  Warehouse,
   X
 } from 'lucide-react'
 import { BarcodeScannerModal } from '@/components/BarcodeScannerModal'
 import { DayTabsRow } from '@/components/DayTabsRow'
+import {
+  RegistroDetalleMetaChip,
+  RegistroDetalleObsChip,
+  RegistroDetallePanel
+} from '@/components/RegistroDetallePanel'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { Badge, Card, CardBody, CardHeader } from '@/components/ui/Card'
@@ -904,129 +911,133 @@ export function RetornosPage() {
   }
 
   if (view === 'detail' && detalle) {
+    const r = detalle.retorno
+    const vehiculoTexto =
+      r.vehiculo_marca || r.vehiculo_modelo
+        ? [r.vehiculo_marca, r.vehiculo_modelo].filter(Boolean).join(' ')
+        : null
+
     return (
-      <div className="mx-auto max-w-4xl space-y-6">
-        <Button variant="ghost" size="sm" onClick={volverAlListado}>
-          <ChevronLeft className="h-4 w-4" />
-          Volver al listado
-        </Button>
-        <div className="flex flex-wrap items-center gap-3">
-          <h1 className="text-2xl font-bold text-slate-900">Retorno #{detalle.retorno.id}</h1>
-          {badgeEstadoRetorno(detalle.retorno.estado)}
-        </div>
-        {error && (
-          <div className="rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>
-        )}
-        {detalle.retorno.estado === 'PENDIENTE' && (
-          <div
-            className={`rounded-lg border px-4 py-3 text-sm ${
-              puedeVerificar
-                ? 'border-amber-200 bg-amber-50 text-amber-950'
-                : 'border-slate-200 bg-slate-50 text-slate-700'
-            }`}
-          >
-            {user?.id === detalle.retorno.cargado_por_id ? (
-              <>
-                <p className="font-medium">Pendiente de verificación</p>
-                <p className="mt-1 text-slate-600">
-                  Lo cargaste con tu usuario ({detalle.retorno.cargado_por_nombre}). Por control interno,
-                  la verificación la debe hacer <strong>otro usuario</strong> con permiso de verificar retornos.
-                </p>
-                <p className="mt-2 text-xs text-slate-500">
-                  Creá un usuario con rol <strong>Supervisor</strong> o <strong>Administrador</strong> en
-                  Administración → Usuarios, cerrá sesión e ingresá con ese usuario para confirmar las líneas.
-                </p>
-              </>
-            ) : !hasPermiso('retornos.verificar') ? (
-              <>
-                <p className="font-medium">Pendiente de verificación</p>
-                <p className="mt-1 text-slate-600">
-                  Este retorno aún no suma stock. Tu usuario no tiene permiso para verificar retornos.
-                </p>
-              </>
-            ) : (
-              <>
-                <p className="font-medium">Pendiente de verificación</p>
-                <p className="mt-1 text-slate-600">
-                  Confirmá cada línea (podés corregir cantidad, estado o sector) y luego completá la
-                  verificación para sumar al stock solo lo que esté en buen estado.
-                </p>
-              </>
+      <RegistroDetallePanel
+        onVolver={volverAlListado}
+        titulo={`Retorno #${r.id}`}
+        fecha={r.fecha}
+        totalEtiqueta="Total"
+        total={detalle.total_cajas}
+        encabezadoExtra={badgeEstadoRetorno(r.estado)}
+        meta={
+          <>
+            <RegistroDetalleMetaChip
+              icon={<Warehouse className="h-3.5 w-3.5 shrink-0 text-slate-400" />}
+            >
+              {resumenSectoresLineas(detalle.lineas, r.sector_nombre)}
+            </RegistroDetalleMetaChip>
+            {(r.camionero_numero || r.camionero_nombre) && (
+              <RegistroDetalleMetaChip icon={<Truck className="h-3.5 w-3.5 shrink-0 text-slate-400" />}>
+                {labelCamionero(r.camionero_numero, r.camionero_nombre)}
+              </RegistroDetalleMetaChip>
             )}
-          </div>
-        )}
-        <Card>
-          <CardBody className="grid gap-4 sm:grid-cols-2 text-sm">
-            <div>
-              <p className="text-slate-500">Fecha</p>
-              <p className="font-medium">{detalle.retorno.fecha}</p>
-            </div>
-            <div>
-              <p className="text-slate-500">Sectores destino</p>
-              <p className="font-medium">
-                {resumenSectoresLineas(detalle.lineas, detalle.retorno.sector_nombre)}
-              </p>
-            </div>
-            <div>
-              <p className="text-slate-500">Camionero</p>
-              <p className="font-medium">
-                {labelCamionero(detalle.retorno.camionero_numero, detalle.retorno.camionero_nombre)}
-              </p>
-            </div>
-            {detalle.retorno.numero_planilla && (
-              <div>
-                <p className="text-slate-500">Nº planilla</p>
-                <p className="font-medium">{detalle.retorno.numero_planilla}</p>
-              </div>
+            {vehiculoTexto && (
+              <RegistroDetalleMetaChip>
+                <span className="font-medium text-slate-500">Vehículo </span>
+                {vehiculoTexto}
+                {r.vehiculo_patente && (
+                  <span className="text-slate-400"> ({r.vehiculo_patente})</span>
+                )}
+              </RegistroDetalleMetaChip>
             )}
-            <div>
-              <p className="text-slate-500">Cargado por</p>
-              <p className="font-medium">{detalle.retorno.cargado_por_nombre}</p>
-            </div>
-            {detalle.retorno.verificado_por_nombre && (
-              <div>
-                <p className="text-slate-500">Verificado por</p>
-                <p className="font-medium">{detalle.retorno.verificado_por_nombre}</p>
-              </div>
+            {r.numero_planilla && (
+              <RegistroDetalleMetaChip>
+                <span className="font-medium text-slate-500">Planilla </span>
+                {r.numero_planilla}
+              </RegistroDetalleMetaChip>
             )}
-          </CardBody>
-        </Card>
-        <Card>
-          <CardHeader title="Productos" />
-          <CardBody className="space-y-2">
-            {detalle.lineas.map((l) => (
+            <RegistroDetalleMetaChip icon={<User className="h-3.5 w-3.5 shrink-0 text-slate-400" />}>
+              {r.cargado_por_nombre}
+            </RegistroDetalleMetaChip>
+            {r.verificado_por_nombre && (
+              <RegistroDetalleMetaChip>
+                <span className="font-medium text-slate-500">Verificado </span>
+                {r.verificado_por_nombre}
+              </RegistroDetalleMetaChip>
+            )}
+            {r.observacion && <RegistroDetalleObsChip>{r.observacion}</RegistroDetalleObsChip>}
+          </>
+        }
+        antesProductos={
+          <>
+            {error && (
+              <div className="rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>
+            )}
+            {r.estado === 'PENDIENTE' && (
               <div
-                key={l.id}
-                className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-surface-border px-4 py-3 text-sm"
+                className={`rounded-lg border px-4 py-3 text-sm ${
+                  puedeVerificar
+                    ? 'border-amber-200 bg-amber-50 text-amber-950'
+                    : 'border-slate-200 bg-slate-50 text-slate-700'
+                }`}
               >
+                {user?.id === r.cargado_por_id ? (
+                  <>
+                    <p className="font-medium">Pendiente de verificación</p>
+                    <p className="mt-1 text-slate-600">
+                      Lo cargaste con tu usuario ({r.cargado_por_nombre}). Por control interno, la
+                      verificación la debe hacer <strong>otro usuario</strong> con permiso de verificar
+                      retornos.
+                    </p>
+                    <p className="mt-2 text-xs text-slate-500">
+                      Creá un usuario con rol <strong>Supervisor</strong> o{' '}
+                      <strong>Administrador</strong> en Administración → Usuarios, cerrá sesión e ingresá
+                      con ese usuario para confirmar las líneas.
+                    </p>
+                  </>
+                ) : !hasPermiso('retornos.verificar') ? (
+                  <>
+                    <p className="font-medium">Pendiente de verificación</p>
+                    <p className="mt-1 text-slate-600">
+                      Este retorno aún no suma stock. Tu usuario no tiene permiso para verificar retornos.
+                    </p>
+                  </>
+                ) : (
+                  <>
+                    <p className="font-medium">Pendiente de verificación</p>
+                    <p className="mt-1 text-slate-600">
+                      Confirmá cada línea (podés corregir cantidad, estado o sector) y luego completá la
+                      verificación para sumar al stock solo lo que esté en buen estado.
+                    </p>
+                  </>
+                )}
+              </div>
+            )}
+          </>
+        }
+        lineas={detalle.lineas.map((l) => ({
+          id: l.id,
+          producto_id: l.producto_id,
+          codigo_interno: l.codigo_interno,
+          nombre: l.nombre,
+          etiqueta: l.etiqueta,
+          cantidad: l.cantidad_efectiva,
+          extra: badgeCondicion(l.estado_efectivo),
+          extraKey: l.estado_efectivo
+        }))}
+        despuesProductos={
+          puedeVerificar ? (
+            <Card>
+              <CardBody className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <div>
-                  <p className="font-mono font-semibold">{l.codigo_interno}</p>
-                  <p className="text-slate-700">{l.nombre}</p>
-                  <p className="text-xs text-slate-500">{l.sector_nombre}</p>
+                  <p className="font-medium text-slate-900">Listo para verificar</p>
+                  <p className="text-sm text-slate-600">
+                    {detalle.lineas_verificadas} de {detalle.lineas.length} líneas confirmadas en sesiones
+                    anteriores
+                  </p>
                 </div>
-                <div className="text-right">
-                  <p className="font-semibold">{formatTotalCajas(l.cantidad_efectiva)}</p>
-                  {badgeCondicion(l.estado_efectivo)}
-                </div>
-              </div>
-            ))}
-          </CardBody>
-        </Card>
-        {puedeVerificar && (
-          <Card>
-            <CardBody className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <div>
-                <p className="font-medium text-slate-900">Listo para verificar</p>
-                <p className="text-sm text-slate-600">
-                  {detalle.lineas_verificadas} de {detalle.lineas.length} líneas confirmadas en sesiones
-                  anteriores
-                </p>
-              </div>
-              <Button onClick={() => setView('verify')}>Iniciar verificación</Button>
-            </CardBody>
-          </Card>
-        )}
-      </div>
+                <Button onClick={() => setView('verify')}>Iniciar verificación</Button>
+              </CardBody>
+            </Card>
+          ) : undefined
+        }
+      />
     )
   }
 

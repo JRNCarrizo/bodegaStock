@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Package } from 'lucide-react'
-import { API_URL, cn } from '@/lib/utils'
+import { getApiUrl, cn } from '@/lib/utils'
 import { ImagePreviewHint } from '@/components/ImagePreviewModal'
 
 export function ProductImage({
@@ -29,7 +29,7 @@ export function ProductImage({
     let objectUrl: string | null = null
     const token = localStorage.getItem('token')
 
-    fetch(`${API_URL}/api/productos/${productoId}/imagen`, {
+    fetch(`${getApiUrl()}/api/productos/${productoId}/imagen`, {
       headers: token ? { Authorization: `Bearer ${token}` } : {}
     })
       .then((res) => (res.ok ? res.blob() : null))

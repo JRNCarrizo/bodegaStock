@@ -1,6 +1,6 @@
 {
   "name": "bodega-stock",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Sistema de gestión de stock para bodega",
   "author": "JRNCarrizo",
   "main": "out/main/index.js",
@@ -9,6 +9,7 @@
     "build": "electron-vite build",
     "preview": "electron-vite preview",
     "dist": "npm run build && electron-builder --win --publish never",
+    "icons": "node scripts/generate-icons.mjs",
     "postinstall": "electron-builder install-app-deps"
   },
   "dependencies": {
@@ -16,10 +17,13 @@
     "bcryptjs": "^2.4.3",
     "better-sqlite3": "^11.8.1",
     "clsx": "^2.1.1",
+    "electron-updater": "^6.8.9",
     "fastify": "^5.2.1",
     "html5-qrcode": "^2.3.8",
+    "jsbarcode": "^3.12.3",
     "jsonwebtoken": "^9.0.2",
     "lucide-react": "^0.469.0",
+    "qrcode": "^1.5.4",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-router-dom": "^7.1.1",
@@ -36,23 +40,28 @@
     "electron": "^33.3.1",
     "electron-builder": "^25.1.8",
     "electron-vite": "^2.3.0",
+    "png-to-ico": "^3.0.1",
     "postcss": "^8.4.49",
+    "sharp": "^0.35.2",
     "tailwindcss": "^3.4.17",
     "typescript": "^5.7.2",
     "vite": "^5.4.11"
   },
   "build": {
     "appId": "com.jrncarrizo.bodegastock",
-    "productName": "BodegaStock",
+    "productName": "ControlStock",
     "copyright": "Copyright © 2026 JRNCarrizo",
     "publish": null,
     "directories": {
-      "output": "release"
+      "output": "release",
+      "buildResources": "build"
     },
     "files": [
       "out/**/*",
-      "package.json"
+      "package.json",
+      "build/icon.png"
     ],
+    "icon": "build/icon.ico",
     "win": {
       "signAndEditExecutable": false,
       "target": [

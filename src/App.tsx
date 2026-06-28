@@ -2,6 +2,7 @@ import { Navigate, Route, Routes } from 'react-router-dom'
 import { AuthProvider, useAuth } from '@/context/AuthContext'
 import { AppLayout } from '@/layouts/AppLayout'
 import { CamionerosPage } from '@/pages/CamionerosPage'
+import { ConfiguracionPage } from '@/pages/ConfiguracionPage'
 import { ConsultaPage } from '@/pages/ConsultaPage'
 import { DashboardPage } from '@/pages/DashboardPage'
 import { IngresosPage } from '@/pages/IngresosPage'
@@ -57,6 +58,7 @@ function AppRoutes() {
       <Route path="/movimientos" element={<ProtectedRoute><MovimientosPage /></ProtectedRoute>} />
       <Route path="/reportes" element={<ProtectedRoute><ReportesPage /></ProtectedRoute>} />
       <Route path="/usuarios" element={<ProtectedRoute><UsuariosPage /></ProtectedRoute>} />
+      <Route path="/configuracion" element={<ProtectedRoute><ConfiguracionPage /></ProtectedRoute>} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   )

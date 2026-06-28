@@ -8,11 +8,19 @@ import {
   Package,
   RotateCcw,
   Search,
+  Settings,
   Truck,
   Users,
   Warehouse
 } from 'lucide-react'
 import type { NavItem } from '@/types'
+
+export const CONFIG_NAV_ITEM: NavItem = {
+  id: 'configuracion',
+  label: 'Configuración',
+  path: '/configuracion',
+  group: ''
+}
 
 export const NAV_ITEMS: NavItem[] = [
   { id: 'dashboard', label: 'Inicio', path: '/', group: 'General' },
@@ -43,5 +51,6 @@ export const NAV_ICONS: Record<string, typeof LayoutDashboard> = {
   inventario: BarChart3,
   camioneros: Truck,
   reportes: BarChart3,
-  usuarios: Users
+  usuarios: Users,
+  configuracion: Settings
 }

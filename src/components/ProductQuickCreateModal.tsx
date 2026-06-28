@@ -1,5 +1,6 @@
 import { useState } from 'react'
-import { Camera, Dices, X } from 'lucide-react'
+import { Camera, Dices, Printer, X } from 'lucide-react'
+import { BarcodePrintModal } from '@/components/BarcodePrintModal'
 import { BarcodeScannerModal } from '@/components/BarcodeScannerModal'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
@@ -23,6 +24,7 @@ export function ProductQuickCreateModal({
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const [showScanner, setShowScanner] = useState(false)
+  const [showBarcodePrint, setShowBarcodePrint] = useState(false)
 
   if (!open) return null
 
@@ -95,17 +97,6 @@ export function ProductQuickCreateModal({
               <div className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</div>
             )}
 
-            <div className="flex flex-wrap gap-2">
-              <Button type="button" variant="secondary" size="sm" onClick={handleGenerarCodigos}>
-                <Dices className="h-4 w-4" />
-                Generar códigos
-              </Button>
-              <Button type="button" variant="secondary" size="sm" onClick={() => setShowScanner(true)}>
-                <Camera className="h-4 w-4" />
-                Escanear barras
-              </Button>
-            </div>
-
             <Input
               label="Código interno *"
               value={codigoInterno}
@@ -113,16 +104,39 @@ export function ProductQuickCreateModal({
               required
             />
             <Input
-              label="Código de barras"
-              value={codigoBarras}
-              onChange={(e) => setCodigoBarras(e.target.value)}
-            />
-            <Input
               label="Nombre *"
               value={nombre}
               onChange={(e) => setNombre(e.target.value)}
               required
             />
+            <div className="space-y-2">
+              <Input
+                label="Código de barras"
+                value={codigoBarras}
+                onChange={(e) => setCodigoBarras(e.target.value)}
+              />
+              <div className="flex flex-wrap gap-2">
+                <Button type="button" variant="secondary" size="sm" onClick={handleGenerarCodigos}>
+                  <Dices className="h-4 w-4" />
+                  Generar códigos
+                </Button>
+                <Button type="button" variant="secondary" size="sm" onClick={() => setShowScanner(true)}>
+                  <Camera className="h-4 w-4" />
+                  Escanear barras
+                </Button>
+                {codigoBarras.trim() && (
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => setShowBarcodePrint(true)}
+                  >
+                    <Printer className="h-4 w-4" />
+                    Imprimir etiqueta
+                  </Button>
+                )}
+              </div>
+            </div>
 
             <div className="flex gap-2 pt-2">
               <Button type="submit" disabled={saving}>
@@ -144,6 +158,13 @@ export function ProductQuickCreateModal({
           setShowScanner(false)
         }}
         title="Escanear código de barras"
+      />
+      <BarcodePrintModal
+        open={showBarcodePrint}
+        onClose={() => setShowBarcodePrint(false)}
+        codigoBarras={codigoBarras}
+        nombre={nombre.trim() || undefined}
+        codigoInterno={codigoInterno.trim() || undefined}
       />
     </>
   )

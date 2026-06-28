@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Camera, ChevronLeft, Dices, Package, Pencil, Plus, Search } from 'lucide-react'
+import { Camera, ChevronLeft, Dices, ImagePlus, Package, Pencil, Plus, Printer, Search } from 'lucide-react'
+import { BarcodePrintModal } from '@/components/BarcodePrintModal'
 import { BarcodeScannerModal } from '@/components/BarcodeScannerModal'
 import { api } from '@/lib/utils'
 import { prepareProductImage } from '@/lib/image'
@@ -39,6 +40,11 @@ export function ProductosPage() {
   const [eliminarImagen, setEliminarImagen] = useState(false)
   const [saving, setSaving] = useState(false)
   const [showScanner, setShowScanner] = useState(false)
+  const [barcodePrint, setBarcodePrint] = useState<{
+    codigoBarras: string
+    nombre?: string
+    codigoInterno?: string
+  } | null>(null)
   const [imagePreview, setImagePreview] = useState<{
     src: string
     alt: string
@@ -47,10 +53,11 @@ export function ProductosPage() {
   const searchRef = useRef<HTMLInputElement>(null)
   const formRef = useRef<HTMLFormElement>(null)
   const codigoInternoRef = useRef<HTMLInputElement>(null)
-  const codigoBarrasRef = useRef<HTMLInputElement>(null)
   const nombreRef = useRef<HTMLInputElement>(null)
   const descripcionRef = useRef<HTMLInputElement>(null)
+  const codigoBarrasRef = useRef<HTMLInputElement>(null)
   const activoRef = useRef<HTMLInputElement>(null)
+  const imagenInputRef = useRef<HTMLInputElement>(null)
 
   function focusField(ref: React.RefObject<HTMLElement | null>) {
     requestAnimationFrame(() => {
@@ -283,7 +290,7 @@ export function ProductosPage() {
 
   const formContent = (
     <form ref={formRef} onSubmit={handleSubmit} className="space-y-6">
-      <div className="grid gap-4 lg:grid-cols-[140px_1fr]">
+      <div className="grid gap-6 lg:grid-cols-[140px_1fr]">
         <div className="space-y-2">
           <p className="text-sm font-medium text-slate-700">Imagen</p>
           <div className="relative">
@@ -326,11 +333,22 @@ export function ProductosPage() {
           <label className="block">
             <span className="sr-only">Subir imagen</span>
             <input
+              ref={imagenInputRef}
               type="file"
               accept="image/jpeg,image/png,image/webp"
               onChange={handleImageChange}
-              className="block w-full text-xs text-slate-500 file:mr-2 file:rounded-md file:border-0 file:bg-brand-50 file:px-2 file:py-1 file:text-xs file:font-medium file:text-brand-700"
+              className="sr-only"
             />
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              className="w-full"
+              onClick={() => imagenInputRef.current?.click()}
+            >
+              <ImagePlus className="h-3.5 w-3.5" />
+              Seleccionar imagen
+            </Button>
           </label>
           {editingId && (imagenPreview || (editingHadImage && !eliminarImagen)) && (
             <Button
@@ -349,22 +367,40 @@ export function ProductosPage() {
           )}
         </div>
 
-        <div className="grid gap-4 sm:grid-cols-2">
+        <div className="grid gap-4 sm:grid-cols-[9.5rem_minmax(0,1fr)]">
           <Input
             ref={codigoInternoRef}
             label="Código interno *"
             value={form.codigo_interno}
             onChange={(e) => setForm({ ...form, codigo_interno: e.target.value })}
-            onKeyDown={(e) => handleFormKeyDown(e, codigoBarrasRef)}
+            onKeyDown={(e) => handleFormKeyDown(e, nombreRef)}
             required
           />
-          <div className="space-y-1.5">
+          <Input
+            ref={nombreRef}
+            label="Nombre *"
+            value={form.nombre}
+            onChange={(e) => setForm({ ...form, nombre: e.target.value })}
+            onKeyDown={(e) => handleFormKeyDown(e, descripcionRef)}
+            required
+            className="min-w-0"
+          />
+          <div className="sm:col-span-2">
+            <Input
+              ref={descripcionRef}
+              label="Descripción"
+              value={form.descripcion}
+              onChange={(e) => setForm({ ...form, descripcion: e.target.value })}
+              onKeyDown={(e) => handleFormKeyDown(e, codigoBarrasRef)}
+            />
+          </div>
+          <div className="space-y-2 sm:col-span-2">
             <Input
               ref={codigoBarrasRef}
               label="Código de barras"
               value={form.codigo_barras}
               onChange={(e) => setForm({ ...form, codigo_barras: e.target.value })}
-              onKeyDown={(e) => handleFormKeyDown(e, nombreRef)}
+              onKeyDown={(e) => handleFormKeyDown(e, activoRef)}
             />
             <div className="flex flex-wrap gap-2">
               <Button
@@ -387,25 +423,25 @@ export function ProductosPage() {
                   Generar códigos
                 </Button>
               )}
+              {form.codigo_barras.trim() && (
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  onClick={() =>
+                    setBarcodePrint({
+                      codigoBarras: form.codigo_barras.trim(),
+                      nombre: form.nombre.trim() || undefined,
+                      codigoInterno: form.codigo_interno.trim() || undefined
+                    })
+                  }
+                >
+                  <Printer className="h-3.5 w-3.5" />
+                  Imprimir etiqueta
+                </Button>
+              )}
             </div>
           </div>
-          <Input
-            ref={nombreRef}
-            label="Nombre *"
-            value={form.nombre}
-            onChange={(e) => setForm({ ...form, nombre: e.target.value })}
-            onKeyDown={(e) => handleFormKeyDown(e, descripcionRef)}
-            className="sm:col-span-2"
-            required
-          />
-          <Input
-            ref={descripcionRef}
-            label="Descripción"
-            value={form.descripcion}
-            onChange={(e) => setForm({ ...form, descripcion: e.target.value })}
-            onKeyDown={(e) => handleFormKeyDown(e, activoRef)}
-            className="sm:col-span-2"
-          />
           <div className="flex items-center gap-2 sm:col-span-2">
             <input
               ref={activoRef}
@@ -416,12 +452,14 @@ export function ProductosPage() {
               onKeyDown={(e) => handleFormKeyDown(e)}
               className="h-4 w-4 rounded border-surface-border text-brand-600"
             />
-            <label htmlFor="activo" className="text-sm text-slate-700">Producto activo</label>
+            <label htmlFor="activo" className="text-sm text-slate-700">
+              Producto activo
+            </label>
           </div>
         </div>
       </div>
 
-      <div className="flex gap-2">
+      <div className="flex gap-2 border-t border-surface-border pt-5">
         <Button type="submit" disabled={saving}>
           {saving ? 'Guardando...' : editingId ? 'Guardar cambios' : 'Crear producto'}
         </Button>
@@ -429,36 +467,62 @@ export function ProductosPage() {
           Cancelar
         </Button>
       </div>
-      <p className="text-xs text-slate-400">
-        Enter pasa al siguiente campo · en Activo guarda · Esc vuelve al listado
-      </p>
     </form>
   )
 
   if (view === 'form') {
     return (
       <div className="-m-4 h-[calc(100vh-5rem)] overflow-y-auto lg:-m-6">
-        <div className="mx-auto flex max-w-2xl flex-col px-4 py-8 pb-16">
-          <Button variant="ghost" size="sm" className="mb-4 -ml-2 self-start" onClick={volverAlListado}>
-            <ChevronLeft className="h-4 w-4" />
-            Volver al listado
-          </Button>
-
-          <h1 className="text-2xl font-bold text-slate-900">
-            {editingId ? 'Editar producto' : 'Nuevo producto'}
-          </h1>
-          <p className="mt-1 mb-6 text-slate-500">
-            {editingId
-              ? 'Modificá los datos del producto en el catálogo'
-              : 'Completá los datos con Enter · pallet 112 cajas y caja 6 botellas por defecto'}
-          </p>
+        <div className="mx-auto flex max-w-2xl flex-col gap-3 px-4 py-6 pb-16 lg:px-6">
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+            <Button
+              variant="ghost"
+              size="sm"
+              className="-ml-2 h-8 shrink-0 px-2"
+              onClick={volverAlListado}
+            >
+              <ChevronLeft className="h-4 w-4" />
+              Volver
+            </Button>
+            <span className="hidden h-4 w-px bg-surface-border sm:block" aria-hidden />
+            <h1 className="text-base font-semibold text-slate-900 sm:text-lg">
+              {editingId ? 'Editar producto' : 'Nuevo producto'}
+            </h1>
+            {editingId ? (
+              <>
+                {form.codigo_interno && <Badge variant="muted">{form.codigo_interno}</Badge>}
+                {!form.activo && <Badge variant="warning">Inactivo</Badge>}
+              </>
+            ) : (
+              <Badge variant="default">Alta</Badge>
+            )}
+            {editingId && form.nombre && (
+              <span className="w-full truncate text-xs text-slate-500 sm:w-auto sm:max-w-[240px]">
+                {form.nombre}
+              </span>
+            )}
+          </div>
 
           {error && (
-            <div className="mb-4 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>
+            <div className="rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>
           )}
 
-          <Card>
-            <CardBody>{formContent}</CardBody>
+          <Card className="overflow-hidden">
+            <div className="flex items-center gap-3 border-b border-surface-border bg-slate-50/80 px-4 py-3 sm:px-5">
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-brand-600 text-white">
+                <Package className="h-5 w-5" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-semibold text-slate-900">Datos del producto</p>
+                <p className="text-xs text-slate-500">
+                  {editingId
+                    ? 'Modificá código, nombre, barras o imagen'
+                    : 'Enter avanza entre campos · Esc vuelve al listado'}
+                  {!editingId && ' · pallet 112 y caja 6 por defecto'}
+                </p>
+              </div>
+            </div>
+            <CardBody className="sm:px-5">{formContent}</CardBody>
           </Card>
         </div>
 
@@ -466,6 +530,13 @@ export function ProductosPage() {
           open={showScanner}
           onClose={() => setShowScanner(false)}
           onScan={(code) => setForm((f) => ({ ...f, codigo_barras: code }))}
+        />
+        <BarcodePrintModal
+          open={!!barcodePrint}
+          onClose={() => setBarcodePrint(null)}
+          codigoBarras={barcodePrint?.codigoBarras ?? ''}
+          nombre={barcodePrint?.nombre}
+          codigoInterno={barcodePrint?.codigoInterno}
         />
 
         <ImagePreviewModal
@@ -479,16 +550,12 @@ export function ProductosPage() {
   }
 
   return (
-    <div className="mx-auto max-w-6xl space-y-6">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-slate-900">Productos</h1>
-          <p className="mt-1 text-slate-500">
-            Catálogo con código interno, código de barras e imagen
-          </p>
-        </div>
+    <div className="mx-auto max-w-6xl space-y-4">
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-2">
+        <h1 className="text-base font-semibold text-slate-900 sm:text-lg">Productos</h1>
+        <span className="text-xs text-slate-400">Catálogo · código interno y barras</span>
         {hasPermiso('productos.crear') && (
-          <Button onClick={openCreate}>
+          <Button className="ml-auto" size="sm" onClick={openCreate}>
             <Plus className="h-4 w-4" />
             Nuevo producto
           </Button>
@@ -578,12 +645,30 @@ export function ProductosPage() {
                         </Badge>
                       </td>
                       <td className="px-6 py-3 text-right">
-                        {hasPermiso('productos.editar') && (
-                          <Button variant="ghost" size="sm" onClick={() => openEdit(p)}>
-                            <Pencil className="h-4 w-4" />
-                            Editar
-                          </Button>
-                        )}
+                        <div className="flex items-center justify-end gap-1">
+                          {p.codigo_barras && (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              title="Imprimir etiqueta de barras"
+                              onClick={() =>
+                                setBarcodePrint({
+                                  codigoBarras: p.codigo_barras!,
+                                  nombre: p.nombre,
+                                  codigoInterno: p.codigo_interno
+                                })
+                              }
+                            >
+                              <Printer className="h-4 w-4" />
+                            </Button>
+                          )}
+                          {hasPermiso('productos.editar') && (
+                            <Button variant="ghost" size="sm" onClick={() => openEdit(p)}>
+                              <Pencil className="h-4 w-4" />
+                              Editar
+                            </Button>
+                          )}
+                        </div>
                       </td>
                     </tr>
                   ))}
@@ -599,6 +684,13 @@ export function ProductosPage() {
         alt={imagePreview?.alt ?? ''}
         title={imagePreview?.title}
         onClose={() => setImagePreview(null)}
+      />
+      <BarcodePrintModal
+        open={!!barcodePrint}
+        onClose={() => setBarcodePrint(null)}
+        codigoBarras={barcodePrint?.codigoBarras ?? ''}
+        nombre={barcodePrint?.nombre}
+        codigoInterno={barcodePrint?.codigoInterno}
       />
     </div>
   )

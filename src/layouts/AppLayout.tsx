@@ -16,7 +16,7 @@ import { useMemo, useState } from 'react'
 
 import { SidebarNavProvider, useSidebarNav } from '@/context/SidebarNavContext'
 
-import { NAV_ICONS, NAV_ITEMS } from '@/config/navigation'
+import { CONFIG_NAV_ITEM, NAV_ICONS, NAV_ITEMS } from '@/config/navigation'
 
 import { useAuth } from '@/context/AuthContext'
 
@@ -44,11 +44,15 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
 
 
 
+  const sidebarItems = useMemo(() => [...visibleItems, CONFIG_NAV_ITEM], [visibleItems])
+
   return (
 
-    <SidebarNavProvider visibleItems={visibleItems}>
+    <SidebarNavProvider visibleItems={sidebarItems}>
 
-      <AppLayoutShell visibleItems={visibleItems}>{children}</AppLayoutShell>
+      <AppLayoutShell visibleItems={visibleItems} configIndex={visibleItems.length}>
+        {children}
+      </AppLayoutShell>
 
     </SidebarNavProvider>
 
@@ -62,11 +66,15 @@ function AppLayoutShell({
 
   visibleItems,
 
+  configIndex,
+
   children
 
 }: {
 
   visibleItems: NavItem[]
+
+  configIndex: number
 
   children: React.ReactNode
 
@@ -100,27 +108,29 @@ function AppLayoutShell({
 
         <SidebarHeader />
 
-        <nav className="flex-1 overflow-y-auto px-3 py-4" aria-label="Menú principal">
+        <nav className="flex flex-1 flex-col overflow-hidden px-3 py-4" aria-label="Menú principal">
 
-          {groups.map((group) => (
+          <div className="flex-1 overflow-y-auto">
 
-            <div key={group} className="mb-5">
+            {groups.map((group) => (
 
-              <p className="mb-2 px-3 text-xs font-semibold uppercase tracking-wider text-slate-400">
+              <div key={group} className="mb-5">
 
-                {group}
+                <p className="mb-2 px-3 text-xs font-semibold uppercase tracking-wider text-slate-400">
 
-              </p>
+                  {group}
 
-              <ul className="space-y-0.5">
+                </p>
 
-                {visibleItems
+                <ul className="space-y-0.5">
 
-                  .map((item, index) => ({ item, index }))
+                  {visibleItems
 
-                  .filter(({ item }) => item.group === group)
+                    .map((item, index) => ({ item, index }))
 
-                  .map(({ item, index }) => (
+                    .filter(({ item }) => item.group === group)
+
+                    .map(({ item, index }) => (
 
                       <SidebarNavItem
 
@@ -138,17 +148,37 @@ function AppLayoutShell({
 
                     ))}
 
-              </ul>
+                </ul>
 
-            </div>
+              </div>
 
-          ))}
+            ))}
 
-          <p className="mt-2 px-3 text-[11px] text-slate-400">
+            <p className="mt-2 px-3 text-[11px] text-slate-400">
 
-            ↑↓ navegar · Enter abrir · Esc volver al menú
+              ↑↓ navegar · Enter abrir · Esc volver al menú
 
-          </p>
+            </p>
+
+          </div>
+
+          <div className="mt-2 shrink-0 border-t border-surface-border pt-3">
+
+            <ul className="space-y-0.5">
+
+              <SidebarNavItem
+
+                item={CONFIG_NAV_ITEM}
+
+                index={configIndex}
+
+                onNavigate={() => setMobileOpen(false)}
+
+              />
+
+            </ul>
+
+          </div>
 
         </nav>
 
@@ -178,19 +208,39 @@ function AppLayoutShell({
 
             </div>
 
-            <nav className="flex-1 overflow-y-auto px-3 py-4" aria-label="Menú principal">
+            <nav className="flex flex-1 flex-col overflow-hidden px-3 py-4" aria-label="Menú principal">
 
-              {visibleItems.map((item, index) => (
+              <div className="flex-1 overflow-y-auto">
+
+                {visibleItems.map((item, index) => (
+
+                  <SidebarNavItem
+
+                    key={item.id}
+
+                    item={item}
+
+                    index={index}
+
+                    end={item.path === '/'}
+
+                    onNavigate={() => setMobileOpen(false)}
+
+                    mobile
+
+                  />
+
+                ))}
+
+              </div>
+
+              <div className="mt-2 shrink-0 border-t border-surface-border pt-3">
 
                 <SidebarNavItem
 
-                  key={item.id}
+                  item={CONFIG_NAV_ITEM}
 
-                  item={item}
-
-                  index={index}
-
-                  end={item.path === '/'}
+                  index={configIndex}
 
                   onNavigate={() => setMobileOpen(false)}
 
@@ -198,7 +248,7 @@ function AppLayoutShell({
 
                 />
 
-              ))}
+              </div>
 
             </nav>
 
@@ -396,9 +446,9 @@ function SidebarHeader({ compact = false }: { compact?: boolean }) {
 
         <div>
 
-          <h1 className="text-base font-bold text-slate-900">BodegaStock</h1>
+          <h1 className="text-base font-bold text-slate-900">ControlStock</h1>
 
-          <p className="text-xs text-slate-500">Gestión de bodega</p>
+          <p className="text-xs text-slate-500">Bodega Esmeralda</p>
 
         </div>
 

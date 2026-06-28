@@ -41,7 +41,7 @@ export function registerAuthHook(app: FastifyInstance): void {
   app.decorateRequest('user', undefined)
 
   app.addHook('onRequest', async (request: FastifyRequest, reply: FastifyReply) => {
-    const publicRoutes = ['/api/auth/login', '/api/health']
+    const publicRoutes = ['/api/auth/login', '/api/health', '/api/server/info']
     if (publicRoutes.some((r) => request.url.startsWith(r))) return
 
     const header = request.headers.authorization

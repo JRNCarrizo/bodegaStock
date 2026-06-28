@@ -10,12 +10,19 @@ import {
   Plus,
   Search,
   Trash2,
+  User,
+  Warehouse,
   X
 } from 'lucide-react'
 import { BarcodeScannerModal } from '@/components/BarcodeScannerModal'
 import { DayTabsRow } from '@/components/DayTabsRow'
 import { ProductQuickCreateModal } from '@/components/ProductQuickCreateModal'
 import { ProductImage } from '@/components/ProductImage'
+import {
+  RegistroDetalleMetaChip,
+  RegistroDetalleObsChip,
+  RegistroDetallePanel
+} from '@/components/RegistroDetallePanel'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { Badge, Card, CardBody, CardHeader } from '@/components/ui/Card'
@@ -690,71 +697,36 @@ export function IngresosPage() {
 
   if (view === 'detail' && detalle) {
     return (
-      <div className="mx-auto max-w-4xl space-y-6">
-        <div className="flex items-center gap-3">
-          <Button variant="ghost" size="sm" onClick={volverAlListadoDesdeDetalle}>
-            <ChevronLeft className="h-4 w-4" />
-            Volver
-          </Button>
-          <div>
-            <h1 className="text-2xl font-bold text-slate-900">Ingreso registrado</h1>
-            <p className="text-sm text-slate-500">Remito {detalle.ingreso.numero_remito} · Esc vuelve al listado</p>
-          </div>
-        </div>
-
-        <Card>
-          <CardBody className="space-y-4">
-            <div className="grid gap-4 sm:grid-cols-2 text-sm">
-              <div>
-                <p className="text-slate-500">Fecha</p>
-                <p className="font-medium text-slate-900">{detalle.ingreso.fecha}</p>
-              </div>
-              <div>
-                <p className="text-slate-500">Sector</p>
-                <p className="font-medium text-slate-900">{detalle.ingreso.sector_nombre}</p>
-              </div>
-              <div>
-                <p className="text-slate-500">Cargado por</p>
-                <p className="font-medium text-slate-900">{detalle.ingreso.usuario_nombre}</p>
-              </div>
-              <div>
-                <p className="text-slate-500">Total</p>
-                <p className="text-lg font-bold text-brand-700">{formatTotalCajas(detalle.total_unidades)}</p>
-              </div>
-              {detalle.ingreso.observacion && (
-                <div className="sm:col-span-2">
-                  <p className="text-slate-500">Observaciones</p>
-                  <p className="text-slate-800">{detalle.ingreso.observacion}</p>
-                </div>
-              )}
-            </div>
-
-            <div className="border-t border-surface-border pt-4">
-              <h3 className="mb-3 font-semibold text-slate-900">Líneas cargadas</h3>
-              <ul className="space-y-2">
-                {detalle.lineas.map((l) => (
-                  <li
-                    key={l.id}
-                    className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-surface-border bg-slate-50/50 px-4 py-3 text-sm"
-                  >
-                    <div>
-                      <p className="font-mono font-semibold text-slate-900">{l.codigo_interno}</p>
-                      <p className="text-slate-700">{l.nombre}</p>
-                      <p className="text-slate-600">
-                        {l.etiqueta}
-                        {l.ubicacion_nombre && (
-                          <span className="ml-2 text-slate-400">({l.ubicacion_nombre})</span>
-                        )}
-                      </p>
-                    </div>
-                    <span className="font-semibold text-slate-900">{formatTotalCajas(l.total_unidades)}</span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          </CardBody>
-        </Card>
-      </div>
+      <RegistroDetallePanel
+        onVolver={volverAlListadoDesdeDetalle}
+        titulo={`Remito ${detalle.ingreso.numero_remito}`}
+        fecha={detalle.ingreso.fecha}
+        totalEtiqueta="Total"
+        total={detalle.total_unidades}
+        meta={
+          <>
+            <RegistroDetalleMetaChip
+              icon={<Warehouse className="h-3.5 w-3.5 shrink-0 text-slate-400" />}
+            >
+              {detalle.ingreso.sector_nombre}
+            </RegistroDetalleMetaChip>
+            <RegistroDetalleMetaChip icon={<User className="h-3.5 w-3.5 shrink-0 text-slate-400" />}>
+              {detalle.ingreso.usuario_nombre}
+            </RegistroDetalleMetaChip>
+            {detalle.ingreso.observacion && (
+              <RegistroDetalleObsChip>{detalle.ingreso.observacion}</RegistroDetalleObsChip>
+            )}
+          </>
+        }
+        lineas={detalle.lineas.map((l) => ({
+          id: l.id,
+          producto_id: l.producto_id,
+          codigo_interno: l.codigo_interno,
+          nombre: l.nombre,
+          etiqueta: l.ubicacion_nombre ? `${l.etiqueta} (${l.ubicacion_nombre})` : l.etiqueta,
+          cantidad: l.total_unidades
+        }))}
+      />
     )
   }
 

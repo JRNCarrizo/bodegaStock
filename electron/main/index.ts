@@ -1,10 +1,15 @@
 import { app, BrowserWindow, shell } from 'electron'
 import { join } from 'path'
-import { startServer, stopServer } from '../../server/index'
+import { bootstrapNetworkServer, setupNetworkIpc, shutdownNetworkServer } from './network'
+import { setupAutoUpdater } from './updater'
 
 const isDev = !app.isPackaged
 
 let mainWindow: BrowserWindow | null = null
+
+function appIconPath(): string {
+  return join(app.getAppPath(), 'build', 'icon.png')
+}
 
 function createWindow(): void {
   mainWindow = new BrowserWindow({
@@ -14,7 +19,8 @@ function createWindow(): void {
     minHeight: 680,
     show: false,
     autoHideMenuBar: true,
-    title: 'BodegaStock',
+    title: 'ControlStock',
+    icon: appIconPath(),
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       sandbox: false,
@@ -41,7 +47,13 @@ function createWindow(): void {
 }
 
 app.whenReady().then(async () => {
-  await startServer()
+  if (process.platform === 'win32') {
+    app.setAppUserModelId('com.jrncarrizo.bodegastock')
+  }
+
+  setupNetworkIpc()
+  setupAutoUpdater(() => mainWindow)
+  await bootstrapNetworkServer()
   createWindow()
 
   app.on('activate', () => {
@@ -50,10 +62,10 @@ app.whenReady().then(async () => {
 })
 
 app.on('window-all-closed', () => {
-  void stopServer()
+  void shutdownNetworkServer()
   if (process.platform !== 'darwin') app.quit()
 })
 
 app.on('before-quit', () => {
-  void stopServer()
+  void shutdownNetworkServer()
 })

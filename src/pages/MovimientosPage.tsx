@@ -12,10 +12,16 @@ import {
   Search,
   Send,
   Trash2,
+  User,
   X
 } from 'lucide-react'
 import { BarcodeScannerModal } from '@/components/BarcodeScannerModal'
 import { DayTabsRow } from '@/components/DayTabsRow'
+import {
+  RegistroDetalleMetaChip,
+  RegistroDetalleObsChip,
+  RegistroDetallePanel
+} from '@/components/RegistroDetallePanel'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { Badge, Card, CardBody, CardHeader } from '@/components/ui/Card'
@@ -896,208 +902,163 @@ export function MovimientosPage() {
 
   if (view === 'detail' && detalle) {
     const m = detalle.movimiento
-    return (
-      <div className="mx-auto max-w-4xl space-y-6">
-        <Button variant="ghost" size="sm" onClick={volverAlListado}>
-          <ChevronLeft className="h-4 w-4" />
-          Volver al listado
-        </Button>
-        <div className="flex flex-wrap items-center gap-3">
-          <h1 className="text-2xl font-bold text-slate-900">Movimiento #{m.id}</h1>
-          {badgeTipo(m.tipo)}
-          {badgeEstado(m.estado)}
-        </div>
-        {error && (
-          <div className="rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>
-        )}
-        {m.estado === 'PENDIENTE' && (
-          <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950">
-            <p className="font-medium">Pendiente de autorización</p>
-            <p className="mt-1 text-amber-900/80">
-              Creado por {m.creado_por_nombre}.
-              {puedeAutorizar
-                ? ' Tildá cada producto revisado; cuando todos estén confirmados podés completar.'
-                : user?.id === m.creado_por_id
-                  ? ' Esperá a que otra persona lo autorice.'
-                  : ''}
-            </p>
+
+    const productosContent = (
+      <Card className="overflow-hidden">
+        <div className="flex items-center justify-between border-b border-surface-border bg-slate-50/80 px-4 py-2">
+          <div className="flex items-center gap-2">
+            <Package className="h-4 w-4 text-slate-400" />
+            <h2 className="text-sm font-semibold text-slate-700">Productos</h2>
           </div>
-        )}
-        <Card>
-          <CardBody className="px-4 py-2.5 text-sm">
-            <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
-              <span className="text-slate-600">
-                <span className="text-xs font-medium uppercase text-slate-500">Fecha </span>
-                <span className="font-medium text-slate-900">{m.fecha}</span>
-              </span>
-              <span className="hidden text-slate-300 sm:inline">|</span>
-              <span className="text-slate-600">
-                <span className="text-xs font-medium uppercase text-slate-500">Origen </span>
-                <span className="font-medium text-slate-900">{resumenSectorLineas('origen')}</span>
-              </span>
-              <span className="text-slate-400">→</span>
-              <span className="text-slate-600">
-                <span className="text-xs font-medium uppercase text-slate-500">Destino </span>
-                <span className="font-medium text-slate-900">{resumenSectorLineas('destino')}</span>
-              </span>
-            </div>
-            {m.observacion && (
-              <p className="mt-1.5 truncate text-xs text-slate-500" title={m.observacion}>
-                <span className="font-medium uppercase">Obs. </span>
-                {m.observacion}
-              </p>
-            )}
-          </CardBody>
-        </Card>
-        <Card>
-          <CardHeader
-            title="Productos"
-            description={`${formatCantidad(detalle.total_cajas)} · ${lineasActivasDetalle.length} activo(s)`}
-          />
-          <CardBody className="p-0">
-            {lineasPorProductoDetalle.map((grupo) => {
-              const isExpanded = expandedProductosDetalle.has(grupo.producto.producto_id)
-              const confirmada = grupoEstaConfirmado(grupo.lineas)
-              const cancelada = grupoEstaCancelado(grupo.lineas)
-              const lineaControl = lineasActivasGrupo(grupo.lineas)[0]
-              const puedeEditarGrupo =
-                m.estado === 'PENDIENTE' && puedeAutorizar && lineaControl != null
+          <span className="text-xs text-slate-400">
+            {formatCantidad(detalle.total_cajas)} · {lineasActivasDetalle.length} activo(s)
+          </span>
+        </div>
+        <div className="divide-y divide-surface-border">
+          {lineasPorProductoDetalle.map((grupo) => {
+            const isExpanded = expandedProductosDetalle.has(grupo.producto.producto_id)
+            const confirmada = grupoEstaConfirmado(grupo.lineas)
+            const cancelada = grupoEstaCancelado(grupo.lineas)
+            const lineaControl = lineasActivasGrupo(grupo.lineas)[0]
+            const puedeEditarGrupo =
+              m.estado === 'PENDIENTE' && puedeAutorizar && lineaControl != null
 
-              const lineaRef = lineasActivasGrupo(grupo.lineas)[0] ?? grupo.lineas[0]
-              const sectorId =
-                lineaRef != null
-                  ? m.tipo === 'RECIBIR'
-                    ? lineaRef.sector_origen_id
-                    : lineaRef.sector_destino_id
-                  : null
+            const lineaRef = lineasActivasGrupo(grupo.lineas)[0] ?? grupo.lineas[0]
+            const sectorId =
+              lineaRef != null
+                ? m.tipo === 'RECIBIR'
+                  ? lineaRef.sector_origen_id
+                  : lineaRef.sector_destino_id
+                : null
 
-              return (
-                <div key={grupo.producto.producto_id} className="border-b border-surface-border last:border-0">
-                  <div
-                    aria-expanded={isExpanded}
+            return (
+              <div key={grupo.producto.producto_id}>
+                <div
+                  className={`flex items-center gap-2 px-4 py-2.5 ${
+                    cancelada
+                      ? 'bg-slate-50/80 opacity-60'
+                      : confirmada
+                        ? 'border-l-2 border-green-500 bg-green-50/90'
+                        : 'hover:bg-slate-50/80'
+                  }`}
+                >
+                  <button
+                    type="button"
                     onClick={() => toggleProductoExpandDetalle(grupo.producto.producto_id)}
-                    className={`flex cursor-pointer items-center gap-1.5 px-3 py-1.5 sm:gap-2 ${
-                      cancelada
-                        ? 'bg-slate-50/80 opacity-60'
-                        : confirmada
-                          ? 'border-l-2 border-green-500 bg-green-50/90'
-                          : 'hover:bg-slate-50/80'
-                    }`}
+                    className="shrink-0 rounded p-1 text-slate-400 hover:bg-slate-200 hover:text-slate-700"
+                    aria-expanded={isExpanded}
+                    aria-label={isExpanded ? 'Ocultar desglose' : 'Ver desglose'}
                   >
-                    <span className="shrink-0 text-slate-400" aria-hidden>
-                      {isExpanded ? (
-                        <ChevronDown className="h-3.5 w-3.5" />
-                      ) : (
-                        <ChevronRight className="h-3.5 w-3.5" />
-                      )}
-                    </span>
-                    <span className="shrink-0 font-mono text-xs font-semibold text-slate-900 sm:text-sm">
-                      {grupo.producto.codigo_interno}
-                    </span>
-                    <span
-                      className="min-w-0 flex-1 truncate text-xs text-slate-600 sm:text-sm"
-                      title={grupo.producto.nombre}
-                    >
-                      {grupo.producto.nombre}
-                    </span>
-                    {sectorId != null && !cancelada && (
-                      puedeEditarGrupo && !confirmada ? (
-                        <div
-                          className="ml-auto mr-6 flex shrink-0 items-center gap-1.5 sm:mr-10"
-                          onClick={(e) => e.stopPropagation()}
-                          onMouseDown={(e) => e.stopPropagation()}
-                          onKeyDown={(e) => e.stopPropagation()}
-                        >
-                          <span className="text-xs text-slate-500">
-                            {m.tipo === 'RECIBIR' ? 'Origen' : 'Destino'}
-                          </span>
-                          {m.tipo === 'RECIBIR' ? (
-                            <SectorOrigenSelect
-                              productoId={lineaRef.producto_id}
-                              excluirSectorId={lineaRef.sector_destino_id}
-                              value={lineaRef.sector_origen_id}
-                              className="h-7 w-[100px] shrink-0 py-0 text-xs sm:w-[130px]"
+                    {isExpanded ? (
+                      <ChevronDown className="h-4 w-4" />
+                    ) : (
+                      <ChevronRight className="h-4 w-4" />
+                    )}
+                  </button>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex min-w-0 items-baseline gap-2">
+                      <span className="shrink-0 font-mono text-sm font-semibold text-slate-900">
+                        {grupo.producto.codigo_interno}
+                      </span>
+                      <span className="min-w-0 truncate text-sm text-slate-600" title={grupo.producto.nombre}>
+                        {grupo.producto.nombre}
+                      </span>
+                    </div>
+                    {!isExpanded && grupo.lineas.length > 1 && (
+                      <p className="text-xs text-slate-400">{grupo.lineas.length} líneas</p>
+                    )}
+                  </div>
+                  {sectorId != null && !cancelada && (
+                    puedeEditarGrupo && !confirmada ? (
+                      <div
+                        className="flex shrink-0 items-center gap-1.5"
+                        onClick={(e) => e.stopPropagation()}
+                        onMouseDown={(e) => e.stopPropagation()}
+                        onKeyDown={(e) => e.stopPropagation()}
+                      >
+                        <span className="text-xs text-slate-500">
+                          {m.tipo === 'RECIBIR' ? 'Origen' : 'Destino'}
+                        </span>
+                        {m.tipo === 'RECIBIR' ? (
+                          <SectorOrigenSelect
+                            productoId={lineaRef.producto_id}
+                            excluirSectorId={lineaRef.sector_destino_id}
+                            value={lineaRef.sector_origen_id}
+                            className="h-7 w-[100px] shrink-0 py-0 text-xs sm:w-[130px]"
+                            onChange={(id) =>
+                              updateSectorLineasGrupo(grupo.lineas, { sector_origen_id: id })
+                            }
+                          />
+                        ) : (
+                          <select
+                            value={lineaRef.sector_destino_id}
+                            onChange={(e) =>
+                              updateSectorLineasGrupo(grupo.lineas, {
+                                sector_destino_id: Number(e.target.value),
+                                ubicacion_destino_id: null
+                              })
+                            }
+                            className="h-7 w-[100px] shrink-0 rounded border border-surface-border px-1 py-0 text-xs sm:w-[130px]"
+                          >
+                            {sectores
+                              .filter((s) => s.id !== lineaRef.sector_origen_id)
+                              .map((s) => (
+                                <option key={s.id} value={s.id}>{s.nombre}</option>
+                              ))}
+                          </select>
+                        )}
+                        {sectorUsaUbicaciones(lineaRef.sector_destino_id) && (
+                          <>
+                            <span className="text-xs text-slate-500">Ubic.</span>
+                            <UbicacionDestinoSelect
+                              sectorId={lineaRef.sector_destino_id}
+                              value={lineaRef.ubicacion_destino_id}
+                              className="h-7 w-[90px] shrink-0 rounded border border-surface-border px-1 py-0 text-xs sm:w-[110px]"
                               onChange={(id) =>
-                                updateSectorLineasGrupo(grupo.lineas, { sector_origen_id: id })
+                                updateSectorLineasGrupo(grupo.lineas, { ubicacion_destino_id: id })
                               }
                             />
-                          ) : (
-                            <select
-                              value={lineaRef.sector_destino_id}
-                              onChange={(e) =>
-                                updateSectorLineasGrupo(grupo.lineas, {
-                                  sector_destino_id: Number(e.target.value),
-                                  ubicacion_destino_id: null
-                                })
-                              }
-                              className="h-7 w-[100px] shrink-0 rounded border border-surface-border px-1 py-0 text-xs sm:w-[130px]"
-                            >
-                              {sectores
-                                .filter((s) => s.id !== lineaRef.sector_origen_id)
-                                .map((s) => (
-                                  <option key={s.id} value={s.id}>{s.nombre}</option>
-                                ))}
-                            </select>
-                          )}
-                          {sectorUsaUbicaciones(lineaRef.sector_destino_id) && (
-                            <>
-                              <span className="text-xs text-slate-500">Ubic.</span>
-                              <UbicacionDestinoSelect
-                                sectorId={lineaRef.sector_destino_id}
-                                value={lineaRef.ubicacion_destino_id}
-                                className="h-7 w-[90px] shrink-0 rounded border border-surface-border px-1 py-0 text-xs sm:w-[110px]"
-                                onChange={(id) =>
-                                  updateSectorLineasGrupo(grupo.lineas, { ubicacion_destino_id: id })
-                                }
-                              />
-                            </>
-                          )}
-                        </div>
-                      ) : (
-                        <span className="ml-auto mr-6 flex shrink-0 items-center gap-1.5 text-xs sm:mr-10">
-                          <span className="text-slate-500">
-                            {m.tipo === 'RECIBIR' ? 'Origen' : 'Destino'}
-                          </span>
-                          <span
-                            className="max-w-[80px] truncate text-slate-600 sm:max-w-[120px]"
-                            title={sectorNombre(sectorId)}
-                          >
-                            {sectorNombre(sectorId)}
-                          </span>
-                          {lineaRef.ubicacion_destino_nombre && (
-                            <span className="max-w-[72px] truncate text-slate-500" title={lineaRef.ubicacion_destino_nombre}>
-                              · {lineaRef.ubicacion_destino_nombre}
-                            </span>
-                          )}
+                          </>
+                        )}
+                      </div>
+                    ) : (
+                      <span className="flex shrink-0 items-center gap-1.5 text-xs">
+                        <span className="text-slate-500">
+                          {m.tipo === 'RECIBIR' ? 'Origen' : 'Destino'}
                         </span>
-                      )
-                    )}
-                    <div className="flex shrink-0 items-center gap-2">
+                        <span
+                          className="max-w-[80px] truncate text-slate-600 sm:max-w-[120px]"
+                          title={sectorNombre(sectorId)}
+                        >
+                          {sectorNombre(sectorId)}
+                        </span>
+                        {lineaRef.ubicacion_destino_nombre && (
+                          <span
+                            className="max-w-[72px] truncate text-slate-500"
+                            title={lineaRef.ubicacion_destino_nombre}
+                          >
+                            · {lineaRef.ubicacion_destino_nombre}
+                          </span>
+                        )}
+                      </span>
+                    )
+                  )}
+                  <div className="flex shrink-0 items-center gap-2">
                     {cancelada && (
                       <span className="shrink-0 text-xs text-slate-400">Cancelada</span>
                     )}
-                    <span className="shrink-0 font-semibold tabular-nums text-brand-700 text-sm">
-                      {formatCantidad(grupo.total)}
-                    </span>
+                    <Badge variant="default">{formatCantidad(grupo.total)}</Badge>
                     {m.estado === 'PENDIENTE' && puedeAutorizar && cancelada && (
                       <button
                         type="button"
                         className="shrink-0 text-xs text-brand-600 hover:underline"
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          restaurarLineasGrupo(grupo.lineas)
-                        }}
+                        onClick={() => restaurarLineasGrupo(grupo.lineas)}
                       >
                         Restaurar
                       </button>
                     )}
                     {puedeEditarGrupo && (
-                      <div
-                        className="flex shrink-0 items-center gap-0.5"
-                        onClick={(e) => e.stopPropagation()}
-                        onMouseDown={(e) => e.stopPropagation()}
-                        onKeyDown={(e) => e.stopPropagation()}
-                      >
+                      <div className="flex shrink-0 items-center gap-0.5">
                         <Button
                           type="button"
                           variant="secondary"
@@ -1124,57 +1085,119 @@ export function MovimientosPage() {
                         </Button>
                       </div>
                     )}
-                    </div>
                   </div>
-                  {isExpanded && (
-                    <ul className="divide-y divide-surface-border border-t border-surface-border bg-surface-muted/20">
-                      {grupo.lineas.map((l) => (
-                        <li
-                          key={l.id}
-                          className={`flex items-center justify-between gap-3 py-1.5 pl-9 pr-3 text-xs sm:text-sm ${
-                            l.cancelada ? 'opacity-50' : ''
-                          }`}
-                        >
-                          <p className="text-slate-700">
-                            {etiquetaLineaDetalle(l)}
-                            {l.ubicacion_destino_nombre && (
-                              <span className="ml-1 text-slate-400">→ {l.ubicacion_destino_nombre}</span>
-                            )}
-                          </p>
-                          <span className="shrink-0 font-semibold tabular-nums text-brand-700">
-                            {formatCantidad(l.cantidad_cajas)}
-                          </span>
-                        </li>
-                      ))}
-                    </ul>
-                  )}
                 </div>
-              )
-            })}
-          </CardBody>
-        </Card>
-        <div className="flex flex-wrap gap-2">
-          {puedeAutorizar && (
-            <Button
-              disabled={saving || !listoParaCompletar}
-              onClick={() => void completar()}
-              title={
-                listoParaCompletar
-                  ? undefined
-                  : 'Tildá cada producto activo o quitá los que no van'
-              }
-            >
-              <Check className="h-4 w-4" />
-              Completar movimiento
-            </Button>
-          )}
-          {puedeCancelarDoc && (
-            <Button variant="secondary" disabled={saving} onClick={() => void cancelarDoc()}>
-              Cancelar
-            </Button>
-          )}
+                {isExpanded && (
+                  <ul className="divide-y divide-surface-border border-t border-surface-border bg-surface-muted/20">
+                    {grupo.lineas.map((l) => (
+                      <li
+                        key={l.id}
+                        className={`flex items-center justify-between gap-2 py-2.5 pl-11 pr-4 text-sm ${
+                          l.cancelada ? 'opacity-50' : ''
+                        }`}
+                      >
+                        <span className="text-slate-700">
+                          {etiquetaLineaDetalle(l)}
+                          {l.ubicacion_destino_nombre && (
+                            <span className="ml-1 text-slate-400">→ {l.ubicacion_destino_nombre}</span>
+                          )}
+                        </span>
+                        <span className="shrink-0 font-semibold tabular-nums text-slate-900">
+                          {formatCantidad(l.cantidad_cajas)}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            )
+          })}
         </div>
-      </div>
+      </Card>
+    )
+
+    return (
+      <RegistroDetallePanel
+        onVolver={volverAlListado}
+        titulo={`Movimiento #${m.id}`}
+        fecha={m.fecha}
+        totalEtiqueta="Total"
+        total={detalle.total_cajas}
+        encabezadoExtra={
+          <>
+            {badgeTipo(m.tipo)}
+            {badgeEstado(m.estado)}
+          </>
+        }
+        meta={
+          <>
+            <RegistroDetalleMetaChip>
+              <span className="font-medium text-slate-500">Origen </span>
+              {resumenSectorLineas('origen')}
+            </RegistroDetalleMetaChip>
+            <span className="text-slate-400">→</span>
+            <RegistroDetalleMetaChip>
+              <span className="font-medium text-slate-500">Destino </span>
+              {resumenSectorLineas('destino')}
+            </RegistroDetalleMetaChip>
+            <RegistroDetalleMetaChip icon={<User className="h-3.5 w-3.5 shrink-0 text-slate-400" />}>
+              {m.creado_por_nombre}
+            </RegistroDetalleMetaChip>
+            {m.recibido_por_nombre && (
+              <RegistroDetalleMetaChip>
+                <span className="font-medium text-slate-500">Completado </span>
+                {m.recibido_por_nombre}
+              </RegistroDetalleMetaChip>
+            )}
+            {m.observacion && <RegistroDetalleObsChip>{m.observacion}</RegistroDetalleObsChip>}
+          </>
+        }
+        antesProductos={
+          <>
+            {error && (
+              <div className="rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>
+            )}
+            {m.estado === 'PENDIENTE' && (
+              <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950">
+                <p className="font-medium">Pendiente de autorización</p>
+                <p className="mt-1 text-amber-900/80">
+                  Creado por {m.creado_por_nombre}.
+                  {puedeAutorizar
+                    ? ' Tildá cada producto revisado; cuando todos estén confirmados podés completar.'
+                    : user?.id === m.creado_por_id
+                      ? ' Esperá a que otra persona lo autorice.'
+                      : ''}
+                </p>
+              </div>
+            )}
+          </>
+        }
+        productosContent={productosContent}
+        productosCount={lineasPorProductoDetalle.length}
+        despuesProductos={
+          <div className="flex flex-wrap gap-2">
+            {puedeAutorizar && (
+              <Button
+                disabled={saving || !listoParaCompletar}
+                onClick={() => void completar()}
+                title={
+                  listoParaCompletar
+                    ? undefined
+                    : 'Tildá cada producto activo o quitá los que no van'
+                }
+              >
+                <Check className="h-4 w-4" />
+                Completar movimiento
+              </Button>
+            )}
+            {puedeCancelarDoc && (
+              <Button variant="secondary" disabled={saving} onClick={() => void cancelarDoc()}>
+                Cancelar
+              </Button>
+            )}
+          </div>
+        }
+      />
     )
   }
 

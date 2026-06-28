@@ -57,7 +57,7 @@ export function DashboardPage() {
           Hola, {user?.nombre?.split(' ')[0]}
         </h1>
         <p className="mt-1 text-slate-500">
-          BodegaStock — desarrollo por secciones. Empezamos con usuarios y base del sistema.
+          ControlStock — desarrollo por secciones. Empezamos con usuarios y base del sistema.
         </p>
       </div>
 

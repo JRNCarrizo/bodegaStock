@@ -5,7 +5,24 @@ export function cn(...inputs: ClassValue[]): string {
   return twMerge(clsx(inputs))
 }
 
-export const API_URL = 'http://127.0.0.1:3847'
+const DEFAULT_API_URL = 'http://127.0.0.1:3847'
+
+let apiUrl = DEFAULT_API_URL
+
+export function getApiUrl(): string {
+  return apiUrl
+}
+
+export function setApiUrl(url: string): void {
+  apiUrl = url.replace(/\/$/, '')
+}
+
+export async function initApiFromBridge(): Promise<void> {
+  if (window.bodegaStock?.getNetworkInfo) {
+    const info = await window.bodegaStock.getNetworkInfo()
+    setApiUrl(info.apiUrl)
+  }
+}
 
 export async function api<T>(
   path: string,
@@ -27,9 +44,11 @@ export async function api<T>(
 
   let res: Response
   try {
-    res = await fetch(`${API_URL}${path}`, { ...options, headers })
+    res = await fetch(`${getApiUrl()}${path}`, { ...options, headers })
   } catch {
-    throw new Error('No se pudo conectar con el servidor. Reiniciá la app (npm run dev).')
+    throw new Error(
+      'No se pudo conectar con el servidor. Verificá la configuración de red en Configuración.'
+    )
   }
 
   const data = await res.json().catch(() => ({}))

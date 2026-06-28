@@ -3,6 +3,11 @@ import cors from '@fastify/cors'
 import { app } from 'electron'
 import http from 'http'
 import { initDatabase } from './db'
+import {
+  buildConnectionUrls,
+  getLanAddresses,
+  loadNetworkConfig
+} from './network-config'
 import { registerAuthHook } from './plugins/auth'
 import { authRoutes } from './routes/auth'
 import { camionerosRoutes } from './routes/camioneros'
@@ -17,24 +22,53 @@ import { productosRoutes } from './routes/productos'
 import { sectoresRoutes } from './routes/sectores'
 import { usuariosRoutes } from './routes/usuarios'
 
-const PORT = 3847
-let server: ReturnType<typeof Fastify> | null = null
+export interface StartServerOptions {
+  host?: string
+  port?: number
+}
 
-function isApiHealthy(): Promise<boolean> {
+let server: ReturnType<typeof Fastify> | null = null
+let activePort = loadNetworkConfig().port
+
+export function checkApiHealth(host: string, port: number): Promise<{
+  ok: boolean
+  app?: string
+  version?: string
+}> {
   return new Promise((resolve) => {
-    const req = http.get(`http://127.0.0.1:${PORT}/api/health`, (res) => {
-      resolve(res.statusCode === 200)
+    const req = http.get(`http://${host}:${port}/api/health`, (res) => {
+      let body = ''
+      res.on('data', (chunk) => {
+        body += chunk
+      })
+      res.on('end', () => {
+        if (res.statusCode !== 200) {
+          resolve({ ok: false })
+          return
+        }
+        try {
+          const data = JSON.parse(body) as { app?: string; version?: string }
+          resolve({ ok: true, app: data.app, version: data.version })
+        } catch {
+          resolve({ ok: true })
+        }
+      })
     })
-    req.on('error', () => resolve(false))
-    req.setTimeout(2000, () => {
+    req.on('error', () => resolve({ ok: false }))
+    req.setTimeout(4000, () => {
       req.destroy()
-      resolve(false)
+      resolve({ ok: false })
     })
   })
 }
 
-export async function startServer(): Promise<void> {
+export async function startServer(options: StartServerOptions = {}): Promise<void> {
   if (server?.server?.listening) return
+
+  const config = loadNetworkConfig()
+  const host = options.host ?? '0.0.0.0'
+  const port = options.port ?? config.port
+  activePort = port
 
   initDatabase()
 
@@ -61,8 +95,17 @@ export async function startServer(): Promise<void> {
 
   server.get('/api/health', async () => ({
     ok: true,
-    app: 'BodegaStock',
-    version: app.getVersion?.() ?? '0.1.0'
+    app: 'ControlStock',
+    version: app.getVersion?.() ?? '0.1.0',
+    port: activePort
+  }))
+
+  server.get('/api/server/info', async () => ({
+    app: 'ControlStock',
+    version: app.getVersion?.() ?? '0.1.0',
+    port: activePort,
+    addresses: getLanAddresses(),
+    urls: buildConnectionUrls(activePort)
   }))
 
   await server.register(authRoutes)
@@ -79,13 +122,14 @@ export async function startServer(): Promise<void> {
   await server.register(reportesRoutes)
 
   try {
-    await server.listen({ port: PORT, host: '127.0.0.1' })
+    await server.listen({ port, host })
+    console.log(`[ControlStock] API escuchando en ${host}:${port}`)
   } catch (err: unknown) {
     const code = (err as NodeJS.ErrnoException)?.code
     if (code === 'EADDRINUSE') {
-      const healthy = await isApiHealthy()
-      if (healthy) {
-        console.log(`[BodegaStock] API ya activa en puerto ${PORT}`)
+      const healthy = await checkApiHealth('127.0.0.1', port)
+      if (healthy.ok) {
+        console.log(`[ControlStock] API ya activa en puerto ${port}`)
         return
       }
     }
@@ -101,5 +145,9 @@ export async function stopServer(): Promise<void> {
 }
 
 export function getServerPort(): number {
-  return PORT
+  return activePort
+}
+
+export function isServerRunning(): boolean {
+  return Boolean(server?.server?.listening)
 }

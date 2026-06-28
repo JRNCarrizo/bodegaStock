@@ -6,14 +6,21 @@ import {
   ChevronRight,
   ClipboardList,
   Eye,
+  Package,
   Plus,
   Search,
   Trash2,
   Truck,
+  User,
   X
 } from 'lucide-react'
 import { BarcodeScannerModal } from '@/components/BarcodeScannerModal'
 import { DayTabsRow } from '@/components/DayTabsRow'
+import {
+  RegistroDetalleMetaChip,
+  RegistroDetalleObsChip,
+  RegistroDetallePanel
+} from '@/components/RegistroDetallePanel'
 import { ProductImage } from '@/components/ProductImage'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
@@ -663,90 +670,7 @@ export function PlanillasPage() {
   }
 
   if (view === 'detail' && detalle) {
-    return (
-      <div className="mx-auto max-w-4xl space-y-6">
-        <div className="flex items-center gap-3">
-          <Button variant="ghost" size="sm" onClick={volverAlListadoDesdeDetalle}>
-            <ChevronLeft className="h-4 w-4" />
-            Volver
-          </Button>
-          <div>
-            <h1 className="text-2xl font-bold text-slate-900">Planilla registrada</h1>
-            <p className="text-sm text-slate-500">Nº {detalle.planilla.numero}</p>
-          </div>
-        </div>
-
-        <Card>
-          <CardBody className="space-y-4">
-            <div className="grid gap-4 sm:grid-cols-2 text-sm">
-              <div>
-                <p className="text-slate-500">Fecha</p>
-                <p className="font-medium">{detalle.planilla.fecha}</p>
-              </div>
-              <div>
-                <p className="text-slate-500">Camionero</p>
-                <p className="font-medium">
-                  {detalle.planilla.camionero_numero} — {detalle.planilla.camionero_nombre}
-                </p>
-                <p className="text-xs text-slate-500">{detalle.planilla.camionero_empresa}</p>
-              </div>
-              {detalle.planilla.vehiculo_modelo && (
-                <div>
-                  <p className="text-slate-500">Modelo</p>
-                  <p className="font-medium">
-                    {detalle.planilla.vehiculo_marca} {detalle.planilla.vehiculo_modelo}
-                  </p>
-                </div>
-              )}
-              <div>
-                <p className="text-slate-500">Cargado por</p>
-                <p className="font-medium">{detalle.planilla.usuario_nombre}</p>
-              </div>
-              <div>
-                <p className="text-slate-500">Total descontado</p>
-                <p className="text-lg font-bold text-brand-700">{formatTotalCajas(detalle.total_unidades)}</p>
-              </div>
-            </div>
-            {detalle.planilla.observacion && (
-              <p className="text-sm text-slate-600">
-                <span className="text-slate-500">Observaciones:</span> {detalle.planilla.observacion}
-              </p>
-            )}
-          </CardBody>
-        </Card>
-
-        <Card>
-          <CardHeader title="Productos y descuentos por sector" />
-          <CardBody className="space-y-4 p-0">
-            {detalle.lineas.map((l) => (
-              <div key={l.id} className="border-b border-surface-border last:border-0">
-                <div className="bg-slate-50 px-6 py-3">
-                  <p className="font-mono font-semibold">{l.codigo_interno}</p>
-                  <p className="text-sm text-slate-700">{l.nombre}</p>
-                  <p className="text-sm text-slate-600">
-                    {l.etiqueta} · <strong className="text-brand-700">{formatTotalCajas(l.total_unidades)}</strong>
-                  </p>
-                </div>
-                <ul className="divide-y divide-surface-border px-6 py-2">
-                  {l.descuentos.map((d) => (
-                    <li key={d.id} className="flex justify-between py-2 text-sm">
-                      <span className="text-slate-700">
-                        <Truck className="mr-1 inline h-3.5 w-3.5 text-slate-400" />
-                        {d.sector_nombre}
-                        {d.etiqueta && (
-                          <span className="ml-2 text-slate-400">({d.etiqueta})</span>
-                        )}
-                      </span>
-                      <span className="font-medium">{formatTotalCajas(d.unidades)}</span>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            ))}
-          </CardBody>
-        </Card>
-      </div>
-    )
+    return <PlanillaDetallePanel detalle={detalle} onVolver={volverAlListadoDesdeDetalle} />
   }
 
   if (view === 'create' && createPhase === 'datos') {
@@ -879,15 +803,19 @@ export function PlanillasPage() {
                   onClick={() => toggleProductoExpand(grupo.producto.producto_id)}
                   className="min-w-0 flex-1 text-left"
                 >
-                  <p className="font-mono text-sm font-semibold text-slate-900">
-                    {grupo.producto.codigo_interno}
-                  </p>
-                  <p className="truncate text-xs text-slate-600">{grupo.producto.nombre}</p>
+                  <div className="flex min-w-0 items-baseline gap-2">
+                    <span className="shrink-0 font-mono text-sm font-semibold text-slate-900">
+                      {grupo.producto.codigo_interno}
+                    </span>
+                    <span className="min-w-0 truncate text-sm text-slate-600">
+                      {grupo.producto.nombre}
+                    </span>
+                  </div>
                   {!isExpanded && grupo.lineas.length > 1 && (
                     <p className="text-xs text-slate-400">{grupo.lineas.length} líneas</p>
                   )}
                 </button>
-                <Badge variant="default">{formatTotalCajas(grupo.total)}</Badge>
+                <Badge variant="default">{formatCantidad(grupo.total)}</Badge>
               </div>
               {isExpanded && (
                 <ul className="divide-y divide-surface-border border-t border-surface-border bg-surface-muted/20">
@@ -898,7 +826,7 @@ export function PlanillasPage() {
                     >
                       <span className="text-slate-700">{l.etiqueta}</span>
                       <div className="flex shrink-0 items-center gap-2">
-                        <span className="font-semibold text-slate-900">{formatTotalCajas(l.total_unidades)}</span>
+                        <span className="font-semibold text-slate-900">{formatCantidad(l.total_unidades)}</span>
                         <Button variant="ghost" size="sm" onClick={() => quitarLinea(l.tempId)}>
                           <Trash2 className="h-4 w-4 text-red-500" />
                         </Button>
@@ -1340,7 +1268,7 @@ export function PlanillasPage() {
                   <tr className="border-b bg-slate-50/80 text-left text-xs font-semibold uppercase text-slate-500">
                     <th className="px-6 py-3">Planilla</th>
                     <th className="px-6 py-3">Camionero</th>
-                    <th className="px-6 py-3">Modelo</th>
+                    <th className="px-6 py-3">Vehículo</th>
                     <th className="px-6 py-3">Total</th>
                     <th className="px-6 py-3">Usuario</th>
                     <th className="px-6 py-3" />
@@ -1372,5 +1300,62 @@ export function PlanillasPage() {
         </CardBody>
       </Card>
     </div>
+  )
+}
+
+function PlanillaDetallePanel({
+  detalle,
+  onVolver
+}: {
+  detalle: PlanillaDetalle
+  onVolver: () => void
+}) {
+  const planilla = detalle.planilla
+  const vehiculoTexto =
+    planilla.vehiculo_marca || planilla.vehiculo_modelo
+      ? [planilla.vehiculo_marca, planilla.vehiculo_modelo].filter(Boolean).join(' ')
+      : null
+
+  return (
+    <RegistroDetallePanel
+      onVolver={onVolver}
+      titulo={`Planilla ${planilla.numero}`}
+      fecha={planilla.fecha}
+      totalEtiqueta="Total"
+      total={detalle.total_unidades}
+      meta={
+        <>
+          <RegistroDetalleMetaChip icon={<Truck className="h-3.5 w-3.5 shrink-0 text-slate-400" />}>
+            {planilla.camionero_numero} · {planilla.camionero_nombre}
+            {planilla.camionero_empresa && (
+              <span className="text-slate-400"> · {planilla.camionero_empresa}</span>
+            )}
+          </RegistroDetalleMetaChip>
+          {vehiculoTexto && (
+            <RegistroDetalleMetaChip>
+              <span className="font-medium text-slate-500">Vehículo </span>
+              {vehiculoTexto}
+              {planilla.vehiculo_patente && (
+                <span className="text-slate-400"> ({planilla.vehiculo_patente})</span>
+              )}
+            </RegistroDetalleMetaChip>
+          )}
+          <RegistroDetalleMetaChip icon={<User className="h-3.5 w-3.5 shrink-0 text-slate-400" />}>
+            {planilla.usuario_nombre}
+          </RegistroDetalleMetaChip>
+          {planilla.observacion && (
+            <RegistroDetalleObsChip>{planilla.observacion}</RegistroDetalleObsChip>
+          )}
+        </>
+      }
+      lineas={detalle.lineas.map((l) => ({
+        id: l.id,
+        producto_id: l.producto_id,
+        codigo_interno: l.codigo_interno,
+        nombre: l.nombre,
+        etiqueta: l.etiqueta,
+        cantidad: l.total_unidades
+      }))}
+    />
   )
 }

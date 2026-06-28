@@ -1,6 +1,6 @@
 {
   "name": "bodega-stock",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Sistema de gestión de stock para bodega",
   "author": "JRNCarrizo",
   "main": "out/main/index.js",
@@ -8,7 +8,7 @@
     "dev": "electron-vite dev",
     "build": "electron-vite build",
     "preview": "electron-vite preview",
-    "dist": "npm run build && electron-builder --win --publish never",
+    "dist": "npm run icons && npm run build && electron-builder --win --publish never",
     "icons": "node scripts/generate-icons.mjs",
     "postinstall": "electron-builder install-app-deps"
   },
@@ -42,6 +42,7 @@
     "electron-vite": "^2.3.0",
     "png-to-ico": "^3.0.1",
     "postcss": "^8.4.49",
+    "rcedit": "^4.0.1",
     "sharp": "^0.35.2",
     "tailwindcss": "^3.4.17",
     "typescript": "^5.7.2",
@@ -61,8 +62,20 @@
       "package.json",
       "build/icon.png"
     ],
+    "extraResources": [
+      {
+        "from": "build/icon.png",
+        "to": "icons/icon.png"
+      },
+      {
+        "from": "build/icon.ico",
+        "to": "icons/icon.ico"
+      }
+    ],
     "icon": "build/icon.ico",
+    "afterPack": "./scripts/after-pack.mjs",
     "win": {
+      "icon": "build/icon.ico",
       "signAndEditExecutable": false,
       "target": [
         {
@@ -76,6 +89,8 @@
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
+      "installerIcon": "build/icon.ico",
+      "uninstallerIcon": "build/icon.ico",
       "installerLanguages": [
         "es"
       ]

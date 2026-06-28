@@ -8,7 +8,10 @@ const isDev = !app.isPackaged
 let mainWindow: BrowserWindow | null = null
 
 function appIconPath(): string {
-  return join(app.getAppPath(), 'build', 'icon.png')
+  if (isDev) {
+    return join(app.getAppPath(), 'build', 'icon.png')
+  }
+  return join(process.resourcesPath, 'icons', 'icon.png')
 }
 
 function createWindow(): void {

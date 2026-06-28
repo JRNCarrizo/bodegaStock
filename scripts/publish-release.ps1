@@ -49,27 +49,24 @@ $exeName = Split-Path $exe -Leaf
 $notes = @"
 ## ControlStock v$Version
 
-Nueva versión con red local, etiquetas de barras y mejoras de interfaz.
+Red local, etiquetas de barras, login renovado e icono en Windows.
 
 ### Nuevo
-- **Servidor / cliente en red:** una PC servidor y otras PCs conectadas por WiFi/LAN (puerto 3847)
-- **Configuración de red:** modo servidor o cliente, probar conexión, URLs y QR para celulares
-- **Etiquetas de código de barras:** generar, imprimir y descargar PNG desde Productos
-- **Configuración:** pantalla de actualizaciones y red
-- **Detalle unificado** en ingresos, retornos, roturas, planillas y movimientos
+- **Servidor / cliente en red:** PC servidor + otras PCs por WiFi/LAN (puerto 3847)
+- **Configuración de red:** modo servidor o cliente, probar conexión, URLs, QR para celulares
+- **Etiquetas de código de barras:** imprimir y descargar PNG desde Productos
+- **Login** rediseñado (panel de marca + formulario moderno)
+- **Icono** embebido en el instalador Windows y en desarrollo (barra de tareas)
 
-### Incluye (base)
-- Productos, sectores, consulta, ingresos, planillas, retornos, roturas, movimientos internos
-- Reportes, usuarios, camioneros y permisos
+### Mejoras
+- Detalle unificado en ingresos, retornos, roturas, planillas y movimientos
+- Configuración cliente: ayuda para pegar IP del servidor (sin 127.0.0.1)
 
 ### Instalación
-1. **PC servidor:** instalá ``$exeName`` → Configuración → *Esta PC es el servidor*
-2. **Otras PCs:** mismo instalador → Configuración → *Esta PC es cliente* → IP del servidor → puerto **3847**
+1. **PC servidor:** instalá el .exe → Configuración → *Esta PC es el servidor*
+2. **Otras PCs:** mismo instalador → *Esta PC es cliente* → IP del servidor → puerto **3847**
 
 Login inicial: **admin** / **admin123** (cambiar después del primer acceso).
-
-### Datos
-La base de datos del servidor se guarda en ``%APPDATA%\ControlStock\data\`` en la PC servidor.
 "@
 
 Write-Host "Publicando release $tag..." -ForegroundColor Green

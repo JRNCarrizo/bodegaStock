@@ -1,5 +1,6 @@
 import { app, BrowserWindow, shell } from 'electron'
 import { join } from 'path'
+import { getAppIcon } from './icon'
 import { bootstrapNetworkServer, setupNetworkIpc, shutdownNetworkServer } from './network'
 import { setupAutoUpdater } from './updater'
 
@@ -7,14 +8,9 @@ const isDev = !app.isPackaged
 
 let mainWindow: BrowserWindow | null = null
 
-function appIconPath(): string {
-  if (isDev) {
-    return join(app.getAppPath(), 'build', 'icon.png')
-  }
-  return join(process.resourcesPath, 'icons', 'icon.png')
-}
-
 function createWindow(): void {
+  const icon = getAppIcon()
+
   mainWindow = new BrowserWindow({
     width: 1280,
     height: 800,
@@ -23,7 +19,7 @@ function createWindow(): void {
     show: false,
     autoHideMenuBar: true,
     title: 'ControlStock',
-    icon: appIconPath(),
+    icon,
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       sandbox: false,
@@ -31,6 +27,10 @@ function createWindow(): void {
       nodeIntegration: false
     }
   })
+
+  if (!icon.isEmpty()) {
+    mainWindow.setIcon(icon)
+  }
 
   mainWindow.on('ready-to-show', () => {
     mainWindow?.show()
@@ -50,10 +50,6 @@ function createWindow(): void {
 }
 
 app.whenReady().then(async () => {
-  if (process.platform === 'win32') {
-    app.setAppUserModelId('com.jrncarrizo.bodegastock')
-  }
-
   setupNetworkIpc()
   setupAutoUpdater(() => mainWindow)
   await bootstrapNetworkServer()

@@ -101,6 +101,42 @@ export interface SectorForm {
   activo: boolean
 }
 
+export interface SectorStockLinea {
+  id: number
+  tipo_bulto: string
+  cantidad_bultos: number | null
+  unidades_por_bulto: number | null
+  cantidad_suelta: number | null
+  ubicacion: string | null
+  ubicacion_id: number | null
+  total_unidades: number
+  etiqueta: string
+}
+
+export interface SectorStockProducto {
+  producto_id: number
+  codigo_interno: string
+  nombre: string
+  imagen_path: string | null
+  unidad: string
+  cantidad_total: number
+  lineas: SectorStockLinea[]
+}
+
+export interface SectorStockDetalle {
+  sector: {
+    id: number
+    codigo: string
+    nombre: string
+    usa_ubicaciones: boolean
+  }
+  ubicacion: { id: number; nombre: string; codigo: string } | null
+  sin_ubicacion: boolean
+  productos: SectorStockProducto[]
+  total_productos: number
+  total_stock: number
+}
+
 export interface Camionero {
   id: number
   numero_interno: string
@@ -203,6 +239,7 @@ export interface IngresoListItem {
   usuario_nombre: string
   total_unidades: number
   lineas_count: number
+  productos_count: number
   created_at: string
 }
 
@@ -488,6 +525,107 @@ export interface ReporteDetalle {
   fecha_hasta: string
   total: number
   items: ReporteDetalleItem[]
+}
+
+export type MovimientoInternoTipo = 'ENVIAR' | 'RECIBIR'
+export type MovimientoInternoEstado = 'PENDIENTE' | 'COMPLETADO' | 'CANCELADO'
+
+export interface MovimientoInternoProductoStock {
+  id: number
+  codigo_interno: string
+  codigo_barras: string | null
+  nombre: string
+  imagen_path: string | null
+  unidad: string | null
+  unidades_por_pallet_default: number | null
+  unidades_por_caja_default: number | null
+  stock_cajas: number
+}
+
+export interface MovimientoInternoSectorStock {
+  sector_id: number
+  sector_nombre: string
+  stock_cajas: number
+}
+
+export interface MovimientoInternoLineaDraft {
+  tempId: string
+  producto_id: number
+  codigo_interno: string
+  nombre: string
+  cantidad_cajas: number
+  tipo_bulto: 'PALLET' | 'CAJA'
+  cantidad_bultos: number
+  unidades_por_bulto: number
+  etiqueta: string
+  sector_origen_id: number
+  sector_origen_nombre: string
+  sector_destino_id: number
+  sector_destino_nombre: string
+  ubicacion_destino_id: number | null
+  ubicacion_destino_nombre: string | null
+}
+
+export interface MovimientoInternoListItem {
+  id: number
+  fecha: string
+  tipo: MovimientoInternoTipo
+  estado: MovimientoInternoEstado
+  observacion: string | null
+  sector_origen_nombre: string
+  sector_destino_nombre: string
+  creado_por_nombre: string
+  recibido_por_nombre: string | null
+  total_cajas: number
+  lineas_count: number
+  created_at: string
+}
+
+export interface MovimientoInternoDetalleLinea {
+  id: number
+  producto_id: number
+  codigo_interno: string
+  nombre: string
+  unidad: string | null
+  cantidad_cajas: number
+  tipo_bulto: 'PALLET' | 'CAJA' | 'SUELTO' | null
+  cantidad_bultos: number | null
+  unidades_por_bulto: number | null
+  etiqueta: string | null
+  sector_origen_id: number
+  sector_origen_nombre: string
+  sector_destino_id: number
+  sector_destino_nombre: string
+  ubicacion_destino_id: number | null
+  ubicacion_destino_nombre: string | null
+  cancelada: boolean
+  orden: number
+}
+
+export interface MovimientoInternoDetalle {
+  movimiento: {
+    id: number
+    fecha: string
+    tipo: MovimientoInternoTipo
+    estado: MovimientoInternoEstado
+    observacion: string | null
+    sector_origen_id: number | null
+    sector_origen_nombre: string | null
+    sector_destino_id: number | null
+    sector_destino_nombre: string | null
+    creado_por_id: number
+    creado_por_nombre: string
+    recibido_por_id: number | null
+    recibido_por_nombre: string | null
+    cancelado_por_id: number | null
+    cancelado_por_nombre: string | null
+    recibido_at: string | null
+    cancelado_at: string | null
+    created_at: string
+  }
+  lineas: MovimientoInternoDetalleLinea[]
+  total_cajas: number
+  lineas_activas: number
 }
 
 export interface NavItem {

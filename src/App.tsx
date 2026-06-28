@@ -5,6 +5,7 @@ import { CamionerosPage } from '@/pages/CamionerosPage'
 import { ConsultaPage } from '@/pages/ConsultaPage'
 import { DashboardPage } from '@/pages/DashboardPage'
 import { IngresosPage } from '@/pages/IngresosPage'
+import { MovimientosPage } from '@/pages/MovimientosPage'
 import { PlanillasPage } from '@/pages/PlanillasPage'
 import { LoginPage } from '@/pages/LoginPage'
 import { ProductosPage } from '@/pages/ProductosPage'
@@ -53,6 +54,7 @@ function AppRoutes() {
       <Route path="/planillas" element={<ProtectedRoute><PlanillasPage /></ProtectedRoute>} />
       <Route path="/retornos" element={<ProtectedRoute><RetornosPage /></ProtectedRoute>} />
       <Route path="/roturas" element={<ProtectedRoute><RoturasPage /></ProtectedRoute>} />
+      <Route path="/movimientos" element={<ProtectedRoute><MovimientosPage /></ProtectedRoute>} />
       <Route path="/reportes" element={<ProtectedRoute><ReportesPage /></ProtectedRoute>} />
       <Route path="/usuarios" element={<ProtectedRoute><UsuariosPage /></ProtectedRoute>} />
       <Route path="*" element={<Navigate to="/" replace />} />

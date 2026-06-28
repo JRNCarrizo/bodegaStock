@@ -13,7 +13,7 @@ import {
   X
 } from 'lucide-react'
 import { BarcodeScannerModal } from '@/components/BarcodeScannerModal'
-import { ProductQuickCreateModal } from '@/components/ProductQuickCreateModal'
+import { DayTabsRow } from '@/components/DayTabsRow'
 import { ProductImage } from '@/components/ProductImage'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
@@ -83,7 +83,6 @@ export function PlanillasPage() {
   } | null>(null)
 
   const [showScanner, setShowScanner] = useState(false)
-  const [showNewProduct, setShowNewProduct] = useState(false)
   const [showPreview, setShowPreview] = useState(false)
   const [previewData, setPreviewData] = useState<PlanillaPreviewLinea[] | null>(null)
   const [loadingPreview, setLoadingPreview] = useState(false)
@@ -328,7 +327,6 @@ export function PlanillasPage() {
     resetCreateForm()
     setShowPreview(false)
     setShowScanner(false)
-    setShowNewProduct(false)
     setView('list')
   }
 
@@ -352,10 +350,6 @@ export function PlanillasPage() {
     }
     if (showScanner) {
       setShowScanner(false)
-      return true
-    }
-    if (showNewProduct) {
-      setShowNewProduct(false)
       return true
     }
 
@@ -953,7 +947,7 @@ export function PlanillasPage() {
           <div className="space-y-3 overflow-visible p-4">
             <div className="relative flex flex-col gap-2 overflow-visible sm:flex-row">
               <div className="relative z-30 min-w-0 flex-1">
-                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
                 <input
                   ref={productSearchRef}
                   type="search"
@@ -994,12 +988,6 @@ export function PlanillasPage() {
                   <Camera className="h-4 w-4" />
                   Escanear
                 </Button>
-                {hasPermiso('productos.crear') && (
-                  <Button variant="secondary" size="sm" onClick={() => setShowNewProduct(true)}>
-                    <Plus className="h-4 w-4" />
-                    Nuevo
-                  </Button>
-                )}
               </div>
             </div>
 
@@ -1247,11 +1235,6 @@ export function PlanillasPage() {
           }}
           title="Escanear producto"
         />
-        <ProductQuickCreateModal
-          open={showNewProduct}
-          onClose={() => setShowNewProduct(false)}
-          onCreated={(p) => selectProduct(p)}
-        />
       </div>
     )
   }
@@ -1275,7 +1258,7 @@ export function PlanillasPage() {
         <CardBody className="space-y-3 border-b py-4">
           <div className="flex flex-wrap items-center gap-2">
             <div className="relative min-w-[10rem] flex-1">
-              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
               <input
                 ref={listSearchRef}
                 type="search"
@@ -1320,27 +1303,12 @@ export function PlanillasPage() {
             Una sola fecha = ese día · las dos = rango
             {hasPermiso('planillas.crear') && ' · Enter = nueva planilla'}
           </p>
-          {diasConPlanillas.length > 0 && (
-            <div className="flex gap-1 overflow-x-auto pb-1">
-              {diasConPlanillas.map((dia) => (
-                <button
-                  key={dia}
-                  type="button"
-                  onClick={() => setSelectedDay(dia)}
-                  className={`flex shrink-0 items-center gap-2 rounded-lg border px-3 py-2 text-sm ${
-                    dia === selectedDay
-                      ? 'border-brand-500 bg-brand-50 font-semibold text-brand-800'
-                      : 'border-surface-border bg-white text-slate-600 hover:bg-slate-50'
-                  }`}
-                >
-                  {formatDayTabLabel(dia)}
-                  <span className="rounded-full bg-slate-100 px-1.5 py-0.5 text-xs">
-                    {conteoPorDia.get(dia) ?? 0}
-                  </span>
-                </button>
-              ))}
-            </div>
-          )}
+          <DayTabsRow
+            days={diasConPlanillas}
+            selectedDay={selectedDay}
+            onSelectDay={setSelectedDay}
+            getCount={(dia) => conteoPorDia.get(dia) ?? 0}
+          />
         </CardBody>
 
         <CardHeader

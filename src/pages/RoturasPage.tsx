@@ -16,7 +16,7 @@ import {
   X
 } from 'lucide-react'
 import { BarcodeScannerModal } from '@/components/BarcodeScannerModal'
-import { ProductQuickCreateModal } from '@/components/ProductQuickCreateModal'
+import { DayTabsRow } from '@/components/DayTabsRow'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { Badge, Card, CardBody, CardHeader } from '@/components/ui/Card'
@@ -68,7 +68,6 @@ export function RoturasPage() {
   const [lineas, setLineas] = useState<RoturaLineaDraft[]>([])
   const [expandedProductos, setExpandedProductos] = useState<Set<number>>(new Set())
   const [showScanner, setShowScanner] = useState(false)
-  const [showNewProduct, setShowNewProduct] = useState(false)
 
   const [showResumenDia, setShowResumenDia] = useState(false)
   const [resumenDia, setResumenDia] = useState<RoturaResumenDia | null>(null)
@@ -249,7 +248,6 @@ export function RoturasPage() {
     setLineas([])
     setExpandedProductos(new Set())
     setShowScanner(false)
-    setShowNewProduct(false)
     setProductHighlightIndex(-1)
     setError('')
   }
@@ -258,7 +256,6 @@ export function RoturasPage() {
     resetCreateForm()
     setDetalle(null)
     setShowScanner(false)
-    setShowNewProduct(false)
     setView('list')
   }
 
@@ -277,10 +274,6 @@ export function RoturasPage() {
     if (saving) return false
     if (showScanner) {
       setShowScanner(false)
-      return true
-    }
-    if (showNewProduct) {
-      setShowNewProduct(false)
       return true
     }
     if (productResults.length > 0 && !selectedProduct) {
@@ -693,7 +686,7 @@ export function RoturasPage() {
           <div className="space-y-3 p-4">
             <div className="relative flex flex-col gap-2 sm:flex-row">
               <div className="relative min-w-0 flex-1">
-                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
                 <input
                   ref={productSearchRef}
                   type="search"
@@ -737,12 +730,6 @@ export function RoturasPage() {
                   <Camera className="h-4 w-4" />
                   Escanear
                 </Button>
-                {hasPermiso('productos.crear') && (
-                  <Button type="button" variant="secondary" size="sm" onClick={() => setShowNewProduct(true)}>
-                    <Plus className="h-4 w-4" />
-                    Nuevo
-                  </Button>
-                )}
               </div>
             </div>
             {selectedProduct && (
@@ -862,14 +849,6 @@ export function RoturasPage() {
           }}
           title="Escanear producto"
         />
-        <ProductQuickCreateModal
-          open={showNewProduct}
-          onClose={() => setShowNewProduct(false)}
-          onCreated={(p) => {
-            setShowNewProduct(false)
-            selectProduct(p)
-          }}
-        />
       </div>
     )
   }
@@ -896,7 +875,7 @@ export function RoturasPage() {
         <CardBody className="space-y-3 border-b py-4">
           <div className="flex flex-wrap items-center gap-2">
             <div className="relative min-w-[10rem] flex-1">
-              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
               <input
                 ref={listSearchRef}
                 type="search"
@@ -941,29 +920,12 @@ export function RoturasPage() {
             Una sola fecha = ese día · las dos = rango
             {hasPermiso('roturas.crear') && ' · Enter = nuevo registro'}
           </p>
-          {diasConRoturas.length > 0 && (
-            <div className="flex gap-1 overflow-x-auto pb-1">
-              {diasConRoturas.map((dia) => {
-                const active = dia === selectedDay
-                const count = conteoPorDia.get(dia) ?? 0
-                return (
-                  <button
-                    key={dia}
-                    type="button"
-                    onClick={() => setSelectedDay(dia)}
-                    className={`flex shrink-0 items-center gap-2 rounded-lg border px-3 py-2 text-sm ${
-                      active
-                        ? 'border-brand-500 bg-brand-50 font-semibold text-brand-800'
-                        : 'border-surface-border bg-white text-slate-600 hover:bg-slate-50'
-                    }`}
-                  >
-                    <span>{formatDayTabLabel(dia)}</span>
-                    <span className="rounded-full bg-slate-100 px-1.5 py-0.5 text-xs">{count}</span>
-                  </button>
-                )
-              })}
-            </div>
-          )}
+          <DayTabsRow
+            days={diasConRoturas}
+            selectedDay={selectedDay}
+            onSelectDay={setSelectedDay}
+            getCount={(dia) => conteoPorDia.get(dia) ?? 0}
+          />
         </CardBody>
 
         <CardHeader

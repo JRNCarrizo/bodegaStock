@@ -16,7 +16,7 @@ import {
   X
 } from 'lucide-react'
 import { BarcodeScannerModal } from '@/components/BarcodeScannerModal'
-import { ProductQuickCreateModal } from '@/components/ProductQuickCreateModal'
+import { DayTabsRow } from '@/components/DayTabsRow'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { Badge, Card, CardBody, CardHeader } from '@/components/ui/Card'
@@ -112,7 +112,6 @@ export function RetornosPage() {
   const [lineas, setLineas] = useState<RetornoLineaDraft[]>([])
   const [expandedProductos, setExpandedProductos] = useState<Set<number>>(new Set())
   const [showScanner, setShowScanner] = useState(false)
-  const [showNewProduct, setShowNewProduct] = useState(false)
 
   const [editLineaId, setEditLineaId] = useState<number | null>(null)
   const [editCantidad, setEditCantidad] = useState('')
@@ -326,7 +325,6 @@ export function RetornosPage() {
     setLineas([])
     setExpandedProductos(new Set())
     setShowScanner(false)
-    setShowNewProduct(false)
     setProductHighlightIndex(-1)
     setError('')
   }
@@ -336,7 +334,6 @@ export function RetornosPage() {
     setDetalle(null)
     setEditLineaId(null)
     setShowScanner(false)
-    setShowNewProduct(false)
     setView('list')
   }
 
@@ -400,10 +397,6 @@ export function RetornosPage() {
     if (saving) return false
     if (showScanner) {
       setShowScanner(false)
-      return true
-    }
-    if (showNewProduct) {
-      setShowNewProduct(false)
       return true
     }
     if (productResults.length > 0 && !selectedProduct) {
@@ -1259,7 +1252,7 @@ export function RetornosPage() {
           <div className="space-y-3 overflow-visible p-4">
             <div className="relative flex flex-col gap-2 overflow-visible sm:flex-row">
               <div className="relative z-30 min-w-0 flex-1">
-                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
                 <input
                   ref={productSearchRef}
                   type="search"
@@ -1309,12 +1302,6 @@ export function RetornosPage() {
                   <Camera className="h-4 w-4" />
                   Escanear
                 </Button>
-                {hasPermiso('productos.crear') && (
-                  <Button type="button" variant="secondary" size="sm" onClick={() => setShowNewProduct(true)}>
-                    <Plus className="h-4 w-4" />
-                    Nuevo
-                  </Button>
-                )}
               </div>
             </div>
 
@@ -1462,14 +1449,6 @@ export function RetornosPage() {
           }}
           title="Escanear producto"
         />
-        <ProductQuickCreateModal
-          open={showNewProduct}
-          onClose={() => setShowNewProduct(false)}
-          onCreated={(p) => {
-            setShowNewProduct(false)
-            selectProduct(p)
-          }}
-        />
       </div>
     )
   }
@@ -1495,7 +1474,7 @@ export function RetornosPage() {
         <CardBody className="space-y-3 border-b border-surface-border py-4">
           <div className="flex flex-wrap items-center gap-2">
             <div className="relative min-w-[10rem] flex-1">
-              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
               <input
                 ref={listSearchRef}
                 type="search"
@@ -1562,35 +1541,12 @@ export function RetornosPage() {
             ))}
           </div>
 
-          {diasConRetornos.length > 0 && (
-            <div className="flex gap-1 overflow-x-auto pb-1">
-              {diasConRetornos.map((dia) => {
-                const active = dia === selectedDay
-                const count = conteoPorDia.get(dia) ?? 0
-                return (
-                  <button
-                    key={dia}
-                    type="button"
-                    onClick={() => setSelectedDay(dia)}
-                    className={`flex shrink-0 items-center gap-2 rounded-lg border px-3 py-2 text-sm transition-colors ${
-                      active
-                        ? 'border-brand-500 bg-brand-50 font-semibold text-brand-800 shadow-sm'
-                        : 'border-surface-border bg-white text-slate-600 hover:border-slate-300 hover:bg-slate-50'
-                    }`}
-                  >
-                    <span>{formatDayTabLabel(dia)}</span>
-                    <span
-                      className={`rounded-full px-1.5 py-0.5 text-xs font-medium ${
-                        active ? 'bg-brand-200 text-brand-900' : 'bg-slate-100 text-slate-600'
-                      }`}
-                    >
-                      {count}
-                    </span>
-                  </button>
-                )
-              })}
-            </div>
-          )}
+          <DayTabsRow
+            days={diasConRetornos}
+            selectedDay={selectedDay}
+            onSelectDay={setSelectedDay}
+            getCount={(dia) => conteoPorDia.get(dia) ?? 0}
+          />
         </CardBody>
 
         <CardHeader
@@ -1634,7 +1590,7 @@ export function RetornosPage() {
                   <tr className="border-b border-surface-border bg-slate-50/80 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
                     <th className="px-6 py-3">Planilla</th>
                     <th className="px-6 py-3">Camionero</th>
-                    <th className="px-6 py-3">Sector</th>
+                    <th className="max-w-[14rem] px-6 py-3">Observación</th>
                     <th className="px-6 py-3">Estado</th>
                     <th className="px-6 py-3">Total</th>
                     <th className="px-6 py-3">Usuario</th>
@@ -1653,7 +1609,11 @@ export function RetornosPage() {
                           <p className="text-xs text-slate-500">{r.camionero_numero}</p>
                         )}
                       </td>
-                      <td className="px-6 py-3 text-slate-600">{r.sector_nombre}</td>
+                      <td className="max-w-[14rem] px-6 py-3 text-slate-600">
+                        <div className="overflow-x-auto whitespace-nowrap [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
+                          {r.observacion?.trim() || '—'}
+                        </div>
+                      </td>
                       <td className="px-6 py-3">{badgeEstadoRetorno(r.estado)}</td>
                       <td className="px-6 py-3 font-semibold text-brand-700">
                         {formatCantidad(r.total_cajas)}

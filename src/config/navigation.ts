@@ -23,7 +23,7 @@ export const NAV_ITEMS: NavItem[] = [
   { id: 'planillas', label: 'Carga de planillas', path: '/planillas', permiso: 'planillas.ver', group: 'Movimientos' },
   { id: 'retornos', label: 'Retornos', path: '/retornos', permiso: 'retornos.ver', group: 'Movimientos' },
   { id: 'roturas', label: 'Roturas y pérdidas', path: '/roturas', permiso: 'roturas.ver', group: 'Movimientos' },
-  { id: 'movimientos', label: 'Movimientos', path: '/movimientos', permiso: 'movimientos_internos.ver', group: 'Movimientos', disabled: true },
+  { id: 'movimientos', label: 'Movimientos', path: '/movimientos', permiso: 'movimientos_internos.ver', group: 'Movimientos' },
   { id: 'inventario', label: 'Inventario', path: '/inventario', permiso: 'inventario.ver', group: 'Inventario', disabled: true },
   { id: 'camioneros', label: 'Camioneros', path: '/camioneros', permiso: 'camioneros.ver', group: 'Administración' },
   { id: 'usuarios', label: 'Usuarios', path: '/usuarios', permiso: 'usuarios.ver', group: 'Administración' },

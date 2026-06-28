@@ -381,6 +381,14 @@ export function ConsultaPage() {
     setShowScanner(false)
   }
 
+  useLayoutEffect(() => {
+    searchInputRef.current?.focus({ preventScroll: true })
+  }, [])
+
+  function focusSearchInput() {
+    searchInputRef.current?.focus({ preventScroll: true })
+  }
+
   return (
     <div className="mx-auto max-w-3xl space-y-6">
       <div>
@@ -393,8 +401,15 @@ export function ConsultaPage() {
       <Card>
         <CardBody className="space-y-3">
           <div className="flex flex-col gap-2 sm:flex-row">
-            <div className="relative flex-1">
-              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+            <div
+              className="relative flex-1"
+              onMouseDown={(e) => {
+                if (e.target === searchInputRef.current) return
+                e.preventDefault()
+                focusSearchInput()
+              }}
+            >
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
               <input
                 ref={searchInputRef}
                 type="search"
@@ -403,7 +418,6 @@ export function ConsultaPage() {
                 onChange={(e) => setSearch(e.target.value)}
                 onKeyDown={handleSearchKeyDown}
                 className="w-full rounded-lg border border-surface-border py-2.5 pl-10 pr-3 text-sm focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20"
-                autoFocus
               />
             </div>
             <Button variant="secondary" onClick={() => setShowScanner(true)}>

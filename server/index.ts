@@ -11,6 +11,7 @@ import { ingresosRoutes } from './routes/ingresos'
 import { planillasRoutes } from './routes/planillas'
 import { retornosRoutes } from './routes/retornos'
 import { roturasRoutes } from './routes/roturas'
+import { movimientosInternosRoutes } from './routes/movimientos-internos'
 import { reportesRoutes } from './routes/reportes'
 import { productosRoutes } from './routes/productos'
 import { sectoresRoutes } from './routes/sectores'
@@ -74,6 +75,7 @@ export async function startServer(): Promise<void> {
   await server.register(planillasRoutes)
   await server.register(retornosRoutes)
   await server.register(roturasRoutes)
+  await server.register(movimientosInternosRoutes)
   await server.register(reportesRoutes)
 
   try {

@@ -113,15 +113,21 @@ export async function ingresosRoutes(app: FastifyInstance): Promise<void> {
         i.id, i.fecha, i.numero_remito, i.observacion, i.sector_id, i.created_at,
         s.nombre AS sector_nombre,
         u.nombre AS usuario_nombre,
-        COALESCE((
-          SELECT SUM(il.total_unidades) FROM ingreso_lineas il WHERE il.ingreso_id = i.id
-        ), 0) AS total_unidades,
-        COALESCE((
-          SELECT COUNT(*) FROM ingreso_lineas il WHERE il.ingreso_id = i.id
-        ), 0) AS lineas_count
+        COALESCE(st.total_unidades, 0) AS total_unidades,
+        COALESCE(st.lineas_count, 0) AS lineas_count,
+        COALESCE(st.productos_count, 0) AS productos_count
       FROM ingresos i
       JOIN sectores s ON s.id = i.sector_id
       JOIN usuarios u ON u.id = i.usuario_id
+      LEFT JOIN (
+        SELECT
+          ingreso_id,
+          SUM(total_unidades) AS total_unidades,
+          COUNT(*) AS lineas_count,
+          COUNT(DISTINCT producto_id) AS productos_count
+        FROM ingreso_lineas
+        GROUP BY ingreso_id
+      ) st ON st.ingreso_id = i.id
       WHERE 1=1
     `
     const params: unknown[] = []

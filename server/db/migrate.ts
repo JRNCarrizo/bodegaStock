@@ -311,5 +311,146 @@ export function runMigrations(db: Database.Database): void {
     `)
   }
 
+  if (!tableExists(db, 'movimientos_internos')) {
+    db.exec(`
+      CREATE TABLE movimientos_internos (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        fecha TEXT NOT NULL,
+        tipo TEXT NOT NULL CHECK (tipo IN ('ENVIAR', 'RECIBIR')),
+        sector_origen_id INTEGER REFERENCES sectores(id),
+        sector_destino_id INTEGER REFERENCES sectores(id),
+        observacion TEXT,
+        estado TEXT NOT NULL DEFAULT 'PENDIENTE' CHECK (estado IN ('PENDIENTE', 'COMPLETADO', 'CANCELADO')),
+        creado_por_id INTEGER NOT NULL REFERENCES usuarios(id),
+        recibido_por_id INTEGER REFERENCES usuarios(id),
+        cancelado_por_id INTEGER REFERENCES usuarios(id),
+        recibido_at TEXT,
+        cancelado_at TEXT,
+        created_at TEXT NOT NULL DEFAULT (datetime('now'))
+      )
+    `)
+  }
+
+  if (!tableExists(db, 'movimiento_interno_lineas')) {
+    db.exec(`
+      CREATE TABLE movimiento_interno_lineas (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        movimiento_interno_id INTEGER NOT NULL REFERENCES movimientos_internos(id) ON DELETE CASCADE,
+        producto_id INTEGER NOT NULL REFERENCES productos(id),
+        sector_origen_id INTEGER NOT NULL REFERENCES sectores(id),
+        sector_destino_id INTEGER NOT NULL REFERENCES sectores(id),
+        cantidad_cajas REAL NOT NULL,
+        cancelada INTEGER NOT NULL DEFAULT 0,
+        orden INTEGER NOT NULL DEFAULT 0
+      )
+    `)
+  }
+
+  if (!tableExists(db, 'movimiento_interno_descuentos')) {
+    db.exec(`
+      CREATE TABLE movimiento_interno_descuentos (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        movimiento_interno_id INTEGER NOT NULL REFERENCES movimientos_internos(id) ON DELETE CASCADE,
+        movimiento_interno_linea_id INTEGER NOT NULL REFERENCES movimiento_interno_lineas(id) ON DELETE CASCADE,
+        producto_id INTEGER NOT NULL REFERENCES productos(id),
+        sector_id INTEGER NOT NULL REFERENCES sectores(id),
+        stock_linea_id INTEGER REFERENCES stock_lineas(id) ON DELETE SET NULL,
+        unidades REAL NOT NULL,
+        etiqueta TEXT
+      )
+    `)
+  }
+
+  db.exec(`
+    UPDATE movimientos_internos SET estado = 'PENDIENTE' WHERE estado = 'EN_TRANSITO'
+  `)
+
+  if (tableExists(db, 'movimiento_interno_lineas') && !columnExists(db, 'movimiento_interno_lineas', 'sector_origen_id')) {
+    db.exec(`
+      ALTER TABLE movimiento_interno_lineas ADD COLUMN sector_origen_id INTEGER REFERENCES sectores(id)
+    `)
+    db.exec(`
+      ALTER TABLE movimiento_interno_lineas ADD COLUMN sector_destino_id INTEGER REFERENCES sectores(id)
+    `)
+    db.exec(`
+      ALTER TABLE movimiento_interno_lineas ADD COLUMN cancelada INTEGER NOT NULL DEFAULT 0
+    `)
+    db.exec(`
+      UPDATE movimiento_interno_lineas
+      SET
+        sector_origen_id = (
+          SELECT sector_origen_id FROM movimientos_internos m
+          WHERE m.id = movimiento_interno_lineas.movimiento_interno_id
+        ),
+        sector_destino_id = (
+          SELECT sector_destino_id FROM movimientos_internos m
+          WHERE m.id = movimiento_interno_lineas.movimiento_interno_id
+        )
+      WHERE sector_origen_id IS NULL OR sector_destino_id IS NULL
+    `)
+  }
+
+  if (tableExists(db, 'movimientos_internos')) {
+    const ddl = db.prepare(`
+      SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'movimientos_internos'
+    `).get() as { sql: string } | undefined
+
+    if (ddl?.sql.includes("'ENVIO'") || ddl?.sql.includes('despachado_por_id')) {
+      db.exec(`
+        CREATE TABLE movimientos_internos_v2 (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          fecha TEXT NOT NULL,
+          tipo TEXT NOT NULL CHECK (tipo IN ('ENVIAR', 'RECIBIR')),
+          sector_origen_id INTEGER REFERENCES sectores(id),
+          sector_destino_id INTEGER REFERENCES sectores(id),
+          observacion TEXT,
+          estado TEXT NOT NULL DEFAULT 'PENDIENTE' CHECK (estado IN ('PENDIENTE', 'COMPLETADO', 'CANCELADO')),
+          creado_por_id INTEGER NOT NULL REFERENCES usuarios(id),
+          recibido_por_id INTEGER REFERENCES usuarios(id),
+          cancelado_por_id INTEGER REFERENCES usuarios(id),
+          recibido_at TEXT,
+          cancelado_at TEXT,
+          created_at TEXT NOT NULL DEFAULT (datetime('now'))
+        )
+      `)
+      db.exec(`
+        INSERT INTO movimientos_internos_v2 (
+          id, fecha, tipo, sector_origen_id, sector_destino_id, observacion, estado,
+          creado_por_id, recibido_por_id, cancelado_por_id, recibido_at, cancelado_at, created_at
+        )
+        SELECT
+          id, fecha,
+          CASE tipo WHEN 'ENVIO' THEN 'ENVIAR' WHEN 'SOLICITUD' THEN 'RECIBIR' ELSE tipo END,
+          sector_origen_id, sector_destino_id, observacion,
+          CASE estado WHEN 'EN_TRANSITO' THEN 'PENDIENTE' ELSE estado END,
+          creado_por_id, recibido_por_id, cancelado_por_id, recibido_at, cancelado_at, created_at
+        FROM movimientos_internos
+      `)
+      db.exec('DROP TABLE movimientos_internos')
+      db.exec('ALTER TABLE movimientos_internos_v2 RENAME TO movimientos_internos')
+    } else if (ddl?.sql.includes("'ENVIO'") === false && ddl?.sql.includes("'ENVIAR'")) {
+      db.exec(`
+        UPDATE movimientos_internos SET tipo = 'ENVIAR' WHERE tipo = 'ENVIO'
+      `)
+      db.exec(`
+        UPDATE movimientos_internos SET tipo = 'RECIBIR' WHERE tipo = 'SOLICITUD'
+      `)
+    }
+  }
+
+  if (tableExists(db, 'movimiento_interno_lineas') && !columnExists(db, 'movimiento_interno_lineas', 'etiqueta')) {
+    db.exec(`ALTER TABLE movimiento_interno_lineas ADD COLUMN tipo_bulto TEXT`)
+    db.exec(`ALTER TABLE movimiento_interno_lineas ADD COLUMN cantidad_bultos REAL`)
+    db.exec(`ALTER TABLE movimiento_interno_lineas ADD COLUMN unidades_por_bulto REAL`)
+    db.exec(`ALTER TABLE movimiento_interno_lineas ADD COLUMN etiqueta TEXT`)
+  }
+
+  if (tableExists(db, 'movimiento_interno_lineas') && !columnExists(db, 'movimiento_interno_lineas', 'ubicacion_destino_id')) {
+    db.exec(`
+      ALTER TABLE movimiento_interno_lineas
+      ADD COLUMN ubicacion_destino_id INTEGER REFERENCES sector_ubicaciones(id) ON DELETE SET NULL
+    `)
+  }
+
   ensureSystemRoles(db)
 }

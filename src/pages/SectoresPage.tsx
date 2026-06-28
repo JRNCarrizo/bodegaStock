@@ -1,23 +1,27 @@
-import { Fragment, useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   ChevronDown,
   ChevronLeft,
   ChevronRight,
   Layers,
+  Package,
   Pencil,
   Plus,
   Search,
   Trash2,
   Warehouse
 } from 'lucide-react'
-import { formatTotalCajas } from '@/lib/desglose'
-import { api } from '@/lib/utils'
-import type { Sector, SectorForm, SectorUbicacion } from '@/types'
+import { formatCantidad, formatTotalCajas } from '@/lib/desglose'
+import { api, cn } from '@/lib/utils'
+import type { Sector, SectorForm, SectorStockDetalle, SectorUbicacion } from '@/types'
 import { useAuth } from '@/context/AuthContext'
 import { useEscHandler } from '@/hooks/useEscHandler'
+import { ProductImage } from '@/components/ProductImage'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { Badge, Card, CardBody, CardHeader } from '@/components/ui/Card'
+
+type UbicacionFilter = 'all' | 'sin' | number
 
 const emptyForm = (): SectorForm => ({
   nombre: '',
@@ -262,15 +266,22 @@ export function SectoresPage() {
   const [search, setSearch] = useState('')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
-  const [view, setView] = useState<'list' | 'form'>('list')
+  const [view, setView] = useState<'list' | 'form' | 'contenido'>('list')
   const [editingId, setEditingId] = useState<number | null>(null)
   const [form, setForm] = useState<SectorForm>(emptyForm())
   const [saving, setSaving] = useState(false)
   const [successMessage, setSuccessMessage] = useState('')
-  const [expandedId, setExpandedId] = useState<number | null>(null)
+  const [stockSector, setStockSector] = useState<Sector | null>(null)
   const [ubicacionesCache, setUbicacionesCache] = useState<Record<number, SectorUbicacion[]>>({})
   const [loadingUbicacionesId, setLoadingUbicacionesId] = useState<number | null>(null)
+  const [ubicacionFilter, setUbicacionFilter] = useState<UbicacionFilter>('all')
+  const [stockDetalle, setStockDetalle] = useState<SectorStockDetalle | null>(null)
+  const [loadingStock, setLoadingStock] = useState(false)
+  const [stockError, setStockError] = useState('')
+  const [expandedStockProductos, setExpandedStockProductos] = useState<Set<number>>(() => new Set())
+  const [stockSearch, setStockSearch] = useState('')
   const searchRef = useRef<HTMLInputElement>(null)
+  const stockSearchRef = useRef<HTMLInputElement>(null)
   const formRef = useRef<HTMLFormElement>(null)
   const nombreRef = useRef<HTMLInputElement>(null)
   const descripcionRef = useRef<HTMLInputElement>(null)
@@ -365,6 +376,36 @@ export function SectoresPage() {
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [view, hasPermiso])
 
+  function clearStockView() {
+    setStockSector(null)
+    setUbicacionFilter('all')
+    setStockDetalle(null)
+    setStockError('')
+    setStockSearch('')
+    setExpandedStockProductos(new Set())
+  }
+
+  const productosStockFiltrados = useMemo(() => {
+    if (!stockDetalle) return []
+    const q = stockSearch.trim().toLowerCase()
+    if (!q) return stockDetalle.productos
+    return stockDetalle.productos.filter(
+      (p) =>
+        p.codigo_interno.toLowerCase().includes(q) ||
+        p.nombre.toLowerCase().includes(q)
+    )
+  }, [stockDetalle, stockSearch])
+
+  const totalStockFiltrado = useMemo(
+    () => productosStockFiltrados.reduce((s, p) => s + p.cantidad_total, 0),
+    [productosStockFiltrados]
+  )
+
+  useEscHandler(view === 'contenido', () => {
+    volverAlListado()
+    return true
+  })
+
   useEscHandler(view === 'form', () => {
     if (saving) return false
     volverAlListado()
@@ -376,6 +417,12 @@ export function SectoresPage() {
     const timer = setTimeout(() => searchRef.current?.focus(), 80)
     return () => clearTimeout(timer)
   }, [view])
+
+  useEffect(() => {
+    if (view !== 'contenido') return
+    const timer = setTimeout(() => stockSearchRef.current?.focus({ preventScroll: true }), 80)
+    return () => clearTimeout(timer)
+  }, [view, stockSector?.id])
 
   const loadUbicaciones = useCallback(async (sectorId: number) => {
     setLoadingUbicacionesId(sectorId)
@@ -393,18 +440,53 @@ export function SectoresPage() {
     if (editingId) void loadUbicaciones(editingId)
   }, [editingId, loadUbicaciones])
 
-  async function toggleExpand(sector: Sector) {
-    if (!sector.usa_ubicaciones) return
-
-    if (expandedId === sector.id) {
-      setExpandedId(null)
-      return
+  const loadSectorStock = useCallback(async (sectorId: number, filter: UbicacionFilter) => {
+    setLoadingStock(true)
+    setStockError('')
+    try {
+      const params = new URLSearchParams()
+      if (filter === 'sin') params.set('sin_ubicacion', '1')
+      else if (filter !== 'all') params.set('ubicacion_id', String(filter))
+      const data = await api<SectorStockDetalle>(
+        `/api/sectores/${sectorId}/stock?${params}`
+      )
+      setStockDetalle(data)
+      setExpandedStockProductos(new Set())
+    } catch (err) {
+      setStockDetalle(null)
+      setStockError(err instanceof Error ? err.message : 'Error al cargar stock')
+    } finally {
+      setLoadingStock(false)
     }
+  }, [])
 
-    setExpandedId(sector.id)
-    if (!ubicacionesCache[sector.id]) {
+  async function openSectorContenido(sector: Sector) {
+    setStockSector(sector)
+    setView('contenido')
+    setUbicacionFilter('all')
+    setStockDetalle(null)
+    setStockError('')
+    setStockSearch('')
+    setExpandedStockProductos(new Set())
+    if (sector.usa_ubicaciones && !ubicacionesCache[sector.id]) {
       await loadUbicaciones(sector.id)
     }
+    void loadSectorStock(sector.id, 'all')
+  }
+
+  function changeUbicacionFilter(filter: UbicacionFilter) {
+    if (!stockSector) return
+    setUbicacionFilter(filter)
+    void loadSectorStock(stockSector.id, filter)
+  }
+
+  function toggleStockProducto(productoId: number) {
+    setExpandedStockProductos((prev) => {
+      const next = new Set(prev)
+      if (next.has(productoId)) next.delete(productoId)
+      else next.add(productoId)
+      return next
+    })
   }
 
   const load = useCallback(async (q?: string) => {
@@ -416,6 +498,8 @@ export function SectoresPage() {
       const data = await api<Sector[]>(`/api/sectores?${params}`)
       setSectores(data)
       setUbicacionesCache({})
+      clearStockView()
+      setView('list')
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error al cargar sectores')
     } finally {
@@ -435,6 +519,7 @@ export function SectoresPage() {
 
   function volverAlListado() {
     resetFormFields()
+    clearStockView()
     setError('')
     setSuccessMessage('')
     setView('list')
@@ -493,7 +578,7 @@ export function SectoresPage() {
           body: JSON.stringify(payload)
         })
         await load(search)
-        if (expandedId === editingId) {
+        if (editingId) {
           await loadUbicaciones(editingId)
         }
         volverAlListado()
@@ -690,6 +775,239 @@ export function SectoresPage() {
     )
   }
 
+  if (view === 'contenido' && stockSector) {
+    const ubicaciones = ubicacionesCache[stockSector.id]
+    const loadingUbicaciones = loadingUbicacionesId === stockSector.id
+    const filtroLabel =
+      ubicacionFilter === 'all'
+        ? 'Todo el sector'
+        : ubicacionFilter === 'sin'
+          ? 'Sin ubicación'
+          : ubicaciones?.find((u) => u.id === ubicacionFilter)?.nombre ?? 'Ubicación'
+
+    return (
+      <div className="-m-4 flex h-[calc(100vh-5rem)] flex-col bg-surface-muted/30 lg:-m-6">
+        <div className="shrink-0 border-b border-surface-border bg-white px-3 py-2 shadow-sm sm:px-4">
+          <div className="mx-auto flex max-w-4xl flex-wrap items-center gap-x-3 gap-y-1.5">
+            <Button variant="ghost" size="sm" className="-ml-1 h-7 shrink-0 px-2" onClick={volverAlListado}>
+              <ChevronLeft className="h-3.5 w-3.5" />
+              Volver
+            </Button>
+            <span className="hidden h-4 w-px bg-surface-border sm:block" aria-hidden />
+            <h1 className="min-w-0 truncate text-base font-bold text-slate-900 sm:text-lg">
+              {stockSector.nombre}
+            </h1>
+            <Badge variant={stockSector.activo ? 'success' : 'muted'}>
+              {stockSector.activo ? 'Activo' : 'Inactivo'}
+            </Badge>
+            {!!stockSector.es_sector_descuento && (
+              <Badge variant="default">
+                P{stockSector.prioridad_descuento ?? '—'}
+              </Badge>
+            )}
+            {stockDetalle && (
+              <span className="shrink-0 text-xs text-slate-500">
+                {stockDetalle.total_productos} prod. ·{' '}
+                <span className="font-semibold text-brand-700">
+                  {formatCantidad(stockDetalle.total_stock)}
+                </span>
+                {ubicacionFilter !== 'all' && (
+                  <span className="text-slate-400"> · {filtroLabel}</span>
+                )}
+              </span>
+            )}
+            <div className="ml-auto shrink-0">
+              {hasPermiso('sectores.editar') && (
+                <Button variant="secondary" size="sm" className="h-7 px-2 text-xs" onClick={() => openEdit(stockSector)}>
+                  <Pencil className="h-3.5 w-3.5" />
+                  Editar
+                </Button>
+              )}
+            </div>
+          </div>
+
+          {!!stockSector.usa_ubicaciones && (
+            <div className="mx-auto mt-1.5 flex max-w-4xl flex-wrap items-center gap-1.5 border-t border-surface-border pt-1.5">
+              <Layers className="h-3 w-3 shrink-0 text-slate-400" aria-hidden />
+              {loadingUbicaciones ? (
+                <span className="text-xs text-slate-400">...</span>
+              ) : (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => changeUbicacionFilter('all')}
+                    className={cn(
+                      'rounded border px-2 py-0.5 text-xs transition-colors',
+                      ubicacionFilter === 'all'
+                        ? 'border-brand-500 bg-brand-600 font-medium text-white'
+                        : 'border-surface-border bg-white text-slate-600 hover:border-brand-300'
+                    )}
+                  >
+                    Todo
+                  </button>
+                  {ubicaciones?.map((u) => (
+                    <button
+                      key={u.id}
+                      type="button"
+                      onClick={() => changeUbicacionFilter(u.id)}
+                      className={cn(
+                        'rounded border px-2 py-0.5 text-xs transition-colors',
+                        ubicacionFilter === u.id
+                          ? 'border-brand-500 bg-brand-600 font-medium text-white'
+                          : 'border-surface-border bg-white text-slate-600 hover:border-brand-300'
+                      )}
+                    >
+                      {u.nombre}
+                    </button>
+                  ))}
+                  <button
+                    type="button"
+                    onClick={() => changeUbicacionFilter('sin')}
+                    className={cn(
+                      'rounded border px-2 py-0.5 text-xs transition-colors',
+                      ubicacionFilter === 'sin'
+                        ? 'border-brand-500 bg-brand-600 font-medium text-white'
+                        : 'border-dashed border-surface-border bg-white text-slate-500 hover:border-brand-300'
+                    )}
+                  >
+                    Sin ubic.
+                  </button>
+                </>
+              )}
+            </div>
+          )}
+        </div>
+
+        {stockError && (
+          <div className="shrink-0 border-b border-red-100 bg-red-50 px-4 py-1.5 text-xs text-red-700">
+            <div className="mx-auto max-w-4xl">{stockError}</div>
+          </div>
+        )}
+
+        <div className="shrink-0 border-b border-surface-border bg-white px-3 py-1.5 sm:px-4">
+          <div className="relative mx-auto max-w-4xl">
+            <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
+            <input
+              ref={stockSearchRef}
+              type="search"
+              placeholder="Buscar producto..."
+              value={stockSearch}
+              onChange={(e) => setStockSearch(e.target.value)}
+              className="w-full rounded-lg border border-surface-border py-1.5 pl-8 pr-3 text-sm focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20"
+            />
+          </div>
+        </div>
+
+        <div className="min-h-0 flex-1 overflow-y-auto">
+          <div className="mx-auto max-w-4xl px-3 py-2 sm:px-4">
+            {loadingStock ? (
+              <div className="flex flex-col items-center justify-center rounded-lg border border-surface-border bg-white py-16">
+                <div className="h-7 w-7 animate-spin rounded-full border-2 border-brand-200 border-t-brand-600" />
+                <p className="mt-2 text-xs text-slate-500">Cargando...</p>
+              </div>
+            ) : !stockDetalle || stockDetalle.productos.length === 0 ? (
+              <div className="flex flex-col items-center rounded-lg border border-dashed border-surface-border bg-white py-16 text-center">
+                <Package className="h-10 w-10 text-slate-300" />
+                <p className="mt-2 text-sm font-medium text-slate-700">Sin productos</p>
+                <p className="mt-0.5 text-xs text-slate-500">
+                  No hay stock{filtroLabel !== 'Todo el sector' ? ` en "${filtroLabel}"` : ''}
+                </p>
+              </div>
+            ) : productosStockFiltrados.length === 0 ? (
+              <div className="flex flex-col items-center rounded-lg border border-dashed border-surface-border bg-white py-12 text-center">
+                <Search className="h-8 w-8 text-slate-300" />
+                <p className="mt-2 text-sm font-medium text-slate-700">Sin coincidencias</p>
+                <p className="mt-0.5 text-xs text-slate-500">
+                  Ningún producto coincide con &quot;{stockSearch.trim()}&quot;
+                </p>
+              </div>
+            ) : (
+              <Card>
+                <CardBody className="p-0">
+                  <ul className="divide-y divide-surface-border">
+                    {productosStockFiltrados.map((producto) => {
+                      const isExpanded = expandedStockProductos.has(producto.producto_id)
+                      return (
+                        <li key={producto.producto_id}>
+                          <button
+                            type="button"
+                            onClick={() => toggleStockProducto(producto.producto_id)}
+                            className="flex w-full items-center gap-2 px-3 py-1.5 text-left hover:bg-slate-50/80 sm:px-4"
+                          >
+                            <span className="shrink-0 text-slate-400" aria-hidden>
+                              {isExpanded ? (
+                                <ChevronDown className="h-3.5 w-3.5" />
+                              ) : (
+                                <ChevronRight className="h-3.5 w-3.5" />
+                              )}
+                            </span>
+                            <ProductImage
+                              productoId={producto.producto_id}
+                              hasImage={!!producto.imagen_path}
+                              alt={producto.nombre}
+                              className="h-8 w-8 shrink-0 rounded object-cover ring-1 ring-surface-border"
+                            />
+                            <p className="min-w-0 flex-1 truncate text-sm">
+                              <span className="font-mono font-semibold text-slate-900">
+                                {producto.codigo_interno}
+                              </span>
+                              <span className="mx-1.5 text-slate-300">—</span>
+                              <span className="text-slate-600">{producto.nombre}</span>
+                            </p>
+                            <span className="shrink-0 font-semibold tabular-nums text-brand-700">
+                              {formatCantidad(producto.cantidad_total)}
+                            </span>
+                          </button>
+                          {isExpanded && (
+                            <ul className="divide-y divide-surface-border border-t border-surface-border bg-surface-muted/30">
+                              {producto.lineas.map((linea) => (
+                                <li
+                                  key={linea.id}
+                                  className="flex items-center justify-between gap-3 py-1.5 pl-11 pr-4 text-xs sm:text-sm sm:pl-12"
+                                >
+                                  <span className="text-slate-700">
+                                    {linea.etiqueta}
+                                    {ubicacionFilter === 'all' && linea.ubicacion && (
+                                      <span className="ml-1.5 text-slate-400">
+                                        ({linea.ubicacion})
+                                      </span>
+                                    )}
+                                  </span>
+                                  <span className="shrink-0 font-medium tabular-nums text-slate-900">
+                                    {formatCantidad(linea.total_unidades)}
+                                  </span>
+                                </li>
+                              ))}
+                            </ul>
+                          )}
+                        </li>
+                      )
+                    })}
+                  </ul>
+                </CardBody>
+              </Card>
+            )}
+          </div>
+        </div>
+
+        {stockDetalle && productosStockFiltrados.length > 0 && (
+          <div className="shrink-0 border-t border-surface-border bg-white px-3 py-2 shadow-[0_-2px_8px_rgba(0,0,0,0.04)] sm:px-4">
+            <div className="mx-auto flex max-w-4xl items-center justify-between text-sm">
+              <span className="text-slate-500">
+                {stockSearch.trim()
+                  ? `${productosStockFiltrados.length} de ${stockDetalle.productos.length}`
+                  : 'Total'}
+              </span>
+              <span className="text-lg font-bold text-brand-700">
+                {formatCantidad(totalStockFiltrado)}
+              </span>
+            </div>
+          </div>
+        )}
+      </div>
+    )
+  }
+
   return (
     <div className="mx-auto max-w-5xl space-y-6">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
@@ -708,24 +1026,23 @@ export function SectoresPage() {
       </div>
 
       <Card>
-        <CardBody className="border-b border-surface-border py-4">
-          <div className="relative max-w-md">
-            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-            <input
-              ref={searchRef}
-              type="search"
-              placeholder="Buscar por nombre... · Enter = nuevo sector"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              onKeyDown={handleSearchKeyDown}
-              className="w-full rounded-lg border border-surface-border py-2 pl-10 pr-3 text-sm focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20"
-            />
-          </div>
-        </CardBody>
-
         <CardHeader
           title="Listado"
-          description={`${sectores.length} sector(es)`}
+          description={`${sectores.length} sector(es) · clic en un sector para ver su contenido`}
+          action={
+            <div className="relative w-full min-w-[180px] sm:w-56">
+              <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
+              <input
+                ref={searchRef}
+                type="search"
+                placeholder="Buscar... · Enter = nuevo"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                onKeyDown={handleSearchKeyDown}
+                className="w-full rounded-lg border border-surface-border py-1.5 pl-8 pr-3 text-sm focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20"
+              />
+            </div>
+          }
         />
 
         <CardBody className="p-0">
@@ -749,7 +1066,6 @@ export function SectoresPage() {
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-surface-border bg-slate-50/80 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
-                    <th className="w-10 px-3 py-3" />
                     <th className="px-6 py-3">Sector</th>
                     <th className="px-6 py-3">Ubicaciones</th>
                     <th className="px-6 py-3">Descuento</th>
@@ -759,123 +1075,71 @@ export function SectoresPage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-surface-border">
-                  {sectores.map((s) => {
-                    const isExpanded = expandedId === s.id
-                    const ubicaciones = ubicacionesCache[s.id]
-                    const loadingUbicaciones = loadingUbicacionesId === s.id
-
-                    return (
-                      <Fragment key={s.id}>
-                        <tr className="hover:bg-slate-50/50">
-                          <td className="px-3 py-3">
-                            {s.usa_ubicaciones ? (
-                              <button
-                                type="button"
-                                onClick={() => toggleExpand(s)}
-                                className="rounded p-1 text-slate-400 hover:bg-slate-200 hover:text-slate-700"
-                                aria-expanded={isExpanded}
-                                aria-label={
-                                  isExpanded
-                                    ? 'Ocultar ubicaciones'
-                                    : 'Ver ubicaciones del sector'
-                                }
-                              >
-                                {isExpanded ? (
-                                  <ChevronDown className="h-4 w-4" />
-                                ) : (
-                                  <ChevronRight className="h-4 w-4" />
-                                )}
-                              </button>
-                            ) : null}
-                          </td>
-                          <td className="px-6 py-3">
-                            <p className="text-base font-semibold text-slate-900">{s.nombre}</p>
-                            {s.descripcion && (
-                              <p className="text-xs text-slate-500 line-clamp-1">{s.descripcion}</p>
-                            )}
-                          </td>
-                          <td className="px-6 py-3">
-                            {s.usa_ubicaciones ? (
-                              <button
-                                type="button"
-                                onClick={() => toggleExpand(s)}
-                                className="inline-flex items-center gap-1 text-slate-600 hover:text-brand-700"
-                              >
-                                <Layers className="h-3.5 w-3.5 text-brand-600" />
-                                {s.ubicaciones_count} ubicación(es)
-                              </button>
-                            ) : (
-                              <span className="text-xs text-slate-400">—</span>
-                            )}
-                          </td>
-                          <td className="px-6 py-3">
-                            {s.es_sector_descuento ? (
-                              <Badge variant="default">
-                                Prioridad {s.prioridad_descuento ?? '—'}
-                              </Badge>
-                            ) : (
-                              <span className="text-xs text-slate-400">—</span>
-                            )}
-                          </td>
-                          <td className="px-6 py-3 text-slate-600">
-                            {s.productos_con_stock > 0 ? (
-                              <>
-                                <p>{s.productos_con_stock} producto(s)</p>
-                                <p className="text-xs text-slate-400">
-                                  {formatTotalCajas(s.stock_total_unidades)} total
-                                </p>
-                              </>
-                            ) : (
-                              <span className="text-xs text-slate-400">Sin stock</span>
-                            )}
-                          </td>
-                          <td className="px-6 py-3">
-                            <Badge variant={s.activo ? 'success' : 'muted'}>
-                              {s.activo ? 'Activo' : 'Inactivo'}
-                            </Badge>
-                          </td>
-                          <td className="px-6 py-3 text-right">
-                            {hasPermiso('sectores.editar') && (
-                              <Button variant="ghost" size="sm" onClick={() => openEdit(s)}>
-                                <Pencil className="h-4 w-4" />
-                                Editar
-                              </Button>
-                            )}
-                          </td>
-                        </tr>
-
-                        {isExpanded && (
-                          <tr className="bg-surface-muted/30">
-                            <td colSpan={7} className="px-6 py-4">
-                              <div className="ml-7 border-l-2 border-brand-200 pl-4">
-                                <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
-                                  Ubicaciones en {s.nombre}
-                                </p>
-                                {loadingUbicaciones ? (
-                                  <p className="text-sm text-slate-500">Cargando...</p>
-                                ) : !ubicaciones || ubicaciones.length === 0 ? (
-                                  <p className="text-sm text-slate-500">
-                                    Sin ubicaciones cargadas. Editá el sector para agregarlas.
-                                  </p>
-                                ) : (
-                                  <ul className="flex flex-wrap gap-2">
-                                    {ubicaciones.map((u) => (
-                                      <li
-                                        key={u.id}
-                                        className="rounded-lg border border-surface-border bg-white px-3 py-1.5 text-sm text-slate-700"
-                                      >
-                                        {u.nombre}
-                                      </li>
-                                    ))}
-                                  </ul>
-                                )}
-                              </div>
-                            </td>
-                          </tr>
+                  {sectores.map((s) => (
+                    <tr
+                      key={s.id}
+                      className="cursor-pointer hover:bg-brand-50/50"
+                      onClick={() => void openSectorContenido(s)}
+                    >
+                      <td className="px-6 py-3">
+                        <p className="text-base font-semibold text-slate-900">{s.nombre}</p>
+                        {s.descripcion && (
+                          <p className="text-xs text-slate-500 line-clamp-1">{s.descripcion}</p>
                         )}
-                      </Fragment>
-                    )
-                  })}
+                      </td>
+                      <td className="px-6 py-3">
+                        {s.usa_ubicaciones ? (
+                          <span className="inline-flex items-center gap-1 text-slate-600">
+                            <Layers className="h-3.5 w-3.5 text-brand-600" />
+                            {s.ubicaciones_count} ubicación(es)
+                          </span>
+                        ) : (
+                          <span className="text-xs text-slate-400">—</span>
+                        )}
+                      </td>
+                      <td className="px-6 py-3">
+                        {s.es_sector_descuento ? (
+                          <Badge variant="default">
+                            Prioridad {s.prioridad_descuento ?? '—'}
+                          </Badge>
+                        ) : (
+                          <span className="text-xs text-slate-400">—</span>
+                        )}
+                      </td>
+                      <td className="px-6 py-3 text-slate-600">
+                        {s.productos_con_stock > 0 ? (
+                          <>
+                            <p>{s.productos_con_stock} producto(s)</p>
+                            <p className="text-xs text-slate-400">
+                              {formatTotalCajas(s.stock_total_unidades)} total
+                            </p>
+                          </>
+                        ) : (
+                          <span className="text-xs text-slate-400">Sin stock</span>
+                        )}
+                      </td>
+                      <td className="px-6 py-3">
+                        <Badge variant={s.activo ? 'success' : 'muted'}>
+                          {s.activo ? 'Activo' : 'Inactivo'}
+                        </Badge>
+                      </td>
+                      <td className="px-6 py-3 text-right">
+                        {hasPermiso('sectores.editar') && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              openEdit(s)
+                            }}
+                          >
+                            <Pencil className="h-4 w-4" />
+                            Editar
+                          </Button>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
                 </tbody>
               </table>
             </div>

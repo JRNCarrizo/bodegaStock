@@ -2135,3 +2135,182 @@ export function applyRoturaLineDeduction(
 
   return descuentos
 }
+
+function ensureStockSector(
+  db: Database.Database,
+  producto_id: number,
+  sector_id: number
+): { id: number; cantidad_total: number } {
+  let stockSector = db.prepare(`
+    SELECT id, cantidad_total FROM stock_sector
+    WHERE producto_id = ? AND sector_id = ?
+  `).get(producto_id, sector_id) as
+    | { id: number; cantidad_total: number }
+    | undefined
+
+  if (!stockSector) {
+    const result = db.prepare(`
+      INSERT INTO stock_sector (producto_id, sector_id, cantidad_total)
+      VALUES (?, ?, 0)
+    `).run(producto_id, sector_id)
+    stockSector = { id: Number(result.lastInsertRowid), cantidad_total: 0 }
+  }
+
+  return stockSector
+}
+
+export function applyMovimientoInternoDespachoLine(
+  db: Database.Database,
+  params: {
+    producto_id: number
+    sector_origen_id: number
+    cantidad_cajas: number
+    movimiento_id: number
+    movimiento_linea_id: number
+    usuario_id: number
+    observacion: string | null
+  }
+): DescuentoAplicado[] {
+  const { botellasPorCaja } = getProductoDefaults(db, params.producto_id)
+  const descuentos = computeSectorProductDeduction(
+    db,
+    params.producto_id,
+    params.sector_origen_id,
+    params.cantidad_cajas
+  )
+
+  for (const d of descuentos) {
+    db.prepare(`
+      INSERT INTO movimiento_interno_descuentos (
+        movimiento_interno_id, movimiento_interno_linea_id, producto_id,
+        sector_id, stock_linea_id, unidades, etiqueta
+      ) VALUES (?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      params.movimiento_id,
+      params.movimiento_linea_id,
+      params.producto_id,
+      d.sector_id,
+      d.stock_linea_id,
+      d.unidades,
+      d.etiqueta
+    )
+
+    db.prepare(`
+      INSERT INTO movimientos (
+        tipo, producto_id, cantidad, sector_origen_id, sector_destino_id,
+        documento_tipo, documento_id, usuario_id, observacion
+      ) VALUES ('MOVIMIENTO_INTERNO', ?, ?, ?, NULL, 'movimiento_interno', ?, ?, ?)
+    `).run(
+      params.producto_id,
+      d.unidades,
+      params.sector_origen_id,
+      params.movimiento_id,
+      params.usuario_id,
+      params.observacion
+    )
+  }
+
+  for (const d of descuentos) {
+    if (d.stock_linea_id) {
+      applyLineDeduction(db, d.stock_linea_id, d.unidades, 'CAJA', botellasPorCaja)
+    }
+  }
+
+  return descuentos
+}
+
+export function applyMovimientoInternoRecepcionLine(
+  db: Database.Database,
+  params: {
+    producto_id: number
+    sector_destino_id: number
+    cantidad_cajas: number
+    movimiento_id: number
+    usuario_id: number
+    observacion: string | null
+    ubicacion_destino_id?: number | null
+  }
+): void {
+  const { botellasPorCaja, cajasPorPallet } = getProductoDefaults(db, params.producto_id)
+  if (params.cantidad_cajas <= 0) throw new Error('Cantidad inválida')
+
+  let ubicacionId: number | null = params.ubicacion_destino_id ?? null
+  let ubicacionNombre: string | null = null
+  if (ubicacionId) {
+    const ub = db.prepare(`
+      SELECT id, nombre FROM sector_ubicaciones
+      WHERE id = ? AND sector_id = ? AND activo = 1
+    `).get(ubicacionId, params.sector_destino_id) as { id: number; nombre: string } | undefined
+    if (!ub) throw new Error('Ubicación destino no válida para el sector')
+    ubicacionNombre = ub.nombre
+  } else {
+    ubicacionId = null
+  }
+
+  const stockSector = ensureStockSector(db, params.producto_id, params.sector_destino_id)
+
+  addCajasToStockSectorSmart(db, {
+    stock_sector_id: stockSector.id,
+    numCajas: params.cantidad_cajas,
+    botellasPorCaja,
+    cajasPorPallet,
+    ubicacion_id: ubicacionId,
+    ubicacion: ubicacionNombre
+  })
+
+  refreshStockSectorTotal(db, stockSector.id)
+
+  db.prepare(`
+    INSERT INTO movimientos (
+      tipo, producto_id, cantidad, sector_origen_id, sector_destino_id,
+      documento_tipo, documento_id, usuario_id, observacion
+    ) VALUES ('MOVIMIENTO_INTERNO', ?, ?, NULL, ?, 'movimiento_interno', ?, ?, ?)
+  `).run(
+    params.producto_id,
+    params.cantidad_cajas,
+    params.sector_destino_id,
+    params.movimiento_id,
+    params.usuario_id,
+    params.observacion
+  )
+}
+
+export function revertMovimientoInternoDespachoLine(
+  db: Database.Database,
+  params: {
+    producto_id: number
+    sector_origen_id: number
+    cantidad_cajas: number
+    movimiento_id: number
+    usuario_id: number
+    observacion: string | null
+  }
+): void {
+  const { botellasPorCaja, cajasPorPallet } = getProductoDefaults(db, params.producto_id)
+  const stockSector = ensureStockSector(db, params.producto_id, params.sector_origen_id)
+
+  addCajasToStockSectorSmart(db, {
+    stock_sector_id: stockSector.id,
+    numCajas: params.cantidad_cajas,
+    botellasPorCaja,
+    cajasPorPallet,
+    ubicacion_id: null,
+    ubicacion: null
+  })
+
+  refreshStockSectorTotal(db, stockSector.id)
+
+  db.prepare(`
+    INSERT INTO movimientos (
+      tipo, producto_id, cantidad, sector_origen_id, sector_destino_id,
+      documento_tipo, documento_id, usuario_id, observacion
+    ) VALUES ('MOVIMIENTO_INTERNO', ?, ?, NULL, ?, 'movimiento_interno', ?, ?, ?)
+  `).run(
+    params.producto_id,
+    params.cantidad_cajas,
+    params.sector_origen_id,
+    params.movimiento_id,
+    params.usuario_id,
+    params.observacion ? `Reversión: ${params.observacion}` : 'Reversión de despacho cancelado'
+  )
+}

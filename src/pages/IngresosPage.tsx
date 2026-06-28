@@ -13,6 +13,7 @@ import {
   X
 } from 'lucide-react'
 import { BarcodeScannerModal } from '@/components/BarcodeScannerModal'
+import { DayTabsRow } from '@/components/DayTabsRow'
 import { ProductQuickCreateModal } from '@/components/ProductQuickCreateModal'
 import { ProductImage } from '@/components/ProductImage'
 import { Button } from '@/components/ui/Button'
@@ -33,6 +34,41 @@ import { useEscHandler } from '@/hooks/useEscHandler'
 
 function newTempId(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+}
+
+function normalizeIngresoListItem(row: IngresoListItem): IngresoListItem {
+  return {
+    ...row,
+    total_unidades: Number(row.total_unidades) || 0,
+    lineas_count: Number(row.lineas_count) || 0,
+    productos_count: Number(row.productos_count) || 0
+  }
+}
+
+async function enrichIngresosProductosCount(items: IngresoListItem[]): Promise<IngresoListItem[]> {
+  if (items.length === 0) return []
+  if (items.every((i) => 'productos_count' in (i as object))) {
+    return items.map(normalizeIngresoListItem)
+  }
+
+  return Promise.all(
+    items.map(async (item) => {
+      if (item.lineas_count === 0) {
+        return normalizeIngresoListItem({ ...item, productos_count: 0 })
+      }
+      try {
+        const det = await api<IngresoDetalle>(`/api/ingresos/${item.id}`)
+        const productos_count = new Set(det.lineas.map((l) => l.producto_id)).size
+        return normalizeIngresoListItem({
+          ...item,
+          productos_count,
+          total_unidades: Number(det.total_unidades) || Number(item.total_unidades) || 0
+        })
+      } catch {
+        return normalizeIngresoListItem({ ...item, productos_count: 0 })
+      }
+    })
+  )
 }
 
 export function IngresosPage() {
@@ -203,7 +239,8 @@ export function IngresosPage() {
       if (hasta) params.set('fecha_hasta', hasta)
 
       const data = await api<IngresoListItem[]>(`/api/ingresos?${params}`)
-      setIngresos(data)
+      const enriched = await enrichIngresosProductosCount(data)
+      setIngresos(enriched)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error al cargar ingresos')
     } finally {
@@ -282,7 +319,7 @@ export function IngresosPage() {
   )
 
   const totalUnidadesDelDia = useMemo(
-    () => ingresosDelDia.reduce((s, i) => s + i.total_unidades, 0),
+    () => ingresosDelDia.reduce((s, i) => s + Number(i.total_unidades || 0), 0),
     [ingresosDelDia]
   )
 
@@ -906,7 +943,7 @@ export function IngresosPage() {
           <div className="space-y-3 overflow-visible p-4">
             <div className="relative flex flex-col gap-2 overflow-visible sm:flex-row">
               <div className="relative z-30 min-w-0 flex-1">
-                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
                 <input
                   ref={productSearchRef}
                   type="search"
@@ -1247,7 +1284,7 @@ export function IngresosPage() {
         <CardBody className="border-b border-surface-border py-4 space-y-3">
           <div className="flex flex-wrap items-center gap-2">
             <div className="relative min-w-[10rem] flex-1">
-              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
               <input
                 ref={listSearchRef}
                 type="search"
@@ -1301,35 +1338,12 @@ export function IngresosPage() {
             {hasPermiso('ingresos.crear') && ' · Enter = nuevo ingreso'}
           </p>
 
-          {diasConIngresos.length > 0 && (
-            <div className="flex gap-1 overflow-x-auto pb-1">
-              {diasConIngresos.map((dia) => {
-                const active = dia === selectedDay
-                const count = conteoPorDia.get(dia) ?? 0
-                return (
-                  <button
-                    key={dia}
-                    type="button"
-                    onClick={() => setSelectedDay(dia)}
-                    className={`flex shrink-0 items-center gap-2 rounded-lg border px-3 py-2 text-sm transition-colors ${
-                      active
-                        ? 'border-brand-500 bg-brand-50 font-semibold text-brand-800 shadow-sm'
-                        : 'border-surface-border bg-white text-slate-600 hover:border-slate-300 hover:bg-slate-50'
-                    }`}
-                  >
-                    <span>{formatDayTabLabel(dia)}</span>
-                    <span
-                      className={`rounded-full px-1.5 py-0.5 text-xs font-medium ${
-                        active ? 'bg-brand-200 text-brand-900' : 'bg-slate-100 text-slate-600'
-                      }`}
-                    >
-                      {count}
-                    </span>
-                  </button>
-                )
-              })}
-            </div>
-          )}
+          <DayTabsRow
+            days={diasConIngresos}
+            selectedDay={selectedDay}
+            onSelectDay={setSelectedDay}
+            getCount={(dia) => conteoPorDia.get(dia) ?? 0}
+          />
         </CardBody>
 
         <CardHeader
@@ -1373,8 +1387,8 @@ export function IngresosPage() {
                 <thead>
                   <tr className="border-b border-surface-border bg-slate-50/80 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
                     <th className="px-6 py-3">Remito</th>
-                    <th className="px-6 py-3">Sector</th>
-                    <th className="px-6 py-3">Líneas</th>
+                    <th className="max-w-[14rem] px-6 py-3">Observación</th>
+                    <th className="px-6 py-3">Productos</th>
                     <th className="px-6 py-3">Total</th>
                     <th className="px-6 py-3">Usuario</th>
                     <th className="px-6 py-3" />
@@ -1384,8 +1398,12 @@ export function IngresosPage() {
                   {ingresosDelDia.map((i) => (
                     <tr key={i.id} className="hover:bg-slate-50/50">
                       <td className="px-6 py-3 font-medium text-slate-900">{i.numero_remito}</td>
-                      <td className="px-6 py-3 text-slate-600">{i.sector_nombre}</td>
-                      <td className="px-6 py-3 text-slate-500">{i.lineas_count}</td>
+                      <td className="max-w-[14rem] px-6 py-3 text-slate-600">
+                        <div className="overflow-x-auto whitespace-nowrap [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
+                          {i.observacion?.trim() || '—'}
+                        </div>
+                      </td>
+                      <td className="px-6 py-3 text-slate-500">{i.productos_count}</td>
                       <td className="px-6 py-3 font-semibold text-brand-700">{formatCantidad(i.total_unidades)}</td>
                       <td className="px-6 py-3 text-slate-500">{i.usuario_nombre}</td>
                       <td className="px-6 py-3 text-right">

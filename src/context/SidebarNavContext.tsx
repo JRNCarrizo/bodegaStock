@@ -36,19 +36,33 @@ function findActiveRouteIndex(items: NavItem[], pathname: string): number {
 }
 
 function focusMainSearchOrContent() {
+  const main = document.querySelector('main')
+  if (!main) return
+
+  const active = document.activeElement
+  if (active instanceof HTMLElement && main.contains(active)) {
+    const tag = active.tagName
+    if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA' || tag === 'BUTTON') return
+    if (active.isContentEditable) return
+  }
+
+  const tryFocus = (): boolean => {
+    const search = main.querySelector('input[type="search"]')
+    if (search instanceof HTMLInputElement && !search.disabled && !search.readOnly) {
+      search.focus({ preventScroll: true })
+      return true
+    }
+    const date = main.querySelector('input[type="date"]')
+    if (date instanceof HTMLInputElement && !date.disabled) {
+      date.focus({ preventScroll: true })
+      return true
+    }
+    return false
+  }
+
   requestAnimationFrame(() => {
-    const main = document.querySelector('main')
-    const search = main?.querySelector('input[type="search"]')
-    if (search instanceof HTMLInputElement) {
-      search.focus()
-      return
-    }
-    const date = main?.querySelector('input[type="date"]')
-    if (date instanceof HTMLInputElement) {
-      date.focus()
-      return
-    }
-    if (main instanceof HTMLElement) main.focus()
+    if (tryFocus()) return
+    requestAnimationFrame(tryFocus)
   })
 }
 
@@ -189,10 +203,9 @@ export function SidebarNavProvider({
     navLinkRefs.current[highlightIndex]?.focus()
   }, [sidebarActive, highlightIndex])
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (sidebarActive) return
-    const timer = setTimeout(() => focusMainSearchOrContent(), 100)
-    return () => clearTimeout(timer)
+    focusMainSearchOrContent()
   }, [location.pathname, sidebarActive])
 
   useEffect(() => {

@@ -1,6 +1,11 @@
 import type { FastifyInstance } from 'fastify'
 import { getDb } from '../db'
 import { requirePermiso } from '../plugins/auth'
+import {
+  formatEtiquetaLinea,
+  getProductoDefaults,
+  lineaTotalEnCajas
+} from '../utils/stock'
 
 interface SectorBody {
   nombre?: string
@@ -73,6 +78,158 @@ function getSectorOr404(db: ReturnType<typeof getDb>, id: number) {
   return db.prepare('SELECT id, usa_ubicaciones FROM sectores WHERE id = ?').get(id) as
     | { id: number; usa_ubicaciones: number }
     | undefined
+}
+
+interface StockLineaRow {
+  id: number
+  tipo_bulto: string
+  cantidad_bultos: number | null
+  unidades_por_bulto: number | null
+  cantidad_suelta: number | null
+  ubicacion: string | null
+  ubicacion_id: number | null
+  ubicacion_codigo: string | null
+  total_unidades: number
+}
+
+function mapStockLinea(
+  row: StockLineaRow & { ubicacion_nombre: string | null },
+  unidadProducto: string,
+  botellasPorCaja: number
+) {
+  const ubicacionLabel = row.ubicacion_nombre ?? row.ubicacion ?? row.ubicacion_codigo ?? null
+  const total_cajas = lineaTotalEnCajas(row, botellasPorCaja)
+  return {
+    id: row.id,
+    tipo_bulto: row.tipo_bulto,
+    cantidad_bultos: row.cantidad_bultos,
+    unidades_por_bulto: row.unidades_por_bulto,
+    cantidad_suelta: row.cantidad_suelta,
+    ubicacion: ubicacionLabel,
+    ubicacion_id: row.ubicacion_id,
+    total_unidades: total_cajas,
+    etiqueta: formatEtiquetaLinea(
+      {
+        tipo_bulto: row.tipo_bulto as 'PALLET' | 'CAJA' | 'SUELTO',
+        cantidad_bultos: row.cantidad_bultos,
+        unidades_por_bulto: row.unidades_por_bulto,
+        cantidad_suelta: row.cantidad_suelta
+      },
+      unidadProducto
+    )
+  }
+}
+
+function getSectorStock(
+  db: ReturnType<typeof getDb>,
+  sectorId: number,
+  options?: { ubicacionId?: number | null; sinUbicacion?: boolean }
+) {
+  const sector = db.prepare(`
+    SELECT id, codigo, nombre, usa_ubicaciones
+    FROM sectores WHERE id = ?
+  `).get(sectorId) as
+    | { id: number; codigo: string; nombre: string; usa_ubicaciones: number }
+    | undefined
+
+  if (!sector) return null
+
+  let ubicacion: { id: number; nombre: string; codigo: string } | null = null
+  if (options?.ubicacionId != null) {
+    ubicacion = db.prepare(`
+      SELECT id, nombre, codigo
+      FROM sector_ubicaciones
+      WHERE id = ? AND sector_id = ?
+    `).get(options.ubicacionId, sectorId) as { id: number; nombre: string; codigo: string } | undefined ?? null
+    if (!ubicacion) return null
+  }
+
+  const productosRaw = db.prepare(`
+    SELECT
+      ss.id AS stock_sector_id,
+      ss.producto_id,
+      ss.cantidad_total,
+      p.codigo_interno,
+      p.nombre,
+      p.imagen_path,
+      p.unidad
+    FROM stock_sector ss
+    JOIN productos p ON p.id = ss.producto_id
+    WHERE ss.sector_id = ? AND ss.cantidad_total > 0
+    ORDER BY p.nombre COLLATE NOCASE ASC
+  `).all(sectorId) as {
+    stock_sector_id: number
+    producto_id: number
+    cantidad_total: number
+    codigo_interno: string
+    nombre: string
+    imagen_path: string | null
+    unidad: string
+  }[]
+
+  const lineasBaseSql = `
+    SELECT
+      sl.id, sl.tipo_bulto, sl.cantidad_bultos, sl.unidades_por_bulto,
+      sl.cantidad_suelta, sl.ubicacion, sl.ubicacion_id, sl.total_unidades,
+      su.nombre AS ubicacion_nombre, su.codigo AS ubicacion_codigo
+    FROM stock_lineas sl
+    LEFT JOIN sector_ubicaciones su ON su.id = sl.ubicacion_id
+    WHERE sl.stock_sector_id = ?
+  `
+
+  const lineasFilteredSql = options?.sinUbicacion
+    ? `${lineasBaseSql} AND sl.ubicacion_id IS NULL`
+    : options?.ubicacionId != null
+      ? `${lineasBaseSql} AND sl.ubicacion_id = ?`
+      : lineasBaseSql
+
+  const lineasStmt = db.prepare(
+    `${lineasFilteredSql} ORDER BY COALESCE(su.orden, 9999) ASC, sl.orden ASC, sl.id ASC`
+  )
+
+  const productos = productosRaw
+    .map((row) => {
+      const { botellasPorCaja } = getProductoDefaults(db, row.producto_id)
+      const lineasParams =
+        options?.sinUbicacion || options?.ubicacionId != null
+          ? [row.stock_sector_id, ...(options?.ubicacionId != null ? [options.ubicacionId] : [])]
+          : [row.stock_sector_id]
+      const lineas = (lineasStmt.all(...lineasParams) as (StockLineaRow & {
+        ubicacion_nombre: string | null
+      })[]).map((l) => mapStockLinea(l, row.unidad, botellasPorCaja))
+
+      const cantidad_total =
+        options?.sinUbicacion || options?.ubicacionId != null
+          ? lineas.reduce((sum, l) => sum + l.total_unidades, 0)
+          : row.cantidad_total
+
+      return {
+        producto_id: row.producto_id,
+        codigo_interno: row.codigo_interno,
+        nombre: row.nombre,
+        imagen_path: row.imagen_path,
+        unidad: row.unidad,
+        cantidad_total,
+        lineas
+      }
+    })
+    .filter((p) => p.cantidad_total > 0)
+
+  const total_stock = productos.reduce((sum, p) => sum + p.cantidad_total, 0)
+
+  return {
+    sector: {
+      id: sector.id,
+      codigo: sector.codigo,
+      nombre: sector.nombre,
+      usa_ubicaciones: !!sector.usa_ubicaciones
+    },
+    ubicacion,
+    sin_ubicacion: !!options?.sinUbicacion,
+    productos,
+    total_productos: productos.length,
+    total_stock
+  }
 }
 
 export async function sectoresRoutes(app: FastifyInstance): Promise<void> {
@@ -154,6 +311,31 @@ export async function sectoresRoutes(app: FastifyInstance): Promise<void> {
       WHERE sector_id = ?
       ORDER BY orden ASC, nombre COLLATE NOCASE ASC, id ASC
     `).all(id)
+  })
+
+  app.get('/api/sectores/:id/stock', {
+    preHandler: requirePermiso('sectores.ver')
+  }, async (request, reply) => {
+    const id = Number((request.params as { id: string }).id)
+    const { ubicacion_id, sin_ubicacion } = request.query as {
+      ubicacion_id?: string
+      sin_ubicacion?: string
+    }
+    const db = getDb()
+
+    const options: { ubicacionId?: number | null; sinUbicacion?: boolean } = {}
+    if (sin_ubicacion === '1') {
+      options.sinUbicacion = true
+    } else if (ubicacion_id?.trim()) {
+      options.ubicacionId = Number(ubicacion_id)
+    }
+
+    const stock = getSectorStock(db, id, options)
+    if (!stock) {
+      return reply.status(404).send({ error: 'Sector o ubicación no encontrada' })
+    }
+
+    return stock
   })
 
   app.post('/api/sectores/:id/ubicaciones', {

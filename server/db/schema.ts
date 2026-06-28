@@ -243,4 +243,47 @@ CREATE TABLE IF NOT EXISTS rotura_descuentos (
   unidades REAL NOT NULL,
   etiqueta TEXT
 );
+
+CREATE TABLE IF NOT EXISTS movimientos_internos (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  fecha TEXT NOT NULL,
+  tipo TEXT NOT NULL CHECK (tipo IN ('ENVIAR', 'RECIBIR')),
+  sector_origen_id INTEGER REFERENCES sectores(id),
+  sector_destino_id INTEGER REFERENCES sectores(id),
+  observacion TEXT,
+  estado TEXT NOT NULL DEFAULT 'PENDIENTE' CHECK (estado IN ('PENDIENTE', 'COMPLETADO', 'CANCELADO')),
+  creado_por_id INTEGER NOT NULL REFERENCES usuarios(id),
+  recibido_por_id INTEGER REFERENCES usuarios(id),
+  cancelado_por_id INTEGER REFERENCES usuarios(id),
+  recibido_at TEXT,
+  cancelado_at TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS movimiento_interno_lineas (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  movimiento_interno_id INTEGER NOT NULL REFERENCES movimientos_internos(id) ON DELETE CASCADE,
+  producto_id INTEGER NOT NULL REFERENCES productos(id),
+  sector_origen_id INTEGER NOT NULL REFERENCES sectores(id),
+  sector_destino_id INTEGER NOT NULL REFERENCES sectores(id),
+  cantidad_cajas REAL NOT NULL,
+  tipo_bulto TEXT CHECK (tipo_bulto IS NULL OR tipo_bulto IN ('PALLET', 'CAJA', 'SUELTO')),
+  cantidad_bultos REAL,
+  unidades_por_bulto REAL,
+  etiqueta TEXT,
+  cancelada INTEGER NOT NULL DEFAULT 0,
+  ubicacion_destino_id INTEGER REFERENCES sector_ubicaciones(id) ON DELETE SET NULL,
+  orden INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS movimiento_interno_descuentos (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  movimiento_interno_id INTEGER NOT NULL REFERENCES movimientos_internos(id) ON DELETE CASCADE,
+  movimiento_interno_linea_id INTEGER NOT NULL REFERENCES movimiento_interno_lineas(id) ON DELETE CASCADE,
+  producto_id INTEGER NOT NULL REFERENCES productos(id),
+  sector_id INTEGER NOT NULL REFERENCES sectores(id),
+  stock_linea_id INTEGER REFERENCES stock_lineas(id) ON DELETE SET NULL,
+  unidades REAL NOT NULL,
+  etiqueta TEXT
+);
 `

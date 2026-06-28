@@ -1,5 +1,5 @@
 param(
-  [string]$Version = "0.2.1"
+  [string]$Version = "0.2.2"
 )
 
 $ErrorActionPreference = "Stop"
@@ -49,24 +49,21 @@ $exeName = Split-Path $exe -Leaf
 $notes = @"
 ## ControlStock v$Version
 
-Red local, etiquetas de barras, login renovado e icono en Windows.
+Corrección de actualizaciones automáticas desde la app instalada.
 
-### Nuevo
-- **Servidor / cliente en red:** PC servidor + otras PCs por WiFi/LAN (puerto 3847)
-- **Configuración de red:** modo servidor o cliente, probar conexión, URLs, QR para celulares
-- **Etiquetas de código de barras:** imprimir y descargar PNG desde Productos
-- **Login** rediseñado (panel de marca + formulario moderno)
-- **Icono** embebido en el instalador Windows y en desarrollo (barra de tareas)
+### Corregido
+- **Actualizaciones:** se genera ``app-update.yml`` en el instalador (ya no falla con ENOENT)
+- Las actualizaciones se buscan en GitHub Releases
 
-### Mejoras
-- Detalle unificado en ingresos, retornos, roturas, planillas y movimientos
-- Configuración cliente: ayuda para pegar IP del servidor (sin 127.0.0.1)
+### Incluye (desde v0.2.0)
+- Red servidor/cliente LAN, etiquetas de barras, login renovado, icono Windows
+- Configuración de red con QR y prueba de conexión
 
 ### Instalación
-1. **PC servidor:** instalá el .exe → Configuración → *Esta PC es el servidor*
-2. **Otras PCs:** mismo instalador → *Esta PC es cliente* → IP del servidor → puerto **3847**
+- **Si tenés 0.2.0 o 0.2.1:** instalá este .exe manualmente (última vez manual)
+- **Desde 0.2.2:** podés usar Configuración → Buscar actualizaciones
 
-Login inicial: **admin** / **admin123** (cambiar después del primer acceso).
+Login inicial: **admin** / **admin123**
 "@
 
 Write-Host "Publicando release $tag..." -ForegroundColor Green

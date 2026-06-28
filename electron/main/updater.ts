@@ -1,5 +1,10 @@
 import { app, BrowserWindow, ipcMain } from 'electron'
+import { existsSync } from 'fs'
+import { join } from 'path'
 import { autoUpdater } from 'electron-updater'
+
+const GITHUB_OWNER = 'JRNCarrizo'
+const GITHUB_REPO = 'bodegaStock'
 
 export type UpdateStatusPayload =
   | { type: 'checking' }
@@ -16,6 +21,34 @@ function sendStatus(win: BrowserWindow, status: UpdateStatusPayload) {
 }
 
 let handlersRegistered = false
+
+function configureAutoUpdaterFeed(): boolean {
+  if (!app.isPackaged) return false
+
+  const updateYml = join(process.resourcesPath, 'app-update.yml')
+  if (existsSync(updateYml)) return true
+
+  autoUpdater.setFeedURL({
+    provider: 'github',
+    owner: GITHUB_OWNER,
+    repo: GITHUB_REPO
+  })
+  return true
+}
+
+function friendlyUpdateError(err: unknown): string {
+  const message = err instanceof Error ? err.message : String(err)
+
+  if (message.includes('app-update.yml')) {
+    return 'Esta versión no incluye actualizaciones automáticas. Descargá la última versión desde GitHub Releases e instalá manualmente.'
+  }
+
+  if (message.includes('404') || message.includes('Not Found')) {
+    return 'No se encontró un release compatible en GitHub. Descargá el instalador manualmente desde Releases.'
+  }
+
+  return message
+}
 
 export function setupAutoUpdater(getWindow: () => BrowserWindow | null) {
   if (handlersRegistered) return
@@ -65,20 +98,26 @@ export function setupAutoUpdater(getWindow: () => BrowserWindow | null) {
 
   autoUpdater.on('error', (err) => {
     const win = getWindow()
-    if (win) sendStatus(win, { type: 'error', message: err.message })
+    if (win) sendStatus(win, { type: 'error', message: friendlyUpdateError(err) })
   })
 
   ipcMain.handle('app:get-info', () => ({
     version: app.getVersion(),
     name: app.getName(),
     isPackaged: app.isPackaged,
-    platform: process.platform
+    platform: process.platform,
+    updatesConfigured: app.isPackaged
+      ? existsSync(join(process.resourcesPath, 'app-update.yml'))
+      : false
   }))
 
   ipcMain.handle('update:check', async () => {
     if (!app.isPackaged) {
       return { ok: false as const, reason: 'dev' as const }
     }
+
+    configureAutoUpdaterFeed()
+
     try {
       const result = await autoUpdater.checkForUpdates()
       return { ok: true as const, updateInfo: result?.updateInfo?.version }
@@ -86,7 +125,7 @@ export function setupAutoUpdater(getWindow: () => BrowserWindow | null) {
       return {
         ok: false as const,
         reason: 'error' as const,
-        message: err instanceof Error ? err.message : String(err)
+        message: friendlyUpdateError(err)
       }
     }
   })
@@ -95,13 +134,16 @@ export function setupAutoUpdater(getWindow: () => BrowserWindow | null) {
     if (!app.isPackaged) {
       return { ok: false as const, reason: 'dev' as const }
     }
+
+    configureAutoUpdaterFeed()
+
     try {
       await autoUpdater.downloadUpdate()
       return { ok: true as const }
     } catch (err) {
       return {
         ok: false as const,
-        message: err instanceof Error ? err.message : String(err)
+        message: friendlyUpdateError(err)
       }
     }
   })

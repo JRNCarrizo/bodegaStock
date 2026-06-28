@@ -555,8 +555,19 @@ export function ConfiguracionPage() {
 
           {isPackaged && (
             <p className="text-xs text-slate-400">
-              Las actualizaciones requieren publicar releases (por ejemplo en GitHub) y configurar
-              el campo <code className="text-slate-500">publish</code> en electron-builder.
+              Las actualizaciones se descargan desde{' '}
+              <a
+                href="https://github.com/JRNCarrizo/bodegaStock/releases"
+                className="text-brand-600 hover:underline"
+                onClick={(e) => {
+                  e.preventDefault()
+                  window.open('https://github.com/JRNCarrizo/bodegaStock/releases', '_blank')
+                }}
+              >
+                GitHub Releases
+              </a>
+              . Si esta versión fue instalada antes de v0.2.2, puede ser necesario actualizar
+              manualmente una vez.
             </p>
           )}
         </CardBody>

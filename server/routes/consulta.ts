@@ -198,7 +198,7 @@ export async function consultaRoutes(app: FastifyInstance): Promise<void> {
 
     const desglose: ReorganizarDesgloseInput = {
       bultos: bultos.map((b) => ({
-        tipo_bulto: b.tipo_bulto === 'CAJA' ? 'CAJA' : 'PALLET',
+        tipo_bulto: 'PALLET' as const,
         cantidad_bultos: Number(b.cantidad_bultos),
         unidades_por_bulto: Number(b.unidades_por_bulto)
       })),

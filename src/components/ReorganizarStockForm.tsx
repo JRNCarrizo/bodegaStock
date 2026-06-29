@@ -13,7 +13,6 @@ import { Button } from '@/components/ui/Button'
 
 interface BultoRow {
   tempId: string
-  tipo_bulto: 'PALLET' | 'CAJA'
   cantidad_bultos: string
   unidades_por_bulto: string
 }
@@ -25,7 +24,6 @@ function newTempId(): string {
 function emptyRow(): BultoRow {
   return {
     tempId: newTempId(),
-    tipo_bulto: 'PALLET',
     cantidad_bultos: '',
     unidades_por_bulto: ''
   }
@@ -46,7 +44,6 @@ function buildInitialRows(info: ReorganizarLineaInfo): BultoRow[] {
   return [
     {
       tempId: newTempId(),
-      tipo_bulto: 'PALLET',
       cantidad_bultos: String(bultos),
       unidades_por_bulto: String(u)
     }
@@ -109,7 +106,7 @@ export function ReorganizarStockForm({
       partes.push(
         formatEtiqueta(
           {
-            tipo_bulto: row.tipo_bulto,
+            tipo_bulto: 'PALLET',
             cantidad_bultos: row.cantidad_bultos,
             unidades_por_bulto: row.unidades_por_bulto
           },
@@ -134,14 +131,14 @@ export function ReorganizarStockForm({
   }
 
   function addRow(ref?: ReferenciaBulto) {
+    const palletRef = ref?.tipo_bulto === 'PALLET' ? ref : undefined
     const next = [
       ...rows,
-      ref
+      palletRef
         ? {
             tempId: newTempId(),
-            tipo_bulto: ref.tipo_bulto,
             cantidad_bultos: '',
-            unidades_por_bulto: String(ref.unidades_por_bulto)
+            unidades_por_bulto: String(palletRef.unidades_por_bulto)
           }
         : emptyRow()
     ]
@@ -159,7 +156,7 @@ export function ReorganizarStockForm({
   function handleConfirm() {
     const bultos = rows
       .map((row) => ({
-        tipo_bulto: row.tipo_bulto,
+        tipo_bulto: 'PALLET' as const,
         cantidad_bultos: Number(row.cantidad_bultos),
         unidades_por_bulto: Number(row.unidades_por_bulto)
       }))
@@ -179,30 +176,29 @@ export function ReorganizarStockForm({
   return (
     <div className="mt-2 rounded-md border border-amber-200 bg-amber-50/80 p-3">
       <p className="text-xs font-semibold text-amber-950">
-        Reorganizar {titulo} ({total} cajas)
+        Reorganizar {titulo} — total fijo: {total} cajas
+      </p>
+      <p className="mt-1 text-[11px] text-amber-900/80">
+        Solo cambiás cómo están armados los pallets y las cajas sueltas; el total no se modifica.
       </p>
 
-      {info.referencias_bulto.length > 0 && (
+      {info.referencias_bulto.some((ref) => ref.tipo_bulto === 'PALLET') && (
         <div className="mt-2 flex flex-wrap gap-1.5">
           <span className="self-center text-[10px] font-medium uppercase tracking-wide text-amber-800/70">
             Referencias:
           </span>
-          {info.referencias_bulto.map((ref) => {
-            const label =
-              ref.tipo_bulto === 'PALLET'
-                ? `Pallet × ${ref.unidades_por_bulto}`
-                : `Caja × ${ref.unidades_por_bulto}`
-            return (
+          {info.referencias_bulto
+            .filter((ref) => ref.tipo_bulto === 'PALLET')
+            .map((ref) => (
               <button
                 key={`${ref.tipo_bulto}-${ref.unidades_por_bulto}`}
                 type="button"
                 className="rounded-full border border-amber-300 bg-white px-2 py-0.5 text-[11px] font-medium text-amber-900 hover:bg-amber-100"
                 onClick={() => addRow(ref)}
               >
-                + {label}
+                + Pallet × {ref.unidades_por_bulto}
               </button>
-            )
-          })}
+            ))}
         </div>
       )}
 
@@ -215,25 +211,10 @@ export function ReorganizarStockForm({
             key={row.tempId}
             className="flex flex-wrap items-end gap-2 rounded-md border border-amber-200/80 bg-white p-2"
           >
-            <div className="min-w-[88px] flex-1">
-              <label className="mb-1 block text-[10px] font-medium text-slate-500">
-                Tipo #{idx + 1}
-              </label>
-              <select
-                value={row.tipo_bulto}
-                onChange={(e) =>
-                  updateRow(row.tempId, {
-                    tipo_bulto: e.target.value as 'PALLET' | 'CAJA'
-                  })
-                }
-                className="w-full rounded-md border border-surface-border px-2 py-1.5 text-xs"
-              >
-                <option value="PALLET">Pallet</option>
-                <option value="CAJA">Caja (bulto)</option>
-              </select>
-            </div>
             <div className="w-16">
-              <label className="mb-1 block text-[10px] font-medium text-slate-500">Cant.</label>
+              <label className="mb-1 block text-[10px] font-medium text-slate-500">
+                Pallets #{idx + 1}
+              </label>
               <input
                 type="number"
                 min={1}

@@ -847,7 +847,7 @@ export function IngresosPage() {
                     <p className="text-xs text-slate-400">{grupo.lineas.length} líneas</p>
                   )}
                 </button>
-                <Badge variant="default">{formatTotalCajas(grupo.total)}</Badge>
+                <Badge variant="default">{formatCantidad(grupo.total)}</Badge>
               </div>
               {isExpanded && (
                 <ul className="divide-y divide-surface-border border-t border-surface-border bg-surface-muted/20">
@@ -864,7 +864,7 @@ export function IngresosPage() {
                       </div>
                       <div className="flex shrink-0 items-center gap-2">
                         <span className="font-semibold text-slate-900">
-                          {formatTotalCajas(l.total_unidades)}
+                          {formatCantidad(l.total_unidades)}
                         </span>
                         <Button
                           type="button"
@@ -1117,7 +1117,7 @@ export function IngresosPage() {
                 Líneas cargadas ({lineas.length})
               </span>
               {lineas.length > 0 && (
-                <span className="text-brand-700 font-semibold">{formatTotalCajas(totalGeneral)} total</span>
+                <span className="text-brand-700 font-semibold">{formatCantidad(totalGeneral)} total</span>
               )}
             </div>
           </div>
@@ -1129,7 +1129,7 @@ export function IngresosPage() {
           <div className="flex items-center justify-between gap-4">
             <div>
               <p className="text-xs text-slate-500">Total general</p>
-              <p className="text-xl font-bold text-brand-700">{formatTotalCajas(totalGeneral)}</p>
+              <p className="text-xl font-bold text-brand-700">{formatCantidad(totalGeneral)}</p>
             </div>
             {hasPermiso('ingresos.crear') && (
               <div className="flex shrink-0 flex-wrap gap-2">

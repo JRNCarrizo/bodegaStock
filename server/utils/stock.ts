@@ -585,8 +585,8 @@ function validateReorganizarDesglose(
     if (b.unidades_por_bulto <= 0 || !Number.isInteger(b.unidades_por_bulto)) {
       return 'Las unidades por pallet deben ser un entero mayor a cero'
     }
-    if (b.tipo_bulto !== 'PALLET' && b.tipo_bulto !== 'CAJA') {
-      return 'Tipo de bulto inválido'
+    if (b.tipo_bulto !== 'PALLET') {
+      return 'La reorganización solo admite líneas de pallet'
     }
     asignado += b.cantidad_bultos * b.unidades_por_bulto
   }

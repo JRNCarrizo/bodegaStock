@@ -1,5 +1,5 @@
 param(
-  [string]$Version = "0.2.2"
+  [string]$Version = "0.2.3"
 )
 
 $ErrorActionPreference = "Stop"
@@ -49,19 +49,21 @@ $exeName = Split-Path $exe -Leaf
 $notes = @"
 ## ControlStock v$Version
 
-Corrección de actualizaciones automáticas desde la app instalada.
+Mejoras de interfaz y navegación por teclado en toda la aplicación.
 
-### Corregido
-- **Actualizaciones:** se genera ``app-update.yml`` en el instalador (ya no falla con ENOENT)
-- Las actualizaciones se buscan en GitHub Releases
+### Nuevo
+- **Navegación por teclado** unificada en listados: flechas, Enter y Esc en Productos, Ingresos, Planillas, Retornos, Roturas, Movimientos, Camioneros, Sectores y Usuarios
+- **Reportes → Movimientos del día:** Enter desde la barra lateral enfoca la card Stock inicial; flechas entre cards; Esc vuelve al menú
+- **Consulta de stock** con navegación por teclado en resultados
 
-### Incluye (desde v0.2.0)
-- Red servidor/cliente LAN, etiquetas de barras, login renovado, icono Windows
-- Configuración de red con QR y prueba de conexión
+### Mejorado
+- Rediseño del layout, dashboard e inicio de sesión
+- Detalle de cards en reportes: código y nombre del producto en la misma fila
+- Barra lateral y foco más predecible (sin saltar a campos de fecha)
 
-### Instalación
-- **Si tenés 0.2.0 o 0.2.1:** instalá este .exe manualmente (última vez manual)
-- **Desde 0.2.2:** podés usar Configuración → Buscar actualizaciones
+### Actualización
+- Desde **v0.2.2:** Configuración → Buscar actualizaciones
+- O instalá el `.exe` de este release manualmente
 
 Login inicial: **admin** / **admin123**
 "@

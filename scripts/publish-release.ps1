@@ -1,5 +1,5 @@
 param(
-  [string]$Version = "0.2.4"
+  [string]$Version = "0.2.5"
 )
 
 $ErrorActionPreference = "Stop"
@@ -49,11 +49,11 @@ $exeName = Split-Path $exe -Leaf
 $notes = @"
 ## ControlStock v$Version
 
-Mejoras de login y atajos del menú lateral.
+Corrección en la pantalla de actualizaciones.
 
-### Mejorado
-- **Login** rediseñado con el mismo estilo visual del sistema (cards, gradientes, tipografía)
-- **Menú lateral:** flecha ← pliega el menú y → lo despliega mientras navegás con el teclado
+### Corregido
+- **Actualizaciones:** las notas del release ya no muestran HTML crudo (``<p>``, ``<a>``, etc.)
+- Si GitHub no incluye changelog útil, se muestra un mensaje claro en lugar del enlace "Full Changelog"
 
 ### Actualización
 - Desde **v0.2.2 o superior:** Configuración → Buscar actualizaciones

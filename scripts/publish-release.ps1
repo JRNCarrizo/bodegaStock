@@ -1,5 +1,5 @@
 param(
-  [string]$Version = "0.2.3"
+  [string]$Version = "0.2.4"
 )
 
 $ErrorActionPreference = "Stop"
@@ -49,21 +49,15 @@ $exeName = Split-Path $exe -Leaf
 $notes = @"
 ## ControlStock v$Version
 
-Mejoras de interfaz y navegación por teclado en toda la aplicación.
-
-### Nuevo
-- **Navegación por teclado** unificada en listados: flechas, Enter y Esc en Productos, Ingresos, Planillas, Retornos, Roturas, Movimientos, Camioneros, Sectores y Usuarios
-- **Reportes → Movimientos del día:** Enter desde la barra lateral enfoca la card Stock inicial; flechas entre cards; Esc vuelve al menú
-- **Consulta de stock** con navegación por teclado en resultados
+Mejoras de login y atajos del menú lateral.
 
 ### Mejorado
-- Rediseño del layout, dashboard e inicio de sesión
-- Detalle de cards en reportes: código y nombre del producto en la misma fila
-- Barra lateral y foco más predecible (sin saltar a campos de fecha)
+- **Login** rediseñado con el mismo estilo visual del sistema (cards, gradientes, tipografía)
+- **Menú lateral:** flecha ← pliega el menú y → lo despliega mientras navegás con el teclado
 
 ### Actualización
-- Desde **v0.2.2:** Configuración → Buscar actualizaciones
-- O instalá el `.exe` de este release manualmente
+- Desde **v0.2.2 o superior:** Configuración → Buscar actualizaciones
+- O instalá el ``.exe`` de este release manualmente
 
 Login inicial: **admin** / **admin123**
 "@

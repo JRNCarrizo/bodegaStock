@@ -68,10 +68,14 @@ function focusMainSearchOrContent(mainFocusHandlers: Set<() => boolean>) {
 
 export function SidebarNavProvider({
   visibleItems,
-  children
+  children,
+  sidebarCollapsed = false,
+  setSidebarCollapsed
 }: {
   visibleItems: NavItem[]
   children: ReactNode
+  sidebarCollapsed?: boolean
+  setSidebarCollapsed?: (collapsed: boolean) => void
 }) {
   const navigate = useNavigate()
   const location = useLocation()
@@ -168,6 +172,20 @@ export function SidebarNavProvider({
         moveHighlight(-1)
         return
       }
+      if (e.key === 'ArrowLeft' && setSidebarCollapsed) {
+        if (window.matchMedia('(min-width: 1024px)').matches && !sidebarCollapsed) {
+          e.preventDefault()
+          setSidebarCollapsed(true)
+        }
+        return
+      }
+      if (e.key === 'ArrowRight' && setSidebarCollapsed) {
+        if (window.matchMedia('(min-width: 1024px)').matches && sidebarCollapsed) {
+          e.preventDefault()
+          setSidebarCollapsed(false)
+        }
+        return
+      }
       if (e.key === 'Enter') {
         e.preventDefault()
         activateNavItem(highlightIndex)
@@ -176,7 +194,14 @@ export function SidebarNavProvider({
 
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [sidebarActive, highlightIndex, moveHighlight, activateNavItem])
+  }, [
+    sidebarActive,
+    highlightIndex,
+    moveHighlight,
+    activateNavItem,
+    sidebarCollapsed,
+    setSidebarCollapsed
+  ])
 
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {

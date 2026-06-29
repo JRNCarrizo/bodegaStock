@@ -51,11 +51,12 @@ function useSidebarCollapsed() {
     setCollapsed((prev) => !prev)
   }
 
-  return { collapsed, toggleCollapsed }
+  return { collapsed, toggleCollapsed, setCollapsed }
 }
 
 export function AppLayout({ children }: { children: React.ReactNode }) {
   const { hasPermiso } = useAuth()
+  const { collapsed, toggleCollapsed, setCollapsed } = useSidebarCollapsed()
 
   const visibleItems = useMemo(
     () => NAV_ITEMS.filter((item) => !item.permiso || hasPermiso(item.permiso)),
@@ -65,8 +66,17 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
   const sidebarItems = useMemo(() => [...visibleItems, CONFIG_NAV_ITEM], [visibleItems])
 
   return (
-    <SidebarNavProvider visibleItems={sidebarItems}>
-      <AppLayoutShell visibleItems={visibleItems} configIndex={visibleItems.length}>
+    <SidebarNavProvider
+      visibleItems={sidebarItems}
+      sidebarCollapsed={collapsed}
+      setSidebarCollapsed={setCollapsed}
+    >
+      <AppLayoutShell
+        visibleItems={visibleItems}
+        configIndex={visibleItems.length}
+        collapsed={collapsed}
+        toggleCollapsed={toggleCollapsed}
+      >
         {children}
       </AppLayoutShell>
     </SidebarNavProvider>
@@ -76,15 +86,18 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
 function AppLayoutShell({
   visibleItems,
   configIndex,
+  collapsed,
+  toggleCollapsed,
   children
 }: {
   visibleItems: NavItem[]
   configIndex: number
+  collapsed: boolean
+  toggleCollapsed: () => void
   children: React.ReactNode
 }) {
   const { user, logout } = useAuth()
   const [mobileOpen, setMobileOpen] = useState(false)
-  const { collapsed, toggleCollapsed } = useSidebarCollapsed()
   const { sidebarActive } = useSidebarNav()
 
   const groups = [...new Set(visibleItems.map((i) => i.group))]
@@ -136,7 +149,7 @@ function AppLayoutShell({
 
             {!collapsed && (
               <p className="mx-1 mt-3 rounded-lg bg-slate-50 px-2.5 py-2 text-[10px] leading-relaxed text-slate-400 ring-1 ring-surface-border/60">
-                ↑↓ navegar · Enter abrir · Esc volver al menú
+                ↑↓ navegar · Enter abrir · ← plegar · → desplegar · Esc volver
               </p>
             )}
           </div>

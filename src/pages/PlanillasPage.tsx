@@ -6,7 +6,7 @@ import {
   ChevronRight,
   ClipboardList,
   Eye,
-  Package,
+  Loader2,
   Plus,
   Search,
   Trash2,
@@ -24,7 +24,7 @@ import {
 import { ProductImage } from '@/components/ProductImage'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
-import { Badge, Card, CardBody, CardHeader } from '@/components/ui/Card'
+import { Card, CardBody } from '@/components/ui/Card'
 import {
   formatCantidad,
   formatDayTabLabel,
@@ -34,7 +34,7 @@ import {
   todayIsoDate,
   type ModoSalidaPlanilla
 } from '@/lib/desglose'
-import { api } from '@/lib/utils'
+import { api, cn } from '@/lib/utils'
 import type {
   Camionero,
   CamioneroVehiculo,
@@ -675,98 +675,119 @@ export function PlanillasPage() {
 
   if (view === 'create' && createPhase === 'datos') {
     return (
-      <div
-        ref={createScrollRef}
-        className="-m-4 h-[calc(100vh-5rem)] overflow-y-auto lg:-m-6"
-      >
-        <div className="mx-auto flex max-w-lg flex-col px-4 py-8 pb-16">
-        <Button variant="ghost" size="sm" className="mb-4 -ml-2" onClick={volverAlListadoPlanilla}>
-          <ChevronLeft className="h-4 w-4" />
-          Volver al listado
-        </Button>
-        <h1 className="text-2xl font-bold text-slate-900">Nueva planilla</h1>
-        <p className="mt-1 mb-6 text-slate-500">Salida de mercadería con camionero asignado</p>
+      <div ref={createScrollRef} className="-m-4 h-[calc(100vh-5rem)] overflow-y-auto lg:-m-6">
+        <div className="mx-auto flex max-w-lg flex-col gap-5 px-4 py-6 pb-16 lg:px-6">
+          <Button
+            variant="ghost"
+            size="sm"
+            className="-ml-2 h-9 self-start rounded-xl px-3"
+            onClick={volverAlListadoPlanilla}
+          >
+            <ChevronLeft className="h-4 w-4" />
+            Volver al listado
+          </Button>
 
-        {error && (
-          <div className="mb-4 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>
-        )}
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">Alta</p>
+            <h1 className="mt-1 text-2xl font-bold tracking-tight text-slate-900">Nueva planilla</h1>
+            <p className="mt-1 text-sm text-slate-500">
+              Salida de mercadería con camionero asignado · Enter avanza · Esc vuelve
+            </p>
+          </div>
 
-        <Card>
-          <CardBody className="space-y-4">
-            <Input
-              ref={fechaRef}
-              label="Fecha *"
-              type="date"
-              value={fecha}
-              onChange={(e) => setFecha(e.target.value)}
-              onKeyDown={(e) => handleDatosKeyDown(e, numeroRef)}
-            />
-            <Input
-              ref={numeroRef}
-              label="Número de planilla *"
-              value={numero}
-              onChange={(e) => setNumero(e.target.value)}
-              onKeyDown={(e) => handleDatosKeyDown(e, camioneroRef)}
-              placeholder="ej. PLA-2024-001"
-            />
-            <div>
-              <label className="mb-1 block text-sm font-medium text-slate-700">Camionero *</label>
-              <select
-                ref={camioneroRef}
-                value={camioneroId}
-                onChange={(e) => {
-                  setCamioneroId(e.target.value)
-                  setVehiculoId('')
-                }}
-                onKeyDown={handleCamioneroKeyDown}
-                className="w-full rounded-lg border border-surface-border px-3 py-2 text-sm focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20"
-              >
-                <option value="">Seleccionar camionero...</option>
-                {camioneros.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.numero_interno} — {c.nombre} ({c.empresa})
-                  </option>
-                ))}
-              </select>
+          {error && (
+            <div className="rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700 ring-1 ring-red-100">
+              {error}
             </div>
-            <div>
-              <label className="mb-1 block text-sm font-medium text-slate-700">Vehículo</label>
-              <select
-                ref={vehiculoRef}
-                value={vehiculoId}
-                onChange={(e) => setVehiculoId(e.target.value)}
-                onKeyDown={(e) => handleDatosKeyDown(e, observacionRef)}
-                disabled={!camioneroId || vehiculos.length === 0}
-                className="w-full rounded-lg border border-surface-border px-3 py-2 text-sm disabled:bg-slate-50"
-              >
-                <option value="">
-                  {!camioneroId
-                    ? 'Elegí un camionero primero'
-                    : vehiculos.length === 0
-                      ? 'Sin vehículos activos'
-                      : 'Sin vehículo específico'}
-                </option>
-                {vehiculos.map((v) => (
-                  <option key={v.id} value={v.id}>
-                    {v.patente} — {v.marca} {v.modelo}
-                  </option>
-                ))}
-              </select>
+          )}
+
+          <Card className="overflow-hidden shadow-panel">
+            <div className="border-b border-brand-100 bg-gradient-to-r from-brand-50/80 via-white to-white px-5 py-4">
+              <div className="flex items-center gap-3">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-brand-600 text-white shadow-sm">
+                  <ClipboardList className="h-5 w-5" />
+                </div>
+                <div>
+                  <p className="text-sm font-semibold text-slate-900">Datos de la planilla</p>
+                  <p className="text-xs text-slate-500">Fecha, número, camionero y vehículo</p>
+                </div>
+              </div>
             </div>
-            <Input
-              ref={observacionRef}
-              label="Observaciones"
-              value={observacion}
-              onChange={(e) => setObservacion(e.target.value)}
-              onFocus={() => scrollFieldIntoView(observacionRef)}
-              onKeyDown={(e) => handleDatosKeyDown(e)}
-            />
-            <p className="text-xs text-slate-400">Enter en observaciones → carga de productos</p>
-            <Button type="button" className="w-full" onClick={irACarga}>
-              Continuar a productos
-            </Button>
-          </CardBody>
-        </Card>
+            <CardBody className="space-y-4">
+              <Input
+                ref={fechaRef}
+                label="Fecha *"
+                type="date"
+                value={fecha}
+                onChange={(e) => setFecha(e.target.value)}
+                onKeyDown={(e) => handleDatosKeyDown(e, numeroRef)}
+              />
+              <Input
+                ref={numeroRef}
+                label="Número de planilla *"
+                value={numero}
+                onChange={(e) => setNumero(e.target.value)}
+                onKeyDown={(e) => handleDatosKeyDown(e, camioneroRef)}
+                placeholder="ej. PLA-2024-001"
+              />
+              <div>
+                <label className="mb-1 block text-sm font-medium text-slate-700">Camionero *</label>
+                <select
+                  ref={camioneroRef}
+                  value={camioneroId}
+                  onChange={(e) => {
+                    setCamioneroId(e.target.value)
+                    setVehiculoId('')
+                  }}
+                  onKeyDown={handleCamioneroKeyDown}
+                  className="w-full rounded-xl border border-surface-border px-3 py-2.5 text-sm shadow-sm focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20"
+                >
+                  <option value="">Seleccionar camionero...</option>
+                  {camioneros.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.numero_interno} — {c.nombre} ({c.empresa})
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="mb-1 block text-sm font-medium text-slate-700">Vehículo</label>
+                <select
+                  ref={vehiculoRef}
+                  value={vehiculoId}
+                  onChange={(e) => setVehiculoId(e.target.value)}
+                  onKeyDown={(e) => handleDatosKeyDown(e, observacionRef)}
+                  disabled={!camioneroId || vehiculos.length === 0}
+                  className="w-full rounded-xl border border-surface-border px-3 py-2.5 text-sm shadow-sm disabled:bg-slate-50 focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20"
+                >
+                  <option value="">
+                    {!camioneroId
+                      ? 'Elegí un camionero primero'
+                      : vehiculos.length === 0
+                        ? 'Sin vehículos activos'
+                        : 'Sin vehículo específico'}
+                  </option>
+                  {vehiculos.map((v) => (
+                    <option key={v.id} value={v.id}>
+                      {v.patente} — {v.marca} {v.modelo}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <Input
+                ref={observacionRef}
+                label="Observaciones"
+                value={observacion}
+                onChange={(e) => setObservacion(e.target.value)}
+                onFocus={() => scrollFieldIntoView(observacionRef)}
+                onKeyDown={(e) => handleDatosKeyDown(e)}
+              />
+              <p className="text-xs text-slate-400">Enter en observaciones → carga de productos</p>
+              <Button type="button" className="w-full rounded-xl" onClick={irACarga}>
+                Continuar a productos
+              </Button>
+            </CardBody>
+          </Card>
         </div>
       </div>
     )
@@ -775,20 +796,33 @@ export function PlanillasPage() {
   if (view === 'create') {
     const lineasListContent =
       lineas.length === 0 ? (
-        <div className="flex h-full min-h-[120px] flex-col items-center justify-center py-8 text-center text-slate-400">
-          <ClipboardList className="mb-2 h-10 w-10 opacity-40" />
-          <p className="text-sm">Las líneas cargadas aparecen acá</p>
+        <div className="flex h-full min-h-[140px] flex-col items-center justify-center px-6 py-12 text-center">
+          <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-100 text-slate-400">
+            <ClipboardList className="h-6 w-6" />
+          </div>
+          <p className="mt-3 text-sm font-medium text-slate-600">Sin líneas cargadas</p>
+          <p className="mt-1 text-xs text-slate-500">Los productos que agregues aparecen acá</p>
         </div>
       ) : (
         lineasPorProducto.map((grupo) => {
           const isExpanded = expandedProductos.has(grupo.producto.producto_id)
           return (
             <div key={grupo.producto.producto_id} className="border-b border-surface-border last:border-0">
-              <div className="flex items-center gap-2 px-4 py-2.5 hover:bg-slate-50/80">
+              <div
+                className={cn(
+                  'flex items-center gap-3 px-4 py-3 transition-colors sm:px-5',
+                  isExpanded ? 'bg-brand-50/50' : 'hover:bg-slate-50/80'
+                )}
+              >
                 <button
                   type="button"
                   onClick={() => toggleProductoExpand(grupo.producto.producto_id)}
-                  className="shrink-0 rounded p-1 text-slate-400 hover:bg-slate-200 hover:text-slate-700"
+                  className={cn(
+                    'shrink-0 rounded-lg p-1.5 transition-colors',
+                    isExpanded
+                      ? 'bg-brand-100 text-brand-700'
+                      : 'text-slate-400 hover:bg-slate-200 hover:text-slate-700'
+                  )}
                   aria-expanded={isExpanded}
                   aria-label={isExpanded ? 'Ocultar líneas' : 'Ver líneas'}
                 >
@@ -803,31 +837,39 @@ export function PlanillasPage() {
                   onClick={() => toggleProductoExpand(grupo.producto.producto_id)}
                   className="min-w-0 flex-1 text-left"
                 >
-                  <div className="flex min-w-0 items-baseline gap-2">
-                    <span className="shrink-0 font-mono text-sm font-semibold text-slate-900">
-                      {grupo.producto.codigo_interno}
-                    </span>
-                    <span className="min-w-0 truncate text-sm text-slate-600">
-                      {grupo.producto.nombre}
-                    </span>
-                  </div>
+                  <span className="inline-flex rounded-md bg-slate-100 px-2 py-0.5 font-mono text-xs font-semibold text-slate-700">
+                    {grupo.producto.codigo_interno}
+                  </span>
+                  <p className="mt-1 truncate text-sm font-semibold text-slate-900">
+                    {grupo.producto.nombre}
+                  </p>
                   {!isExpanded && grupo.lineas.length > 1 && (
-                    <p className="text-xs text-slate-400">{grupo.lineas.length} líneas</p>
+                    <p className="mt-0.5 text-xs text-slate-500">{grupo.lineas.length} líneas</p>
                   )}
                 </button>
-                <Badge variant="default">{formatCantidad(grupo.total)}</Badge>
+                <span className="inline-flex shrink-0 items-center rounded-lg bg-brand-50 px-2.5 py-1.5 text-sm font-bold tabular-nums text-brand-700 ring-1 ring-brand-100">
+                  {formatCantidad(grupo.total)}
+                </span>
               </div>
               {isExpanded && (
-                <ul className="divide-y divide-surface-border border-t border-surface-border bg-surface-muted/20">
+                <ul className="space-y-2 border-t border-brand-100/80 bg-gradient-to-b from-surface-muted/40 to-white px-4 py-3 sm:px-5">
                   {grupo.lineas.map((l) => (
                     <li
                       key={l.tempId}
-                      className="flex items-center justify-between gap-2 py-2.5 pl-11 pr-4 text-sm"
+                      className="flex items-center justify-between gap-3 rounded-lg border border-surface-border bg-white px-3 py-2.5 text-sm"
                     >
-                      <span className="text-slate-700">{l.etiqueta}</span>
+                      <div className="min-w-0 text-slate-800">{l.etiqueta}</div>
                       <div className="flex shrink-0 items-center gap-2">
-                        <span className="font-semibold text-slate-900">{formatCantidad(l.total_unidades)}</span>
-                        <Button variant="ghost" size="sm" onClick={() => quitarLinea(l.tempId)}>
+                        <span className="rounded-md bg-slate-50 px-2 py-1 text-sm font-semibold tabular-nums text-slate-900 ring-1 ring-surface-border">
+                          {formatCantidad(l.total_unidades)}
+                        </span>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          className="rounded-lg"
+                          onClick={() => quitarLinea(l.tempId)}
+                        >
                           <Trash2 className="h-4 w-4 text-red-500" />
                         </Button>
                       </div>
@@ -846,40 +888,56 @@ export function PlanillasPage() {
           ref={cargaPanelRef}
           className="relative z-20 shrink-0 overflow-visible border-b border-surface-border bg-white shadow-sm"
         >
-          <div className="flex flex-wrap items-center gap-x-4 gap-y-1 border-b border-surface-border px-4 py-2 text-xs text-slate-600">
-            <Button variant="ghost" size="sm" className="-ml-2 h-7" onClick={volverAlListadoPlanilla}>
-              <ChevronLeft className="h-3.5 w-3.5" />
-              Salir
-            </Button>
-            <span>{fecha}</span>
-            <span>
-              Planilla <strong>{numero}</strong>
-            </span>
-            <span>
-              <Truck className="mr-0.5 inline h-3 w-3" />
-              {camioneroSeleccionado?.nombre}
-            </span>
-            <button
-              type="button"
-              className="text-brand-600 hover:underline"
-              onClick={() => setCreatePhase('datos')}
-            >
-              Editar datos
-            </button>
+          <div className="border-b border-brand-100 bg-gradient-to-r from-brand-50/80 via-white to-white px-4 py-3 sm:px-5">
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+              <Button
+                variant="ghost"
+                size="sm"
+                className="-ml-2 h-8 rounded-lg px-2"
+                onClick={volverAlListadoPlanilla}
+              >
+                <ChevronLeft className="h-3.5 w-3.5" />
+                Salir
+              </Button>
+              <div className="flex flex-wrap items-center gap-2 text-xs">
+                <span className="rounded-full bg-white px-2.5 py-1 font-medium text-slate-700 ring-1 ring-surface-border">
+                  {fecha}
+                </span>
+                <span className="rounded-full bg-white px-2.5 py-1 font-medium text-slate-700 ring-1 ring-surface-border">
+                  Planilla {numero}
+                </span>
+                <span className="inline-flex items-center gap-1 rounded-full bg-brand-50 px-2.5 py-1 font-medium text-brand-800 ring-1 ring-brand-100">
+                  <Truck className="h-3 w-3" />
+                  {camioneroSeleccionado?.nombre}
+                </span>
+              </div>
+              <button
+                type="button"
+                className="ml-auto text-xs font-medium text-brand-600 hover:text-brand-700 hover:underline"
+                onClick={() => setCreatePhase('datos')}
+              >
+                Editar datos
+              </button>
+            </div>
           </div>
 
           {error && !showPreview && (
-            <div className="border-b border-red-100 bg-red-50 px-4 py-2 text-sm text-red-700">{error}</div>
+            <div className="border-b border-red-100 bg-red-50 px-4 py-2 text-sm text-red-700 sm:px-5">
+              {error}
+            </div>
           )}
 
-          <div className="space-y-3 overflow-visible p-4">
+          <div className="space-y-3 overflow-visible p-4 sm:p-5">
             <div className="relative flex flex-col gap-2 overflow-visible sm:flex-row">
               <div className="relative z-30 min-w-0 flex-1">
-                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-brand-400" />
                 <input
                   ref={productSearchRef}
                   type="search"
-                  placeholder="Buscar producto — ↑↓ · Enter"
+                  role="combobox"
+                  aria-expanded={productResults.length > 0 && !selectedProduct}
+                  aria-autocomplete="list"
+                  placeholder="Buscar producto — ↑↓ navegar · Enter seleccionar"
                   value={productSearch}
                   onChange={(e) => {
                     setProductSearch(e.target.value)
@@ -889,21 +947,29 @@ export function PlanillasPage() {
                     }
                   }}
                   onKeyDown={handleProductSearchKeyDown}
-                  className="w-full rounded-lg border border-surface-border py-2.5 pl-10 pr-3 text-sm focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20"
+                  className="w-full rounded-xl border border-surface-border bg-white py-2.5 pl-10 pr-3 text-sm shadow-sm focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20"
                 />
                 {productResults.length > 0 && !selectedProduct && (
-                  <ul className="absolute z-50 mt-1 max-h-48 w-full overflow-auto rounded-lg border border-surface-border bg-white shadow-lg">
+                  <ul
+                    role="listbox"
+                    className="absolute z-50 mt-1 max-h-52 w-full overflow-auto rounded-xl border border-surface-border bg-white py-1 shadow-panel"
+                  >
                     {productResults.map((p, index) => (
-                      <li key={p.id}>
+                      <li key={p.id} role="option" aria-selected={index === productHighlightIndex}>
                         <button
                           type="button"
-                          className={`flex w-full gap-2 px-3 py-2 text-left text-sm ${
-                            index === productHighlightIndex ? 'bg-brand-50' : 'hover:bg-slate-50'
-                          }`}
+                          className={cn(
+                            'flex w-full items-center gap-2 px-3 py-2.5 text-left text-sm',
+                            index === productHighlightIndex
+                              ? 'bg-brand-50 text-brand-900'
+                              : 'hover:bg-slate-50'
+                          )}
                           onMouseEnter={() => setProductHighlightIndex(index)}
                           onClick={() => selectProduct(p)}
                         >
-                          <span className="font-mono font-semibold">{p.codigo_interno}</span>
+                          <span className="rounded bg-slate-100 px-1.5 py-0.5 font-mono text-xs font-semibold">
+                            {p.codigo_interno}
+                          </span>
                           <span className="truncate text-slate-600">{p.nombre}</span>
                         </button>
                       </li>
@@ -912,7 +978,13 @@ export function PlanillasPage() {
                 )}
               </div>
               <div className="flex shrink-0 gap-2">
-                <Button variant="secondary" size="sm" onClick={() => setShowScanner(true)}>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  className="rounded-xl"
+                  onClick={() => setShowScanner(true)}
+                >
                   <Camera className="h-4 w-4" />
                   Escanear
                 </Button>
@@ -922,24 +994,26 @@ export function PlanillasPage() {
             {selectedProduct && (
               <div
                 ref={productLineFormRef}
-                className="rounded-lg border border-brand-200 bg-brand-50/50 p-3"
+                className="overflow-hidden rounded-xl border border-brand-200 bg-gradient-to-br from-brand-50/80 to-white p-4 shadow-card"
               >
-                <div className="mb-3 flex items-center gap-2">
+                <div className="mb-4 flex items-center gap-3">
                   <ProductImage
                     productoId={selectedProduct.id}
                     hasImage={!!selectedProduct.imagen_path}
                     alt={selectedProduct.nombre}
-                    className="h-9 w-9"
+                    className="h-11 w-11 rounded-xl ring-1 ring-surface-border"
                   />
                   <div className="min-w-0 flex-1">
-                    <p className="truncate font-mono text-sm font-semibold">
+                    <span className="inline-flex rounded-md bg-white px-2 py-0.5 font-mono text-xs font-semibold text-slate-700 ring-1 ring-surface-border">
                       {selectedProduct.codigo_interno}
+                    </span>
+                    <p className="mt-1 truncate text-sm font-semibold text-slate-900">
+                      {selectedProduct.nombre}
                     </p>
-                    <p className="truncate text-xs text-slate-600">{selectedProduct.nombre}</p>
                   </div>
                   <button
                     type="button"
-                    className="rounded p-1 text-slate-400 hover:text-slate-600"
+                    className="rounded-lg p-1.5 text-slate-400 hover:bg-white hover:text-slate-600"
                     onClick={() => {
                       setSelectedProduct(null)
                       setProductoRefs(null)
@@ -988,7 +1062,7 @@ export function PlanillasPage() {
                     <Button
                       type="button"
                       size="sm"
-                      className="w-full"
+                      className="w-full rounded-xl"
                       onClick={() => void agregarLineaYContinuar()}
                     >
                       <Plus className="h-4 w-4" />
@@ -998,7 +1072,7 @@ export function PlanillasPage() {
                 </div>
 
                 {lineaPreview && (
-                  <div className="mt-2 rounded-md border border-brand-100 bg-white/80 px-3 py-2 text-sm">
+                  <div className="mt-3 rounded-lg border border-brand-100 bg-white/90 px-3 py-2.5 text-sm shadow-sm">
                     <p className="font-medium text-brand-800">{lineaPreview.etiqueta}</p>
                     <p className="mt-0.5 text-xs text-slate-500">
                       Total: {lineaPreview.total}{' '}
@@ -1014,7 +1088,7 @@ export function PlanillasPage() {
                   </div>
                 )}
 
-                <p className="mt-2 text-xs text-slate-500">
+                <p className="mt-3 text-xs leading-relaxed text-slate-500">
                   <span className="font-medium text-slate-600">Cajas:</span> descuenta cajas enteras del stock
                   (pallets se abren si hace falta).
                   {' '}
@@ -1029,22 +1103,37 @@ export function PlanillasPage() {
         </div>
 
         <div ref={listScrollRef} className="relative z-0 min-h-0 flex-1 overflow-y-auto bg-white">
-          <div className="sticky top-0 z-[2] border-b bg-white/95 px-4 py-2 text-sm backdrop-blur-sm">
-            <span className="font-medium">Líneas ({lineas.length})</span>
-            {lineas.length > 0 && (
-              <span className="float-right font-semibold text-brand-700">{formatTotalCajas(totalGeneral)}</span>
-            )}
+          <div className="sticky top-0 z-[2] border-b border-surface-border bg-white/95 px-4 py-3 backdrop-blur-sm sm:px-5">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <p className="text-sm font-semibold text-slate-900">Líneas cargadas</p>
+                <p className="text-xs text-slate-500">{lineas.length} línea(s)</p>
+              </div>
+              {lineas.length > 0 && (
+                <span className="inline-flex items-center rounded-full bg-brand-50 px-3 py-1 text-sm font-bold tabular-nums text-brand-700 ring-1 ring-brand-100">
+                  {formatTotalCajas(totalGeneral)} total
+                </span>
+              )}
+            </div>
           </div>
           {lineasListContent}
         </div>
 
-        <div className="shrink-0 border-t bg-white px-4 py-3 shadow-[0_-4px_12px_rgba(0,0,0,0.04)]">
-          <div className="flex items-center justify-between gap-3">
-            <p className="text-xl font-bold text-brand-700">{formatTotalCajas(totalGeneral)}</p>
+        <div className="shrink-0 border-t border-surface-border bg-white px-4 py-4 shadow-[0_-4px_12px_rgba(0,0,0,0.04)] sm:px-5">
+          <div className="flex items-center justify-between gap-4">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+                Total general
+              </p>
+              <p className="text-2xl font-bold tabular-nums text-brand-700">
+                {formatTotalCajas(totalGeneral)}
+              </p>
+            </div>
             {hasPermiso('planillas.crear') && (
-              <div className="flex shrink-0 gap-2">
+              <div className="flex shrink-0 flex-wrap gap-2">
                 <Button
                   variant="secondary"
+                  className="rounded-xl"
                   onClick={abrirPreview}
                   disabled={lineas.length === 0 || loadingPreview || saving}
                 >
@@ -1052,6 +1141,7 @@ export function PlanillasPage() {
                   {loadingPreview ? 'Calculando...' : 'Vista previa'}
                 </Button>
                 <Button
+                  className="rounded-xl"
                   onClick={confirmarPlanilla}
                   disabled={
                     lineas.length === 0 ||
@@ -1070,10 +1160,14 @@ export function PlanillasPage() {
         {showPreview && previewData && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
             <div className="absolute inset-0 bg-slate-900/50" onClick={() => setShowPreview(false)} />
-            <div className="relative z-10 max-h-[90vh] w-full max-w-2xl overflow-auto rounded-xl border bg-white shadow-xl">
-              <div className="sticky top-0 flex items-center justify-between border-b px-5 py-4">
-                <h3 className="font-semibold">Vista previa — descuento de stock</h3>
-                <button type="button" onClick={() => setShowPreview(false)} className="rounded p-1">
+            <div className="relative z-10 max-h-[90vh] w-full max-w-2xl overflow-auto rounded-xl border border-surface-border bg-white shadow-xl">
+              <div className="sticky top-0 flex items-center justify-between border-b border-surface-border bg-white px-5 py-4">
+                <h3 className="font-semibold text-slate-900">Vista previa — descuento de stock</h3>
+                <button
+                  type="button"
+                  onClick={() => setShowPreview(false)}
+                  className="rounded p-1 text-slate-400 hover:bg-slate-100"
+                >
                   <X className="h-5 w-5" />
                 </button>
               </div>
@@ -1081,21 +1175,21 @@ export function PlanillasPage() {
                 {error && (
                   <div className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</div>
                 )}
-                <div className="grid gap-2 text-sm sm:grid-cols-2">
+                <div className="grid gap-3 text-sm sm:grid-cols-2">
                   <div>
-                    Fecha: <strong>{fecha}</strong>
+                    <span className="text-slate-500">Fecha:</span> <strong>{fecha}</strong>
                   </div>
                   <div>
-                    Planilla: <strong>{numero}</strong>
+                    <span className="text-slate-500">Planilla:</span> <strong>{numero}</strong>
                   </div>
                   <div className="sm:col-span-2">
-                    Camionero:{' '}
+                    <span className="text-slate-500">Camionero:</span>{' '}
                     <strong>
                       {camioneroSeleccionado?.numero_interno} — {camioneroSeleccionado?.nombre}
                     </strong>
                   </div>
                   <div className="sm:col-span-2">
-                    Vehículo:{' '}
+                    <span className="text-slate-500">Vehículo:</span>{' '}
                     <strong>
                       {vehiculoSeleccionado
                         ? `${vehiculoSeleccionado.marca} ${vehiculoSeleccionado.modelo}`
@@ -1110,9 +1204,12 @@ export function PlanillasPage() {
                 {previewData.map((pl, idx) => (
                   <div
                     key={idx}
-                    className={`rounded-lg border p-3 ${pl.error ? 'border-red-200 bg-red-50/50' : 'border-surface-border'}`}
+                    className={cn(
+                      'rounded-xl border p-4',
+                      pl.error ? 'border-red-200 bg-red-50/50' : 'border-surface-border bg-white'
+                    )}
                   >
-                    <p className="font-mono font-semibold">
+                    <p className="font-mono font-semibold text-slate-900">
                       {pl.codigo_interno} — {pl.nombre}
                     </p>
                     <p className="text-sm text-slate-600">
@@ -1121,16 +1218,19 @@ export function PlanillasPage() {
                     {pl.error ? (
                       <p className="mt-2 text-sm font-medium text-red-700">{pl.error}</p>
                     ) : (
-                      <ul className="mt-2 space-y-1 text-sm">
+                      <ul className="mt-3 space-y-1.5 text-sm">
                         {pl.descuentos.map((d, i) => (
-                          <li key={i} className="flex justify-between text-slate-700">
+                          <li
+                            key={i}
+                            className="flex justify-between gap-3 rounded-lg bg-slate-50 px-3 py-2 text-slate-700"
+                          >
                             <span>
                               {d.sector_nombre}
                               {d.etiqueta && (
                                 <span className="ml-1 text-slate-400">({d.etiqueta})</span>
                               )}
                             </span>
-                            <span className="font-medium">{formatTotalCajas(d.unidades)}</span>
+                            <span className="font-medium tabular-nums">{formatTotalCajas(d.unidades)}</span>
                           </li>
                         ))}
                       </ul>
@@ -1140,12 +1240,13 @@ export function PlanillasPage() {
 
                 <div className="flex gap-2 pt-2">
                   <Button
+                    className="rounded-xl"
                     onClick={confirmarPlanilla}
                     disabled={saving || previewData.some((p) => p.error)}
                   >
                     {saving ? 'Registrando...' : 'Confirmar planilla'}
                   </Button>
-                  <Button variant="secondary" onClick={() => setShowPreview(false)}>
+                  <Button variant="secondary" className="rounded-xl" onClick={() => setShowPreview(false)}>
                     Volver a editar
                   </Button>
                 </div>
@@ -1168,134 +1269,208 @@ export function PlanillasPage() {
   }
 
   return (
-    <div className="mx-auto max-w-5xl space-y-6">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+    <div className="mx-auto max-w-6xl space-y-6">
+      <section className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-slate-900">Carga de planillas</h1>
-          <p className="mt-1 text-slate-500">Salidas de mercadería con descuento automático de stock</p>
+          <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">
+            Movimientos
+          </p>
+          <h1 className="mt-1 text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">
+            Carga de planillas
+          </h1>
+          <p className="mt-2 max-w-xl text-sm leading-relaxed text-slate-500">
+            Salidas de mercadería con descuento automático de stock por camionero y vehículo.
+          </p>
         </div>
         {hasPermiso('planillas.crear') && (
-          <Button onClick={abrirNuevaPlanilla}>
-            <Plus className="h-4 w-4" />
-            Nueva planilla
-          </Button>
-        )}
-      </div>
-
-      <Card>
-        <CardBody className="space-y-3 border-b py-4">
           <div className="flex flex-wrap items-center gap-2">
-            <div className="relative min-w-[10rem] flex-1">
-              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-              <input
-                ref={listSearchRef}
-                type="search"
-                placeholder="Buscar por planilla o camionero... · Enter = nueva planilla"
-                value={listSearch}
-                onChange={(e) => setListSearch(e.target.value)}
-                onKeyDown={handleListSearchKeyDown}
-                className="w-full rounded-lg border py-2 pl-10 pr-3 text-sm"
-              />
-            </div>
-            <div className="flex shrink-0 items-center gap-1.5 rounded-lg border bg-slate-50/60 px-2 py-1">
-              <span className="pl-1 text-xs font-medium text-slate-500">Desde</span>
-              <input
-                type="date"
-                value={listFechaDesde}
-                onChange={(e) => setListFechaDesde(e.target.value)}
-                className="rounded border-0 bg-transparent px-1 py-1 text-sm"
-              />
-              <span className="text-slate-300">|</span>
-              <span className="text-xs font-medium text-slate-500">Hasta</span>
-              <input
-                type="date"
-                value={listFechaHasta}
-                onChange={(e) => setListFechaHasta(e.target.value)}
-                className="rounded border-0 bg-transparent px-1 py-1 text-sm"
-              />
-            </div>
-            {(listFechaDesde || listFechaHasta) && (
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => {
-                  setListFechaDesde('')
-                  setListFechaHasta('')
-                }}
-              >
-                <X className="h-4 w-4" />
-              </Button>
-            )}
+            <span className="hidden rounded-full border border-surface-border bg-white px-2.5 py-1 text-[11px] font-medium text-slate-500 shadow-card sm:inline-flex">
+              Enter = nueva planilla
+            </span>
+            <Button className="rounded-xl px-4" onClick={abrirNuevaPlanilla}>
+              <Plus className="h-4 w-4" />
+              Nueva planilla
+            </Button>
           </div>
-          <p className="text-xs text-slate-400">
-            Una sola fecha = ese día · las dos = rango
-            {hasPermiso('planillas.crear') && ' · Enter = nueva planilla'}
-          </p>
-          <DayTabsRow
-            days={diasConPlanillas}
-            selectedDay={selectedDay}
-            onSelectDay={setSelectedDay}
-            getCount={(dia) => conteoPorDia.get(dia) ?? 0}
-          />
-        </CardBody>
+        )}
+      </section>
 
-        <CardHeader
-          title={diasConPlanillas.length > 0 ? formatDayTabLabel(selectedDay) : 'Registros'}
-          description={
-            diasConPlanillas.length > 0
-              ? `${planillasDelDia.length} planilla(s) · ${formatCantidad(totalUnidadesDelDia)} en el día`
-              : `${planillas.length} planilla(s)`
-          }
-        />
+      <Card className="overflow-hidden shadow-panel">
+        <div className="border-b border-brand-100 bg-gradient-to-r from-brand-50/80 via-white to-white px-5 py-4 sm:px-6">
+          <div className="flex flex-col gap-3">
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="relative min-w-[10rem] flex-1">
+                <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-brand-400" />
+                <input
+                  ref={listSearchRef}
+                  type="search"
+                  placeholder="Buscar por planilla o camionero..."
+                  value={listSearch}
+                  onChange={(e) => setListSearch(e.target.value)}
+                  onKeyDown={handleListSearchKeyDown}
+                  className="w-full rounded-xl border border-surface-border bg-white py-2.5 pl-10 pr-4 text-sm shadow-sm focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20"
+                />
+              </div>
+
+              <div className="flex shrink-0 items-center gap-1.5 rounded-xl border border-surface-border bg-white px-2 py-1.5 shadow-sm">
+                <span className="pl-1 text-xs font-medium text-slate-500">Desde</span>
+                <input
+                  type="date"
+                  value={listFechaDesde}
+                  onChange={(e) => setListFechaDesde(e.target.value)}
+                  title="Fecha desde — solo este campo = ese día"
+                  className="rounded border-0 bg-transparent px-1 py-1 text-sm focus:outline-none focus:ring-0"
+                />
+                <span className="text-slate-300">|</span>
+                <span className="text-xs font-medium text-slate-500">Hasta</span>
+                <input
+                  type="date"
+                  value={listFechaHasta}
+                  onChange={(e) => setListFechaHasta(e.target.value)}
+                  title="Fecha hasta — solo este campo = ese día"
+                  className="rounded border-0 bg-transparent px-1 py-1 text-sm focus:outline-none focus:ring-0"
+                />
+              </div>
+
+              {(listFechaDesde || listFechaHasta) && (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="shrink-0 rounded-lg"
+                  onClick={() => {
+                    setListFechaDesde('')
+                    setListFechaHasta('')
+                  }}
+                >
+                  <X className="h-4 w-4" />
+                </Button>
+              )}
+            </div>
+            <p className="text-xs text-slate-500">
+              Una sola fecha filtra ese día · las dos juntas = rango
+              {hasPermiso('planillas.crear') && ' · Enter = nueva planilla'}
+            </p>
+
+            <DayTabsRow
+              days={diasConPlanillas}
+              selectedDay={selectedDay}
+              onSelectDay={setSelectedDay}
+              getCount={(dia) => conteoPorDia.get(dia) ?? 0}
+            />
+          </div>
+        </div>
+
+        <div className="flex items-center justify-between gap-3 border-b border-surface-border bg-slate-50/80 px-5 py-3.5 sm:px-6">
+          <div>
+            <h2 className="text-sm font-semibold text-slate-900">
+              {diasConPlanillas.length > 0 ? formatDayTabLabel(selectedDay) : 'Registros'}
+            </h2>
+            <p className="text-xs text-slate-500">
+              {diasConPlanillas.length > 0
+                ? `${planillasDelDia.length} planilla(s) · ${formatCantidad(totalUnidadesDelDia)} en el día`
+                : `${planillas.length} planilla(s)`}
+            </p>
+          </div>
+          {loadingList && <Loader2 className="h-5 w-5 shrink-0 animate-spin text-brand-600" />}
+        </div>
 
         <CardBody className="p-0">
           {error && (
-            <div className="border-b bg-red-50 px-6 py-3 text-sm text-red-700">{error}</div>
+            <div className="border-b border-red-100 bg-red-50 px-6 py-3 text-sm text-red-700">
+              {error}
+            </div>
           )}
           {loadingList ? (
-            <p className="p-6 text-sm text-slate-500">Cargando...</p>
+            <div className="flex items-center justify-center gap-2 py-16 text-sm text-slate-500">
+              <Loader2 className="h-5 w-5 animate-spin text-brand-600" />
+              Cargando planillas...
+            </div>
           ) : planillas.length === 0 ? (
-            <div className="flex flex-col items-center py-16 text-center">
-              <ClipboardList className="h-12 w-12 text-slate-300" />
-              <p className="mt-3 font-medium text-slate-700">No hay planillas registradas</p>
+            <div className="flex flex-col items-center px-6 py-16 text-center">
+              <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-slate-100 text-slate-400">
+                <ClipboardList className="h-7 w-7" />
+              </div>
+              <p className="mt-4 text-sm font-medium text-slate-700">
+                {listSearch || listFechaDesde || listFechaHasta
+                  ? 'No hay planillas con esos filtros'
+                  : 'No hay planillas registradas'}
+              </p>
+              <p className="mt-1 max-w-sm text-xs text-slate-500">
+                {listSearch || listFechaDesde || listFechaHasta
+                  ? 'Probá ampliar el rango de fechas o cambiar la búsqueda'
+                  : 'Registrá la primera salida para descontar stock'}
+              </p>
+              {!(listSearch || listFechaDesde || listFechaHasta) &&
+                hasPermiso('planillas.crear') && (
+                  <Button className="mt-4 rounded-xl" size="sm" onClick={abrirNuevaPlanilla}>
+                    <Plus className="h-4 w-4" />
+                    Nueva planilla
+                  </Button>
+                )}
             </div>
           ) : planillasDelDia.length === 0 ? (
-            <p className="p-6 text-sm text-slate-500">Sin resultados para este día</p>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b bg-slate-50/80 text-left text-xs font-semibold uppercase text-slate-500">
-                    <th className="px-6 py-3">Planilla</th>
-                    <th className="px-6 py-3">Camionero</th>
-                    <th className="px-6 py-3">Vehículo</th>
-                    <th className="px-6 py-3">Total</th>
-                    <th className="px-6 py-3">Usuario</th>
-                    <th className="px-6 py-3" />
-                  </tr>
-                </thead>
-                <tbody className="divide-y">
-                  {planillasDelDia.map((p) => (
-                    <tr key={p.id} className="hover:bg-slate-50/50">
-                      <td className="px-6 py-3 font-medium">{p.numero}</td>
-                      <td className="px-6 py-3">
-                        <p>{p.camionero_nombre}</p>
-                        <p className="text-xs text-slate-500">{p.camionero_numero}</p>
-                      </td>
-                      <td className="px-6 py-3 text-slate-500">{p.vehiculo_modelo ?? '—'}</td>
-                      <td className="px-6 py-3 font-semibold text-brand-700">{formatCantidad(p.total_unidades)}</td>
-                      <td className="px-6 py-3 text-slate-500">{p.usuario_nombre}</td>
-                      <td className="px-6 py-3 text-right">
-                        <Button variant="ghost" size="sm" onClick={() => verDetalle(p.id)}>
-                          <Eye className="h-4 w-4" />
-                          Ver
-                        </Button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+            <div className="flex flex-col items-center px-6 py-16 text-center">
+              <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-slate-100 text-slate-400">
+                <ClipboardList className="h-7 w-7" />
+              </div>
+              <p className="mt-4 text-sm font-medium text-slate-700">Sin resultados para este día</p>
+              <p className="mt-1 text-xs text-slate-500">Probá otra fecha o ajustá la búsqueda</p>
             </div>
+          ) : (
+            <ul className="divide-y divide-surface-border">
+              {planillasDelDia.map((p) => (
+                <li
+                  key={p.id}
+                  className="flex flex-col gap-3 px-4 py-4 transition-colors hover:bg-slate-50/80 sm:flex-row sm:items-center sm:gap-4 sm:px-6"
+                >
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <p className="text-base font-semibold text-slate-900">{p.numero}</p>
+                      <span className="inline-flex items-center gap-1 rounded-full bg-brand-50 px-2.5 py-0.5 text-xs font-medium text-brand-800 ring-1 ring-brand-100">
+                        <Truck className="h-3 w-3" />
+                        {p.camionero_nombre}
+                      </span>
+                      {p.vehiculo_modelo && (
+                        <span className="inline-flex items-center rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-medium text-slate-600">
+                          {p.vehiculo_modelo}
+                        </span>
+                      )}
+                    </div>
+                    {p.observacion?.trim() ? (
+                      <p className="mt-1 line-clamp-2 text-xs text-slate-500">{p.observacion}</p>
+                    ) : (
+                      <p className="mt-1 text-xs text-slate-400">
+                        {p.camionero_numero}
+                        {!p.vehiculo_modelo && ' · Sin vehículo asignado'}
+                      </p>
+                    )}
+                    <div className="mt-2 flex flex-wrap items-center gap-3 text-xs text-slate-500">
+                      <span>{p.lineas_count} línea{p.lineas_count === 1 ? '' : 's'}</span>
+                      <span className="inline-flex items-center gap-1">
+                        <User className="h-3 w-3" />
+                        {p.usuario_nombre}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="flex shrink-0 items-center gap-2 sm:justify-end">
+                    <span className="inline-flex min-w-[3rem] items-center justify-center rounded-lg bg-brand-50 px-2.5 py-1.5 text-sm font-bold tabular-nums text-brand-700 ring-1 ring-brand-100">
+                      {formatCantidad(p.total_unidades)}
+                    </span>
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      className="rounded-lg"
+                      onClick={() => verDetalle(p.id)}
+                    >
+                      <Eye className="h-4 w-4" />
+                      Ver
+                    </Button>
+                  </div>
+                </li>
+              ))}
+            </ul>
           )}
         </CardBody>
       </Card>

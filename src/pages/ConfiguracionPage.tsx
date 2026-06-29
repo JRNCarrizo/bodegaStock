@@ -4,6 +4,7 @@ import {
   Check,
   Copy,
   Download,
+  Loader2,
   RefreshCw,
   Server,
   Smartphone,
@@ -11,7 +12,8 @@ import {
 } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
-import { Badge, Card, CardBody, CardHeader } from '@/components/ui/Card'
+import { Card, CardBody } from '@/components/ui/Card'
+import { cn } from '@/lib/utils'
 import type {
   AppInfo,
   NetworkConfig,
@@ -55,6 +57,71 @@ function parseServerConnection(raw: string): { host: string; port?: string } | n
     if (!match) return null
     return { host: match[1], port: match[2] }
   }
+}
+
+function StatusPill({
+  tone,
+  children
+}: {
+  tone: 'success' | 'warning' | 'neutral' | 'brand'
+  children: React.ReactNode
+}) {
+  const styles = {
+    success: 'bg-emerald-50 text-emerald-800 ring-emerald-100',
+    warning: 'bg-amber-50 text-amber-800 ring-amber-100',
+    neutral: 'bg-slate-100 text-slate-700 ring-surface-border',
+    brand: 'bg-brand-50 text-brand-800 ring-brand-100'
+  }
+  return (
+    <span
+      className={cn(
+        'inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ring-1',
+        styles[tone]
+      )}
+    >
+      {children}
+    </span>
+  )
+}
+
+function ModeOption({
+  active,
+  icon: Icon,
+  title,
+  description,
+  onClick
+}: {
+  active: boolean
+  icon: typeof Server
+  title: string
+  description: string
+  onClick: () => void
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={cn(
+        'rounded-xl border px-4 py-3.5 text-left transition-all',
+        active
+          ? 'border-brand-500 bg-brand-50 shadow-sm ring-2 ring-brand-500/20'
+          : 'border-surface-border bg-white hover:border-slate-300 hover:bg-slate-50/80'
+      )}
+    >
+      <div className="flex items-center gap-2.5">
+        <div
+          className={cn(
+            'flex h-9 w-9 shrink-0 items-center justify-center rounded-lg',
+            active ? 'bg-brand-600 text-white' : 'bg-slate-100 text-slate-600'
+          )}
+        >
+          <Icon className="h-4 w-4" />
+        </div>
+        <span className="text-sm font-semibold text-slate-900">{title}</span>
+      </div>
+      <p className="mt-2 pl-[2.875rem] text-xs leading-relaxed text-slate-500">{description}</p>
+    </button>
+  )
 }
 
 export function ConfiguracionPage() {
@@ -214,7 +281,9 @@ export function ConfiguracionPage() {
     const host = remoteHost.trim()
     if (mode === 'client' && !host) {
       setConnectionTest('fail')
-      setConnectionMessage('Ingresá la IP del servidor (no uses 127.0.0.1 salvo que el servidor sea esta misma PC).')
+      setConnectionMessage(
+        'Ingresá la IP del servidor (no uses 127.0.0.1 salvo que el servidor sea esta misma PC).'
+      )
       return
     }
 
@@ -241,64 +310,59 @@ export function ConfiguracionPage() {
   const hasNetworkConfig = Boolean(api?.applyNetworkConfig)
 
   return (
-    <div className="mx-auto max-w-2xl space-y-4">
-      <div>
-        <h1 className="text-base font-semibold text-slate-900 sm:text-lg">Configuración</h1>
-        <p className="text-xs text-slate-500">Red local, actualizaciones y datos de la aplicación</p>
-      </div>
+    <div className="mx-auto max-w-3xl space-y-6">
+      <section>
+        <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">Sistema</p>
+        <h1 className="mt-1 text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">
+          Configuración
+        </h1>
+        <p className="mt-2 max-w-xl text-sm leading-relaxed text-slate-500">
+          Red local para clientes y celulares, actualizaciones automáticas e información de la
+          aplicación.
+        </p>
+      </section>
 
-      <Card>
-        <CardHeader
-          title="Red y conexión"
-          description="Servidor en una PC; otras PCs y celulares se conectan por WiFi/LAN"
-        />
-        <CardBody className="space-y-4">
+      <Card className="overflow-hidden shadow-panel">
+        <div className="border-b border-brand-100 bg-gradient-to-r from-brand-50/80 via-white to-white px-5 py-4 sm:px-6">
+          <div className="flex items-start gap-3">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-brand-600 text-white shadow-sm">
+              <Wifi className="h-5 w-5" />
+            </div>
+            <div>
+              <h2 className="font-semibold text-slate-900">Red y conexión</h2>
+              <p className="mt-0.5 text-sm text-slate-500">
+                Servidor en una PC; otras PCs y celulares se conectan por WiFi/LAN
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <CardBody className="space-y-5 p-5 sm:p-6">
           {!hasNetworkConfig ? (
-            <p className="rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-800">
+            <div className="rounded-xl bg-amber-50 px-4 py-3 text-sm text-amber-800 ring-1 ring-amber-100">
               La configuración de red está disponible en la aplicación de escritorio instalada.
-            </p>
+            </div>
           ) : (
             <>
-              <div className="grid gap-2 sm:grid-cols-2">
-                <button
-                  type="button"
+              <div className="grid gap-3 sm:grid-cols-2">
+                <ModeOption
+                  active={mode === 'server'}
+                  icon={Server}
+                  title="Esta PC es el servidor"
+                  description="Base de datos local. Otras PCs y celulares se conectan acá."
                   onClick={() => setMode('server')}
-                  className={`rounded-lg border px-4 py-3 text-left transition-colors ${
-                    mode === 'server'
-                      ? 'border-brand-500 bg-brand-50 ring-1 ring-brand-500/30'
-                      : 'border-surface-border hover:bg-slate-50'
-                  }`}
-                >
-                  <div className="flex items-center gap-2">
-                    <Server className="h-4 w-4 text-brand-600" />
-                    <span className="text-sm font-semibold text-slate-900">Esta PC es el servidor</span>
-                  </div>
-                  <p className="mt-1 text-xs text-slate-500">
-                    Base de datos local. Otras PCs y celulares se conectan acá.
-                  </p>
-                </button>
-
-                <button
-                  type="button"
+                />
+                <ModeOption
+                  active={mode === 'client'}
+                  icon={Wifi}
+                  title="Esta PC es cliente"
+                  description="Sin base local. Se conecta al servidor por IP de red."
                   onClick={() => {
                     setMode('client')
                     if (remoteHost.trim() === '127.0.0.1' || !remoteHost.trim()) setRemoteHost('')
                     setConnectionTest('idle')
                   }}
-                  className={`rounded-lg border px-4 py-3 text-left transition-colors ${
-                    mode === 'client'
-                      ? 'border-brand-500 bg-brand-50 ring-1 ring-brand-500/30'
-                      : 'border-surface-border hover:bg-slate-50'
-                  }`}
-                >
-                  <div className="flex items-center gap-2">
-                    <Wifi className="h-4 w-4 text-brand-600" />
-                    <span className="text-sm font-semibold text-slate-900">Esta PC es cliente</span>
-                  </div>
-                  <p className="mt-1 text-xs text-slate-500">
-                    Sin base local. Se conecta al servidor por IP de red.
-                  </p>
-                </button>
+                />
               </div>
 
               <div className="space-y-4">
@@ -322,10 +386,13 @@ export function ConfiguracionPage() {
                           setConnectionTest('idle')
                         }}
                         placeholder="192.168.1.50"
+                        className="rounded-xl shadow-sm"
                       />
-                      <p className="text-xs text-slate-500">
-                        Solo la IP (ej. 192.168.1.50). También podés pegar la URL completa del servidor.
-                        <strong className="text-amber-700"> No uses 127.0.0.1</strong> — es esta PC, no el servidor.
+                      <p className="text-xs leading-relaxed text-slate-500">
+                        Solo la IP (ej. 192.168.1.50). También podés pegar la URL completa del
+                        servidor.
+                        <strong className="text-amber-700"> No uses 127.0.0.1</strong> — es esta PC,
+                        no el servidor.
                       </p>
                     </div>
                     <Input
@@ -336,6 +403,7 @@ export function ConfiguracionPage() {
                         setConnectionTest('idle')
                       }}
                       inputMode="numeric"
+                      className="rounded-xl shadow-sm"
                     />
                   </div>
                 )}
@@ -345,17 +413,17 @@ export function ConfiguracionPage() {
                     value={port}
                     onChange={(e) => setPort(e.target.value.replace(/\D/g, ''))}
                     inputMode="numeric"
-                    className="max-w-[8rem]"
+                    className="max-w-[8rem] rounded-xl shadow-sm"
                   />
                 )}
               </div>
 
               {mode === 'server' && (
-                <div className="space-y-3 rounded-lg border border-surface-border bg-slate-50/80 p-4">
+                <div className="space-y-4 rounded-xl border border-surface-border bg-slate-50/80 p-4 sm:p-5">
                   <div className="flex flex-wrap items-center gap-2">
-                    <Badge variant={networkInfo?.serverRunning ? 'success' : 'warning'}>
+                    <StatusPill tone={networkInfo?.serverRunning ? 'success' : 'warning'}>
                       {networkInfo?.serverRunning ? 'Servidor activo' : 'Servidor inactivo'}
-                    </Badge>
+                    </StatusPill>
                     <span className="text-xs text-slate-500">
                       Escuchando en la red local (puerto {port || '3847'})
                     </span>
@@ -363,28 +431,40 @@ export function ConfiguracionPage() {
 
                   {networkInfo?.connectionUrls.length ? (
                     <div className="space-y-2">
-                      <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
+                      <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">
                         URLs para clientes y celulares
                       </p>
-                      {networkInfo.connectionUrls.map((url) => (
-                        <div key={url} className="flex flex-wrap items-center gap-2">
-                          <code className="rounded bg-white px-2 py-1 text-sm text-slate-800 ring-1 ring-surface-border">
-                            {url}
-                          </code>
-                          <Button type="button" variant="ghost" size="sm" onClick={() => void copiarUrl(url)}>
-                            {copiedUrl === url ? (
-                              <Check className="h-4 w-4 text-green-600" />
-                            ) : (
-                              <Copy className="h-4 w-4" />
-                            )}
-                            Copiar
-                          </Button>
-                        </div>
-                      ))}
+                      <ul className="space-y-2">
+                        {networkInfo.connectionUrls.map((url) => (
+                          <li
+                            key={url}
+                            className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-surface-border bg-white px-3 py-2.5 shadow-sm"
+                          >
+                            <code className="min-w-0 break-all font-mono text-sm text-slate-800">
+                              {url}
+                            </code>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              className="shrink-0 rounded-lg"
+                              onClick={() => void copiarUrl(url)}
+                            >
+                              {copiedUrl === url ? (
+                                <Check className="h-4 w-4 text-emerald-600" />
+                              ) : (
+                                <Copy className="h-4 w-4" />
+                              )}
+                              Copiar
+                            </Button>
+                          </li>
+                        ))}
+                      </ul>
                     </div>
                   ) : (
-                    <p className="text-sm text-amber-700">
-                      No se detectó una IP de red local. Verificá que la PC esté conectada al WiFi/LAN.
+                    <p className="rounded-xl bg-amber-50 px-3 py-2 text-sm text-amber-800 ring-1 ring-amber-100">
+                      No se detectó una IP de red local. Verificá que la PC esté conectada al
+                      WiFi/LAN.
                     </p>
                   )}
 
@@ -393,56 +473,89 @@ export function ConfiguracionPage() {
                       <img
                         src={qrDataUrl}
                         alt={`QR de conexión ${primaryConnectionUrl}`}
-                        className="rounded-lg border border-surface-border bg-white p-2"
+                        className="rounded-xl border border-surface-border bg-white p-2 shadow-sm"
                       />
-                      <div className="min-w-0 space-y-1">
-                        <div className="flex items-center gap-2 text-sm font-medium text-slate-900">
-                          <Smartphone className="h-4 w-4" />
+                      <div className="min-w-0 space-y-1.5">
+                        <div className="flex items-center gap-2 text-sm font-semibold text-slate-900">
+                          <Smartphone className="h-4 w-4 text-brand-600" />
                           Conexión para celulares (APK)
                         </div>
-                        <p className="text-xs text-slate-500">
-                          Cuando la app móvil esté lista, podrán escanear este QR o ingresar la IP manualmente.
+                        <p className="text-xs leading-relaxed text-slate-500">
+                          Cuando la app móvil esté lista, podrán escanear este QR o ingresar la IP
+                          manualmente.
                         </p>
-                        <p className="font-mono text-xs text-slate-700">{primaryConnectionUrl}</p>
+                        <p className="inline-flex rounded-md bg-brand-50 px-2 py-1 font-mono text-xs text-brand-800 ring-1 ring-brand-100">
+                          {primaryConnectionUrl}
+                        </p>
                       </div>
                     </div>
                   )}
 
-                  <p className="text-xs text-slate-500">
-                    Si otras PCs o celulares no conectan, permití ControlStock en el firewall de Windows para el
-                    puerto {port || '3847'}.
+                  <p className="text-xs leading-relaxed text-slate-500">
+                    Si otras PCs o celulares no conectan, permití ControlStock en el firewall de
+                    Windows para el puerto {port || '3847'}.
                   </p>
                 </div>
               )}
 
               {mode === 'client' && (
-                <div className="space-y-3 rounded-lg border border-surface-border bg-slate-50/80 p-4">
+                <div className="space-y-3 rounded-xl border border-surface-border bg-slate-50/80 p-4 sm:p-5">
                   <p className="text-sm text-slate-600">
-                    Ingresá la IP del PC servidor (la ves en Configuración del servidor). Puerto por defecto:{' '}
-                    <strong>3847</strong>.
+                    Ingresá la IP del PC servidor (la ves en Configuración del servidor). Puerto por
+                    defecto: <strong>3847</strong>.
                   </p>
-                  <div className="flex flex-wrap gap-2">
-                    <Button type="button" variant="secondary" size="sm" onClick={() => void probarConexion()}>
-                      Probar conexión
-                    </Button>
-                  </div>
-                  {connectionTest === 'testing' && (
-                    <p className="text-sm text-slate-500">Probando conexión…</p>
-                  )}
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    size="sm"
+                    className="rounded-xl"
+                    disabled={connectionTest === 'testing'}
+                    onClick={() => void probarConexion()}
+                  >
+                    {connectionTest === 'testing' ? (
+                      <>
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                        Probando…
+                      </>
+                    ) : (
+                      'Probar conexión'
+                    )}
+                  </Button>
                   {connectionTest === 'ok' && (
-                    <p className="rounded-lg bg-green-50 px-3 py-2 text-sm text-green-800">{connectionMessage}</p>
+                    <p className="rounded-xl bg-emerald-50 px-3 py-2.5 text-sm text-emerald-800 ring-1 ring-emerald-100">
+                      {connectionMessage}
+                    </p>
                   )}
                   {connectionTest === 'fail' && (
-                    <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-800">{connectionMessage}</p>
+                    <p className="rounded-xl bg-red-50 px-3 py-2.5 text-sm text-red-800 ring-1 ring-red-100">
+                      {connectionMessage}
+                    </p>
                   )}
                 </div>
               )}
 
-              <div className="flex flex-wrap gap-2 border-t border-surface-border pt-4">
-                <Button type="button" onClick={() => void guardarRed()} disabled={savingNetwork}>
-                  {savingNetwork ? 'Guardando…' : 'Guardar y reiniciar'}
+              <div className="flex flex-wrap gap-2 border-t border-surface-border pt-5">
+                <Button
+                  type="button"
+                  className="rounded-xl"
+                  disabled={savingNetwork}
+                  onClick={() => void guardarRed()}
+                >
+                  {savingNetwork ? (
+                    <>
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      Guardando…
+                    </>
+                  ) : (
+                    'Guardar y reiniciar'
+                  )}
                 </Button>
-                <Button type="button" variant="secondary" onClick={() => void loadNetworkInfo()}>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  className="rounded-xl"
+                  onClick={() => void loadNetworkInfo()}
+                >
                   Descartar cambios
                 </Button>
               </div>
@@ -454,57 +567,70 @@ export function ConfiguracionPage() {
         </CardBody>
       </Card>
 
-      <Card>
-        <CardHeader title="Actualizar sistema" />
-        <CardBody className="space-y-4">
-          <div className="flex flex-wrap items-center gap-2 text-sm text-slate-600">
-            <span>Versión instalada:</span>
-            <Badge variant="default">{appInfo?.version ?? '…'}</Badge>
+      <Card className="overflow-hidden shadow-panel">
+        <div className="border-b border-violet-100 bg-gradient-to-r from-violet-50/80 via-white to-white px-5 py-4 sm:px-6">
+          <div className="flex items-start gap-3">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-violet-600 text-white shadow-sm">
+              <RefreshCw className="h-5 w-5" />
+            </div>
+            <div>
+              <h2 className="font-semibold text-slate-900">Actualizar sistema</h2>
+              <p className="mt-0.5 text-sm text-slate-500">
+                Comprobá e instalá nuevas versiones de ControlStock
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <CardBody className="space-y-4 p-5 sm:p-6">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-sm text-slate-600">Versión instalada:</span>
+            <StatusPill tone="brand">{appInfo?.version ?? '…'}</StatusPill>
             {isElectron && (
-              <Badge variant={isPackaged ? 'success' : 'warning'}>
+              <StatusPill tone={isPackaged ? 'success' : 'warning'}>
                 {isPackaged ? 'Instalada en PC' : 'Modo desarrollo'}
-              </Badge>
+              </StatusPill>
             )}
           </div>
 
           {!isElectron && (
-            <p className="rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-800">
-              Está usando la versión web. Las actualizaciones automáticas están disponibles solo en la
-              aplicación de escritorio instalada.
-            </p>
+            <div className="rounded-xl bg-amber-50 px-4 py-3 text-sm text-amber-800 ring-1 ring-amber-100">
+              Está usando la versión web. Las actualizaciones automáticas están disponibles solo en
+              la aplicación de escritorio instalada.
+            </div>
           )}
 
           {phase === 'dev-mode' && (
-            <p className="rounded-lg bg-slate-50 px-3 py-2 text-sm text-slate-600">
+            <div className="rounded-xl bg-slate-50 px-4 py-3 text-sm text-slate-600 ring-1 ring-surface-border">
               En modo desarrollo no se buscan actualizaciones. Genere e instale el instalador (.exe)
               para probar las actualizaciones automáticas.
-            </p>
+            </div>
           )}
 
           {phase === 'checking' && (
-            <p className="flex items-center gap-2 text-sm text-slate-600">
-              <RefreshCw className="h-4 w-4 animate-spin" />
+            <div className="flex items-center gap-2 text-sm text-slate-600">
+              <Loader2 className="h-4 w-4 animate-spin text-brand-600" />
               Buscando actualizaciones…
-            </p>
+            </div>
           )}
 
           {phase === 'not-available' && (
-            <p className="rounded-lg bg-green-50 px-3 py-2 text-sm text-green-800">
+            <div className="rounded-xl bg-emerald-50 px-4 py-3 text-sm text-emerald-800 ring-1 ring-emerald-100">
               Ya tiene la última versión ({availableVersion || appInfo?.version}).
-            </p>
+            </div>
           )}
 
           {phase === 'available' && (
-            <div className="space-y-3 rounded-lg border border-brand-200 bg-brand-50 px-3 py-3">
-              <p className="text-sm font-medium text-brand-900">
+            <div className="space-y-3 rounded-xl border border-brand-200 bg-gradient-to-br from-brand-50/90 to-white p-4 ring-1 ring-brand-100">
+              <p className="text-sm font-semibold text-brand-900">
                 Hay una nueva versión disponible: {availableVersion}
               </p>
               {releaseNotes && (
-                <pre className="max-h-32 overflow-y-auto whitespace-pre-wrap text-xs text-brand-800">
+                <pre className="max-h-32 overflow-y-auto whitespace-pre-wrap rounded-lg bg-white/80 px-3 py-2 text-xs text-brand-800 ring-1 ring-brand-100">
                   {releaseNotes}
                 </pre>
               )}
-              <Button size="sm" onClick={() => void descargarActualizacion()}>
+              <Button size="sm" className="rounded-xl" onClick={() => void descargarActualizacion()}>
                 <Download className="h-4 w-4" />
                 Descargar actualización
               </Button>
@@ -512,14 +638,19 @@ export function ConfiguracionPage() {
           )}
 
           {phase === 'downloading' && (
-            <div className="space-y-2">
+            <div className="space-y-2.5 rounded-xl border border-surface-border bg-slate-50/80 p-4">
               <div className="flex justify-between text-sm text-slate-600">
-                <span>Descargando…</span>
-                <span>{downloadPercent}% {downloadDetail && `· ${downloadDetail}`}</span>
+                <span className="flex items-center gap-2">
+                  <Loader2 className="h-4 w-4 animate-spin text-brand-600" />
+                  Descargando…
+                </span>
+                <span className="tabular-nums">
+                  {downloadPercent}%{downloadDetail && ` · ${downloadDetail}`}
+                </span>
               </div>
-              <div className="h-2 overflow-hidden rounded-full bg-slate-200">
+              <div className="h-2.5 overflow-hidden rounded-full bg-slate-200">
                 <div
-                  className="h-full rounded-full bg-brand-600 transition-all"
+                  className="h-full rounded-full bg-brand-600 transition-all duration-300"
                   style={{ width: `${downloadPercent}%` }}
                 />
               </div>
@@ -527,34 +658,37 @@ export function ConfiguracionPage() {
           )}
 
           {phase === 'downloaded' && (
-            <div className="space-y-3 rounded-lg border border-green-200 bg-green-50 px-3 py-3">
-              <p className="text-sm font-medium text-green-900">
+            <div className="space-y-3 rounded-xl border border-emerald-200 bg-gradient-to-br from-emerald-50/90 to-white p-4 ring-1 ring-emerald-100">
+              <p className="text-sm font-semibold text-emerald-900">
                 Versión {availableVersion} descargada. Reinicie para aplicar los cambios.
               </p>
-              <Button size="sm" onClick={() => void instalarActualizacion()}>
+              <Button size="sm" className="rounded-xl" onClick={() => void instalarActualizacion()}>
                 Instalar y reiniciar
               </Button>
             </div>
           )}
 
           {phase === 'error' && errorMessage && (
-            <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-800">{errorMessage}</p>
+            <div className="rounded-xl bg-red-50 px-4 py-3 text-sm text-red-800 ring-1 ring-red-100">
+              {errorMessage}
+            </div>
           )}
 
           <div className="flex flex-wrap gap-2 pt-1">
             <Button
               variant="secondary"
               size="sm"
+              className="rounded-xl"
               disabled={phase === 'checking' || phase === 'downloading'}
               onClick={() => void buscarActualizaciones()}
             >
-              <RefreshCw className={`h-4 w-4 ${phase === 'checking' ? 'animate-spin' : ''}`} />
+              <RefreshCw className={cn('h-4 w-4', phase === 'checking' && 'animate-spin')} />
               Buscar actualizaciones
             </Button>
           </div>
 
           {isPackaged && (
-            <p className="text-xs text-slate-400">
+            <p className="text-xs leading-relaxed text-slate-400">
               Las actualizaciones se descargan desde{' '}
               <a
                 href="https://github.com/JRNCarrizo/bodegaStock/releases"
@@ -575,4 +709,3 @@ export function ConfiguracionPage() {
     </div>
   )
 }
-

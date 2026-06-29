@@ -6,6 +6,7 @@ import {
   ChevronRight,
   Check,
   Eye,
+  Loader2,
   Package,
   Plus,
   Search,
@@ -25,9 +26,9 @@ import {
 } from '@/components/RegistroDetallePanel'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
-import { Badge, Card, CardBody, CardHeader } from '@/components/ui/Card'
+import { Card, CardBody } from '@/components/ui/Card'
 import { calcTotalEnCajas, botellasPorCajaDefault, formatCantidad, formatDayTabLabel, formatEtiqueta, formatTotalCajas, normalizarUnidadProducto, todayIsoDate } from '@/lib/desglose'
-import { api } from '@/lib/utils'
+import { api, cn } from '@/lib/utils'
 import type {
   IngresoDetalle,
   IngresoLineaDraft,
@@ -732,77 +733,97 @@ export function IngresosPage() {
 
   if (view === 'create' && createPhase === 'remito') {
     return (
-      <div
-        ref={createScrollRef}
-        className="-m-4 h-[calc(100vh-5rem)] overflow-y-auto lg:-m-6"
-      >
-        <div className="mx-auto flex max-w-lg flex-col px-4 py-8 pb-16">
-        <Button variant="ghost" size="sm" className="mb-4 -ml-2 self-start" onClick={volverAlListadoIngreso}>
-          <ChevronLeft className="h-4 w-4" />
-          Volver al listado
-        </Button>
+      <div ref={createScrollRef} className="-m-4 h-[calc(100vh-5rem)] overflow-y-auto lg:-m-6">
+        <div className="mx-auto flex max-w-lg flex-col gap-5 px-4 py-6 pb-16 lg:px-6">
+          <Button
+            variant="ghost"
+            size="sm"
+            className="-ml-2 h-9 self-start rounded-xl px-3"
+            onClick={volverAlListadoIngreso}
+          >
+            <ChevronLeft className="h-4 w-4" />
+            Volver al listado
+          </Button>
 
-        <h1 className="text-2xl font-bold text-slate-900">Nuevo ingreso</h1>
-        <p className="mt-1 mb-6 text-slate-500">
-          Completá el remito con Enter para pasar al siguiente campo · Esc vuelve al listado
-        </p>
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">Alta</p>
+            <h1 className="mt-1 text-2xl font-bold tracking-tight text-slate-900">Nuevo ingreso</h1>
+            <p className="mt-1 text-sm text-slate-500">
+              Datos del remito · Enter avanza · Esc vuelve al listado
+            </p>
+          </div>
 
-        {error && (
-          <div className="mb-4 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>
-        )}
-
-        <Card>
-          <CardBody className="space-y-4">
-            <Input
-              ref={fechaRef}
-              label="Fecha *"
-              type="date"
-              value={fecha}
-              onChange={(e) => setFecha(e.target.value)}
-              onKeyDown={(e) => handleRemitoKeyDown(e, remitoRef)}
-              required
-            />
-            <Input
-              ref={remitoRef}
-              label="Número de remito *"
-              value={numeroRemito}
-              onChange={(e) => setNumeroRemito(e.target.value)}
-              onKeyDown={(e) => handleRemitoKeyDown(e, sectorRef)}
-              placeholder="ej. REM-2024-001"
-              required
-            />
-            <div>
-              <label className="mb-1 block text-sm font-medium text-slate-700">Sector destino *</label>
-              <select
-                ref={sectorRef}
-                value={sectorId}
-                onChange={(e) => setSectorId(e.target.value)}
-                onKeyDown={(e) => handleRemitoKeyDown(e, observacionRef)}
-                className="w-full rounded-lg border border-surface-border px-3 py-2 text-sm focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20"
-              >
-                <option value="">Seleccionar sector...</option>
-                {sectores.map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {s.nombre}
-                  </option>
-                ))}
-              </select>
+          {error && (
+            <div className="rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700 ring-1 ring-red-100">
+              {error}
             </div>
-            <Input
-              ref={observacionRef}
-              label="Observaciones"
-              value={observacion}
-              onChange={(e) => setObservacion(e.target.value)}
-              onFocus={() => scrollFieldIntoView(observacionRef)}
-              onKeyDown={(e) => handleRemitoKeyDown(e)}
-              placeholder="Notas sobre el ingreso..."
-            />
-            <p className="text-xs text-slate-400">Enter en observaciones → carga de productos</p>
-            <Button type="button" className="w-full" onClick={irACargaProductos}>
-              Continuar a productos
-            </Button>
-          </CardBody>
-        </Card>
+          )}
+
+          <Card className="overflow-hidden shadow-panel">
+            <div className="border-b border-brand-100 bg-gradient-to-r from-brand-50/80 via-white to-white px-5 py-4">
+              <div className="flex items-center gap-3">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-brand-600 text-white shadow-sm">
+                  <Package className="h-5 w-5" />
+                </div>
+                <div>
+                  <p className="text-sm font-semibold text-slate-900">Remito de ingreso</p>
+                  <p className="text-xs text-slate-500">Fecha, número, sector y observaciones</p>
+                </div>
+              </div>
+            </div>
+            <CardBody className="space-y-4">
+              <Input
+                ref={fechaRef}
+                label="Fecha *"
+                type="date"
+                value={fecha}
+                onChange={(e) => setFecha(e.target.value)}
+                onKeyDown={(e) => handleRemitoKeyDown(e, remitoRef)}
+                required
+              />
+              <Input
+                ref={remitoRef}
+                label="Número de remito *"
+                value={numeroRemito}
+                onChange={(e) => setNumeroRemito(e.target.value)}
+                onKeyDown={(e) => handleRemitoKeyDown(e, sectorRef)}
+                placeholder="ej. REM-2024-001"
+                required
+              />
+              <div>
+                <label className="mb-1 block text-sm font-medium text-slate-700">
+                  Sector destino *
+                </label>
+                <select
+                  ref={sectorRef}
+                  value={sectorId}
+                  onChange={(e) => setSectorId(e.target.value)}
+                  onKeyDown={(e) => handleRemitoKeyDown(e, observacionRef)}
+                  className="w-full rounded-xl border border-surface-border px-3 py-2.5 text-sm shadow-sm focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20"
+                >
+                  <option value="">Seleccionar sector...</option>
+                  {sectores.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.nombre}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <Input
+                ref={observacionRef}
+                label="Observaciones"
+                value={observacion}
+                onChange={(e) => setObservacion(e.target.value)}
+                onFocus={() => scrollFieldIntoView(observacionRef)}
+                onKeyDown={(e) => handleRemitoKeyDown(e)}
+                placeholder="Notas sobre el ingreso..."
+              />
+              <p className="text-xs text-slate-400">Enter en observaciones → carga de productos</p>
+              <Button type="button" className="w-full rounded-xl" onClick={irACargaProductos}>
+                Continuar a productos
+              </Button>
+            </CardBody>
+          </Card>
         </div>
       </div>
     )
@@ -811,20 +832,33 @@ export function IngresosPage() {
   if (view === 'create') {
     const lineasListContent =
       lineas.length === 0 ? (
-        <div className="flex h-full min-h-[120px] flex-col items-center justify-center py-8 text-center text-slate-400">
-          <Package className="mb-2 h-10 w-10 opacity-40" />
-          <p className="text-sm">Las líneas cargadas aparecen acá</p>
+        <div className="flex h-full min-h-[140px] flex-col items-center justify-center px-6 py-12 text-center">
+          <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-100 text-slate-400">
+            <Package className="h-6 w-6" />
+          </div>
+          <p className="mt-3 text-sm font-medium text-slate-600">Sin líneas cargadas</p>
+          <p className="mt-1 text-xs text-slate-500">Los productos que agregues aparecen acá</p>
         </div>
       ) : (
         lineasPorProducto.map((grupo) => {
           const isExpanded = expandedProductos.has(grupo.producto.producto_id)
           return (
             <div key={grupo.producto.producto_id} className="border-b border-surface-border last:border-0">
-              <div className="flex items-center gap-2 px-4 py-2.5 hover:bg-slate-50/80">
+              <div
+                className={cn(
+                  'flex items-center gap-3 px-4 py-3 transition-colors sm:px-5',
+                  isExpanded ? 'bg-brand-50/50' : 'hover:bg-slate-50/80'
+                )}
+              >
                 <button
                   type="button"
                   onClick={() => toggleProductoExpand(grupo.producto.producto_id)}
-                  className="shrink-0 rounded p-1 text-slate-400 hover:bg-slate-200 hover:text-slate-700"
+                  className={cn(
+                    'shrink-0 rounded-lg p-1.5 transition-colors',
+                    isExpanded
+                      ? 'bg-brand-100 text-brand-700'
+                      : 'text-slate-400 hover:bg-slate-200 hover:text-slate-700'
+                  )}
                   aria-expanded={isExpanded}
                   aria-label={isExpanded ? 'Ocultar líneas' : 'Ver líneas'}
                 >
@@ -839,37 +873,42 @@ export function IngresosPage() {
                   onClick={() => toggleProductoExpand(grupo.producto.producto_id)}
                   className="min-w-0 flex-1 text-left"
                 >
-                  <p className="font-mono text-sm font-semibold text-slate-900">
+                  <span className="inline-flex rounded-md bg-slate-100 px-2 py-0.5 font-mono text-xs font-semibold text-slate-700">
                     {grupo.producto.codigo_interno}
+                  </span>
+                  <p className="mt-1 truncate text-sm font-semibold text-slate-900">
+                    {grupo.producto.nombre}
                   </p>
-                  <p className="truncate text-xs text-slate-600">{grupo.producto.nombre}</p>
                   {!isExpanded && grupo.lineas.length > 1 && (
-                    <p className="text-xs text-slate-400">{grupo.lineas.length} líneas</p>
+                    <p className="mt-0.5 text-xs text-slate-500">{grupo.lineas.length} líneas</p>
                   )}
                 </button>
-                <Badge variant="default">{formatCantidad(grupo.total)}</Badge>
+                <span className="inline-flex shrink-0 items-center rounded-lg bg-brand-50 px-2.5 py-1.5 text-sm font-bold tabular-nums text-brand-700 ring-1 ring-brand-100">
+                  {formatCantidad(grupo.total)}
+                </span>
               </div>
               {isExpanded && (
-                <ul className="divide-y divide-surface-border border-t border-surface-border bg-surface-muted/20">
+                <ul className="space-y-2 border-t border-brand-100/80 bg-gradient-to-b from-surface-muted/40 to-white px-4 py-3 sm:px-5">
                   {grupo.lineas.map((l) => (
                     <li
                       key={l.tempId}
-                      className="flex items-center justify-between gap-2 py-2.5 pl-11 pr-4 text-sm"
+                      className="flex items-center justify-between gap-3 rounded-lg border border-surface-border bg-white px-3 py-2.5 text-sm"
                     >
-                      <div className="text-slate-700">
+                      <div className="min-w-0 text-slate-800">
                         {l.etiqueta}
                         {l.ubicacion_nombre && (
-                          <span className="ml-1 text-slate-400">({l.ubicacion_nombre})</span>
+                          <span className="ml-1.5 text-xs text-slate-500">({l.ubicacion_nombre})</span>
                         )}
                       </div>
                       <div className="flex shrink-0 items-center gap-2">
-                        <span className="font-semibold text-slate-900">
+                        <span className="rounded-md bg-slate-50 px-2 py-1 text-sm font-semibold tabular-nums text-slate-900 ring-1 ring-surface-border">
                           {formatCantidad(l.total_unidades)}
                         </span>
                         <Button
                           type="button"
                           variant="ghost"
                           size="sm"
+                          className="rounded-lg"
                           onClick={() => quitarLinea(l.tempId)}
                         >
                           <Trash2 className="h-4 w-4 text-red-500" />
@@ -891,31 +930,49 @@ export function IngresosPage() {
           ref={cargaPanelRef}
           className="relative z-20 shrink-0 overflow-visible border-b border-surface-border bg-white shadow-sm"
         >
-          <div className="flex flex-wrap items-center gap-x-4 gap-y-1 border-b border-surface-border px-4 py-2 text-xs text-slate-600">
-            <Button variant="ghost" size="sm" className="-ml-2 h-7" onClick={volverAlListadoIngreso}>
-              <ChevronLeft className="h-3.5 w-3.5" />
-              Salir
-            </Button>
-            <span><strong className="text-slate-800">{fecha}</strong></span>
-            <span>Remito <strong className="text-slate-800">{numeroRemito}</strong></span>
-            <span>Sector <strong className="text-slate-800">{sectorSeleccionado?.nombre}</strong></span>
-            <button
-              type="button"
-              className="text-brand-600 hover:underline"
-              onClick={() => setCreatePhase('remito')}
-            >
-              Editar remito
-            </button>
+          <div className="border-b border-brand-100 bg-gradient-to-r from-brand-50/80 via-white to-white px-4 py-3 sm:px-5">
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+              <Button
+                variant="ghost"
+                size="sm"
+                className="-ml-2 h-8 rounded-lg px-2"
+                onClick={volverAlListadoIngreso}
+              >
+                <ChevronLeft className="h-3.5 w-3.5" />
+                Salir
+              </Button>
+              <div className="flex flex-wrap items-center gap-2 text-xs">
+                <span className="rounded-full bg-white px-2.5 py-1 font-medium text-slate-700 ring-1 ring-surface-border">
+                  {fecha}
+                </span>
+                <span className="rounded-full bg-white px-2.5 py-1 font-medium text-slate-700 ring-1 ring-surface-border">
+                  Remito {numeroRemito}
+                </span>
+                <span className="inline-flex items-center gap-1 rounded-full bg-brand-50 px-2.5 py-1 font-medium text-brand-800 ring-1 ring-brand-100">
+                  <Warehouse className="h-3 w-3" />
+                  {sectorSeleccionado?.nombre}
+                </span>
+              </div>
+              <button
+                type="button"
+                className="ml-auto text-xs font-medium text-brand-600 hover:text-brand-700 hover:underline"
+                onClick={() => setCreatePhase('remito')}
+              >
+                Editar remito
+              </button>
+            </div>
           </div>
 
           {error && !showPreview && (
-            <div className="border-b border-red-100 bg-red-50 px-4 py-2 text-sm text-red-700">{error}</div>
+            <div className="border-b border-red-100 bg-red-50 px-4 py-2 text-sm text-red-700 sm:px-5">
+              {error}
+            </div>
           )}
 
-          <div className="space-y-3 overflow-visible p-4">
+          <div className="space-y-3 overflow-visible p-4 sm:p-5">
             <div className="relative flex flex-col gap-2 overflow-visible sm:flex-row">
               <div className="relative z-30 min-w-0 flex-1">
-                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-brand-400" />
                 <input
                   ref={productSearchRef}
                   type="search"
@@ -932,27 +989,33 @@ export function IngresosPage() {
                     }
                   }}
                   onKeyDown={handleProductSearchKeyDown}
-                  className="w-full rounded-lg border border-surface-border py-2.5 pl-10 pr-3 text-sm focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20"
+                  className="w-full rounded-xl border border-surface-border bg-white py-2.5 pl-10 pr-3 text-sm shadow-sm focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20"
                 />
+                {searchingProducts && (
+                  <Loader2 className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 animate-spin text-brand-600" />
+                )}
                 {productResults.length > 0 && !selectedProduct && (
                   <ul
                     ref={productResultsListRef}
                     role="listbox"
-                    className="absolute z-50 mt-1 max-h-48 w-full overflow-auto rounded-lg border border-surface-border bg-white shadow-lg"
+                    className="absolute z-50 mt-1 max-h-52 w-full overflow-auto rounded-xl border border-surface-border bg-white py-1 shadow-panel"
                   >
                     {productResults.map((p, index) => (
                       <li key={p.id} role="option" aria-selected={index === productHighlightIndex}>
                         <button
                           type="button"
-                          className={`flex w-full items-center gap-2 px-3 py-2 text-left text-sm ${
+                          className={cn(
+                            'flex w-full items-center gap-2 px-3 py-2.5 text-left text-sm',
                             index === productHighlightIndex
                               ? 'bg-brand-50 text-brand-900'
                               : 'hover:bg-slate-50'
-                          }`}
+                          )}
                           onMouseEnter={() => setProductHighlightIndex(index)}
                           onClick={() => selectProduct(p)}
                         >
-                          <span className="font-mono font-semibold">{p.codigo_interno}</span>
+                          <span className="rounded bg-slate-100 px-1.5 py-0.5 font-mono text-xs font-semibold">
+                            {p.codigo_interno}
+                          </span>
                           <span className="truncate text-slate-600">{p.nombre}</span>
                         </button>
                       </li>
@@ -961,12 +1024,24 @@ export function IngresosPage() {
                 )}
               </div>
               <div className="flex shrink-0 gap-2">
-                <Button type="button" variant="secondary" size="sm" onClick={() => setShowScanner(true)}>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  className="rounded-xl"
+                  onClick={() => setShowScanner(true)}
+                >
                   <Camera className="h-4 w-4" />
                   Escanear
                 </Button>
                 {hasPermiso('productos.crear') && (
-                  <Button type="button" variant="secondary" size="sm" onClick={() => setShowNewProduct(true)}>
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    size="sm"
+                    className="rounded-xl"
+                    onClick={() => setShowNewProduct(true)}
+                  >
                     <Plus className="h-4 w-4" />
                     Nuevo
                   </Button>
@@ -977,22 +1052,26 @@ export function IngresosPage() {
             {selectedProduct && (
               <div
                 ref={productLineFormRef}
-                className="rounded-lg border border-brand-200 bg-brand-50/50 p-3"
+                className="overflow-hidden rounded-xl border border-brand-200 bg-gradient-to-br from-brand-50/80 to-white p-4 shadow-card"
               >
-                <div className="mb-3 flex items-center gap-2">
+                <div className="mb-4 flex items-center gap-3">
                   <ProductImage
                     productoId={selectedProduct.id}
                     hasImage={!!selectedProduct.imagen_path}
                     alt={selectedProduct.nombre}
-                    className="h-9 w-9 rounded object-cover"
+                    className="h-11 w-11 rounded-xl ring-1 ring-surface-border"
                   />
                   <div className="min-w-0 flex-1">
-                    <p className="truncate font-mono text-sm font-semibold">{selectedProduct.codigo_interno}</p>
-                    <p className="truncate text-xs text-slate-600">{selectedProduct.nombre}</p>
+                    <span className="inline-flex rounded-md bg-white px-2 py-0.5 font-mono text-xs font-semibold text-slate-700 ring-1 ring-surface-border">
+                      {selectedProduct.codigo_interno}
+                    </span>
+                    <p className="mt-1 truncate text-sm font-semibold text-slate-900">
+                      {selectedProduct.nombre}
+                    </p>
                   </div>
                   <button
                     type="button"
-                    className="rounded p-1 text-slate-400 hover:text-slate-600"
+                    className="rounded-lg p-1.5 text-slate-400 hover:bg-white hover:text-slate-600"
                     onClick={() => {
                       setSelectedProduct(null)
                       setProductSearch('')
@@ -1085,63 +1164,74 @@ export function IngresosPage() {
                   )}
 
                   <div className="flex items-end">
-                    <Button type="button" size="sm" className="w-full" onClick={agregarLineaYContinuar}>
+                    <Button
+                      type="button"
+                      size="sm"
+                      className="w-full rounded-xl"
+                      onClick={agregarLineaYContinuar}
+                    >
                       <Plus className="h-4 w-4" />
                       Enter ↵
                     </Button>
                   </div>
                 </div>
-                <p className="mt-2 text-xs text-slate-500">
-                  <span className="font-medium text-slate-600">Pallet:</span> 3 × 112 = 3 pallets de 112 cajas.
-                  {' '}
-                  <span className="font-medium text-slate-600">Caja:</span> 30 × 6 = 30 cajas de 6 botellas.
-                  {' '}
-                  <span className="font-medium text-slate-600">Botellerio:</span> 1 × 4 = 1 caja con 4 botellas.
-                </p>
-                <p className="mt-1 text-xs text-slate-500">
-                  Enter en el último campo agrega la línea y vuelve al buscador
+                <p className="mt-3 text-xs leading-relaxed text-slate-500">
+                  <span className="font-medium text-slate-600">Pallet:</span> 3 × 112 = 3 pallets de 112
+                  cajas.{' '}
+                  <span className="font-medium text-slate-600">Caja:</span> 30 × 6 = 30 cajas de 6
+                  botellas.
                 </p>
               </div>
             )}
           </div>
         </div>
 
-        {/* Lista — siempre visible, scroll interno */}
         <div
           ref={listScrollRef}
           className="relative z-0 min-h-0 flex-1 overflow-y-auto bg-white"
         >
-          <div className="sticky top-0 z-[2] border-b border-surface-border bg-white/95 px-4 py-2 backdrop-blur-sm">
-            <div className="flex items-center justify-between text-sm">
-              <span className="font-medium text-slate-700">
-                Líneas cargadas ({lineas.length})
-              </span>
+          <div className="sticky top-0 z-[2] border-b border-surface-border bg-white/95 px-4 py-3 backdrop-blur-sm sm:px-5">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <p className="text-sm font-semibold text-slate-900">Líneas cargadas</p>
+                <p className="text-xs text-slate-500">{lineas.length} línea(s)</p>
+              </div>
               {lineas.length > 0 && (
-                <span className="text-brand-700 font-semibold">{formatCantidad(totalGeneral)} total</span>
+                <span className="inline-flex items-center rounded-full bg-brand-50 px-3 py-1 text-sm font-bold tabular-nums text-brand-700 ring-1 ring-brand-100">
+                  {formatCantidad(totalGeneral)} total
+                </span>
               )}
             </div>
           </div>
           {lineasListContent}
         </div>
 
-        {/* Pie fijo */}
-        <div className="shrink-0 border-t border-surface-border bg-white px-4 py-3 shadow-[0_-4px_12px_rgba(0,0,0,0.04)]">
+        <div className="shrink-0 border-t border-surface-border bg-white px-4 py-4 shadow-[0_-4px_12px_rgba(0,0,0,0.04)] sm:px-5">
           <div className="flex items-center justify-between gap-4">
             <div>
-              <p className="text-xs text-slate-500">Total general</p>
-              <p className="text-xl font-bold text-brand-700">{formatCantidad(totalGeneral)}</p>
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+                Total general
+              </p>
+              <p className="text-2xl font-bold tabular-nums text-brand-700">
+                {formatCantidad(totalGeneral)}
+              </p>
             </div>
             {hasPermiso('ingresos.crear') && (
               <div className="flex shrink-0 flex-wrap gap-2">
                 <Button
                   variant="secondary"
+                  className="rounded-xl"
                   onClick={abrirPreview}
                   disabled={lineas.length === 0 || saving}
                 >
                   <Eye className="h-4 w-4" />
                   Vista previa
                 </Button>
-                <Button onClick={confirmarIngresoDirecto} disabled={lineas.length === 0 || saving}>
+                <Button
+                  className="rounded-xl"
+                  onClick={confirmarIngresoDirecto}
+                  disabled={lineas.length === 0 || saving}
+                >
                   <Check className="h-4 w-4" />
                   {saving ? 'Registrando...' : 'Confirmar ingreso'}
                 </Button>
@@ -1238,157 +1328,201 @@ export function IngresosPage() {
   }
 
   return (
-    <div className="mx-auto max-w-5xl space-y-6">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+    <div className="mx-auto max-w-6xl space-y-6">
+      <section className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-slate-900">Ingresos</h1>
-          <p className="mt-1 text-slate-500">Entrada de mercadería archivada por día</p>
+          <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">
+            Movimientos
+          </p>
+          <h1 className="mt-1 text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">
+            Ingresos
+          </h1>
+          <p className="mt-2 max-w-xl text-sm leading-relaxed text-slate-500">
+            Entrada de mercadería archivada por día, con remito y sector destino.
+          </p>
         </div>
         {hasPermiso('ingresos.crear') && (
-          <Button onClick={abrirNuevoIngreso}>
-            <Plus className="h-4 w-4" />
-            Nuevo ingreso
-          </Button>
-        )}
-      </div>
-
-      <Card>
-        <CardBody className="border-b border-surface-border py-4 space-y-3">
           <div className="flex flex-wrap items-center gap-2">
-            <div className="relative min-w-[10rem] flex-1">
-              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-              <input
-                ref={listSearchRef}
-                type="search"
-                placeholder="Buscar por remito... · Enter = nuevo ingreso"
-                value={listSearch}
-                onChange={(e) => setListSearch(e.target.value)}
-                onKeyDown={handleListSearchKeyDown}
-                className="w-full rounded-lg border border-surface-border py-2 pl-10 pr-3 text-sm focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20"
-              />
-            </div>
-
-            <div className="flex shrink-0 items-center gap-1.5 rounded-lg border border-surface-border bg-slate-50/60 px-2 py-1">
-              <span className="pl-1 text-xs font-medium text-slate-500">Desde</span>
-              <input
-                id="ingresos-fecha-desde"
-                type="date"
-                value={listFechaDesde}
-                onChange={(e) => setListFechaDesde(e.target.value)}
-                title="Fecha desde — solo este campo = ese día"
-                className="rounded border-0 bg-transparent px-1 py-1 text-sm focus:outline-none focus:ring-0"
-              />
-              <span className="text-slate-300">|</span>
-              <span className="text-xs font-medium text-slate-500">Hasta</span>
-              <input
-                id="ingresos-fecha-hasta"
-                type="date"
-                value={listFechaHasta}
-                onChange={(e) => setListFechaHasta(e.target.value)}
-                title="Fecha hasta — solo este campo = ese día"
-                className="rounded border-0 bg-transparent px-1 py-1 text-sm focus:outline-none focus:ring-0"
-              />
-            </div>
-
-            {(listFechaDesde || listFechaHasta) && (
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                className="shrink-0"
-                onClick={() => {
-                  setListFechaDesde('')
-                  setListFechaHasta('')
-                }}
-              >
-                <X className="h-4 w-4" />
-              </Button>
-            )}
+            <span className="hidden rounded-full border border-surface-border bg-white px-2.5 py-1 text-[11px] font-medium text-slate-500 shadow-card sm:inline-flex">
+              Enter = nuevo ingreso
+            </span>
+            <Button className="rounded-xl px-4" onClick={abrirNuevoIngreso}>
+              <Plus className="h-4 w-4" />
+              Nuevo ingreso
+            </Button>
           </div>
-          <p className="text-xs text-slate-400">
-            Una sola fecha (Desde o Hasta) filtra ese día · las dos juntas = rango
-            {hasPermiso('ingresos.crear') && ' · Enter = nuevo ingreso'}
-          </p>
+        )}
+      </section>
 
-          <DayTabsRow
-            days={diasConIngresos}
-            selectedDay={selectedDay}
-            onSelectDay={setSelectedDay}
-            getCount={(dia) => conteoPorDia.get(dia) ?? 0}
-          />
-        </CardBody>
+      <Card className="overflow-hidden shadow-panel">
+        <div className="border-b border-brand-100 bg-gradient-to-r from-brand-50/80 via-white to-white px-5 py-4 sm:px-6">
+          <div className="flex flex-col gap-3">
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="relative min-w-[10rem] flex-1">
+                <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-brand-400" />
+                <input
+                  ref={listSearchRef}
+                  type="search"
+                  placeholder="Buscar por remito..."
+                  value={listSearch}
+                  onChange={(e) => setListSearch(e.target.value)}
+                  onKeyDown={handleListSearchKeyDown}
+                  className="w-full rounded-xl border border-surface-border bg-white py-2.5 pl-10 pr-4 text-sm shadow-sm focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20"
+                />
+              </div>
 
-        <CardHeader
-          title={diasConIngresos.length > 0 ? formatDayTabLabel(selectedDay) : 'Registros'}
-          description={
-            diasConIngresos.length > 0
-              ? `${ingresosDelDia.length} ingreso(s) · ${formatCantidad(totalUnidadesDelDia)} en el día`
-              : `${ingresos.length} ingreso(s)`
-          }
-        />
+              <div className="flex shrink-0 items-center gap-1.5 rounded-xl border border-surface-border bg-white px-2 py-1.5 shadow-sm">
+                <span className="pl-1 text-xs font-medium text-slate-500">Desde</span>
+                <input
+                  id="ingresos-fecha-desde"
+                  type="date"
+                  value={listFechaDesde}
+                  onChange={(e) => setListFechaDesde(e.target.value)}
+                  title="Fecha desde — solo este campo = ese día"
+                  className="rounded border-0 bg-transparent px-1 py-1 text-sm focus:outline-none focus:ring-0"
+                />
+                <span className="text-slate-300">|</span>
+                <span className="text-xs font-medium text-slate-500">Hasta</span>
+                <input
+                  id="ingresos-fecha-hasta"
+                  type="date"
+                  value={listFechaHasta}
+                  onChange={(e) => setListFechaHasta(e.target.value)}
+                  title="Fecha hasta — solo este campo = ese día"
+                  className="rounded border-0 bg-transparent px-1 py-1 text-sm focus:outline-none focus:ring-0"
+                />
+              </div>
+
+              {(listFechaDesde || listFechaHasta) && (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="shrink-0 rounded-lg"
+                  onClick={() => {
+                    setListFechaDesde('')
+                    setListFechaHasta('')
+                  }}
+                >
+                  <X className="h-4 w-4" />
+                </Button>
+              )}
+            </div>
+            <p className="text-xs text-slate-500">
+              Una sola fecha filtra ese día · las dos juntas = rango
+            </p>
+
+            <DayTabsRow
+              days={diasConIngresos}
+              selectedDay={selectedDay}
+              onSelectDay={setSelectedDay}
+              getCount={(dia) => conteoPorDia.get(dia) ?? 0}
+            />
+          </div>
+        </div>
+
+        <div className="flex items-center justify-between gap-3 border-b border-surface-border bg-slate-50/80 px-5 py-3.5 sm:px-6">
+          <div>
+            <h2 className="text-sm font-semibold text-slate-900">
+              {diasConIngresos.length > 0 ? formatDayTabLabel(selectedDay) : 'Registros'}
+            </h2>
+            <p className="text-xs text-slate-500">
+              {diasConIngresos.length > 0
+                ? `${ingresosDelDia.length} ingreso(s) · ${formatCantidad(totalUnidadesDelDia)} en el día`
+                : `${ingresos.length} ingreso(s)`}
+            </p>
+          </div>
+          {loadingList && <Loader2 className="h-5 w-5 shrink-0 animate-spin text-brand-600" />}
+        </div>
 
         <CardBody className="p-0">
           {error && (
-            <div className="border-b border-red-100 bg-red-50 px-6 py-3 text-sm text-red-700">{error}</div>
+            <div className="border-b border-red-100 bg-red-50 px-6 py-3 text-sm text-red-700">
+              {error}
+            </div>
           )}
           {loadingList ? (
-            <p className="p-6 text-sm text-slate-500">Cargando...</p>
+            <div className="flex items-center justify-center gap-2 py-16 text-sm text-slate-500">
+              <Loader2 className="h-5 w-5 animate-spin text-brand-600" />
+              Cargando ingresos...
+            </div>
           ) : ingresos.length === 0 ? (
-            <div className="flex flex-col items-center py-16 text-center">
-              <Package className="h-12 w-12 text-slate-300" />
-              <p className="mt-3 font-medium text-slate-700">
+            <div className="flex flex-col items-center px-6 py-16 text-center">
+              <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-slate-100 text-slate-400">
+                <Package className="h-7 w-7" />
+              </div>
+              <p className="mt-4 text-sm font-medium text-slate-700">
                 {listSearch || listFechaDesde || listFechaHasta
                   ? 'No hay ingresos con esos filtros'
                   : 'No hay ingresos registrados'}
               </p>
-              <p className="mt-1 text-sm text-slate-500">
+              <p className="mt-1 max-w-sm text-xs text-slate-500">
                 {listSearch || listFechaDesde || listFechaHasta
                   ? 'Probá ampliar el rango de fechas o cambiar la búsqueda'
                   : 'Cargá el primer ingreso para sumar stock'}
               </p>
+              {!(listSearch || listFechaDesde || listFechaHasta) &&
+                hasPermiso('ingresos.crear') && (
+                  <Button className="mt-4 rounded-xl" size="sm" onClick={abrirNuevoIngreso}>
+                    <Plus className="h-4 w-4" />
+                    Nuevo ingreso
+                  </Button>
+                )}
             </div>
           ) : ingresosDelDia.length === 0 ? (
-            <div className="flex flex-col items-center py-16 text-center">
-              <Package className="h-12 w-12 text-slate-300" />
-              <p className="mt-3 font-medium text-slate-700">Sin resultados para este día</p>
-              <p className="mt-1 text-sm text-slate-500">Probá otra fecha o ajustá la búsqueda</p>
+            <div className="flex flex-col items-center px-6 py-16 text-center">
+              <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-slate-100 text-slate-400">
+                <Package className="h-7 w-7" />
+              </div>
+              <p className="mt-4 text-sm font-medium text-slate-700">Sin resultados para este día</p>
+              <p className="mt-1 text-xs text-slate-500">Probá otra fecha o ajustá la búsqueda</p>
             </div>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-surface-border bg-slate-50/80 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
-                    <th className="px-6 py-3">Remito</th>
-                    <th className="max-w-[14rem] px-6 py-3">Observación</th>
-                    <th className="px-6 py-3">Productos</th>
-                    <th className="px-6 py-3">Total</th>
-                    <th className="px-6 py-3">Usuario</th>
-                    <th className="px-6 py-3" />
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-surface-border">
-                  {ingresosDelDia.map((i) => (
-                    <tr key={i.id} className="hover:bg-slate-50/50">
-                      <td className="px-6 py-3 font-medium text-slate-900">{i.numero_remito}</td>
-                      <td className="max-w-[14rem] px-6 py-3 text-slate-600">
-                        <div className="overflow-x-auto whitespace-nowrap [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
-                          {i.observacion?.trim() || '—'}
-                        </div>
-                      </td>
-                      <td className="px-6 py-3 text-slate-500">{i.productos_count}</td>
-                      <td className="px-6 py-3 font-semibold text-brand-700">{formatCantidad(i.total_unidades)}</td>
-                      <td className="px-6 py-3 text-slate-500">{i.usuario_nombre}</td>
-                      <td className="px-6 py-3 text-right">
-                        <Button variant="ghost" size="sm" onClick={() => verDetalle(i.id)}>
-                          <Eye className="h-4 w-4" />
-                          Ver
-                        </Button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+            <ul className="divide-y divide-surface-border">
+              {ingresosDelDia.map((i) => (
+                <li
+                  key={i.id}
+                  className="flex flex-col gap-3 px-4 py-4 transition-colors hover:bg-slate-50/80 sm:flex-row sm:items-center sm:gap-4 sm:px-6"
+                >
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <p className="text-base font-semibold text-slate-900">{i.numero_remito}</p>
+                      <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-medium text-slate-600">
+                        <Warehouse className="h-3 w-3" />
+                        {i.sector_nombre}
+                      </span>
+                    </div>
+                    {i.observacion?.trim() ? (
+                      <p className="mt-1 line-clamp-2 text-xs text-slate-500">{i.observacion}</p>
+                    ) : (
+                      <p className="mt-1 text-xs text-slate-400">Sin observaciones</p>
+                    )}
+                    <div className="mt-2 flex flex-wrap items-center gap-3 text-xs text-slate-500">
+                      <span>{i.productos_count} producto{i.productos_count === 1 ? '' : 's'}</span>
+                      <span className="inline-flex items-center gap-1">
+                        <User className="h-3 w-3" />
+                        {i.usuario_nombre}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="flex shrink-0 items-center gap-2 sm:justify-end">
+                    <span className="inline-flex min-w-[3rem] items-center justify-center rounded-lg bg-brand-50 px-2.5 py-1.5 text-sm font-bold tabular-nums text-brand-700 ring-1 ring-brand-100">
+                      {formatCantidad(i.total_unidades)}
+                    </span>
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      className="rounded-lg"
+                      onClick={() => verDetalle(i.id)}
+                    >
+                      <Eye className="h-4 w-4" />
+                      Ver
+                    </Button>
+                  </div>
+                </li>
+              ))}
+            </ul>
           )}
         </CardBody>
       </Card>

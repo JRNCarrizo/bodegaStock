@@ -4,6 +4,8 @@ import {
   ChevronLeft,
   ChevronRight,
   Layers,
+  Loader2,
+  MapPin,
   Package,
   Pencil,
   Plus,
@@ -11,7 +13,7 @@ import {
   Trash2,
   Warehouse
 } from 'lucide-react'
-import { formatCantidad, formatTotalCajas } from '@/lib/desglose'
+import { formatCantidad } from '@/lib/desglose'
 import { api, cn } from '@/lib/utils'
 import type { Sector, SectorForm, SectorStockDetalle, SectorUbicacion } from '@/types'
 import { useAuth } from '@/context/AuthContext'
@@ -19,7 +21,7 @@ import { useEscHandler } from '@/hooks/useEscHandler'
 import { ProductImage } from '@/components/ProductImage'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
-import { Badge, Card, CardBody, CardHeader } from '@/components/ui/Card'
+import { Badge, Card, CardBody } from '@/components/ui/Card'
 
 type UbicacionFilter = 'all' | 'sin' | number
 
@@ -147,96 +149,107 @@ function SectorUbicacionesPanel({
   }
 
   return (
-    <div className="rounded-lg border border-surface-border bg-white p-4 space-y-4">
+    <div className="space-y-4 rounded-xl border border-surface-border bg-surface-muted/20 p-4 sm:p-5">
       <div>
-        <p className="text-sm font-medium text-slate-800">Ubicaciones internas</p>
-        <p className="text-xs text-slate-500 mt-1">
-          Puntos dentro del sector donde puede haber stock: &quot;A arriba&quot;, &quot;1 izquierda&quot;,
-          o lo que uses en la bodega. Al cargar ingresos o inventario se elige una de estas.
+        <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">
+          Ubicaciones internas
+        </p>
+        <p className="mt-1 text-sm text-slate-600">
+          Puntos dentro del sector: &quot;A arriba&quot;, &quot;1 izquierda&quot;, etc. Se eligen al
+          cargar ingresos o inventario.
         </p>
       </div>
 
       {onToggleChange && (
-        <label className="flex items-center gap-2 rounded-lg border border-surface-border bg-slate-50/60 px-3 py-2">
+        <label className="flex items-center gap-3 rounded-xl border border-surface-border bg-white px-4 py-3">
           <input
             type="checkbox"
             checked={toggleChecked}
             onChange={(e) => onToggleChange(e.target.checked)}
             className="h-4 w-4 rounded border-surface-border text-brand-600"
           />
-          <span className="text-sm text-slate-700">Usar ubicaciones internas en este sector</span>
+          <span className="text-sm font-medium text-slate-700">
+            Usar ubicaciones internas en este sector
+          </span>
         </label>
       )}
 
       {error && (
-        <div className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</div>
-      )}
-
-      {loading ? (
-        <p className="text-sm text-slate-500">Cargando ubicaciones...</p>
-      ) : ubicaciones.length === 0 ? (
-        <p className="text-sm text-slate-500">
-          Sin ubicaciones. Agregá una con el nombre que uses en la bodega.
-        </p>
-      ) : (
-        <div className="overflow-x-auto rounded-lg border border-surface-border">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-surface-border bg-slate-50/80 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
-                <th className="px-4 py-2">Ubicación</th>
-                {canEdit && <th className="px-4 py-2" />}
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-surface-border">
-              {ubicaciones.map((u) => (
-                <tr key={u.id} className="hover:bg-slate-50/50">
-                  <td className="px-4 py-2 font-medium text-slate-900">{u.nombre}</td>
-                  {canEdit && (
-                    <td className="px-4 py-2 text-right">
-                      {confirmDeleteId === u.id ? (
-                        <div className="flex items-center justify-end gap-2">
-                          <span className="text-xs text-slate-500">¿Eliminar?</span>
-                          <Button
-                            type="button"
-                            variant="danger"
-                            size="sm"
-                            disabled={deletingId === u.id}
-                            onClick={() => void confirmarEliminar(u.id)}
-                          >
-                            Sí
-                          </Button>
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="sm"
-                            disabled={deletingId === u.id}
-                            onClick={cancelarEliminar}
-                          >
-                            No
-                          </Button>
-                        </div>
-                      ) : (
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="sm"
-                          disabled={deletingId !== null}
-                          onClick={() => setConfirmDeleteId(u.id)}
-                        >
-                          <Trash2 className="h-4 w-4 text-red-500" />
-                        </Button>
-                      )}
-                    </td>
-                  )}
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        <div className="rounded-xl bg-red-50 px-3 py-2 text-sm text-red-700 ring-1 ring-red-100">
+          {error}
         </div>
       )}
 
+      {loading ? (
+        <div className="flex items-center gap-2 py-4 text-sm text-slate-500">
+          <Loader2 className="h-4 w-4 animate-spin text-brand-600" />
+          Cargando ubicaciones...
+        </div>
+      ) : ubicaciones.length === 0 ? (
+        <div className="rounded-xl border border-dashed border-surface-border bg-white px-4 py-6 text-center">
+          <MapPin className="mx-auto h-6 w-6 text-slate-300" />
+          <p className="mt-2 text-sm text-slate-500">
+            Sin ubicaciones. Agregá una con el nombre que uses en la bodega.
+          </p>
+        </div>
+      ) : (
+        <ul className="space-y-2">
+          {ubicaciones.map((u) => (
+            <li
+              key={u.id}
+              className="flex items-center justify-between gap-3 rounded-lg border border-surface-border bg-white px-3 py-2.5"
+            >
+              <div className="flex items-center gap-2 min-w-0">
+                <MapPin className="h-3.5 w-3.5 shrink-0 text-brand-500" />
+                <span className="truncate font-medium text-slate-900">{u.nombre}</span>
+              </div>
+              {canEdit && (
+                <div className="shrink-0">
+                  {confirmDeleteId === u.id ? (
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs text-slate-500">¿Eliminar?</span>
+                      <Button
+                        type="button"
+                        variant="danger"
+                        size="sm"
+                        className="rounded-lg"
+                        disabled={deletingId === u.id}
+                        onClick={() => void confirmarEliminar(u.id)}
+                      >
+                        Sí
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="rounded-lg"
+                        disabled={deletingId === u.id}
+                        onClick={cancelarEliminar}
+                      >
+                        No
+                      </Button>
+                    </div>
+                  ) : (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="rounded-lg"
+                      disabled={deletingId !== null}
+                      onClick={() => setConfirmDeleteId(u.id)}
+                    >
+                      <Trash2 className="h-4 w-4 text-red-500" />
+                    </Button>
+                  )}
+                </div>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+
       {canEdit && (
-        <div className="relative z-10 flex flex-col gap-3 sm:flex-row sm:items-end">
+        <div className="relative z-10 flex flex-col gap-3 border-t border-surface-border pt-4 sm:flex-row sm:items-end">
           <Input
             ref={nuevoNombreRef}
             label="Nombre de ubicación"
@@ -248,6 +261,7 @@ function SectorUbicacionesPanel({
           />
           <Button
             type="button"
+            className="rounded-xl sm:mb-0.5"
             disabled={saving || !nuevoNombre.trim()}
             onClick={() => void agregarUbicacion()}
           >
@@ -604,46 +618,63 @@ export function SectoresPage() {
 
   const formContent = (
     <>
-      <form ref={formRef} onSubmit={guardarSector} className="space-y-4">
-        <div className="grid gap-4 sm:grid-cols-2">
-          <Input
-            ref={nombreRef}
-            label="Nombre del sector *"
-            value={form.nombre}
-            onChange={(e) => setForm({ ...form, nombre: e.target.value })}
-            onKeyDown={(e) => handleFormKeyDown(e, descripcionRef)}
-            placeholder="ej. GPI, Depósito principal, Despacho"
-            required
-            className="sm:col-span-2"
-          />
-          <Input
-            ref={descripcionRef}
-            label="Descripción"
-            value={form.descripcion}
-            onChange={(e) => setForm({ ...form, descripcion: e.target.value })}
-            onKeyDown={(e) => handleFormKeyDown(e, activoRef)}
-            className="sm:col-span-2"
-          />
+      <form ref={formRef} onSubmit={guardarSector} className="space-y-5">
+        <div className="rounded-xl border border-surface-border bg-surface-muted/20 p-4">
+          <p className="mb-3 text-xs font-semibold uppercase tracking-wider text-slate-400">
+            Datos generales
+          </p>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Input
+              ref={nombreRef}
+              label="Nombre del sector *"
+              value={form.nombre}
+              onChange={(e) => setForm({ ...form, nombre: e.target.value })}
+              onKeyDown={(e) => handleFormKeyDown(e, descripcionRef)}
+              placeholder="ej. GPI, Depósito principal, Despacho"
+              required
+              className="sm:col-span-2"
+            />
+            <Input
+              ref={descripcionRef}
+              label="Descripción"
+              value={form.descripcion}
+              onChange={(e) => setForm({ ...form, descripcion: e.target.value })}
+              onKeyDown={(e) => handleFormKeyDown(e, activoRef)}
+              className="sm:col-span-2"
+            />
+          </div>
         </div>
 
-        <label className="flex items-center gap-2">
+        <div className="flex items-center gap-3 rounded-xl border border-surface-border bg-white px-4 py-3">
           <input
             ref={activoRef}
+            id="sector-activo"
             type="checkbox"
             checked={form.activo}
             onChange={(e) => setForm({ ...form, activo: e.target.checked })}
             onKeyDown={(e) => handleFormKeyDown(e, descuentoRef)}
             className="h-4 w-4 rounded border-surface-border text-brand-600"
           />
-          <span className="text-sm text-slate-700">Sector activo</span>
-        </label>
+          <label htmlFor="sector-activo" className="text-sm font-medium text-slate-700">
+            Sector activo
+          </label>
+          {!form.activo && (
+            <Badge variant="muted" className="ml-auto">
+              Inactivo
+            </Badge>
+          )}
+        </div>
 
-        <div className="rounded-lg border border-surface-border bg-white p-4 space-y-3">
-          <p className="text-sm font-medium text-slate-800">Descuento de stock</p>
-          <p className="text-xs text-slate-500">
-            Los sectores marcados se usan primero al descontar en planillas y roturas.
-          </p>
-          <label className="flex items-center gap-2">
+        <div className="rounded-xl border border-surface-border bg-surface-muted/20 p-4 space-y-3">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">
+              Descuento de stock
+            </p>
+            <p className="mt-1 text-xs text-slate-500">
+              Los sectores marcados se usan primero al descontar en planillas y roturas.
+            </p>
+          </div>
+          <label className="flex items-center gap-3 rounded-xl border border-surface-border bg-white px-4 py-3">
             <input
               ref={descuentoRef}
               type="checkbox"
@@ -658,7 +689,7 @@ export function SectoresPage() {
               onKeyDown={handleDescuentoEnter}
               className="h-4 w-4 rounded border-surface-border text-brand-600"
             />
-            <span className="text-sm text-slate-700">Sector de descuento</span>
+            <span className="text-sm font-medium text-slate-700">Sector de descuento</span>
           </label>
           {form.es_sector_descuento && (
             <Input
@@ -677,7 +708,7 @@ export function SectoresPage() {
         </div>
 
         {!(editingId && form.usa_ubicaciones) && (
-          <label className="flex items-start gap-3 rounded-lg border border-surface-border bg-white p-4">
+          <label className="flex items-start gap-3 rounded-xl border border-surface-border bg-white p-4">
             <input
               ref={usaUbicacionesRef}
               type="checkbox"
@@ -701,14 +732,14 @@ export function SectoresPage() {
         )}
 
         {form.usa_ubicaciones && !editingId && (
-          <p className="text-sm text-amber-700 bg-amber-50 rounded-lg px-3 py-2">
+          <p className="rounded-xl bg-amber-50 px-4 py-3 text-sm text-amber-800 ring-1 ring-amber-100">
             Guardá el sector primero para poder agregar las ubicaciones internas.
           </p>
         )}
       </form>
 
       {editingId && form.usa_ubicaciones && (
-        <div className="mt-4">
+        <div className="mt-5">
           <SectorUbicacionesPanel
             key={editingId}
             sectorId={editingId}
@@ -722,53 +753,79 @@ export function SectoresPage() {
         </div>
       )}
 
-      <div className="mt-4 flex gap-2">
-          <Button
-            type="button"
-            disabled={saving}
-            onClick={() => void guardarSector()}
-          >
-            {saving ? 'Guardando...' : editingId ? 'Guardar cambios' : 'Crear sector'}
-          </Button>
-          <Button type="button" variant="secondary" onClick={volverAlListado}>
-            Cancelar
-          </Button>
-        </div>
-        <p className="mt-2 text-xs text-slate-400">
-          Enter pasa al siguiente campo · en el último guarda · Esc vuelve al listado
-        </p>
+      <div className="mt-5 flex flex-wrap gap-2 border-t border-surface-border pt-5">
+        <Button
+          type="button"
+          className="rounded-xl px-5"
+          disabled={saving}
+          onClick={() => void guardarSector()}
+        >
+          {saving ? 'Guardando...' : editingId ? 'Guardar cambios' : 'Crear sector'}
+        </Button>
+        <Button type="button" variant="secondary" className="rounded-xl" onClick={volverAlListado}>
+          Cancelar
+        </Button>
+      </div>
+      <p className="mt-2 text-xs text-slate-400">
+        Enter pasa al siguiente campo · en el último guarda · Esc vuelve al listado
+      </p>
     </>
   )
 
   if (view === 'form') {
     return (
       <div className="-m-4 h-[calc(100vh-5rem)] overflow-y-auto lg:-m-6">
-        <div className="mx-auto flex max-w-2xl flex-col px-4 py-8 pb-16">
-          <Button variant="ghost" size="sm" className="mb-4 -ml-2 self-start" onClick={volverAlListado}>
+        <div className="mx-auto flex max-w-3xl flex-col gap-5 px-4 py-6 pb-16 lg:px-6">
+          <Button
+            variant="ghost"
+            size="sm"
+            className="-ml-2 h-9 self-start rounded-xl px-3"
+            onClick={volverAlListado}
+          >
             <ChevronLeft className="h-4 w-4" />
             Volver al listado
           </Button>
 
-          <h1 className="text-2xl font-bold text-slate-900">
-            {editingId ? 'Editar sector' : 'Nuevo sector'}
-          </h1>
-          <p className="mt-1 mb-6 text-slate-500">
-            {editingId
-              ? 'Modificá el sector y sus ubicaciones internas'
-              : 'Completá los datos con Enter para avanzar entre campos'}
-          </p>
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">
+              {editingId ? 'Edición' : 'Alta'}
+            </p>
+            <h1 className="mt-1 text-2xl font-bold tracking-tight text-slate-900">
+              {editingId ? 'Editar sector' : 'Nuevo sector'}
+            </h1>
+            <p className="mt-1 text-sm text-slate-500">
+              {editingId
+                ? 'Modificá el sector y sus ubicaciones internas'
+                : 'Completá los datos con Enter para avanzar entre campos'}
+            </p>
+          </div>
 
           {error && (
-            <div className="mb-4 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>
+            <div className="rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700 ring-1 ring-red-100">
+              {error}
+            </div>
           )}
           {successMessage && (
-            <div className="mb-4 rounded-lg bg-green-50 px-4 py-3 text-sm text-green-700">
+            <div className="rounded-xl bg-emerald-50 px-4 py-3 text-sm text-emerald-700 ring-1 ring-emerald-100">
               {successMessage}
             </div>
           )}
 
-          <Card>
-            <CardBody>{formContent}</CardBody>
+          <Card className="overflow-hidden shadow-panel">
+            <div className="border-b border-brand-100 bg-gradient-to-r from-brand-50/80 via-white to-white px-5 py-4 sm:px-6">
+              <div className="flex items-center gap-3">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-brand-600 text-white shadow-sm">
+                  <Warehouse className="h-5 w-5" />
+                </div>
+                <div>
+                  <p className="text-sm font-semibold text-slate-900">Configuración del sector</p>
+                  <p className="text-xs text-slate-500">
+                    Nombre, descuento de stock y ubicaciones internas
+                  </p>
+                </div>
+              </div>
+            </div>
+            <CardBody className="sm:px-6">{formContent}</CardBody>
           </Card>
         </div>
       </div>
@@ -787,63 +844,83 @@ export function SectoresPage() {
 
     return (
       <div className="-m-4 flex h-[calc(100vh-5rem)] flex-col bg-surface-muted/30 lg:-m-6">
-        <div className="shrink-0 border-b border-surface-border bg-white px-3 py-2 shadow-sm sm:px-4">
-          <div className="mx-auto flex max-w-4xl flex-wrap items-center gap-x-3 gap-y-1.5">
-            <Button variant="ghost" size="sm" className="-ml-1 h-7 shrink-0 px-2" onClick={volverAlListado}>
-              <ChevronLeft className="h-3.5 w-3.5" />
-              Volver
-            </Button>
-            <span className="hidden h-4 w-px bg-surface-border sm:block" aria-hidden />
-            <h1 className="min-w-0 truncate text-base font-bold text-slate-900 sm:text-lg">
-              {stockSector.nombre}
-            </h1>
-            <Badge variant={stockSector.activo ? 'success' : 'muted'}>
-              {stockSector.activo ? 'Activo' : 'Inactivo'}
-            </Badge>
-            {!!stockSector.es_sector_descuento && (
-              <Badge variant="default">
-                P{stockSector.prioridad_descuento ?? '—'}
-              </Badge>
-            )}
-            {stockDetalle && (
-              <span className="shrink-0 text-xs text-slate-500">
-                {stockDetalle.total_productos} prod. ·{' '}
-                <span className="font-semibold text-brand-700">
+        <div className="shrink-0 border-b border-surface-border bg-white shadow-sm">
+          <div className="border-b border-brand-100 bg-gradient-to-r from-brand-50/80 via-white to-white px-4 py-4 sm:px-6">
+            <div className="mx-auto flex max-w-4xl flex-wrap items-center gap-x-3 gap-y-2">
+              <Button
+                variant="ghost"
+                size="sm"
+                className="-ml-1 h-9 shrink-0 rounded-xl px-3"
+                onClick={volverAlListado}
+              >
+                <ChevronLeft className="h-4 w-4" />
+                Volver
+              </Button>
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-brand-600 text-white shadow-sm">
+                <Warehouse className="h-5 w-5" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <h1 className="truncate text-lg font-bold tracking-tight text-slate-900 sm:text-xl">
+                  {stockSector.nombre}
+                </h1>
+                <div className="mt-1 flex flex-wrap items-center gap-1.5">
+                  <Badge variant={stockSector.activo ? 'success' : 'muted'}>
+                    {stockSector.activo ? 'Activo' : 'Inactivo'}
+                  </Badge>
+                  {!!stockSector.es_sector_descuento && (
+                    <Badge variant="default">
+                      Descuento P{stockSector.prioridad_descuento ?? '—'}
+                    </Badge>
+                  )}
+                  {stockDetalle && (
+                    <span className="text-xs text-slate-500">
+                      {stockDetalle.total_productos} productos
+                    </span>
+                  )}
+                </div>
+              </div>
+              {stockDetalle && (
+                <span className="inline-flex shrink-0 items-center rounded-full bg-brand-50 px-3 py-1 text-sm font-bold tabular-nums text-brand-700 ring-1 ring-brand-100">
                   {formatCantidad(stockDetalle.total_stock)}
                 </span>
-                {ubicacionFilter !== 'all' && (
-                  <span className="text-slate-400"> · {filtroLabel}</span>
-                )}
-              </span>
-            )}
-            <div className="ml-auto shrink-0">
-              {hasPermiso('sectores.editar') && (
-                <Button variant="secondary" size="sm" className="h-7 px-2 text-xs" onClick={() => openEdit(stockSector)}>
-                  <Pencil className="h-3.5 w-3.5" />
-                  Editar
-                </Button>
               )}
+              <div className="ml-auto shrink-0">
+                {hasPermiso('sectores.editar') && (
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    className="h-8 rounded-lg px-3 text-xs"
+                    onClick={() => openEdit(stockSector)}
+                  >
+                    <Pencil className="h-3.5 w-3.5" />
+                    Editar
+                  </Button>
+                )}
+              </div>
             </div>
           </div>
 
           {!!stockSector.usa_ubicaciones && (
-            <div className="mx-auto mt-1.5 flex max-w-4xl flex-wrap items-center gap-1.5 border-t border-surface-border pt-1.5">
-              <Layers className="h-3 w-3 shrink-0 text-slate-400" aria-hidden />
+            <div className="mx-auto flex max-w-4xl flex-wrap items-center gap-2 px-4 py-3 sm:px-6">
+              <Layers className="h-3.5 w-3.5 shrink-0 text-slate-400" aria-hidden />
+              <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">
+                Filtrar
+              </span>
               {loadingUbicaciones ? (
-                <span className="text-xs text-slate-400">...</span>
+                <Loader2 className="h-4 w-4 animate-spin text-brand-600" />
               ) : (
                 <>
                   <button
                     type="button"
                     onClick={() => changeUbicacionFilter('all')}
                     className={cn(
-                      'rounded border px-2 py-0.5 text-xs transition-colors',
+                      'rounded-full border px-3 py-1 text-xs font-medium transition-colors',
                       ubicacionFilter === 'all'
-                        ? 'border-brand-500 bg-brand-600 font-medium text-white'
+                        ? 'border-brand-500 bg-brand-600 text-white'
                         : 'border-surface-border bg-white text-slate-600 hover:border-brand-300'
                     )}
                   >
-                    Todo
+                    Todo el sector
                   </button>
                   {ubicaciones?.map((u) => (
                     <button
@@ -851,9 +928,9 @@ export function SectoresPage() {
                       type="button"
                       onClick={() => changeUbicacionFilter(u.id)}
                       className={cn(
-                        'rounded border px-2 py-0.5 text-xs transition-colors',
+                        'rounded-full border px-3 py-1 text-xs font-medium transition-colors',
                         ubicacionFilter === u.id
-                          ? 'border-brand-500 bg-brand-600 font-medium text-white'
+                          ? 'border-brand-500 bg-brand-600 text-white'
                           : 'border-surface-border bg-white text-slate-600 hover:border-brand-300'
                       )}
                     >
@@ -864,65 +941,68 @@ export function SectoresPage() {
                     type="button"
                     onClick={() => changeUbicacionFilter('sin')}
                     className={cn(
-                      'rounded border px-2 py-0.5 text-xs transition-colors',
+                      'rounded-full border px-3 py-1 text-xs font-medium transition-colors',
                       ubicacionFilter === 'sin'
-                        ? 'border-brand-500 bg-brand-600 font-medium text-white'
+                        ? 'border-brand-500 bg-brand-600 text-white'
                         : 'border-dashed border-surface-border bg-white text-slate-500 hover:border-brand-300'
                     )}
                   >
-                    Sin ubic.
+                    Sin ubicación
                   </button>
                 </>
+              )}
+              {ubicacionFilter !== 'all' && (
+                <span className="text-xs text-slate-400">· {filtroLabel}</span>
               )}
             </div>
           )}
         </div>
 
         {stockError && (
-          <div className="shrink-0 border-b border-red-100 bg-red-50 px-4 py-1.5 text-xs text-red-700">
+          <div className="shrink-0 border-b border-red-100 bg-red-50 px-4 py-2 text-sm text-red-700">
             <div className="mx-auto max-w-4xl">{stockError}</div>
           </div>
         )}
 
-        <div className="shrink-0 border-b border-surface-border bg-white px-3 py-1.5 sm:px-4">
+        <div className="shrink-0 border-b border-surface-border bg-white px-4 py-3 sm:px-6">
           <div className="relative mx-auto max-w-4xl">
-            <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
+            <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-brand-400" />
             <input
               ref={stockSearchRef}
               type="search"
-              placeholder="Buscar producto..."
+              placeholder="Buscar producto por código o nombre..."
               value={stockSearch}
               onChange={(e) => setStockSearch(e.target.value)}
-              className="w-full rounded-lg border border-surface-border py-1.5 pl-8 pr-3 text-sm focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20"
+              className="w-full rounded-xl border border-surface-border bg-white py-2.5 pl-10 pr-4 text-sm shadow-sm focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20"
             />
           </div>
         </div>
 
         <div className="min-h-0 flex-1 overflow-y-auto">
-          <div className="mx-auto max-w-4xl px-3 py-2 sm:px-4">
+          <div className="mx-auto max-w-4xl px-4 py-4 sm:px-6">
             {loadingStock ? (
-              <div className="flex flex-col items-center justify-center rounded-lg border border-surface-border bg-white py-16">
-                <div className="h-7 w-7 animate-spin rounded-full border-2 border-brand-200 border-t-brand-600" />
-                <p className="mt-2 text-xs text-slate-500">Cargando...</p>
+              <div className="flex flex-col items-center justify-center rounded-2xl border border-surface-border bg-white py-16 shadow-card">
+                <Loader2 className="h-8 w-8 animate-spin text-brand-600" />
+                <p className="mt-3 text-sm text-slate-500">Cargando stock del sector...</p>
               </div>
             ) : !stockDetalle || stockDetalle.productos.length === 0 ? (
-              <div className="flex flex-col items-center rounded-lg border border-dashed border-surface-border bg-white py-16 text-center">
+              <div className="flex flex-col items-center rounded-2xl border border-dashed border-surface-border bg-white py-16 text-center shadow-card">
                 <Package className="h-10 w-10 text-slate-300" />
-                <p className="mt-2 text-sm font-medium text-slate-700">Sin productos</p>
-                <p className="mt-0.5 text-xs text-slate-500">
+                <p className="mt-3 text-sm font-medium text-slate-700">Sin productos</p>
+                <p className="mt-1 text-xs text-slate-500">
                   No hay stock{filtroLabel !== 'Todo el sector' ? ` en "${filtroLabel}"` : ''}
                 </p>
               </div>
             ) : productosStockFiltrados.length === 0 ? (
-              <div className="flex flex-col items-center rounded-lg border border-dashed border-surface-border bg-white py-12 text-center">
+              <div className="flex flex-col items-center rounded-2xl border border-dashed border-surface-border bg-white py-14 text-center shadow-card">
                 <Search className="h-8 w-8 text-slate-300" />
-                <p className="mt-2 text-sm font-medium text-slate-700">Sin coincidencias</p>
-                <p className="mt-0.5 text-xs text-slate-500">
+                <p className="mt-3 text-sm font-medium text-slate-700">Sin coincidencias</p>
+                <p className="mt-1 text-xs text-slate-500">
                   Ningún producto coincide con &quot;{stockSearch.trim()}&quot;
                 </p>
               </div>
             ) : (
-              <Card>
+              <Card className="overflow-hidden shadow-panel">
                 <CardBody className="p-0">
                   <ul className="divide-y divide-surface-border">
                     {productosStockFiltrados.map((producto) => {
@@ -932,48 +1012,68 @@ export function SectoresPage() {
                           <button
                             type="button"
                             onClick={() => toggleStockProducto(producto.producto_id)}
-                            className="flex w-full items-center gap-2 px-3 py-1.5 text-left hover:bg-slate-50/80 sm:px-4"
+                            className={cn(
+                              'flex w-full items-center gap-3 px-4 py-3.5 text-left transition-colors sm:px-5',
+                              isExpanded ? 'bg-brand-50/60' : 'hover:bg-slate-50/80'
+                            )}
                           >
-                            <span className="shrink-0 text-slate-400" aria-hidden>
+                            <span
+                              className={cn(
+                                'shrink-0 rounded-lg p-1',
+                                isExpanded
+                                  ? 'bg-brand-100 text-brand-700'
+                                  : 'text-slate-400'
+                              )}
+                              aria-hidden
+                            >
                               {isExpanded ? (
-                                <ChevronDown className="h-3.5 w-3.5" />
+                                <ChevronDown className="h-4 w-4" />
                               ) : (
-                                <ChevronRight className="h-3.5 w-3.5" />
+                                <ChevronRight className="h-4 w-4" />
                               )}
                             </span>
                             <ProductImage
                               productoId={producto.producto_id}
                               hasImage={!!producto.imagen_path}
                               alt={producto.nombre}
-                              className="h-8 w-8 shrink-0 rounded object-cover ring-1 ring-surface-border"
+                              className="h-11 w-11 shrink-0 rounded-xl ring-1 ring-surface-border"
                             />
-                            <p className="min-w-0 flex-1 truncate text-sm">
-                              <span className="font-mono font-semibold text-slate-900">
+                            <div className="min-w-0 flex-1 text-left">
+                              <span className="inline-flex rounded-md bg-slate-100 px-2 py-0.5 font-mono text-xs font-semibold text-slate-700">
                                 {producto.codigo_interno}
                               </span>
-                              <span className="mx-1.5 text-slate-300">—</span>
-                              <span className="text-slate-600">{producto.nombre}</span>
-                            </p>
-                            <span className="shrink-0 font-semibold tabular-nums text-brand-700">
+                              <p className="mt-1 truncate text-sm font-semibold text-slate-900">
+                                {producto.nombre}
+                              </p>
+                            </div>
+                            <span className="inline-flex shrink-0 items-center rounded-lg bg-brand-50 px-2.5 py-1.5 text-sm font-bold tabular-nums text-brand-700 ring-1 ring-brand-100">
                               {formatCantidad(producto.cantidad_total)}
                             </span>
                           </button>
                           {isExpanded && (
-                            <ul className="divide-y divide-surface-border border-t border-surface-border bg-surface-muted/30">
-                              {producto.lineas.map((linea) => (
+                            <ul className="space-y-2 border-t border-brand-100/80 bg-gradient-to-b from-surface-muted/40 to-white px-4 py-3 sm:px-5">
+                              {producto.lineas.map((linea, idx) => (
                                 <li
                                   key={linea.id}
-                                  className="flex items-center justify-between gap-3 py-1.5 pl-11 pr-4 text-xs sm:text-sm sm:pl-12"
+                                  className="flex items-center justify-between gap-3 rounded-lg border border-surface-border bg-white px-3 py-2 text-sm"
                                 >
-                                  <span className="text-slate-700">
-                                    {linea.etiqueta}
-                                    {ubicacionFilter === 'all' && linea.ubicacion && (
-                                      <span className="ml-1.5 text-slate-400">
-                                        ({linea.ubicacion})
+                                  <div className="min-w-0">
+                                    <div className="flex items-center gap-2">
+                                      <span className="inline-flex h-5 min-w-[1.25rem] items-center justify-center rounded bg-slate-100 px-1 text-[10px] font-semibold text-slate-400">
+                                        {idx + 1}
                                       </span>
+                                      <span className="font-medium text-slate-800">
+                                        {linea.etiqueta}
+                                      </span>
+                                    </div>
+                                    {ubicacionFilter === 'all' && linea.ubicacion && (
+                                      <p className="mt-1 flex items-center gap-1 pl-7 text-xs text-slate-500">
+                                        <MapPin className="h-3 w-3 shrink-0" />
+                                        {linea.ubicacion}
+                                      </p>
                                     )}
-                                  </span>
-                                  <span className="shrink-0 font-medium tabular-nums text-slate-900">
+                                  </div>
+                                  <span className="shrink-0 rounded-md bg-slate-50 px-2 py-1 text-sm font-semibold tabular-nums text-slate-900 ring-1 ring-surface-border">
                                     {formatCantidad(linea.total_unidades)}
                                   </span>
                                 </li>
@@ -991,14 +1091,14 @@ export function SectoresPage() {
         </div>
 
         {stockDetalle && productosStockFiltrados.length > 0 && (
-          <div className="shrink-0 border-t border-surface-border bg-white px-3 py-2 shadow-[0_-2px_8px_rgba(0,0,0,0.04)] sm:px-4">
-            <div className="mx-auto flex max-w-4xl items-center justify-between text-sm">
-              <span className="text-slate-500">
+          <div className="shrink-0 border-t border-surface-border bg-white px-4 py-3 shadow-[0_-4px_12px_rgba(0,0,0,0.04)] sm:px-6">
+            <div className="mx-auto flex max-w-4xl items-center justify-between">
+              <span className="text-sm text-slate-500">
                 {stockSearch.trim()
-                  ? `${productosStockFiltrados.length} de ${stockDetalle.productos.length}`
-                  : 'Total'}
+                  ? `${productosStockFiltrados.length} de ${stockDetalle.productos.length} productos`
+                  : 'Total del sector'}
               </span>
-              <span className="text-lg font-bold text-brand-700">
+              <span className="text-xl font-bold tabular-nums text-brand-700">
                 {formatCantidad(totalStockFiltrado)}
               </span>
             </div>
@@ -1009,41 +1109,58 @@ export function SectoresPage() {
   }
 
   return (
-    <div className="mx-auto max-w-5xl space-y-6">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+    <div className="mx-auto max-w-6xl space-y-6">
+      <section className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-slate-900">Sectores</h1>
-          <p className="mt-1 text-slate-500">
-            Ubicaciones de la bodega, sectores de descuento y puntos internos por sector
+          <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">
+            Catálogo de bodega
+          </p>
+          <h1 className="mt-1 text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">
+            Sectores
+          </h1>
+          <p className="mt-2 max-w-xl text-sm leading-relaxed text-slate-500">
+            Ubicaciones de la bodega, sectores de descuento y puntos internos. Clic en un sector
+            para ver su contenido.
           </p>
         </div>
-        {hasPermiso('sectores.crear') && (
-          <Button onClick={openCreate}>
-            <Plus className="h-4 w-4" />
-            Nuevo sector
-          </Button>
-        )}
-      </div>
+        <div className="flex flex-wrap items-center gap-2">
+          {hasPermiso('sectores.crear') && (
+            <>
+              <span className="hidden rounded-full border border-surface-border bg-white px-2.5 py-1 text-[11px] font-medium text-slate-500 shadow-card sm:inline-flex">
+                Enter = nuevo sector
+              </span>
+              <Button className="rounded-xl px-4" onClick={openCreate}>
+                <Plus className="h-4 w-4" />
+                Nuevo sector
+              </Button>
+            </>
+          )}
+        </div>
+      </section>
 
-      <Card>
-        <CardHeader
-          title="Listado"
-          description={`${sectores.length} sector(es) · clic en un sector para ver su contenido`}
-          action={
-            <div className="relative w-full min-w-[180px] sm:w-56">
-              <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
+      <Card className="overflow-hidden shadow-panel">
+        <div className="border-b border-brand-100 bg-gradient-to-r from-brand-50/80 via-white to-white px-5 py-4 sm:px-6">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <h2 className="text-sm font-semibold text-slate-900">Listado de sectores</h2>
+              <p className="text-xs text-slate-500">
+                {loading ? 'Cargando sectores...' : `${sectores.length} sector(es)`}
+              </p>
+            </div>
+            <div className="relative w-full sm:max-w-xs">
+              <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-brand-400" />
               <input
                 ref={searchRef}
                 type="search"
-                placeholder="Buscar... · Enter = nuevo"
+                placeholder="Buscar sector..."
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 onKeyDown={handleSearchKeyDown}
-                className="w-full rounded-lg border border-surface-border py-1.5 pl-8 pr-3 text-sm focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20"
+                className="w-full rounded-xl border border-surface-border bg-white py-2.5 pl-10 pr-4 text-sm shadow-sm focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20"
               />
             </div>
-          }
-        />
+          </div>
+        </div>
 
         <CardBody className="p-0">
           {error && (
@@ -1051,98 +1168,111 @@ export function SectoresPage() {
               {error}
             </div>
           )}
+
           {loading ? (
-            <p className="p-6 text-sm text-slate-500">Cargando...</p>
+            <div className="flex items-center justify-center gap-2 py-16 text-sm text-slate-500">
+              <Loader2 className="h-5 w-5 animate-spin text-brand-600" />
+              Cargando sectores...
+            </div>
           ) : sectores.length === 0 ? (
-            <div className="flex flex-col items-center py-16 text-center">
-              <Warehouse className="h-12 w-12 text-slate-300" />
-              <p className="mt-3 font-medium text-slate-700">No hay sectores</p>
-              <p className="mt-1 text-sm text-slate-500">
+            <div className="flex flex-col items-center px-6 py-16 text-center">
+              <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-slate-100 text-slate-400">
+                <Warehouse className="h-7 w-7" />
+              </div>
+              <p className="mt-4 text-sm font-medium text-slate-700">No hay sectores</p>
+              <p className="mt-1 max-w-sm text-xs text-slate-500">
                 Creá sectores para organizar el stock de la bodega
               </p>
+              {hasPermiso('sectores.crear') && (
+                <Button className="mt-4 rounded-xl" size="sm" onClick={openCreate}>
+                  <Plus className="h-4 w-4" />
+                  Crear sector
+                </Button>
+              )}
             </div>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-surface-border bg-slate-50/80 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
-                    <th className="px-6 py-3">Sector</th>
-                    <th className="px-6 py-3">Ubicaciones</th>
-                    <th className="px-6 py-3">Descuento</th>
-                    <th className="px-6 py-3">Stock</th>
-                    <th className="px-6 py-3">Estado</th>
-                    <th className="px-6 py-3" />
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-surface-border">
-                  {sectores.map((s) => (
-                    <tr
-                      key={s.id}
-                      className="cursor-pointer hover:bg-brand-50/50"
-                      onClick={() => void openSectorContenido(s)}
-                    >
-                      <td className="px-6 py-3">
-                        <p className="text-base font-semibold text-slate-900">{s.nombre}</p>
-                        {s.descripcion && (
-                          <p className="text-xs text-slate-500 line-clamp-1">{s.descripcion}</p>
-                        )}
-                      </td>
-                      <td className="px-6 py-3">
-                        {s.usa_ubicaciones ? (
-                          <span className="inline-flex items-center gap-1 text-slate-600">
-                            <Layers className="h-3.5 w-3.5 text-brand-600" />
-                            {s.ubicaciones_count} ubicación(es)
-                          </span>
-                        ) : (
-                          <span className="text-xs text-slate-400">—</span>
-                        )}
-                      </td>
-                      <td className="px-6 py-3">
-                        {s.es_sector_descuento ? (
-                          <Badge variant="default">
-                            Prioridad {s.prioridad_descuento ?? '—'}
+            <ul className="divide-y divide-surface-border">
+              {sectores.map((s) => (
+                <li key={s.id}>
+                  <div
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => void openSectorContenido(s)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault()
+                        void openSectorContenido(s)
+                      }
+                    }}
+                    className="flex cursor-pointer flex-col gap-3 px-4 py-4 transition-colors hover:bg-brand-50/40 sm:flex-row sm:items-center sm:gap-4 sm:px-6"
+                  >
+                    <div className="flex min-w-0 flex-1 items-start gap-3">
+                      <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-brand-50 text-brand-600 ring-1 ring-brand-100">
+                        <Warehouse className="h-5 w-5" />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <p className="text-base font-semibold text-slate-900">{s.nombre}</p>
+                          <Badge variant={s.activo ? 'success' : 'muted'}>
+                            {s.activo ? 'Activo' : 'Inactivo'}
                           </Badge>
-                        ) : (
-                          <span className="text-xs text-slate-400">—</span>
+                          {!!s.es_sector_descuento && (
+                            <Badge variant="default">
+                              Descuento P{s.prioridad_descuento ?? '—'}
+                            </Badge>
+                          )}
+                        </div>
+                        {s.descripcion && (
+                          <p className="mt-1 line-clamp-1 text-xs text-slate-500">{s.descripcion}</p>
                         )}
-                      </td>
-                      <td className="px-6 py-3 text-slate-600">
-                        {s.productos_con_stock > 0 ? (
-                          <>
-                            <p>{s.productos_con_stock} producto(s)</p>
-                            <p className="text-xs text-slate-400">
-                              {formatTotalCajas(s.stock_total_unidades)} total
-                            </p>
-                          </>
-                        ) : (
-                          <span className="text-xs text-slate-400">Sin stock</span>
-                        )}
-                      </td>
-                      <td className="px-6 py-3">
-                        <Badge variant={s.activo ? 'success' : 'muted'}>
-                          {s.activo ? 'Activo' : 'Inactivo'}
-                        </Badge>
-                      </td>
-                      <td className="px-6 py-3 text-right">
-                        {hasPermiso('sectores.editar') && (
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={(e) => {
-                              e.stopPropagation()
-                              openEdit(s)
-                            }}
-                          >
-                            <Pencil className="h-4 w-4" />
-                            Editar
-                          </Button>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                        <div className="mt-2 flex flex-wrap items-center gap-3 text-xs text-slate-500">
+                          {s.usa_ubicaciones ? (
+                            <span className="inline-flex items-center gap-1">
+                              <Layers className="h-3.5 w-3.5 text-brand-500" />
+                              {s.ubicaciones_count} ubicación{s.ubicaciones_count === 1 ? '' : 'es'}
+                            </span>
+                          ) : (
+                            <span>Sin ubicaciones internas</span>
+                          )}
+                          {s.productos_con_stock > 0 ? (
+                            <span>
+                              {s.productos_con_stock} producto{s.productos_con_stock === 1 ? '' : 's'}{' '}
+                              · {formatCantidad(s.stock_total_unidades)} total
+                            </span>
+                          ) : (
+                            <span>Sin stock</span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div
+                      className="flex shrink-0 items-center gap-2 sm:justify-end"
+                      onClick={(e) => e.stopPropagation()}
+                      onKeyDown={(e) => e.stopPropagation()}
+                    >
+                      {s.productos_con_stock > 0 && (
+                        <span className="inline-flex min-w-[3rem] items-center justify-center rounded-lg bg-brand-50 px-2.5 py-1.5 text-sm font-bold tabular-nums text-brand-700 ring-1 ring-brand-100">
+                          {formatCantidad(s.stock_total_unidades)}
+                        </span>
+                      )}
+                      {hasPermiso('sectores.editar') && (
+                        <Button
+                          variant="secondary"
+                          size="sm"
+                          className="rounded-lg"
+                          onClick={() => openEdit(s)}
+                        >
+                          <Pencil className="h-4 w-4" />
+                          Editar
+                        </Button>
+                      )}
+                      <ChevronRight className="hidden h-4 w-4 text-slate-300 sm:block" />
+                    </div>
+                  </div>
+                </li>
+              ))}
+            </ul>
           )}
         </CardBody>
       </Card>

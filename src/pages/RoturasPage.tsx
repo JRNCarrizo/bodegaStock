@@ -9,7 +9,7 @@ import {
   ChevronRight,
   Eye,
   List,
-  Package,
+  Loader2,
   Plus,
   Search,
   Trash2,
@@ -25,10 +25,10 @@ import {
 } from '@/components/RegistroDetallePanel'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
-import { Badge, Card, CardBody, CardHeader } from '@/components/ui/Card'
+import { Card, CardBody } from '@/components/ui/Card'
 import { ProductImage } from '@/components/ProductImage'
 import { formatCantidad, formatDayTabLabel, formatTotalCajas, todayIsoDate } from '@/lib/desglose'
-import { api } from '@/lib/utils'
+import { api, cn } from '@/lib/utils'
 import type {
   Producto,
   RoturaDetalle,
@@ -521,7 +521,11 @@ export function RoturasPage() {
         fecha={detalle.rotura.fecha}
         totalEtiqueta="Total"
         total={detalle.total_cajas}
-        encabezadoExtra={<Badge variant="muted">Descuento aplicado</Badge>}
+        encabezadoExtra={
+          <span className="inline-flex items-center rounded-full bg-red-50 px-2.5 py-0.5 text-xs font-medium text-red-800 ring-1 ring-red-100">
+            Descuento aplicado
+          </span>
+        }
         meta={
           <>
             <RegistroDetalleMetaChip icon={<User className="h-3.5 w-3.5 shrink-0 text-slate-400" />}>
@@ -552,19 +556,43 @@ export function RoturasPage() {
   if (view === 'create' && createPhase === 'datos') {
     return (
       <div className="-m-4 h-[calc(100vh-5rem)] overflow-y-auto lg:-m-6">
-        <div className="mx-auto flex max-w-lg flex-col px-4 py-8 pb-16">
-          <Button variant="ghost" size="sm" className="mb-4 -ml-2 self-start" onClick={volverAlListado}>
+        <div className="mx-auto flex max-w-lg flex-col gap-5 px-4 py-6 pb-16 lg:px-6">
+          <Button
+            variant="ghost"
+            size="sm"
+            className="-ml-2 h-9 self-start rounded-xl px-3"
+            onClick={volverAlListado}
+          >
             <ChevronLeft className="h-4 w-4" />
             Volver al listado
           </Button>
-          <h1 className="text-2xl font-bold text-slate-900">Rotura / pérdida</h1>
-          <p className="mt-1 mb-6 text-slate-500">
-            Descuenta stock por cajas rotas o perdidas · Enter avanza · Esc vuelve al listado
-          </p>
+
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">Alta</p>
+            <h1 className="mt-1 text-2xl font-bold tracking-tight text-slate-900">Rotura / pérdida</h1>
+            <p className="mt-1 text-sm text-slate-500">
+              Descuenta stock por cajas rotas o perdidas · Enter avanza · Esc vuelve al listado
+            </p>
+          </div>
+
           {error && (
-            <div className="mb-4 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>
+            <div className="rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700 ring-1 ring-red-100">
+              {error}
+            </div>
           )}
-          <Card>
+
+          <Card className="overflow-hidden shadow-panel">
+            <div className="border-b border-red-100 bg-gradient-to-r from-red-50/80 via-white to-white px-5 py-4">
+              <div className="flex items-center gap-3">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-red-600 text-white shadow-sm">
+                  <AlertTriangle className="h-5 w-5" />
+                </div>
+                <div>
+                  <p className="text-sm font-semibold text-slate-900">Datos del registro</p>
+                  <p className="text-xs text-slate-500">Fecha y observación del motivo</p>
+                </div>
+              </div>
+            </div>
             <CardBody className="space-y-4">
               <Input
                 ref={fechaRef}
@@ -583,7 +611,7 @@ export function RoturasPage() {
                 placeholder="Opcional — motivo, referencia, etc."
               />
               <p className="text-xs text-slate-400">Enter en observaciones → carga de productos</p>
-              <Button type="button" className="w-full" onClick={avanzarACarga}>
+              <Button type="button" className="w-full rounded-xl" onClick={avanzarACarga}>
                 Continuar a productos
               </Button>
             </CardBody>
@@ -596,20 +624,33 @@ export function RoturasPage() {
   if (view === 'create') {
     const lineasListContent =
       lineas.length === 0 ? (
-        <div className="flex h-full min-h-[120px] flex-col items-center justify-center py-8 text-center text-slate-400">
-          <Package className="mb-2 h-10 w-10 opacity-40" />
-          <p className="text-sm">Las líneas cargadas aparecen acá</p>
+        <div className="flex h-full min-h-[140px] flex-col items-center justify-center px-6 py-12 text-center">
+          <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-red-50 text-red-400">
+            <AlertTriangle className="h-6 w-6" />
+          </div>
+          <p className="mt-3 text-sm font-medium text-slate-600">Sin líneas cargadas</p>
+          <p className="mt-1 text-xs text-slate-500">Los productos que agregues aparecen acá</p>
         </div>
       ) : (
         lineasPorProducto.map((grupo) => {
           const isExpanded = expandedProductos.has(grupo.producto.producto_id)
           return (
             <div key={grupo.producto.producto_id} className="border-b border-surface-border last:border-0">
-              <div className="flex items-center gap-2 px-4 py-2.5 hover:bg-slate-50/80">
+              <div
+                className={cn(
+                  'flex items-center gap-3 px-4 py-3 transition-colors sm:px-5',
+                  isExpanded ? 'bg-red-50/50' : 'hover:bg-slate-50/80'
+                )}
+              >
                 <button
                   type="button"
                   onClick={() => toggleProductoExpand(grupo.producto.producto_id)}
-                  className="shrink-0 rounded p-1 text-slate-400 hover:bg-slate-200"
+                  className={cn(
+                    'shrink-0 rounded-lg p-1.5 transition-colors',
+                    isExpanded
+                      ? 'bg-red-100 text-red-700'
+                      : 'text-slate-400 hover:bg-slate-200 hover:text-slate-700'
+                  )}
                 >
                   {isExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
                 </button>
@@ -618,22 +659,32 @@ export function RoturasPage() {
                   onClick={() => toggleProductoExpand(grupo.producto.producto_id)}
                   className="min-w-0 flex-1 text-left"
                 >
-                  <p className="font-mono text-sm font-semibold">{grupo.producto.codigo_interno}</p>
-                  <p className="truncate text-xs text-slate-600">{grupo.producto.nombre}</p>
+                  <span className="inline-flex rounded-md bg-slate-100 px-2 py-0.5 font-mono text-xs font-semibold text-slate-700">
+                    {grupo.producto.codigo_interno}
+                  </span>
+                  <p className="mt-1 truncate text-sm font-semibold text-slate-900">{grupo.producto.nombre}</p>
                 </button>
-                <Badge variant="default">{formatTotalCajas(grupo.total)}</Badge>
+                <span className="inline-flex shrink-0 items-center rounded-lg bg-red-50 px-2.5 py-1.5 text-sm font-bold tabular-nums text-red-700 ring-1 ring-red-100">
+                  {formatTotalCajas(grupo.total)}
+                </span>
               </div>
               {isExpanded && (
-                <ul className="divide-y divide-surface-border border-t bg-surface-muted/20">
+                <ul className="space-y-2 border-t border-red-100/80 bg-gradient-to-b from-surface-muted/40 to-white px-4 py-3 sm:px-5">
                   {grupo.lineas.map((l) => (
                     <li
                       key={l.tempId}
-                      className="flex items-center justify-between gap-2 py-2.5 pl-11 pr-4 text-sm"
+                      className="flex items-center justify-between gap-3 rounded-lg border border-surface-border bg-white px-3 py-2.5 text-sm"
                     >
-                      <span className="text-slate-700">
+                      <span className="text-slate-800">
                         {formatTotalCajas(l.cantidad_cajas)} · {l.sector_nombre}
                       </span>
-                      <Button type="button" variant="ghost" size="sm" onClick={() => quitarLinea(l.tempId)}>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="rounded-lg"
+                        onClick={() => quitarLinea(l.tempId)}
+                      >
                         <Trash2 className="h-4 w-4 text-red-500" />
                       </Button>
                     </li>
@@ -647,35 +698,48 @@ export function RoturasPage() {
 
     return (
       <div className="-m-4 flex h-[calc(100vh-5rem)] flex-col bg-surface-muted/30 lg:-m-6">
-        <div className="shrink-0 border-b border-surface-border bg-white shadow-sm">
-          <div className="flex flex-wrap items-center gap-x-4 gap-y-1 border-b px-4 py-2 text-xs text-slate-600">
-            <Button variant="ghost" size="sm" className="-ml-2 h-7" onClick={volverAlListado}>
-              <ChevronLeft className="h-3.5 w-3.5" />
-              Salir
-            </Button>
-            <span>
-              <strong className="text-slate-800">{fecha}</strong>
-            </span>
-            {observacion.trim() && (
-              <span className="truncate max-w-xs" title={observacion.trim()}>
-                {observacion.trim()}
-              </span>
-            )}
-            <button type="button" className="text-brand-600 hover:underline" onClick={() => setCreatePhase('datos')}>
-              Editar datos
-            </button>
+        <div className="relative z-20 shrink-0 overflow-visible border-b border-surface-border bg-white shadow-sm">
+          <div className="border-b border-red-100 bg-gradient-to-r from-red-50/80 via-white to-white px-4 py-3 sm:px-5">
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+              <Button variant="ghost" size="sm" className="-ml-2 h-8 rounded-lg px-2" onClick={volverAlListado}>
+                <ChevronLeft className="h-3.5 w-3.5" />
+                Salir
+              </Button>
+              <div className="flex flex-wrap items-center gap-2 text-xs">
+                <span className="rounded-full bg-white px-2.5 py-1 font-medium text-slate-700 ring-1 ring-surface-border">
+                  {fecha}
+                </span>
+                {observacion.trim() && (
+                  <span
+                    className="max-w-xs truncate rounded-full bg-white px-2.5 py-1 font-medium text-slate-700 ring-1 ring-surface-border"
+                    title={observacion.trim()}
+                  >
+                    {observacion.trim()}
+                  </span>
+                )}
+              </div>
+              <button
+                type="button"
+                className="ml-auto text-xs font-medium text-brand-600 hover:text-brand-700 hover:underline"
+                onClick={() => setCreatePhase('datos')}
+              >
+                Editar datos
+              </button>
+            </div>
           </div>
           {error && (
-            <div className="border-b border-red-100 bg-red-50 px-4 py-2 text-sm text-red-700">{error}</div>
+            <div className="border-b border-red-100 bg-red-50 px-4 py-2 text-sm text-red-700 sm:px-5">{error}</div>
           )}
-          <div className="space-y-3 p-4">
-            <div className="relative flex flex-col gap-2 sm:flex-row">
-              <div className="relative min-w-0 flex-1">
-                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+          <div className="space-y-3 overflow-visible p-4 sm:p-5">
+            <div className="relative flex flex-col gap-2 overflow-visible sm:flex-row">
+              <div className="relative z-30 min-w-0 flex-1">
+                <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-brand-400" />
                 <input
                   ref={productSearchRef}
                   type="search"
-                  placeholder="Buscar producto — ↑↓ · Enter"
+                  role="combobox"
+                  aria-expanded={productResults.length > 0 && !selectedProduct}
+                  placeholder="Buscar producto — ↑↓ navegar · Enter seleccionar"
                   value={productSearch}
                   onChange={(e) => {
                     setProductSearch(e.target.value)
@@ -685,24 +749,28 @@ export function RoturasPage() {
                     }
                   }}
                   onKeyDown={handleProductSearchKeyDown}
-                  className="w-full rounded-lg border border-surface-border py-2.5 pl-10 pr-3 text-sm focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20"
+                  className="w-full rounded-xl border border-surface-border bg-white py-2.5 pl-10 pr-3 text-sm shadow-sm focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20"
                 />
                 {productResults.length > 0 && !selectedProduct && (
                   <ul
                     ref={productResultsListRef}
-                    className="absolute z-50 mt-1 max-h-48 w-full overflow-auto rounded-lg border bg-white shadow-lg"
+                    role="listbox"
+                    className="absolute z-50 mt-1 max-h-52 w-full overflow-auto rounded-xl border border-surface-border bg-white py-1 shadow-panel"
                   >
                     {productResults.map((p, index) => (
-                      <li key={p.id}>
+                      <li key={p.id} role="option" aria-selected={index === productHighlightIndex}>
                         <button
                           type="button"
-                          className={`flex w-full items-center gap-2 px-3 py-2 text-left text-sm ${
-                            index === productHighlightIndex ? 'bg-brand-50' : 'hover:bg-slate-50'
-                          }`}
+                          className={cn(
+                            'flex w-full items-center gap-2 px-3 py-2.5 text-left text-sm',
+                            index === productHighlightIndex ? 'bg-brand-50 text-brand-900' : 'hover:bg-slate-50'
+                          )}
                           onMouseEnter={() => setProductHighlightIndex(index)}
                           onClick={() => selectProduct(p)}
                         >
-                          <span className="font-mono font-semibold">{p.codigo_interno}</span>
+                          <span className="rounded bg-slate-100 px-1.5 py-0.5 font-mono text-xs font-semibold">
+                            {p.codigo_interno}
+                          </span>
                           <span className="truncate text-slate-600">{p.nombre}</span>
                         </button>
                       </li>
@@ -710,29 +778,38 @@ export function RoturasPage() {
                   </ul>
                 )}
               </div>
-              <div className="flex shrink-0 gap-2">
-                <Button type="button" variant="secondary" size="sm" onClick={() => setShowScanner(true)}>
-                  <Camera className="h-4 w-4" />
-                  Escanear
-                </Button>
-              </div>
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                className="shrink-0 rounded-xl"
+                onClick={() => setShowScanner(true)}
+              >
+                <Camera className="h-4 w-4" />
+                Escanear
+              </Button>
             </div>
             {selectedProduct && (
-              <div ref={productLineFormRef} className="rounded-lg border border-red-200 bg-red-50/40 p-3">
-                <div className="mb-3 flex items-center gap-2">
+              <div
+                ref={productLineFormRef}
+                className="overflow-hidden rounded-xl border border-red-200 bg-gradient-to-br from-red-50/80 to-white p-4 shadow-card"
+              >
+                <div className="mb-4 flex items-center gap-3">
                   <ProductImage
                     productoId={selectedProduct.id}
                     hasImage={!!selectedProduct.imagen_path}
                     alt={selectedProduct.nombre}
-                    className="h-9 w-9 rounded object-cover"
+                    className="h-11 w-11 rounded-xl ring-1 ring-surface-border"
                   />
                   <div className="min-w-0 flex-1">
-                    <p className="truncate font-mono text-sm font-semibold">{selectedProduct.codigo_interno}</p>
-                    <p className="truncate text-xs text-slate-600">{selectedProduct.nombre}</p>
+                    <span className="inline-flex rounded-md bg-white px-2 py-0.5 font-mono text-xs font-semibold text-slate-700 ring-1 ring-surface-border">
+                      {selectedProduct.codigo_interno}
+                    </span>
+                    <p className="mt-1 truncate text-sm font-semibold text-slate-900">{selectedProduct.nombre}</p>
                   </div>
                   <button
                     type="button"
-                    className="rounded p-1 text-slate-400 hover:text-slate-600"
+                    className="rounded-lg p-1.5 text-slate-400 hover:bg-white hover:text-slate-600"
                     onClick={() => {
                       setSelectedProduct(null)
                       setProductSearch('')
@@ -782,14 +859,14 @@ export function RoturasPage() {
                     </select>
                   </div>
                   <div className="col-span-2 flex items-end sm:col-span-1">
-                    <Button type="button" size="sm" className="w-full" onClick={agregarLineaYContinuar}>
+                    <Button type="button" size="sm" className="w-full rounded-xl" onClick={agregarLineaYContinuar}>
                       <Plus className="h-4 w-4" />
-                      Agregar
+                      Enter ↵
                     </Button>
                   </div>
                 </div>
                 {stockDisponible != null && lineSectorId && (
-                  <p className="mt-2 text-xs text-slate-600">
+                  <p className="mt-3 text-xs text-slate-600">
                     Disponible en sector:{' '}
                     <strong className={stockDisponible <= 0 ? 'text-red-700' : 'text-slate-800'}>
                       {formatTotalCajas(stockDisponible)}
@@ -800,25 +877,34 @@ export function RoturasPage() {
             )}
           </div>
         </div>
-        <div ref={listScrollRef} className="min-h-0 flex-1 overflow-y-auto bg-white">
-          <div className="sticky top-0 border-b bg-white/95 px-4 py-2 backdrop-blur-sm">
-            <div className="flex items-center justify-between text-sm">
-              <span className="font-medium text-slate-700">Líneas ({lineas.length})</span>
+        <div ref={listScrollRef} className="relative z-0 min-h-0 flex-1 overflow-y-auto bg-white">
+          <div className="sticky top-0 z-[2] border-b border-surface-border bg-white/95 px-4 py-3 backdrop-blur-sm sm:px-5">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <p className="text-sm font-semibold text-slate-900">Líneas cargadas</p>
+                <p className="text-xs text-slate-500">{lineas.length} línea(s)</p>
+              </div>
               {lineas.length > 0 && (
-                <span className="font-semibold text-brand-700">{formatTotalCajas(totalGeneral)}</span>
+                <span className="inline-flex items-center rounded-full bg-red-50 px-3 py-1 text-sm font-bold tabular-nums text-red-700 ring-1 ring-red-100">
+                  {formatTotalCajas(totalGeneral)} total
+                </span>
               )}
             </div>
           </div>
           {lineasListContent}
         </div>
-        <div className="shrink-0 border-t bg-white px-4 py-3 shadow-[0_-4px_12px_rgba(0,0,0,0.04)]">
+        <div className="shrink-0 border-t border-surface-border bg-white px-4 py-4 shadow-[0_-4px_12px_rgba(0,0,0,0.04)] sm:px-5">
           <div className="flex items-center justify-between gap-4">
             <div>
-              <p className="text-xs text-slate-500">Total a descontar</p>
-              <p className="text-xl font-bold text-brand-700">{formatTotalCajas(totalGeneral)}</p>
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">Total a descontar</p>
+              <p className="text-2xl font-bold tabular-nums text-red-700">{formatTotalCajas(totalGeneral)}</p>
             </div>
             {hasPermiso('roturas.crear') && (
-              <Button onClick={() => void confirmarRotura()} disabled={lineas.length === 0 || saving}>
+              <Button
+                className="rounded-xl"
+                onClick={() => void confirmarRotura()}
+                disabled={lineas.length === 0 || saving}
+              >
                 <Check className="h-4 w-4" />
                 {saving ? 'Registrando...' : 'Confirmar y descontar'}
               </Button>
@@ -839,147 +925,201 @@ export function RoturasPage() {
   }
 
   return (
-    <div className="mx-auto max-w-5xl space-y-6">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+    <div className="mx-auto max-w-6xl space-y-6">
+      <section className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-slate-900">Roturas y pérdidas</h1>
-          <p className="mt-1 text-slate-500">
-            Descuenta stock por cajas rotas o perdidas
-            {hasPermiso('roturas.crear') && ' · Enter = nuevo registro'}
+          <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">Movimientos</p>
+          <h1 className="mt-1 text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">
+            Roturas y pérdidas
+          </h1>
+          <p className="mt-2 max-w-xl text-sm leading-relaxed text-slate-500">
+            Descuenta stock por cajas rotas o perdidas, con registro por día.
           </p>
         </div>
         {hasPermiso('roturas.crear') && (
-          <Button onClick={abrirNuevoRegistro}>
-            <Plus className="h-4 w-4" />
-            Nuevo registro
-          </Button>
-        )}
-      </div>
-
-      <Card>
-        <CardBody className="space-y-3 border-b py-4">
           <div className="flex flex-wrap items-center gap-2">
-            <div className="relative min-w-[10rem] flex-1">
-              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-              <input
-                ref={listSearchRef}
-                type="search"
-                placeholder="Buscar por producto u observación... · Enter = nuevo"
-                value={listSearch}
-                onChange={(e) => setListSearch(e.target.value)}
-                onKeyDown={handleListSearchKeyDown}
-                className="w-full rounded-lg border border-surface-border py-2 pl-10 pr-3 text-sm"
-              />
-            </div>
-            <div className="flex shrink-0 items-center gap-1.5 rounded-lg border bg-slate-50/60 px-2 py-1">
-              <span className="pl-1 text-xs font-medium text-slate-500">Desde</span>
-              <input
-                type="date"
-                value={listFechaDesde}
-                onChange={(e) => setListFechaDesde(e.target.value)}
-                className="rounded border-0 bg-transparent px-1 py-1 text-sm"
-              />
-              <span className="text-slate-300">|</span>
-              <span className="text-xs font-medium text-slate-500">Hasta</span>
-              <input
-                type="date"
-                value={listFechaHasta}
-                onChange={(e) => setListFechaHasta(e.target.value)}
-                className="rounded border-0 bg-transparent px-1 py-1 text-sm"
-              />
-            </div>
-            {(listFechaDesde || listFechaHasta) && (
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => {
-                  setListFechaDesde('')
-                  setListFechaHasta('')
-                }}
-              >
-                <X className="h-4 w-4" />
-              </Button>
-            )}
+            <span className="hidden rounded-full border border-surface-border bg-white px-2.5 py-1 text-[11px] font-medium text-slate-500 shadow-card sm:inline-flex">
+              Enter = nuevo registro
+            </span>
+            <Button className="rounded-xl px-4" onClick={abrirNuevoRegistro}>
+              <Plus className="h-4 w-4" />
+              Nuevo registro
+            </Button>
           </div>
-          <p className="text-xs text-slate-400">
-            Una sola fecha = ese día · las dos = rango
-            {hasPermiso('roturas.crear') && ' · Enter = nuevo registro'}
-          </p>
-          <DayTabsRow
-            days={diasConRoturas}
-            selectedDay={selectedDay}
-            onSelectDay={setSelectedDay}
-            getCount={(dia) => conteoPorDia.get(dia) ?? 0}
-          />
-        </CardBody>
+        )}
+      </section>
 
-        <CardHeader
-          title={diasConRoturas.length > 0 ? formatDayTabLabel(selectedDay) : 'Registros'}
-          description={
-            diasConRoturas.length > 0
-              ? `${roturasDelDia.length} registro(s) · ${formatCantidad(totalCajasDelDia)} descontadas en el día`
-              : `${roturas.length} registro(s)`
-          }
-          action={
-            diasConRoturas.length > 0 ? (
+      <Card className="overflow-hidden shadow-panel">
+        <div className="border-b border-red-100 bg-gradient-to-r from-red-50/60 via-white to-white px-5 py-4 sm:px-6">
+          <div className="flex flex-col gap-3">
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="relative min-w-[10rem] flex-1">
+                <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-brand-400" />
+                <input
+                  ref={listSearchRef}
+                  type="search"
+                  placeholder="Buscar por producto u observación..."
+                  value={listSearch}
+                  onChange={(e) => setListSearch(e.target.value)}
+                  onKeyDown={handleListSearchKeyDown}
+                  className="w-full rounded-xl border border-surface-border bg-white py-2.5 pl-10 pr-4 text-sm shadow-sm focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20"
+                />
+              </div>
+              <div className="flex shrink-0 items-center gap-1.5 rounded-xl border border-surface-border bg-white px-2 py-1.5 shadow-sm">
+                <span className="pl-1 text-xs font-medium text-slate-500">Desde</span>
+                <input
+                  type="date"
+                  value={listFechaDesde}
+                  onChange={(e) => setListFechaDesde(e.target.value)}
+                  className="rounded border-0 bg-transparent px-1 py-1 text-sm focus:outline-none focus:ring-0"
+                />
+                <span className="text-slate-300">|</span>
+                <span className="text-xs font-medium text-slate-500">Hasta</span>
+                <input
+                  type="date"
+                  value={listFechaHasta}
+                  onChange={(e) => setListFechaHasta(e.target.value)}
+                  className="rounded border-0 bg-transparent px-1 py-1 text-sm focus:outline-none focus:ring-0"
+                />
+              </div>
+              {(listFechaDesde || listFechaHasta) && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="shrink-0 rounded-lg"
+                  onClick={() => {
+                    setListFechaDesde('')
+                    setListFechaHasta('')
+                  }}
+                >
+                  <X className="h-4 w-4" />
+                </Button>
+              )}
+            </div>
+            <p className="text-xs text-slate-500">
+              Una sola fecha filtra ese día · las dos juntas = rango
+              {hasPermiso('roturas.crear') && ' · Enter = nuevo registro'}
+            </p>
+            <DayTabsRow
+              days={diasConRoturas}
+              selectedDay={selectedDay}
+              onSelectDay={setSelectedDay}
+              getCount={(dia) => conteoPorDia.get(dia) ?? 0}
+            />
+          </div>
+        </div>
+
+        <div className="flex items-center justify-between gap-3 border-b border-surface-border bg-slate-50/80 px-5 py-3.5 sm:px-6">
+          <div>
+            <h2 className="text-sm font-semibold text-slate-900">
+              {diasConRoturas.length > 0 ? formatDayTabLabel(selectedDay) : 'Registros'}
+            </h2>
+            <p className="text-xs text-slate-500">
+              {diasConRoturas.length > 0
+                ? `${roturasDelDia.length} registro(s) · ${formatCantidad(totalCajasDelDia)} descontadas en el día`
+                : `${roturas.length} registro(s)`}
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
+            {loadingList && <Loader2 className="h-5 w-5 shrink-0 animate-spin text-brand-600" />}
+            {diasConRoturas.length > 0 && (
               <Button
                 variant="secondary"
                 size="sm"
+                className="rounded-lg"
                 disabled={loadingResumen}
                 onClick={() => void abrirResumenDia()}
               >
                 <List className="h-4 w-4" />
                 Productos del día
               </Button>
-            ) : undefined
-          }
-        />
+            )}
+          </div>
+        </div>
 
         <CardBody className="p-0">
           {error && (
-            <div className="border-b bg-red-50 px-6 py-3 text-sm text-red-700">{error}</div>
+            <div className="border-b border-red-100 bg-red-50 px-6 py-3 text-sm text-red-700">{error}</div>
           )}
           {loadingList ? (
-            <p className="p-6 text-sm text-slate-500">Cargando...</p>
+            <div className="flex items-center justify-center gap-2 py-16 text-sm text-slate-500">
+              <Loader2 className="h-5 w-5 animate-spin text-brand-600" />
+              Cargando registros...
+            </div>
           ) : roturas.length === 0 ? (
-            <div className="flex flex-col items-center py-16 text-center">
-              <AlertTriangle className="h-12 w-12 text-slate-300" />
-              <p className="mt-3 font-medium text-slate-700">No hay registros</p>
+            <div className="flex flex-col items-center px-6 py-16 text-center">
+              <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-red-50 text-red-400">
+                <AlertTriangle className="h-7 w-7" />
+              </div>
+              <p className="mt-4 text-sm font-medium text-slate-700">
+                {listSearch || listFechaDesde || listFechaHasta
+                  ? 'No hay registros con esos filtros'
+                  : 'No hay registros de roturas'}
+              </p>
+              <p className="mt-1 max-w-sm text-xs text-slate-500">
+                {listSearch || listFechaDesde || listFechaHasta
+                  ? 'Probá ampliar el rango de fechas o cambiar la búsqueda'
+                  : 'Registrá la primera rotura o pérdida para descontar stock'}
+              </p>
+              {!(listSearch || listFechaDesde || listFechaHasta) && hasPermiso('roturas.crear') && (
+                <Button className="mt-4 rounded-xl" size="sm" onClick={abrirNuevoRegistro}>
+                  <Plus className="h-4 w-4" />
+                  Nuevo registro
+                </Button>
+              )}
             </div>
           ) : roturasDelDia.length === 0 ? (
-            <p className="p-6 text-sm text-slate-500">Sin resultados para este día</p>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b bg-slate-50/80 text-left text-xs font-semibold uppercase text-slate-500">
-                    <th className="px-6 py-3">#</th>
-                    <th className="px-6 py-3">Observación</th>
-                    <th className="px-6 py-3">Total</th>
-                    <th className="px-6 py-3">Usuario</th>
-                    <th className="px-6 py-3" />
-                  </tr>
-                </thead>
-                <tbody className="divide-y">
-                  {roturasDelDia.map((r) => (
-                    <tr key={r.id} className="hover:bg-slate-50/50">
-                      <td className="px-6 py-3 font-medium">{r.id}</td>
-                      <td className="px-6 py-3 text-slate-600">{r.observacion ?? '—'}</td>
-                      <td className="px-6 py-3 font-semibold text-brand-700">
-                        {formatCantidad(r.total_cajas)}
-                      </td>
-                      <td className="px-6 py-3 text-slate-500">{r.usuario_nombre}</td>
-                      <td className="px-6 py-3 text-right">
-                        <Button variant="ghost" size="sm" onClick={() => void abrirDetalle(r.id)}>
-                          <Eye className="h-4 w-4" />
-                          Ver
-                        </Button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+            <div className="flex flex-col items-center px-6 py-16 text-center">
+              <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-slate-100 text-slate-400">
+                <AlertTriangle className="h-7 w-7" />
+              </div>
+              <p className="mt-4 text-sm font-medium text-slate-700">Sin resultados para este día</p>
+              <p className="mt-1 text-xs text-slate-500">Probá otra fecha o ajustá la búsqueda</p>
             </div>
+          ) : (
+            <ul className="divide-y divide-surface-border">
+              {roturasDelDia.map((r) => (
+                <li
+                  key={r.id}
+                  className="flex flex-col gap-3 px-4 py-4 transition-colors hover:bg-slate-50/80 sm:flex-row sm:items-center sm:gap-4 sm:px-6"
+                >
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <p className="text-base font-semibold text-slate-900">Rotura #{r.id}</p>
+                      <span className="inline-flex items-center rounded-full bg-red-50 px-2.5 py-0.5 text-xs font-medium text-red-800 ring-1 ring-red-100">
+                        Descuento aplicado
+                      </span>
+                    </div>
+                    {r.observacion?.trim() ? (
+                      <p className="mt-1 line-clamp-2 text-xs text-slate-500">{r.observacion}</p>
+                    ) : (
+                      <p className="mt-1 text-xs text-slate-400">Sin observación</p>
+                    )}
+                    <div className="mt-2 flex flex-wrap items-center gap-3 text-xs text-slate-500">
+                      <span>{r.lineas_count} línea{r.lineas_count === 1 ? '' : 's'}</span>
+                      <span className="inline-flex items-center gap-1">
+                        <User className="h-3 w-3" />
+                        {r.usuario_nombre}
+                      </span>
+                    </div>
+                  </div>
+                  <div className="flex shrink-0 items-center gap-2 sm:justify-end">
+                    <span className="inline-flex min-w-[3rem] items-center justify-center rounded-lg bg-red-50 px-2.5 py-1.5 text-sm font-bold tabular-nums text-red-700 ring-1 ring-red-100">
+                      {formatCantidad(r.total_cajas)}
+                    </span>
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      className="rounded-lg"
+                      onClick={() => void abrirDetalle(r.id)}
+                    >
+                      <Eye className="h-4 w-4" />
+                      Ver
+                    </Button>
+                  </div>
+                </li>
+              ))}
+            </ul>
           )}
         </CardBody>
       </Card>
@@ -987,8 +1127,8 @@ export function RoturasPage() {
       {showResumenDia && resumenDia && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-slate-900/50" onClick={() => setShowResumenDia(false)} />
-          <div className="relative z-10 max-h-[85vh] w-full max-w-2xl overflow-auto rounded-xl border bg-white shadow-xl">
-            <div className="sticky top-0 flex items-center justify-between border-b bg-white px-5 py-4">
+          <div className="relative z-10 max-h-[85vh] w-full max-w-2xl overflow-auto rounded-xl border border-surface-border bg-white shadow-xl">
+            <div className="sticky top-0 flex items-center justify-between border-b border-surface-border bg-white px-5 py-4">
               <div>
                 <h3 className="font-semibold text-slate-900">
                   Productos perdidos — {formatDayTabLabel(resumenDia.fecha)}
@@ -1009,17 +1149,21 @@ export function RoturasPage() {
               {resumenDia.productos.length === 0 ? (
                 <p className="text-sm text-slate-500">Sin productos en este día</p>
               ) : (
-                <ul className="divide-y divide-surface-border rounded-lg border">
+                <ul className="divide-y divide-surface-border rounded-xl border border-surface-border">
                   {resumenDia.productos.map((p) => (
-                    <li key={p.producto_id} className="flex items-center justify-between gap-3 px-4 py-3">
+                    <li key={p.producto_id} className="flex items-center justify-between gap-3 px-4 py-3.5">
                       <div>
-                        <p className="font-mono text-sm font-semibold">{p.codigo_interno}</p>
-                        <p className="text-sm text-slate-700">{p.nombre}</p>
+                        <span className="inline-flex rounded-md bg-slate-100 px-2 py-0.5 font-mono text-xs font-semibold text-slate-700">
+                          {p.codigo_interno}
+                        </span>
+                        <p className="mt-1 text-sm font-medium text-slate-900">{p.nombre}</p>
                         {p.sectores_count > 1 && (
-                          <p className="text-xs text-slate-400">{p.sectores_count} sectores</p>
+                          <p className="text-xs text-slate-500">{p.sectores_count} sectores</p>
                         )}
                       </div>
-                      <span className="font-semibold text-brand-700">{formatCantidad(p.total_cajas)}</span>
+                      <span className="inline-flex rounded-lg bg-red-50 px-2.5 py-1.5 text-sm font-bold tabular-nums text-red-700 ring-1 ring-red-100">
+                        {formatCantidad(p.total_cajas)}
+                      </span>
                     </li>
                   ))}
                 </ul>

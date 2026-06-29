@@ -5,7 +5,7 @@ import {
   ChevronDown,
   ChevronLeft,
   ChevronRight,
-  Package,
+  Loader2,
   Pencil,
   Plus,
   RotateCcw,
@@ -26,10 +26,10 @@ import {
 } from '@/components/RegistroDetallePanel'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
-import { Badge, Card, CardBody, CardHeader } from '@/components/ui/Card'
+import { Card, CardBody } from '@/components/ui/Card'
 import { ProductImage } from '@/components/ProductImage'
 import { formatCantidad, formatDayTabLabel, formatTotalCajas, todayIsoDate } from '@/lib/desglose'
-import { api } from '@/lib/utils'
+import { api, cn } from '@/lib/utils'
 import type {
   Camionero,
   CamioneroVehiculo,
@@ -56,15 +56,39 @@ function labelEstado(condicion: RetornoEstadoCondicion): string {
 
 function badgeEstadoRetorno(estado: 'PENDIENTE' | 'VERIFICADO') {
   if (estado === 'VERIFICADO') {
-    return <Badge variant="success">Verificado</Badge>
+    return (
+      <span className="inline-flex items-center rounded-full bg-green-50 px-2.5 py-0.5 text-xs font-medium text-green-800 ring-1 ring-green-100">
+        Verificado
+      </span>
+    )
   }
-  return <Badge variant="warning">Sin verificar</Badge>
+  return (
+    <span className="inline-flex items-center rounded-full bg-amber-50 px-2.5 py-0.5 text-xs font-medium text-amber-800 ring-1 ring-amber-100">
+      Sin verificar
+    </span>
+  )
 }
 
 function badgeCondicion(condicion: RetornoEstadoCondicion) {
-  if (condicion === 'BUEN_ESTADO') return <Badge variant="success">{labelEstado(condicion)}</Badge>
-  if (condicion === 'INCOMPLETA') return <Badge variant="default">{labelEstado(condicion)}</Badge>
-  return <Badge variant="muted">{labelEstado(condicion)}</Badge>
+  if (condicion === 'BUEN_ESTADO') {
+    return (
+      <span className="inline-flex items-center rounded-full bg-green-50 px-2.5 py-0.5 text-xs font-medium text-green-800 ring-1 ring-green-100">
+        {labelEstado(condicion)}
+      </span>
+    )
+  }
+  if (condicion === 'INCOMPLETA') {
+    return (
+      <span className="inline-flex items-center rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-medium text-slate-700 ring-1 ring-surface-border">
+        {labelEstado(condicion)}
+      </span>
+    )
+  }
+  return (
+    <span className="inline-flex items-center rounded-full bg-red-50 px-2.5 py-0.5 text-xs font-medium text-red-800 ring-1 ring-red-100">
+      {labelEstado(condicion)}
+    </span>
+  )
 }
 
 function labelCamionero(numero: string | null | undefined, nombre: string | null | undefined): string {
@@ -724,17 +748,20 @@ export function RetornosPage() {
           return (
             <div
               key={linea.id}
-              className={`rounded-lg border px-4 py-3 ${
+              className={cn(
+                'rounded-xl border px-4 py-3.5 sm:px-5',
                 linea.linea_verificada
                   ? 'border-green-200 bg-green-50/50'
                   : 'border-surface-border bg-white'
-              }`}
+              )}
             >
               <div className="flex flex-wrap items-start justify-between gap-3">
-                <div>
-                  <p className="font-mono text-sm font-semibold text-slate-900">{linea.codigo_interno}</p>
-                  <p className="text-sm text-slate-700">{linea.nombre}</p>
-                  <p className="mt-1 text-sm text-slate-600">
+                <div className="min-w-0">
+                  <span className="inline-flex rounded-md bg-slate-100 px-2 py-0.5 font-mono text-xs font-semibold text-slate-700">
+                    {linea.codigo_interno}
+                  </span>
+                  <p className="mt-1 text-sm font-semibold text-slate-900">{linea.nombre}</p>
+                  <p className="mt-1.5 text-sm text-slate-600">
                     Declarado: {formatTotalCajas(linea.cantidad_cajas)} · {labelEstado(linea.estado_condicion)} ·{' '}
                     {linea.sector_nombre}
                   </p>
@@ -745,9 +772,11 @@ export function RetornosPage() {
                     </p>
                   )}
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="flex shrink-0 flex-wrap items-center gap-2">
                   {linea.linea_verificada ? (
-                    <Badge variant="success">Confirmada</Badge>
+                    <span className="inline-flex items-center rounded-full bg-green-50 px-2.5 py-0.5 text-xs font-medium text-green-800 ring-1 ring-green-100">
+                      Confirmada
+                    </span>
                   ) : (
                     <>
                       {!editando && (
@@ -755,6 +784,7 @@ export function RetornosPage() {
                           type="button"
                           variant="ghost"
                           size="sm"
+                          className="rounded-lg"
                           onClick={() => {
                             setEditLineaId(linea.id)
                             setEditCantidad(String(linea.cantidad_efectiva))
@@ -770,6 +800,7 @@ export function RetornosPage() {
                         <Button
                           type="button"
                           size="sm"
+                          className="rounded-xl"
                           disabled={saving}
                           onClick={() => void confirmarLinea(linea)}
                         >
@@ -795,7 +826,7 @@ export function RetornosPage() {
                     <select
                       value={editEstado}
                       onChange={(e) => setEditEstado(e.target.value as RetornoEstadoCondicion)}
-                      className="w-full rounded-lg border border-surface-border px-3 py-2 text-sm"
+                      className="w-full rounded-xl border border-surface-border px-3 py-2 text-sm shadow-sm focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20"
                     >
                       {ESTADOS_CONDICION.map((e) => (
                         <option key={e.value} value={e.value}>
@@ -809,7 +840,7 @@ export function RetornosPage() {
                     <select
                       value={editSector}
                       onChange={(e) => setEditSector(e.target.value)}
-                      className="w-full rounded-lg border border-surface-border px-3 py-2 text-sm"
+                      className="w-full rounded-xl border border-surface-border px-3 py-2 text-sm shadow-sm focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20"
                     >
                       {sectores.map((s) => (
                         <option key={s.id} value={s.id}>
@@ -822,12 +853,19 @@ export function RetornosPage() {
                     <Button
                       type="button"
                       size="sm"
+                      className="rounded-xl"
                       disabled={saving}
                       onClick={() => void confirmarLinea(linea)}
                     >
                       Guardar y confirmar
                     </Button>
-                    <Button type="button" variant="secondary" size="sm" onClick={() => setEditLineaId(null)}>
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      size="sm"
+                      className="rounded-xl"
+                      onClick={() => setEditLineaId(null)}
+                    >
                       Cancelar
                     </Button>
                   </div>
@@ -842,51 +880,66 @@ export function RetornosPage() {
 
   if (view === 'verify' && detalle) {
     return (
-      <div className="mx-auto max-w-4xl space-y-6">
-        <Button variant="ghost" size="sm" onClick={volverAlListado}>
+      <div className="mx-auto max-w-4xl space-y-6 px-4 py-6 lg:px-0">
+        <Button
+          variant="ghost"
+          size="sm"
+          className="-ml-2 h-9 rounded-xl px-3"
+          onClick={volverAlListado}
+        >
           <ChevronLeft className="h-4 w-4" />
           Volver
         </Button>
         <div>
-          <h1 className="text-2xl font-bold text-slate-900">Verificar retorno</h1>
-          <p className="mt-1 text-slate-500">
+          <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">Verificación</p>
+          <h1 className="mt-1 text-2xl font-bold tracking-tight text-slate-900">Verificar retorno</h1>
+          <p className="mt-1 text-sm text-slate-500">
             Confirmá línea por línea — solo &quot;Buen estado&quot; suma al stock · Esc vuelve al listado
           </p>
         </div>
         {error && (
-          <div className="rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>
+          <div className="rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700 ring-1 ring-red-100">
+            {error}
+          </div>
         )}
-        <Card>
-          <CardBody className="space-y-3 text-sm">
-            <div className="flex flex-wrap gap-2">
+        <Card className="overflow-hidden shadow-panel">
+          <div className="border-b border-brand-100 bg-gradient-to-r from-brand-50/80 via-white to-white px-5 py-4">
+            <div className="flex flex-wrap items-center gap-2">
               {badgeEstadoRetorno(detalle.retorno.estado)}
-              <Badge variant="default">
+              <span className="inline-flex items-center gap-1 rounded-full bg-white px-2.5 py-0.5 text-xs font-medium text-slate-700 ring-1 ring-surface-border">
+                <Warehouse className="h-3 w-3" />
                 {resumenSectoresLineas(detalle.lineas, detalle.retorno.sector_nombre)}
-              </Badge>
+              </span>
             </div>
+          </div>
+          <CardBody className="space-y-2 text-sm">
             <p>
               <span className="text-slate-500">Camionero:</span>{' '}
-              {labelCamionero(detalle.retorno.camionero_numero, detalle.retorno.camionero_nombre)}
+              <strong>{labelCamionero(detalle.retorno.camionero_numero, detalle.retorno.camionero_nombre)}</strong>
             </p>
             {detalle.retorno.numero_planilla && (
               <p>
-                <span className="text-slate-500">Planilla:</span> {detalle.retorno.numero_planilla}
+                <span className="text-slate-500">Planilla:</span>{' '}
+                <strong>{detalle.retorno.numero_planilla}</strong>
               </p>
             )}
             <p>
-              <span className="text-slate-500">Cargado por:</span> {detalle.retorno.cargado_por_nombre}
+              <span className="text-slate-500">Cargado por:</span>{' '}
+              <strong>{detalle.retorno.cargado_por_nombre}</strong>
             </p>
           </CardBody>
         </Card>
-        <Card>
-          <CardHeader
-            title="Líneas a verificar"
-            description={`${detalle.lineas_verificadas} de ${detalle.lineas.length} confirmadas`}
-          />
+        <Card className="overflow-hidden shadow-panel">
+          <div className="border-b border-surface-border bg-slate-50/80 px-5 py-3.5">
+            <h2 className="text-sm font-semibold text-slate-900">Líneas a verificar</h2>
+            <p className="text-xs text-slate-500">
+              {detalle.lineas_verificadas} de {detalle.lineas.length} confirmadas
+            </p>
+          </div>
           <CardBody>{renderLineasVerificacion()}</CardBody>
         </Card>
         {puedeVerificar && (
-          <Card>
+          <Card className="shadow-panel">
             <CardBody className="space-y-4">
               <Input
                 label="Observación de verificación"
@@ -895,6 +948,7 @@ export function RetornosPage() {
                 placeholder="Opcional"
               />
               <Button
+                className="rounded-xl"
                 disabled={saving || !todasLineasVerificadas}
                 onClick={() => void completarVerificacion()}
               >
@@ -1023,7 +1077,7 @@ export function RetornosPage() {
         }))}
         despuesProductos={
           puedeVerificar ? (
-            <Card>
+            <Card className="overflow-hidden shadow-panel">
               <CardBody className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <div>
                   <p className="font-medium text-slate-900">Listo para verificar</p>
@@ -1032,7 +1086,9 @@ export function RetornosPage() {
                     anteriores
                   </p>
                 </div>
-                <Button onClick={() => setView('verify')}>Iniciar verificación</Button>
+                <Button className="rounded-xl" onClick={() => setView('verify')}>
+                  Iniciar verificación
+                </Button>
               </CardBody>
             </Card>
           ) : undefined
@@ -1044,19 +1100,43 @@ export function RetornosPage() {
   if (view === 'create' && createPhase === 'datos') {
     return (
       <div className="-m-4 h-[calc(100vh-5rem)] overflow-y-auto lg:-m-6">
-        <div className="mx-auto flex max-w-lg flex-col px-4 py-8 pb-16">
-          <Button variant="ghost" size="sm" className="mb-4 -ml-2 self-start" onClick={volverAlListado}>
+        <div className="mx-auto flex max-w-lg flex-col gap-5 px-4 py-6 pb-16 lg:px-6">
+          <Button
+            variant="ghost"
+            size="sm"
+            className="-ml-2 h-9 self-start rounded-xl px-3"
+            onClick={volverAlListado}
+          >
             <ChevronLeft className="h-4 w-4" />
             Volver al listado
           </Button>
-          <h1 className="text-2xl font-bold text-slate-900">Nuevo retorno</h1>
-          <p className="mt-1 mb-6 text-slate-500">
-            Mercadería que vuelve a bodega — Enter avanza · Esc vuelve al listado
-          </p>
+
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">Alta</p>
+            <h1 className="mt-1 text-2xl font-bold tracking-tight text-slate-900">Nuevo retorno</h1>
+            <p className="mt-1 text-sm text-slate-500">
+              Mercadería que vuelve a bodega — Enter avanza · Esc vuelve al listado
+            </p>
+          </div>
+
           {error && (
-            <div className="mb-4 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>
+            <div className="rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700 ring-1 ring-red-100">
+              {error}
+            </div>
           )}
-          <Card>
+
+          <Card className="overflow-hidden shadow-panel">
+            <div className="border-b border-brand-100 bg-gradient-to-r from-brand-50/80 via-white to-white px-5 py-4">
+              <div className="flex items-center gap-3">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-brand-600 text-white shadow-sm">
+                  <RotateCcw className="h-5 w-5" />
+                </div>
+                <div>
+                  <p className="text-sm font-semibold text-slate-900">Datos del retorno</p>
+                  <p className="text-xs text-slate-500">Fecha, planilla, camionero y sector default</p>
+                </div>
+              </div>
+            </div>
             <CardBody className="space-y-4">
               <Input
                 ref={fechaRef}
@@ -1084,7 +1164,7 @@ export function RetornosPage() {
                     setVehiculoId('')
                   }}
                   onKeyDown={handleCamioneroKeyDown}
-                  className="w-full rounded-lg border border-surface-border px-3 py-2 text-sm"
+                  className="w-full rounded-xl border border-surface-border px-3 py-2.5 text-sm shadow-sm focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20"
                 >
                   <option value="">Opcional</option>
                   {camioneros.map((c) => (
@@ -1102,7 +1182,7 @@ export function RetornosPage() {
                   onChange={(e) => setVehiculoId(e.target.value)}
                   onKeyDown={(e) => handleDatosKeyDown(e, sectorRef)}
                   disabled={!camioneroId}
-                  className="w-full rounded-lg border border-surface-border px-3 py-2 text-sm disabled:bg-slate-50"
+                  className="w-full rounded-xl border border-surface-border px-3 py-2.5 text-sm shadow-sm disabled:bg-slate-50 focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20"
                 >
                   <option value="">Opcional</option>
                   {vehiculos.map((v) => (
@@ -1124,7 +1204,7 @@ export function RetornosPage() {
                     if (e.target.value) setLineSectorId(e.target.value)
                   }}
                   onKeyDown={handleSectorKeyDown}
-                  className="w-full rounded-lg border border-surface-border px-3 py-2 text-sm"
+                  className="w-full rounded-xl border border-surface-border px-3 py-2.5 text-sm shadow-sm focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20"
                 >
                   <option value="">Sin default — elegís por línea</option>
                   {sectores.map((s) => (
@@ -1142,7 +1222,7 @@ export function RetornosPage() {
                 onKeyDown={(e) => handleDatosKeyDown(e)}
               />
               <p className="text-xs text-slate-400">Enter en observaciones → carga de productos</p>
-              <Button type="button" className="w-full" onClick={avanzarACarga}>
+              <Button type="button" className="w-full rounded-xl" onClick={avanzarACarga}>
                 Continuar a productos
               </Button>
             </CardBody>
@@ -1155,20 +1235,33 @@ export function RetornosPage() {
   if (view === 'create') {
     const lineasListContent =
       lineas.length === 0 ? (
-        <div className="flex h-full min-h-[120px] flex-col items-center justify-center py-8 text-center text-slate-400">
-          <Package className="mb-2 h-10 w-10 opacity-40" />
-          <p className="text-sm">Las líneas cargadas aparecen acá</p>
+        <div className="flex h-full min-h-[140px] flex-col items-center justify-center px-6 py-12 text-center">
+          <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-100 text-slate-400">
+            <RotateCcw className="h-6 w-6" />
+          </div>
+          <p className="mt-3 text-sm font-medium text-slate-600">Sin líneas cargadas</p>
+          <p className="mt-1 text-xs text-slate-500">Los productos que agregues aparecen acá</p>
         </div>
       ) : (
         lineasPorProducto.map((grupo) => {
           const isExpanded = expandedProductos.has(grupo.producto.producto_id)
           return (
             <div key={grupo.producto.producto_id} className="border-b border-surface-border last:border-0">
-              <div className="flex items-center gap-2 px-4 py-2.5 hover:bg-slate-50/80">
+              <div
+                className={cn(
+                  'flex items-center gap-3 px-4 py-3 transition-colors sm:px-5',
+                  isExpanded ? 'bg-brand-50/50' : 'hover:bg-slate-50/80'
+                )}
+              >
                 <button
                   type="button"
                   onClick={() => toggleProductoExpand(grupo.producto.producto_id)}
-                  className="shrink-0 rounded p-1 text-slate-400 hover:bg-slate-200 hover:text-slate-700"
+                  className={cn(
+                    'shrink-0 rounded-lg p-1.5 transition-colors',
+                    isExpanded
+                      ? 'bg-brand-100 text-brand-700'
+                      : 'text-slate-400 hover:bg-slate-200 hover:text-slate-700'
+                  )}
                   aria-expanded={isExpanded}
                   aria-label={isExpanded ? 'Ocultar líneas' : 'Ver líneas'}
                 >
@@ -1183,30 +1276,40 @@ export function RetornosPage() {
                   onClick={() => toggleProductoExpand(grupo.producto.producto_id)}
                   className="min-w-0 flex-1 text-left"
                 >
-                  <p className="font-mono text-sm font-semibold text-slate-900">
+                  <span className="inline-flex rounded-md bg-slate-100 px-2 py-0.5 font-mono text-xs font-semibold text-slate-700">
                     {grupo.producto.codigo_interno}
+                  </span>
+                  <p className="mt-1 truncate text-sm font-semibold text-slate-900">
+                    {grupo.producto.nombre}
                   </p>
-                  <p className="truncate text-xs text-slate-600">{grupo.producto.nombre}</p>
                   {!isExpanded && grupo.lineas.length > 1 && (
-                    <p className="text-xs text-slate-400">{grupo.lineas.length} líneas</p>
+                    <p className="mt-0.5 text-xs text-slate-500">{grupo.lineas.length} líneas</p>
                   )}
                 </button>
-                <Badge variant="default">{formatTotalCajas(grupo.total)}</Badge>
+                <span className="inline-flex shrink-0 items-center rounded-lg bg-brand-50 px-2.5 py-1.5 text-sm font-bold tabular-nums text-brand-700 ring-1 ring-brand-100">
+                  {formatTotalCajas(grupo.total)}
+                </span>
               </div>
               {isExpanded && (
-                <ul className="divide-y divide-surface-border border-t border-surface-border bg-surface-muted/20">
+                <ul className="space-y-2 border-t border-brand-100/80 bg-gradient-to-b from-surface-muted/40 to-white px-4 py-3 sm:px-5">
                   {grupo.lineas.map((l) => (
                     <li
                       key={l.tempId}
-                      className="flex items-center justify-between gap-2 py-2.5 pl-11 pr-4 text-sm"
+                      className="flex items-center justify-between gap-3 rounded-lg border border-surface-border bg-white px-3 py-2.5 text-sm"
                     >
-                      <div className="text-slate-700">
+                      <div className="min-w-0 text-slate-800">
                         {formatTotalCajas(l.cantidad_cajas)} · {labelEstado(l.estado_condicion)} ·{' '}
                         {l.sector_nombre}
                       </div>
                       <div className="flex shrink-0 items-center gap-2">
                         {badgeCondicion(l.estado_condicion)}
-                        <Button type="button" variant="ghost" size="sm" onClick={() => quitarLinea(l.tempId)}>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          className="rounded-lg"
+                          onClick={() => quitarLinea(l.tempId)}
+                        >
                           <Trash2 className="h-4 w-4 text-red-500" />
                         </Button>
                       </div>
@@ -1225,45 +1328,57 @@ export function RetornosPage() {
           ref={cargaPanelRef}
           className="relative z-20 shrink-0 overflow-visible border-b border-surface-border bg-white shadow-sm"
         >
-          <div className="flex flex-wrap items-center gap-x-4 gap-y-1 border-b border-surface-border px-4 py-2 text-xs text-slate-600">
-            <Button variant="ghost" size="sm" className="-ml-2 h-7" onClick={volverAlListado}>
-              <ChevronLeft className="h-3.5 w-3.5" />
-              Salir
-            </Button>
-            <span>
-              <strong className="text-slate-800">{fecha}</strong>
-            </span>
-            {numeroPlanilla.trim() && (
-              <span>
-                Planilla <strong className="text-slate-800">{numeroPlanilla.trim()}</strong>
-              </span>
-            )}
-            <span>
-              <Truck className="mr-0.5 inline h-3 w-3" />
-              {labelCamionero(camioneroSeleccionado?.numero_interno, camioneroSeleccionado?.nombre)}
-            </span>
-            {sectorDefaultSeleccionado && (
-              <span>
-                Default <strong className="text-slate-800">{sectorDefaultSeleccionado.nombre}</strong>
-              </span>
-            )}
-            <button
-              type="button"
-              className="text-brand-600 hover:underline"
-              onClick={() => setCreatePhase('datos')}
-            >
-              Editar datos
-            </button>
+          <div className="border-b border-brand-100 bg-gradient-to-r from-brand-50/80 via-white to-white px-4 py-3 sm:px-5">
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+              <Button
+                variant="ghost"
+                size="sm"
+                className="-ml-2 h-8 rounded-lg px-2"
+                onClick={volverAlListado}
+              >
+                <ChevronLeft className="h-3.5 w-3.5" />
+                Salir
+              </Button>
+              <div className="flex flex-wrap items-center gap-2 text-xs">
+                <span className="rounded-full bg-white px-2.5 py-1 font-medium text-slate-700 ring-1 ring-surface-border">
+                  {fecha}
+                </span>
+                {numeroPlanilla.trim() && (
+                  <span className="rounded-full bg-white px-2.5 py-1 font-medium text-slate-700 ring-1 ring-surface-border">
+                    Planilla {numeroPlanilla.trim()}
+                  </span>
+                )}
+                <span className="inline-flex items-center gap-1 rounded-full bg-brand-50 px-2.5 py-1 font-medium text-brand-800 ring-1 ring-brand-100">
+                  <Truck className="h-3 w-3" />
+                  {labelCamionero(camioneroSeleccionado?.numero_interno, camioneroSeleccionado?.nombre)}
+                </span>
+                {sectorDefaultSeleccionado && (
+                  <span className="inline-flex items-center gap-1 rounded-full bg-white px-2.5 py-1 font-medium text-slate-700 ring-1 ring-surface-border">
+                    <Warehouse className="h-3 w-3" />
+                    {sectorDefaultSeleccionado.nombre}
+                  </span>
+                )}
+              </div>
+              <button
+                type="button"
+                className="ml-auto text-xs font-medium text-brand-600 hover:text-brand-700 hover:underline"
+                onClick={() => setCreatePhase('datos')}
+              >
+                Editar datos
+              </button>
+            </div>
           </div>
 
           {error && (
-            <div className="border-b border-red-100 bg-red-50 px-4 py-2 text-sm text-red-700">{error}</div>
+            <div className="border-b border-red-100 bg-red-50 px-4 py-2 text-sm text-red-700 sm:px-5">
+              {error}
+            </div>
           )}
 
-          <div className="space-y-3 overflow-visible p-4">
+          <div className="space-y-3 overflow-visible p-4 sm:p-5">
             <div className="relative flex flex-col gap-2 overflow-visible sm:flex-row">
               <div className="relative z-30 min-w-0 flex-1">
-                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-brand-400" />
                 <input
                   ref={productSearchRef}
                   type="search"
@@ -1280,27 +1395,30 @@ export function RetornosPage() {
                     }
                   }}
                   onKeyDown={handleProductSearchKeyDown}
-                  className="w-full rounded-lg border border-surface-border py-2.5 pl-10 pr-3 text-sm focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20"
+                  className="w-full rounded-xl border border-surface-border bg-white py-2.5 pl-10 pr-3 text-sm shadow-sm focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20"
                 />
                 {productResults.length > 0 && !selectedProduct && (
                   <ul
                     ref={productResultsListRef}
                     role="listbox"
-                    className="absolute z-50 mt-1 max-h-48 w-full overflow-auto rounded-lg border border-surface-border bg-white shadow-lg"
+                    className="absolute z-50 mt-1 max-h-52 w-full overflow-auto rounded-xl border border-surface-border bg-white py-1 shadow-panel"
                   >
                     {productResults.map((p, index) => (
                       <li key={p.id} role="option" aria-selected={index === productHighlightIndex}>
                         <button
                           type="button"
-                          className={`flex w-full items-center gap-2 px-3 py-2 text-left text-sm ${
+                          className={cn(
+                            'flex w-full items-center gap-2 px-3 py-2.5 text-left text-sm',
                             index === productHighlightIndex
                               ? 'bg-brand-50 text-brand-900'
                               : 'hover:bg-slate-50'
-                          }`}
+                          )}
                           onMouseEnter={() => setProductHighlightIndex(index)}
                           onClick={() => selectProduct(p)}
                         >
-                          <span className="font-mono font-semibold">{p.codigo_interno}</span>
+                          <span className="rounded bg-slate-100 px-1.5 py-0.5 font-mono text-xs font-semibold">
+                            {p.codigo_interno}
+                          </span>
                           <span className="truncate text-slate-600">{p.nombre}</span>
                         </button>
                       </li>
@@ -1309,7 +1427,13 @@ export function RetornosPage() {
                 )}
               </div>
               <div className="flex shrink-0 gap-2">
-                <Button type="button" variant="secondary" size="sm" onClick={() => setShowScanner(true)}>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  className="rounded-xl"
+                  onClick={() => setShowScanner(true)}
+                >
                   <Camera className="h-4 w-4" />
                   Escanear
                 </Button>
@@ -1319,22 +1443,26 @@ export function RetornosPage() {
             {selectedProduct && (
               <div
                 ref={productLineFormRef}
-                className="rounded-lg border border-brand-200 bg-brand-50/50 p-3"
+                className="overflow-hidden rounded-xl border border-brand-200 bg-gradient-to-br from-brand-50/80 to-white p-4 shadow-card"
               >
-                <div className="mb-3 flex items-center gap-2">
+                <div className="mb-4 flex items-center gap-3">
                   <ProductImage
                     productoId={selectedProduct.id}
                     hasImage={!!selectedProduct.imagen_path}
                     alt={selectedProduct.nombre}
-                    className="h-9 w-9 rounded object-cover"
+                    className="h-11 w-11 rounded-xl ring-1 ring-surface-border"
                   />
                   <div className="min-w-0 flex-1">
-                    <p className="truncate font-mono text-sm font-semibold">{selectedProduct.codigo_interno}</p>
-                    <p className="truncate text-xs text-slate-600">{selectedProduct.nombre}</p>
+                    <span className="inline-flex rounded-md bg-white px-2 py-0.5 font-mono text-xs font-semibold text-slate-700 ring-1 ring-surface-border">
+                      {selectedProduct.codigo_interno}
+                    </span>
+                    <p className="mt-1 truncate text-sm font-semibold text-slate-900">
+                      {selectedProduct.nombre}
+                    </p>
                   </div>
                   <button
                     type="button"
-                    className="rounded p-1 text-slate-400 hover:text-slate-600"
+                    className="rounded-lg p-1.5 text-slate-400 hover:bg-white hover:text-slate-600"
                     onClick={() => {
                       setSelectedProduct(null)
                       setProductSearch('')
@@ -1405,14 +1533,20 @@ export function RetornosPage() {
                     </select>
                   </div>
                   <div className="col-span-2 flex items-end sm:col-span-1">
-                    <Button type="button" size="sm" className="w-full" onClick={agregarLineaYContinuar}>
+                    <Button
+                      type="button"
+                      size="sm"
+                      className="w-full rounded-xl"
+                      onClick={agregarLineaYContinuar}
+                    >
                       <Plus className="h-4 w-4" />
                       Enter ↵
                     </Button>
                   </div>
                 </div>
-                <p className="mt-2 text-xs text-slate-500">
-                  Enter en el último campo agrega la línea y vuelve al buscador
+                <p className="mt-3 text-xs leading-relaxed text-slate-500">
+                  Enter en el último campo agrega la línea y vuelve al buscador. Solo mercadería en{' '}
+                  <span className="font-medium text-slate-600">buen estado</span> suma stock al verificar.
                 </p>
               </div>
             )}
@@ -1420,27 +1554,35 @@ export function RetornosPage() {
         </div>
 
         <div ref={listScrollRef} className="relative z-0 min-h-0 flex-1 overflow-y-auto bg-white">
-          <div className="sticky top-0 z-[2] border-b border-surface-border bg-white/95 px-4 py-2 backdrop-blur-sm">
-            <div className="flex items-center justify-between text-sm">
-              <span className="font-medium text-slate-700">
-                Líneas cargadas ({lineas.length})
-              </span>
+          <div className="sticky top-0 z-[2] border-b border-surface-border bg-white/95 px-4 py-3 backdrop-blur-sm sm:px-5">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <p className="text-sm font-semibold text-slate-900">Líneas cargadas</p>
+                <p className="text-xs text-slate-500">{lineas.length} línea(s)</p>
+              </div>
               {lineas.length > 0 && (
-                <span className="font-semibold text-brand-700">{formatTotalCajas(totalGeneral)} total</span>
+                <span className="inline-flex items-center rounded-full bg-brand-50 px-3 py-1 text-sm font-bold tabular-nums text-brand-700 ring-1 ring-brand-100">
+                  {formatTotalCajas(totalGeneral)} total
+                </span>
               )}
             </div>
           </div>
           {lineasListContent}
         </div>
 
-        <div className="shrink-0 border-t border-surface-border bg-white px-4 py-3 shadow-[0_-4px_12px_rgba(0,0,0,0.04)]">
+        <div className="shrink-0 border-t border-surface-border bg-white px-4 py-4 shadow-[0_-4px_12px_rgba(0,0,0,0.04)] sm:px-5">
           <div className="flex items-center justify-between gap-4">
             <div>
-              <p className="text-xs text-slate-500">Total general</p>
-              <p className="text-xl font-bold text-brand-700">{formatTotalCajas(totalGeneral)}</p>
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+                Total general
+              </p>
+              <p className="text-2xl font-bold tabular-nums text-brand-700">
+                {formatTotalCajas(totalGeneral)}
+              </p>
             </div>
             {hasPermiso('retornos.crear') && (
               <Button
+                className="rounded-xl"
                 onClick={() => void confirmarRetorno()}
                 disabled={lineas.length === 0 || saving}
               >
@@ -1465,182 +1607,228 @@ export function RetornosPage() {
   }
 
   return (
-    <div className="mx-auto max-w-5xl space-y-6">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+    <div className="mx-auto max-w-6xl space-y-6">
+      <section className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-slate-900">Retornos</h1>
-          <p className="mt-1 text-slate-500">
-            Mercadería que vuelve a bodega — sin verificar hasta segunda revisión
-            {hasPermiso('retornos.crear') && ' · Enter = nuevo retorno'}
+          <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">
+            Movimientos
+          </p>
+          <h1 className="mt-1 text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">
+            Retornos
+          </h1>
+          <p className="mt-2 max-w-xl text-sm leading-relaxed text-slate-500">
+            Mercadería que vuelve a bodega — sin verificar hasta segunda revisión por otro usuario.
           </p>
         </div>
         {hasPermiso('retornos.crear') && (
-          <Button onClick={abrirNuevoRetorno}>
-            <Plus className="h-4 w-4" />
-            Nuevo retorno
-          </Button>
-        )}
-      </div>
-      <Card>
-        <CardBody className="space-y-3 border-b border-surface-border py-4">
           <div className="flex flex-wrap items-center gap-2">
-            <div className="relative min-w-[10rem] flex-1">
-              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-              <input
-                ref={listSearchRef}
-                type="search"
-                placeholder="Buscar por camionero o planilla... · Enter = nuevo retorno"
-                value={listSearch}
-                onChange={(e) => setListSearch(e.target.value)}
-                onKeyDown={handleListSearchKeyDown}
-                className="w-full rounded-lg border border-surface-border py-2 pl-10 pr-3 text-sm focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20"
-              />
+            <span className="hidden rounded-full border border-surface-border bg-white px-2.5 py-1 text-[11px] font-medium text-slate-500 shadow-card sm:inline-flex">
+              Enter = nuevo retorno
+            </span>
+            <Button className="rounded-xl px-4" onClick={abrirNuevoRetorno}>
+              <Plus className="h-4 w-4" />
+              Nuevo retorno
+            </Button>
+          </div>
+        )}
+      </section>
+
+      <Card className="overflow-hidden shadow-panel">
+        <div className="border-b border-brand-100 bg-gradient-to-r from-brand-50/80 via-white to-white px-5 py-4 sm:px-6">
+          <div className="flex flex-col gap-3">
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="relative min-w-[10rem] flex-1">
+                <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-brand-400" />
+                <input
+                  ref={listSearchRef}
+                  type="search"
+                  placeholder="Buscar por camionero o planilla..."
+                  value={listSearch}
+                  onChange={(e) => setListSearch(e.target.value)}
+                  onKeyDown={handleListSearchKeyDown}
+                  className="w-full rounded-xl border border-surface-border bg-white py-2.5 pl-10 pr-4 text-sm shadow-sm focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20"
+                />
+              </div>
+
+              <div className="flex shrink-0 items-center gap-1.5 rounded-xl border border-surface-border bg-white px-2 py-1.5 shadow-sm">
+                <span className="pl-1 text-xs font-medium text-slate-500">Desde</span>
+                <input
+                  type="date"
+                  value={listFechaDesde}
+                  onChange={(e) => setListFechaDesde(e.target.value)}
+                  title="Fecha desde — solo este campo = ese día"
+                  className="rounded border-0 bg-transparent px-1 py-1 text-sm focus:outline-none focus:ring-0"
+                />
+                <span className="text-slate-300">|</span>
+                <span className="text-xs font-medium text-slate-500">Hasta</span>
+                <input
+                  type="date"
+                  value={listFechaHasta}
+                  onChange={(e) => setListFechaHasta(e.target.value)}
+                  title="Fecha hasta — solo este campo = ese día"
+                  className="rounded border-0 bg-transparent px-1 py-1 text-sm focus:outline-none focus:ring-0"
+                />
+              </div>
+
+              {(listFechaDesde || listFechaHasta) && (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="shrink-0 rounded-lg"
+                  onClick={() => {
+                    setListFechaDesde('')
+                    setListFechaHasta('')
+                  }}
+                >
+                  <X className="h-4 w-4" />
+                </Button>
+              )}
             </div>
 
-            <div className="flex shrink-0 items-center gap-1.5 rounded-lg border border-surface-border bg-slate-50/60 px-2 py-1">
-              <span className="pl-1 text-xs font-medium text-slate-500">Desde</span>
-              <input
-                type="date"
-                value={listFechaDesde}
-                onChange={(e) => setListFechaDesde(e.target.value)}
-                title="Fecha desde — solo este campo = ese día"
-                className="rounded border-0 bg-transparent px-1 py-1 text-sm focus:outline-none focus:ring-0"
-              />
-              <span className="text-slate-300">|</span>
-              <span className="text-xs font-medium text-slate-500">Hasta</span>
-              <input
-                type="date"
-                value={listFechaHasta}
-                onChange={(e) => setListFechaHasta(e.target.value)}
-                title="Fecha hasta — solo este campo = ese día"
-                className="rounded border-0 bg-transparent px-1 py-1 text-sm focus:outline-none focus:ring-0"
-              />
+            <p className="text-xs text-slate-500">
+              Una sola fecha filtra ese día · las dos juntas = rango
+              {hasPermiso('retornos.crear') && ' · Enter = nuevo retorno'}
+            </p>
+
+            <div className="flex flex-wrap gap-2">
+              {(['TODOS', 'PENDIENTE', 'VERIFICADO'] as const).map((e) => (
+                <Button
+                  key={e}
+                  type="button"
+                  size="sm"
+                  className="rounded-xl"
+                  variant={filtroEstado === e ? 'primary' : 'secondary'}
+                  onClick={() => setFiltroEstado(e)}
+                >
+                  {e === 'TODOS' ? 'Todos' : e === 'PENDIENTE' ? 'Sin verificar' : 'Verificados'}
+                </Button>
+              ))}
             </div>
 
-            {(listFechaDesde || listFechaHasta) && (
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                className="shrink-0"
-                onClick={() => {
-                  setListFechaDesde('')
-                  setListFechaHasta('')
-                }}
-              >
-                <X className="h-4 w-4" />
-              </Button>
-            )}
+            <DayTabsRow
+              days={diasConRetornos}
+              selectedDay={selectedDay}
+              onSelectDay={setSelectedDay}
+              getCount={(dia) => conteoPorDia.get(dia) ?? 0}
+            />
           </div>
+        </div>
 
-          <p className="text-xs text-slate-400">
-            Una sola fecha (Desde o Hasta) filtra ese día · las dos juntas = rango
-            {hasPermiso('retornos.crear') && ' · Enter = nuevo retorno'}
-          </p>
-
-          <div className="flex flex-wrap gap-2">
-            {(['TODOS', 'PENDIENTE', 'VERIFICADO'] as const).map((e) => (
-              <Button
-                key={e}
-                type="button"
-                size="sm"
-                variant={filtroEstado === e ? 'primary' : 'secondary'}
-                onClick={() => setFiltroEstado(e)}
-              >
-                {e === 'TODOS' ? 'Todos' : e === 'PENDIENTE' ? 'Sin verificar' : 'Verificados'}
-              </Button>
-            ))}
+        <div className="flex items-center justify-between gap-3 border-b border-surface-border bg-slate-50/80 px-5 py-3.5 sm:px-6">
+          <div>
+            <h2 className="text-sm font-semibold text-slate-900">
+              {diasConRetornos.length > 0 ? formatDayTabLabel(selectedDay) : 'Registros'}
+            </h2>
+            <p className="text-xs text-slate-500">
+              {diasConRetornos.length > 0
+                ? `${retornosDelDia.length} retorno(s) · ${formatCantidad(totalCajasDelDia)} en el día`
+                : `${retornos.length} retorno(s)`}
+            </p>
           </div>
+          {loadingList && <Loader2 className="h-5 w-5 shrink-0 animate-spin text-brand-600" />}
+        </div>
 
-          <DayTabsRow
-            days={diasConRetornos}
-            selectedDay={selectedDay}
-            onSelectDay={setSelectedDay}
-            getCount={(dia) => conteoPorDia.get(dia) ?? 0}
-          />
-        </CardBody>
-
-        <CardHeader
-          title={diasConRetornos.length > 0 ? formatDayTabLabel(selectedDay) : 'Registros'}
-          description={
-            diasConRetornos.length > 0
-              ? `${retornosDelDia.length} retorno(s) · ${formatCantidad(totalCajasDelDia)} en el día`
-              : `${retornos.length} retorno(s)`
-          }
-        />
         <CardBody className="p-0">
           {error && (
-            <div className="border-b border-red-100 bg-red-50 px-6 py-3 text-sm text-red-700">{error}</div>
+            <div className="border-b border-red-100 bg-red-50 px-6 py-3 text-sm text-red-700">
+              {error}
+            </div>
           )}
           {loadingList ? (
-            <p className="p-6 text-sm text-slate-500">Cargando...</p>
+            <div className="flex items-center justify-center gap-2 py-16 text-sm text-slate-500">
+              <Loader2 className="h-5 w-5 animate-spin text-brand-600" />
+              Cargando retornos...
+            </div>
           ) : retornos.length === 0 ? (
-            <div className="flex flex-col items-center py-16 text-center">
-              <RotateCcw className="h-12 w-12 text-slate-300" />
-              <p className="mt-3 font-medium text-slate-700">
+            <div className="flex flex-col items-center px-6 py-16 text-center">
+              <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-slate-100 text-slate-400">
+                <RotateCcw className="h-7 w-7" />
+              </div>
+              <p className="mt-4 text-sm font-medium text-slate-700">
                 {listSearch || listFechaDesde || listFechaHasta || filtroEstado !== 'TODOS'
                   ? 'No hay retornos con esos filtros'
                   : 'No hay retornos registrados'}
               </p>
-              <p className="mt-1 text-sm text-slate-500">
+              <p className="mt-1 max-w-sm text-xs text-slate-500">
                 {listSearch || listFechaDesde || listFechaHasta || filtroEstado !== 'TODOS'
                   ? 'Probá ampliar el rango de fechas o cambiar la búsqueda'
                   : 'Registrá el primer retorno de mercadería que vuelve a bodega'}
               </p>
+              {!(listSearch || listFechaDesde || listFechaHasta || filtroEstado !== 'TODOS') &&
+                hasPermiso('retornos.crear') && (
+                  <Button className="mt-4 rounded-xl" size="sm" onClick={abrirNuevoRetorno}>
+                    <Plus className="h-4 w-4" />
+                    Nuevo retorno
+                  </Button>
+                )}
             </div>
           ) : retornosDelDia.length === 0 ? (
-            <div className="flex flex-col items-center py-16 text-center">
-              <RotateCcw className="h-12 w-12 text-slate-300" />
-              <p className="mt-3 font-medium text-slate-700">Sin resultados para este día</p>
-              <p className="mt-1 text-sm text-slate-500">Probá otra fecha o ajustá la búsqueda</p>
+            <div className="flex flex-col items-center px-6 py-16 text-center">
+              <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-slate-100 text-slate-400">
+                <RotateCcw className="h-7 w-7" />
+              </div>
+              <p className="mt-4 text-sm font-medium text-slate-700">Sin resultados para este día</p>
+              <p className="mt-1 text-xs text-slate-500">Probá otra fecha o ajustá la búsqueda</p>
             </div>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-surface-border bg-slate-50/80 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
-                    <th className="px-6 py-3">Planilla</th>
-                    <th className="px-6 py-3">Camionero</th>
-                    <th className="max-w-[14rem] px-6 py-3">Observación</th>
-                    <th className="px-6 py-3">Estado</th>
-                    <th className="px-6 py-3">Total</th>
-                    <th className="px-6 py-3">Usuario</th>
-                    <th className="px-6 py-3" />
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-surface-border">
-                  {retornosDelDia.map((r) => (
-                    <tr key={r.id} className="hover:bg-slate-50/50">
-                      <td className="px-6 py-3 font-medium text-slate-900">
-                        {r.numero_planilla ?? '—'}
-                      </td>
-                      <td className="px-6 py-3">
-                        <p>{r.camionero_nombre ?? '—'}</p>
-                        {r.camionero_numero && (
-                          <p className="text-xs text-slate-500">{r.camionero_numero}</p>
-                        )}
-                      </td>
-                      <td className="max-w-[14rem] px-6 py-3 text-slate-600">
-                        <div className="overflow-x-auto whitespace-nowrap [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
-                          {r.observacion?.trim() || '—'}
-                        </div>
-                      </td>
-                      <td className="px-6 py-3">{badgeEstadoRetorno(r.estado)}</td>
-                      <td className="px-6 py-3 font-semibold text-brand-700">
-                        {formatCantidad(r.total_cajas)}
-                      </td>
-                      <td className="px-6 py-3 text-slate-500">{r.usuario_nombre}</td>
-                      <td className="px-6 py-3 text-right">
-                        <Button variant="ghost" size="sm" onClick={() => void abrirRetorno(r.id)}>
-                          <Eye className="h-4 w-4" />
-                          Ver
-                        </Button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+            <ul className="divide-y divide-surface-border">
+              {retornosDelDia.map((r) => (
+                <li
+                  key={r.id}
+                  className="flex flex-col gap-3 px-4 py-4 transition-colors hover:bg-slate-50/80 sm:flex-row sm:items-center sm:gap-4 sm:px-6"
+                >
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <p className="text-base font-semibold text-slate-900">
+                        {r.numero_planilla ?? `Retorno #${r.id}`}
+                      </p>
+                      {badgeEstadoRetorno(r.estado)}
+                      {r.sector_nombre && (
+                        <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-medium text-slate-600">
+                          <Warehouse className="h-3 w-3" />
+                          {r.sector_nombre}
+                        </span>
+                      )}
+                    </div>
+                    {r.observacion?.trim() ? (
+                      <p className="mt-1 line-clamp-2 text-xs text-slate-500">{r.observacion}</p>
+                    ) : (
+                      <p className="mt-1 text-xs text-slate-400">
+                        {r.camionero_nombre
+                          ? `${r.camionero_numero ?? ''} — ${r.camionero_nombre}`.trim()
+                          : 'Sin camionero asignado'}
+                      </p>
+                    )}
+                    <div className="mt-2 flex flex-wrap items-center gap-3 text-xs text-slate-500">
+                      <span>{r.lineas_count} línea{r.lineas_count === 1 ? '' : 's'}</span>
+                      <span className="inline-flex items-center gap-1">
+                        <User className="h-3 w-3" />
+                        {r.usuario_nombre}
+                      </span>
+                      {r.verificado_por_nombre && (
+                        <span className="text-green-700">Verificado por {r.verificado_por_nombre}</span>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="flex shrink-0 items-center gap-2 sm:justify-end">
+                    <span className="inline-flex min-w-[3rem] items-center justify-center rounded-lg bg-brand-50 px-2.5 py-1.5 text-sm font-bold tabular-nums text-brand-700 ring-1 ring-brand-100">
+                      {formatCantidad(r.total_cajas)}
+                    </span>
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      className="rounded-lg"
+                      onClick={() => void abrirRetorno(r.id)}
+                    >
+                      <Eye className="h-4 w-4" />
+                      Ver
+                    </Button>
+                  </div>
+                </li>
+              ))}
+            </ul>
           )}
         </CardBody>
       </Card>

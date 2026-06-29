@@ -18,6 +18,8 @@ import { api, cn } from '@/lib/utils'
 import type { Sector, SectorForm, SectorStockDetalle, SectorUbicacion } from '@/types'
 import { useAuth } from '@/context/AuthContext'
 import { useEscHandler } from '@/hooks/useEscHandler'
+import { useRegistroListKeyboard } from '@/hooks/useRegistroListKeyboard'
+import { focusAndScrollIntoView } from '@/lib/scroll'
 import { ProductImage } from '@/components/ProductImage'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
@@ -360,35 +362,9 @@ export function SectoresPage() {
     submitFormulario()
   }
 
-  function shouldAbrirFormularioConEnter(target: EventTarget | null): boolean {
-    if (!(target instanceof HTMLElement)) return true
-    if (target.closest('button, a, textarea, [contenteditable="true"]')) return false
-    if (target instanceof HTMLInputElement && target.type === 'date') return false
-    if (target instanceof HTMLSelectElement) return false
-    return true
-  }
-
   function abrirNuevoSector() {
     openCreate()
   }
-
-  function handleSearchKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
-    if (e.key !== 'Enter' || !hasPermiso('sectores.crear')) return
-    e.preventDefault()
-    abrirNuevoSector()
-  }
-
-  useEffect(() => {
-    if (view !== 'list' || !hasPermiso('sectores.crear')) return
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key !== 'Enter' || e.repeat) return
-      if (!shouldAbrirFormularioConEnter(e.target)) return
-      e.preventDefault()
-      abrirNuevoSector()
-    }
-    window.addEventListener('keydown', onKeyDown)
-    return () => window.removeEventListener('keydown', onKeyDown)
-  }, [view, hasPermiso])
 
   function clearStockView() {
     setStockSector(null)
@@ -428,7 +404,7 @@ export function SectoresPage() {
 
   useEffect(() => {
     if (view !== 'list') return
-    const timer = setTimeout(() => searchRef.current?.focus(), 80)
+    const timer = setTimeout(() => focusAndScrollIntoView(searchRef.current), 80)
     return () => clearTimeout(timer)
   }, [view])
 
@@ -560,6 +536,17 @@ export function SectoresPage() {
     setView('form')
     setTimeout(() => focusField(nombreRef), 50)
   }
+
+  const registroListKb = useRegistroListKeyboard({
+    enabled: view === 'list',
+    items: sectores,
+    listSearchRef: searchRef,
+    canCreate: hasPermiso('sectores.crear'),
+    onCreate: abrirNuevoSector,
+    onOpenDetail: (s) => {
+      void openSectorContenido(s)
+    }
+  })
 
   async function guardarSector(e?: React.FormEvent) {
     e?.preventDefault()
@@ -1155,7 +1142,7 @@ export function SectoresPage() {
                 placeholder="Buscar sector..."
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                onKeyDown={handleSearchKeyDown}
+                onKeyDown={registroListKb.handleListSearchKeyDown}
                 className="w-full rounded-xl border border-surface-border bg-white py-2.5 pl-10 pr-4 text-sm shadow-sm focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20"
               />
             </div>
@@ -1192,19 +1179,23 @@ export function SectoresPage() {
             </div>
           ) : (
             <ul className="divide-y divide-surface-border">
-              {sectores.map((s) => (
+              {sectores.map((s, index) => (
                 <li key={s.id}>
                   <div
                     role="button"
                     tabIndex={0}
                     onClick={() => void openSectorContenido(s)}
                     onKeyDown={(e) => {
+                      if (registroListKb.highlightIndex >= 0) return
                       if (e.key === 'Enter' || e.key === ' ') {
                         e.preventDefault()
                         void openSectorContenido(s)
                       }
                     }}
-                    className="flex cursor-pointer flex-col gap-3 px-4 py-4 transition-colors hover:bg-brand-50/40 sm:flex-row sm:items-center sm:gap-4 sm:px-6"
+                    {...registroListKb.listItemProps(
+                      index,
+                      'flex cursor-pointer flex-col gap-3 px-4 py-4 transition-colors hover:bg-brand-50/40 sm:flex-row sm:items-center sm:gap-4 sm:px-6'
+                    )}
                   >
                     <div className="flex min-w-0 flex-1 items-start gap-3">
                       <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-brand-50 text-brand-600 ring-1 ring-brand-100">

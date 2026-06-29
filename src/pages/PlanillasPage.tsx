@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import {
-  Camera,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
@@ -14,7 +13,6 @@ import {
   User,
   X
 } from 'lucide-react'
-import { BarcodeScannerModal } from '@/components/BarcodeScannerModal'
 import { DayTabsRow } from '@/components/DayTabsRow'
 import {
   RegistroDetalleMetaChip,
@@ -29,7 +27,6 @@ import {
   formatCantidad,
   formatDayTabLabel,
   formatPlanillaEtiqueta,
-  formatTotalCajas,
   normalizarUnidadProducto,
   todayIsoDate,
   type ModoSalidaPlanilla
@@ -46,6 +43,7 @@ import type {
 } from '@/types'
 import { useAuth } from '@/context/AuthContext'
 import { useEscHandler } from '@/hooks/useEscHandler'
+import { useRegistroListKeyboard } from '@/hooks/useRegistroListKeyboard'
 
 function newTempId(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
@@ -89,7 +87,6 @@ export function PlanillasPage() {
     unidades_por_caja_default: number | null
   } | null>(null)
 
-  const [showScanner, setShowScanner] = useState(false)
   const [showPreview, setShowPreview] = useState(false)
   const [previewData, setPreviewData] = useState<PlanillaPreviewLinea[] | null>(null)
   const [loadingPreview, setLoadingPreview] = useState(false)
@@ -132,32 +129,6 @@ export function PlanillasPage() {
     resetCreateForm()
     setView('create')
   }
-
-  function handleListSearchKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
-    if (e.key !== 'Enter' || !hasPermiso('planillas.crear')) return
-    e.preventDefault()
-    abrirNuevaPlanilla()
-  }
-
-  function shouldAbrirFormularioConEnter(target: EventTarget | null): boolean {
-    if (!(target instanceof HTMLElement)) return true
-    if (target.closest('button, a, textarea, [contenteditable="true"]')) return false
-    if (target instanceof HTMLInputElement && target.type === 'date') return false
-    if (target instanceof HTMLSelectElement) return false
-    return true
-  }
-
-  useEffect(() => {
-    if (view !== 'list' || !hasPermiso('planillas.crear')) return
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key !== 'Enter' || e.repeat) return
-      if (!shouldAbrirFormularioConEnter(e.target)) return
-      e.preventDefault()
-      abrirNuevaPlanilla()
-    }
-    window.addEventListener('keydown', onKeyDown)
-    return () => window.removeEventListener('keydown', onKeyDown)
-  }, [view, hasPermiso])
 
   useEffect(() => {
     if (view !== 'list') return
@@ -333,7 +304,6 @@ export function PlanillasPage() {
   function volverAlListadoPlanilla() {
     resetCreateForm()
     setShowPreview(false)
-    setShowScanner(false)
     setView('list')
   }
 
@@ -341,6 +311,7 @@ export function PlanillasPage() {
     if (detalle) setSelectedDay(detalle.planilla.fecha)
     setDetalle(null)
     setView('list')
+    setTimeout(() => listSearchRef.current?.focus({ preventScroll: true }), 80)
   }
 
   useEscHandler(view === 'detail' && !!detalle, () => {
@@ -353,10 +324,6 @@ export function PlanillasPage() {
 
     if (showPreview) {
       setShowPreview(false)
-      return true
-    }
-    if (showScanner) {
-      setShowScanner(false)
       return true
     }
 
@@ -669,6 +636,17 @@ export function PlanillasPage() {
     }
   }
 
+  const registroListKb = useRegistroListKeyboard({
+    enabled: view === 'list',
+    items: planillasDelDia,
+    listSearchRef,
+    canCreate: hasPermiso('planillas.crear'),
+    onCreate: abrirNuevaPlanilla,
+    onOpenDetail: (p) => {
+      void verDetalle(p.id)
+    }
+  })
+
   if (view === 'detail' && detalle) {
     return <PlanillaDetallePanel detalle={detalle} onVolver={volverAlListadoDesdeDetalle} />
   }
@@ -810,7 +788,7 @@ export function PlanillasPage() {
             <div key={grupo.producto.producto_id} className="border-b border-surface-border last:border-0">
               <div
                 className={cn(
-                  'flex items-center gap-3 px-4 py-3 transition-colors sm:px-5',
+                  'flex items-center gap-3 px-4 py-2.5 transition-colors sm:px-5',
                   isExpanded ? 'bg-brand-50/50' : 'hover:bg-slate-50/80'
                 )}
               >
@@ -835,16 +813,18 @@ export function PlanillasPage() {
                 <button
                   type="button"
                   onClick={() => toggleProductoExpand(grupo.producto.producto_id)}
-                  className="min-w-0 flex-1 text-left"
+                  className="flex min-w-0 flex-1 items-center gap-2 text-left"
                 >
-                  <span className="inline-flex rounded-md bg-slate-100 px-2 py-0.5 font-mono text-xs font-semibold text-slate-700">
+                  <span className="shrink-0 rounded-md bg-slate-100 px-2 py-0.5 font-mono text-xs font-semibold text-slate-700">
                     {grupo.producto.codigo_interno}
                   </span>
-                  <p className="mt-1 truncate text-sm font-semibold text-slate-900">
+                  <span className="min-w-0 truncate text-sm font-semibold text-slate-900">
                     {grupo.producto.nombre}
-                  </p>
+                  </span>
                   {!isExpanded && grupo.lineas.length > 1 && (
-                    <p className="mt-0.5 text-xs text-slate-500">{grupo.lineas.length} líneas</p>
+                    <span className="shrink-0 text-xs text-slate-500">
+                      · {grupo.lineas.length} líneas
+                    </span>
                   )}
                 </button>
                 <span className="inline-flex shrink-0 items-center rounded-lg bg-brand-50 px-2.5 py-1.5 text-sm font-bold tabular-nums text-brand-700 ring-1 ring-brand-100">
@@ -858,7 +838,11 @@ export function PlanillasPage() {
                       key={l.tempId}
                       className="flex items-center justify-between gap-3 rounded-lg border border-surface-border bg-white px-3 py-2.5 text-sm"
                     >
-                      <div className="min-w-0 text-slate-800">{l.etiqueta}</div>
+                      <div className="min-w-0 text-slate-800">
+                        {l.modo_salida === 'CAJA'
+                          ? formatCantidad(l.cantidad)
+                          : l.etiqueta}
+                      </div>
                       <div className="flex shrink-0 items-center gap-2">
                         <span className="rounded-md bg-slate-50 px-2 py-1 text-sm font-semibold tabular-nums text-slate-900 ring-1 ring-surface-border">
                           {formatCantidad(l.total_unidades)}
@@ -928,9 +912,8 @@ export function PlanillasPage() {
           )}
 
           <div className="space-y-3 overflow-visible p-4 sm:p-5">
-            <div className="relative flex flex-col gap-2 overflow-visible sm:flex-row">
-              <div className="relative z-30 min-w-0 flex-1">
-                <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-brand-400" />
+            <div className="relative z-30 overflow-visible">
+              <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-brand-400" />
                 <input
                   ref={productSearchRef}
                   type="search"
@@ -976,19 +959,6 @@ export function PlanillasPage() {
                     ))}
                   </ul>
                 )}
-              </div>
-              <div className="flex shrink-0 gap-2">
-                <Button
-                  type="button"
-                  variant="secondary"
-                  size="sm"
-                  className="rounded-xl"
-                  onClick={() => setShowScanner(true)}
-                >
-                  <Camera className="h-4 w-4" />
-                  Escanear
-                </Button>
-              </div>
             </div>
 
             {selectedProduct && (
@@ -1073,16 +1043,15 @@ export function PlanillasPage() {
 
                 {lineaPreview && (
                   <div className="mt-3 rounded-lg border border-brand-100 bg-white/90 px-3 py-2.5 text-sm shadow-sm">
-                    <p className="font-medium text-brand-800">{lineaPreview.etiqueta}</p>
+                    <p className="font-medium text-brand-800">
+                      {modoSalida === 'CAJA'
+                        ? formatCantidad(lineaPreview.total)
+                        : lineaPreview.etiqueta}
+                    </p>
                     <p className="mt-0.5 text-xs text-slate-500">
-                      Total: {lineaPreview.total}{' '}
-                      {modoSalida === 'CAJA' ? 'cajas' : normalizarUnidadProducto(selectedProduct.unidad) + 's'}
+                      Total: {formatCantidad(lineaPreview.total)}
                       {stockDisponibleModo != null && (
-                        <>
-                          {' '}
-                          · Stock: {stockDisponibleModo}{' '}
-                          {modoSalida === 'CAJA' ? 'cajas' : normalizarUnidadProducto(selectedProduct.unidad) + 's'}
-                        </>
+                        <> · Stock: {formatCantidad(stockDisponibleModo)}</>
                       )}
                     </p>
                   </div>
@@ -1103,19 +1072,6 @@ export function PlanillasPage() {
         </div>
 
         <div ref={listScrollRef} className="relative z-0 min-h-0 flex-1 overflow-y-auto bg-white">
-          <div className="sticky top-0 z-[2] border-b border-surface-border bg-white/95 px-4 py-3 backdrop-blur-sm sm:px-5">
-            <div className="flex items-center justify-between gap-3">
-              <div>
-                <p className="text-sm font-semibold text-slate-900">Líneas cargadas</p>
-                <p className="text-xs text-slate-500">{lineas.length} línea(s)</p>
-              </div>
-              {lineas.length > 0 && (
-                <span className="inline-flex items-center rounded-full bg-brand-50 px-3 py-1 text-sm font-bold tabular-nums text-brand-700 ring-1 ring-brand-100">
-                  {formatTotalCajas(totalGeneral)} total
-                </span>
-              )}
-            </div>
-          </div>
           {lineasListContent}
         </div>
 
@@ -1126,7 +1082,11 @@ export function PlanillasPage() {
                 Total general
               </p>
               <p className="text-2xl font-bold tabular-nums text-brand-700">
-                {formatTotalCajas(totalGeneral)}
+                {formatCantidad(totalGeneral)}
+              </p>
+              <p className="mt-1 text-xs text-slate-500">
+                {lineas.length} línea{lineas.length === 1 ? '' : 's'} cargada
+                {lineas.length === 1 ? '' : 's'}
               </p>
             </div>
             {hasPermiso('planillas.crear') && (
@@ -1213,7 +1173,7 @@ export function PlanillasPage() {
                       {pl.codigo_interno} — {pl.nombre}
                     </p>
                     <p className="text-sm text-slate-600">
-                      Solicitado: {pl.etiqueta} ({formatTotalCajas(pl.total_solicitado)})
+                      Solicitado: {formatCantidad(pl.total_solicitado)}
                     </p>
                     {pl.error ? (
                       <p className="mt-2 text-sm font-medium text-red-700">{pl.error}</p>
@@ -1230,7 +1190,7 @@ export function PlanillasPage() {
                                 <span className="ml-1 text-slate-400">({d.etiqueta})</span>
                               )}
                             </span>
-                            <span className="font-medium tabular-nums">{formatTotalCajas(d.unidades)}</span>
+                            <span className="font-medium tabular-nums">{formatCantidad(d.unidades)}</span>
                           </li>
                         ))}
                       </ul>
@@ -1254,16 +1214,6 @@ export function PlanillasPage() {
             </div>
           </div>
         )}
-
-        <BarcodeScannerModal
-          open={showScanner}
-          onClose={() => setShowScanner(false)}
-          onScan={(code) => {
-            setProductSearch(code)
-            setShowScanner(false)
-          }}
-          title="Escanear producto"
-        />
       </div>
     )
   }
@@ -1307,7 +1257,7 @@ export function PlanillasPage() {
                   placeholder="Buscar por planilla o camionero..."
                   value={listSearch}
                   onChange={(e) => setListSearch(e.target.value)}
-                  onKeyDown={handleListSearchKeyDown}
+                  onKeyDown={registroListKb.handleListSearchKeyDown}
                   className="w-full rounded-xl border border-surface-border bg-white py-2.5 pl-10 pr-4 text-sm shadow-sm focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20"
                 />
               </div>
@@ -1419,10 +1369,13 @@ export function PlanillasPage() {
             </div>
           ) : (
             <ul className="divide-y divide-surface-border">
-              {planillasDelDia.map((p) => (
+              {planillasDelDia.map((p, index) => (
                 <li
                   key={p.id}
-                  className="flex flex-col gap-3 px-4 py-4 transition-colors hover:bg-slate-50/80 sm:flex-row sm:items-center sm:gap-4 sm:px-6"
+                  {...registroListKb.listItemProps(
+                    index,
+                    'flex flex-col gap-3 px-4 py-4 transition-colors hover:bg-slate-50/80 sm:flex-row sm:items-center sm:gap-4 sm:px-6'
+                  )}
                 >
                   <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-center gap-2">

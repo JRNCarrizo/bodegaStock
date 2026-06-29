@@ -10,6 +10,7 @@ import {
   type ReactNode
 } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
+import { focusAndScrollIntoView } from '@/lib/scroll'
 import type { NavItem } from '@/types'
 
 type SidebarNavContextValue = {
@@ -18,6 +19,7 @@ type SidebarNavContextValue = {
   focusSidebar: () => void
   blurSidebar: () => void
   registerEscHandler: (handler: () => boolean) => () => void
+  registerMainContentFocus: (handler: () => boolean) => () => void
   setNavLinkRef: (index: number, node: HTMLAnchorElement | null) => void
   isNavItemHighlighted: (index: number) => boolean
   handleNavLinkClick: (index: number, disabled?: boolean) => void
@@ -35,26 +37,24 @@ function findActiveRouteIndex(items: NavItem[], pathname: string): number {
   return items.findIndex((item) => routeMatches(item.path, pathname))
 }
 
-function focusMainSearchOrContent() {
+function focusMainSearchOrContent(mainFocusHandlers: Set<() => boolean>) {
   const main = document.querySelector('main')
   if (!main) return
 
   const active = document.activeElement
   if (active instanceof HTMLElement && main.contains(active)) {
-    const tag = active.tagName
-    if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA' || tag === 'BUTTON') return
-    if (active.isContentEditable) return
+    if (active.closest('[data-reporte-card]')) return
+    const input = active instanceof HTMLInputElement ? active : null
+    if (input?.type === 'search' && !input.disabled && !input.readOnly) return
   }
 
   const tryFocus = (): boolean => {
+    for (const handler of [...mainFocusHandlers].reverse()) {
+      if (handler()) return true
+    }
     const search = main.querySelector('input[type="search"]')
     if (search instanceof HTMLInputElement && !search.disabled && !search.readOnly) {
-      search.focus({ preventScroll: true })
-      return true
-    }
-    const date = main.querySelector('input[type="date"]')
-    if (date instanceof HTMLInputElement && !date.disabled) {
-      date.focus({ preventScroll: true })
+      focusAndScrollIntoView(search)
       return true
     }
     return false
@@ -78,6 +78,7 @@ export function SidebarNavProvider({
   const [sidebarActive, setSidebarActive] = useState(false)
   const [highlightIndex, setHighlightIndex] = useState(0)
   const escHandlersRef = useRef<Set<() => boolean>>(new Set())
+  const mainFocusHandlersRef = useRef<Set<() => boolean>>(new Set())
   const navLinkRefs = useRef<(HTMLAnchorElement | null)[]>([])
 
   const activeRouteIndex = useMemo(
@@ -88,6 +89,11 @@ export function SidebarNavProvider({
   const registerEscHandler = useCallback((handler: () => boolean) => {
     escHandlersRef.current.add(handler)
     return () => escHandlersRef.current.delete(handler)
+  }, [])
+
+  const registerMainContentFocus = useCallback((handler: () => boolean) => {
+    mainFocusHandlersRef.current.add(handler)
+    return () => mainFocusHandlersRef.current.delete(handler)
   }, [])
 
   const setNavLinkRef = useCallback((index: number, node: HTMLAnchorElement | null) => {
@@ -102,7 +108,7 @@ export function SidebarNavProvider({
 
   const blurSidebar = useCallback(() => {
     setSidebarActive(false)
-    focusMainSearchOrContent()
+    focusMainSearchOrContent(mainFocusHandlersRef.current)
   }, [])
 
   const moveHighlight = useCallback(
@@ -134,7 +140,7 @@ export function SidebarNavProvider({
       if (!item || item.disabled) return
       navigate(item.path)
       setSidebarActive(false)
-      requestAnimationFrame(() => focusMainSearchOrContent())
+      requestAnimationFrame(() => focusMainSearchOrContent(mainFocusHandlersRef.current))
     },
     [navigate, visibleItems]
   )
@@ -205,7 +211,7 @@ export function SidebarNavProvider({
 
   useLayoutEffect(() => {
     if (sidebarActive) return
-    focusMainSearchOrContent()
+    focusMainSearchOrContent(mainFocusHandlersRef.current)
   }, [location.pathname, sidebarActive])
 
   useEffect(() => {
@@ -220,6 +226,7 @@ export function SidebarNavProvider({
       focusSidebar,
       blurSidebar,
       registerEscHandler,
+      registerMainContentFocus,
       setNavLinkRef,
       isNavItemHighlighted: (index) => sidebarActive && index === highlightIndex,
       handleNavLinkClick,
@@ -231,6 +238,7 @@ export function SidebarNavProvider({
       focusSidebar,
       blurSidebar,
       registerEscHandler,
+      registerMainContentFocus,
       setNavLinkRef,
       handleNavLinkClick,
       activateNavItem

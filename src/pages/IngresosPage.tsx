@@ -39,6 +39,7 @@ import type {
 } from '@/types'
 import { useAuth } from '@/context/AuthContext'
 import { useEscHandler } from '@/hooks/useEscHandler'
+import { useRegistroListKeyboard } from '@/hooks/useRegistroListKeyboard'
 
 function newTempId(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
@@ -155,38 +156,6 @@ export function IngresosPage() {
     setView('create')
   }
 
-  function handleListSearchKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
-    if (e.key !== 'Enter' || !hasPermiso('ingresos.crear')) return
-    e.preventDefault()
-    abrirNuevoIngreso()
-  }
-
-  function shouldAbrirFormularioConEnter(target: EventTarget | null): boolean {
-    if (!(target instanceof HTMLElement)) return true
-    if (target.closest('button, a, textarea, [contenteditable="true"]')) return false
-    if (target instanceof HTMLInputElement && target.type === 'date') return false
-    if (target instanceof HTMLSelectElement) return false
-    return true
-  }
-
-  useEffect(() => {
-    if (view !== 'list' || !hasPermiso('ingresos.crear')) return
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key !== 'Enter' || e.repeat) return
-      if (!shouldAbrirFormularioConEnter(e.target)) return
-      e.preventDefault()
-      abrirNuevoIngreso()
-    }
-    window.addEventListener('keydown', onKeyDown)
-    return () => window.removeEventListener('keydown', onKeyDown)
-  }, [view, hasPermiso])
-
-  useEffect(() => {
-    if (view !== 'list') return
-    const timer = setTimeout(() => listSearchRef.current?.focus(), 80)
-    return () => clearTimeout(timer)
-  }, [view])
-
   function scrollListToBottom() {
     requestAnimationFrame(() => {
       const el = listScrollRef.current
@@ -195,6 +164,12 @@ export function IngresosPage() {
       }
     })
   }
+
+  useEffect(() => {
+    if (view !== 'list') return
+    const timer = setTimeout(() => listSearchRef.current?.focus(), 80)
+    return () => clearTimeout(timer)
+  }, [view])
 
   useLayoutEffect(() => {
     if (productHighlightIndex < 0) return
@@ -389,6 +364,7 @@ export function IngresosPage() {
   function volverAlListadoDesdeDetalle() {
     if (detalle) setSelectedDay(detalle.ingreso.fecha)
     setView('list')
+    setTimeout(() => listSearchRef.current?.focus({ preventScroll: true }), 80)
   }
 
   useEscHandler(view === 'detail' && !!detalle, () => {
@@ -668,6 +644,17 @@ export function IngresosPage() {
       setError(err instanceof Error ? err.message : 'Error al cargar detalle')
     }
   }
+
+  const registroListKb = useRegistroListKeyboard({
+    enabled: view === 'list',
+    items: ingresosDelDia,
+    listSearchRef,
+    canCreate: hasPermiso('ingresos.crear'),
+    onCreate: abrirNuevoIngreso,
+    onOpenDetail: (i) => {
+      void verDetalle(i.id)
+    }
+  })
 
   function validarIngresoParaRegistrar(): boolean {
     if (!fecha || !numeroRemito.trim()) {
@@ -1190,19 +1177,6 @@ export function IngresosPage() {
           ref={listScrollRef}
           className="relative z-0 min-h-0 flex-1 overflow-y-auto bg-white"
         >
-          <div className="sticky top-0 z-[2] border-b border-surface-border bg-white/95 px-4 py-3 backdrop-blur-sm sm:px-5">
-            <div className="flex items-center justify-between gap-3">
-              <div>
-                <p className="text-sm font-semibold text-slate-900">Líneas cargadas</p>
-                <p className="text-xs text-slate-500">{lineas.length} línea(s)</p>
-              </div>
-              {lineas.length > 0 && (
-                <span className="inline-flex items-center rounded-full bg-brand-50 px-3 py-1 text-sm font-bold tabular-nums text-brand-700 ring-1 ring-brand-100">
-                  {formatCantidad(totalGeneral)} total
-                </span>
-              )}
-            </div>
-          </div>
           {lineasListContent}
         </div>
 
@@ -1214,6 +1188,10 @@ export function IngresosPage() {
               </p>
               <p className="text-2xl font-bold tabular-nums text-brand-700">
                 {formatCantidad(totalGeneral)}
+              </p>
+              <p className="mt-1 text-xs text-slate-500">
+                {lineas.length} línea{lineas.length === 1 ? '' : 's'} cargada
+                {lineas.length === 1 ? '' : 's'}
               </p>
             </div>
             {hasPermiso('ingresos.crear') && (
@@ -1366,7 +1344,7 @@ export function IngresosPage() {
                   placeholder="Buscar por remito..."
                   value={listSearch}
                   onChange={(e) => setListSearch(e.target.value)}
-                  onKeyDown={handleListSearchKeyDown}
+                  onKeyDown={registroListKb.handleListSearchKeyDown}
                   className="w-full rounded-xl border border-surface-border bg-white py-2.5 pl-10 pr-4 text-sm shadow-sm focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20"
                 />
               </div>
@@ -1479,10 +1457,13 @@ export function IngresosPage() {
             </div>
           ) : (
             <ul className="divide-y divide-surface-border">
-              {ingresosDelDia.map((i) => (
+              {ingresosDelDia.map((i, index) => (
                 <li
                   key={i.id}
-                  className="flex flex-col gap-3 px-4 py-4 transition-colors hover:bg-slate-50/80 sm:flex-row sm:items-center sm:gap-4 sm:px-6"
+                  {...registroListKb.listItemProps(
+                    index,
+                    'flex flex-col gap-3 px-4 py-4 transition-colors hover:bg-slate-50/80 sm:flex-row sm:items-center sm:gap-4 sm:px-6'
+                  )}
                 >
                   <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-center gap-2">

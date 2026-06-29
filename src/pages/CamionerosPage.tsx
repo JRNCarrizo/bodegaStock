@@ -14,6 +14,8 @@ import { api, cn } from '@/lib/utils'
 import type { Camionero, CamioneroForm, CamioneroVehiculo } from '@/types'
 import { useAuth } from '@/context/AuthContext'
 import { useEscHandler } from '@/hooks/useEscHandler'
+import { useRegistroListKeyboard } from '@/hooks/useRegistroListKeyboard'
+import { focusAndScrollIntoView } from '@/lib/scroll'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { Card, CardBody } from '@/components/ui/Card'
@@ -329,35 +331,14 @@ export function CamionerosPage() {
     }
   }
 
-  function shouldAbrirFormularioConEnter(target: EventTarget | null): boolean {
-    if (!(target instanceof HTMLElement)) return true
-    if (target.closest('button, a, textarea, [contenteditable="true"]')) return false
-    if (target instanceof HTMLInputElement && target.type === 'date') return false
-    if (target instanceof HTMLSelectElement) return false
-    return true
-  }
-
   function abrirNuevoCamionero() {
     openCreate()
   }
 
-  function handleSearchKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
-    if (e.key !== 'Enter' || !hasPermiso('camioneros.crear')) return
-    e.preventDefault()
-    abrirNuevoCamionero()
-  }
-
-  useEffect(() => {
-    if (view !== 'list' || !hasPermiso('camioneros.crear')) return
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key !== 'Enter' || e.repeat) return
-      if (!shouldAbrirFormularioConEnter(e.target)) return
-      e.preventDefault()
-      abrirNuevoCamionero()
-    }
-    window.addEventListener('keydown', onKeyDown)
-    return () => window.removeEventListener('keydown', onKeyDown)
-  }, [view, hasPermiso])
+  useEscHandler(view === 'list' && expandedId !== null, () => {
+    setExpandedId(null)
+    return true
+  })
 
   useEscHandler(view === 'form', () => {
     if (saving) return false
@@ -367,7 +348,7 @@ export function CamionerosPage() {
 
   useEffect(() => {
     if (view !== 'list') return
-    const timer = setTimeout(() => searchRef.current?.focus(), 80)
+    const timer = setTimeout(() => focusAndScrollIntoView(searchRef.current), 80)
     return () => clearTimeout(timer)
   }, [view])
 
@@ -446,6 +427,24 @@ export function CamionerosPage() {
     setView('form')
     setTimeout(() => focusField(numeroInternoRef), 50)
   }
+
+  const registroListKb = useRegistroListKeyboard({
+    enabled: view === 'list',
+    items: camioneros,
+    listSearchRef: searchRef,
+    canCreate: hasPermiso('camioneros.crear'),
+    onCreate: abrirNuevoCamionero,
+    onOpenDetail: (c) => {
+      if (expandedId !== c.id) void toggleExpand(c)
+    },
+    onEscFromHighlight: () => {
+      if (expandedId !== null) {
+        setExpandedId(null)
+        return true
+      }
+      return false
+    }
+  })
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -665,7 +664,7 @@ export function CamionerosPage() {
               placeholder="Buscar por nº interno, nombre, empresa o patente..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              onKeyDown={handleSearchKeyDown}
+              onKeyDown={registroListKb.handleListSearchKeyDown}
               className="w-full rounded-xl border border-surface-border bg-white py-2.5 pl-10 pr-4 text-sm shadow-sm focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20"
             />
           </div>
@@ -708,7 +707,7 @@ export function CamionerosPage() {
             </div>
           ) : (
             <ul className="divide-y divide-surface-border">
-              {camioneros.map((c) => {
+              {camioneros.map((c, index) => {
                 const isExpanded = expandedId === c.id
                 const vehiculos = vehiculosCache[c.id]
                 const loadingVehiculos = loadingVehiculosId === c.id
@@ -716,9 +715,12 @@ export function CamionerosPage() {
                 return (
                   <li key={c.id}>
                     <div
-                      className={cn(
-                        'flex flex-col gap-3 px-4 py-4 transition-colors sm:flex-row sm:items-center sm:gap-4 sm:px-6',
-                        isExpanded ? 'bg-brand-50/40' : 'hover:bg-slate-50/80'
+                      {...registroListKb.listItemProps(
+                        index,
+                        cn(
+                          'flex flex-col gap-3 px-4 py-4 transition-colors sm:flex-row sm:items-center sm:gap-4 sm:px-6',
+                          isExpanded ? 'bg-brand-50/40' : 'hover:bg-slate-50/80'
+                        )
                       )}
                     >
                       <button

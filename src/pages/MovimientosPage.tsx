@@ -50,6 +50,7 @@ import type {
 } from '@/types'
 import { useAuth } from '@/context/AuthContext'
 import { useEscHandler } from '@/hooks/useEscHandler'
+import { useRegistroListKeyboard } from '@/hooks/useRegistroListKeyboard'
 
 function newTempId(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
@@ -110,6 +111,8 @@ export function MovimientosPage() {
   const [selectedDay, setSelectedDay] = useState(() => todayIsoDate())
   const [filtroEstado, setFiltroEstado] = useState<'TODOS' | MovimientoInternoEstado>('TODOS')
   const [filtroTipo, setFiltroTipo] = useState<'TODOS' | MovimientoInternoTipo>('TODOS')
+  const [listTipoPickerActive, setListTipoPickerActive] = useState(false)
+  const [listTipoHighlight, setListTipoHighlight] = useState<MovimientoInternoTipo>('ENVIAR')
 
   const [createTipo, setCreateTipo] = useState<MovimientoInternoTipo>('ENVIAR')
   const [createPhase, setCreatePhase] = useState<'datos' | 'carga'>('datos')
@@ -145,6 +148,8 @@ export function MovimientosPage() {
   const fechaRef = useRef<HTMLInputElement>(null)
   const sectorContextoRef = useRef<HTMLSelectElement>(null)
   const sectorDestinoRef = useRef<HTMLSelectElement>(null)
+  const defaultUbicacionRef = useRef<HTMLSelectElement>(null)
+  const observacionRef = useRef<HTMLInputElement>(null)
   const productSearchRef = useRef<HTMLInputElement>(null)
   const cargaPanelRef = useRef<HTMLDivElement>(null)
   const listScrollRef = useRef<HTMLDivElement>(null)
@@ -155,6 +160,8 @@ export function MovimientosPage() {
   const lineOrigenRef = useRef<HTMLSelectElement>(null)
   const lineUbicacionDestinoRef = useRef<HTMLSelectElement>(null)
   const listSearchRef = useRef<HTMLInputElement>(null)
+  const enviarBtnRef = useRef<HTMLButtonElement>(null)
+  const recibirBtnRef = useRef<HTMLButtonElement>(null)
   const productResultsListRef = useRef<HTMLUListElement>(null)
 
   const totalGeneral = useMemo(
@@ -406,6 +413,7 @@ export function MovimientosPage() {
     setView('list')
     setDetalle(null)
     setCreatePhase('datos')
+    setListTipoPickerActive(false)
     setLineas([])
     setExpandedProductos(new Set())
     setSelectedProduct(null)
@@ -417,6 +425,7 @@ export function MovimientosPage() {
   }
 
   function iniciarCreacion(tipo: MovimientoInternoTipo) {
+    setListTipoPickerActive(false)
     setCreateTipo(tipo)
     setView('create')
     setCreatePhase('datos')
@@ -495,7 +504,7 @@ export function MovimientosPage() {
     setProductHighlightIndex(-1)
     resetLineaForm(p)
     setError('')
-    setTimeout(() => focusField(cantidadBultosRef), 50)
+    setTimeout(() => focusFirstLineaField(), 50)
   }
 
   function toggleProductoExpand(productoId: number) {
@@ -861,6 +870,44 @@ export function MovimientosPage() {
     requestAnimationFrame(() => ref.current?.focus({ preventScroll: true }))
   }
 
+  function focusFirstLineaField() {
+    if (createTipo === 'RECIBIR' && origenesDisponibles.length > 0) {
+      focusField(lineOrigenRef)
+      return
+    }
+    if (sectorUsaUbicaciones(destinoSectorIdCreate())) {
+      focusField(lineUbicacionDestinoRef)
+      return
+    }
+    focusField(tipoBultoRef)
+  }
+
+  function nextDatosAfterSectorContexto(): React.RefObject<HTMLElement | null> {
+    if (createTipo === 'ENVIAR') return sectorDestinoRef
+    const destId = destinoSectorIdCreate()
+    if (destId && sectorUsaUbicaciones(destId)) return defaultUbicacionRef
+    return observacionRef
+  }
+
+  function nextDatosAfterSectorDestino(): React.RefObject<HTMLElement | null> {
+    const destId = destinoSectorIdCreate()
+    if (destId && sectorUsaUbicaciones(destId)) return defaultUbicacionRef
+    return observacionRef
+  }
+
+  function handleDatosKeyDown(
+    e: React.KeyboardEvent,
+    next?: React.RefObject<HTMLElement | null>
+  ) {
+    if (e.key !== 'Enter') return
+    e.preventDefault()
+    if (next?.current) {
+      focusField(next)
+    } else {
+      avanzarACarga()
+    }
+  }
+
   function focusProductSearch() {
     productSearchRef.current?.focus({ preventScroll: true })
   }
@@ -886,6 +933,66 @@ export function MovimientosPage() {
     const timer = setTimeout(focusProductSearch, 0)
     return () => clearTimeout(timer)
   }, [view, createPhase])
+
+  function activarSelectorTipo(tipo: MovimientoInternoTipo = 'ENVIAR') {
+    setListTipoPickerActive(true)
+    setListTipoHighlight(tipo)
+  }
+
+  const registroListKb = useRegistroListKeyboard({
+    enabled: view === 'list' && !listTipoPickerActive,
+    items: movimientosDelDia,
+    listSearchRef,
+    enterPrioritizesListNavigation: true,
+    onEnterFromSearch: () => {
+      listSearchRef.current?.blur()
+      activarSelectorTipo('ENVIAR')
+    },
+    onOpenDetail: (m) => {
+      void abrirDetalle(m.id)
+    }
+  })
+
+  function focusTipoButton(tipo: MovimientoInternoTipo) {
+    const ref = tipo === 'ENVIAR' ? enviarBtnRef : recibirBtnRef
+    requestAnimationFrame(() => ref.current?.focus({ preventScroll: true }))
+  }
+
+  useEffect(() => {
+    if (view !== 'list' || !listTipoPickerActive) return
+    focusTipoButton(listTipoHighlight)
+  }, [view, listTipoPickerActive, listTipoHighlight])
+
+  useEffect(() => {
+    if (view !== 'list' || !hasPermiso('movimientos_internos.crear') || !listTipoPickerActive) return
+
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
+        e.preventDefault()
+        setListTipoHighlight('ENVIAR')
+        return
+      }
+      if (e.key === 'ArrowRight' || e.key === 'ArrowDown') {
+        e.preventDefault()
+        setListTipoHighlight('RECIBIR')
+        return
+      }
+      if (e.key === 'Enter') {
+        e.preventDefault()
+        iniciarCreacion(listTipoHighlight)
+        return
+      }
+      if (e.key === 'Escape') {
+        e.preventDefault()
+        setListTipoPickerActive(false)
+        focusListSearch()
+        return
+      }
+    }
+
+    window.addEventListener('keydown', onKeyDown, true)
+    return () => window.removeEventListener('keydown', onKeyDown, true)
+  }, [view, listTipoPickerActive, listTipoHighlight, hasPermiso])
 
   function handleProductSearchKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
     if (selectedProduct) return
@@ -920,7 +1027,13 @@ export function MovimientosPage() {
         selectProduct(productResults[productHighlightIndex])
         return
       }
-      pickProductFromSearch()
+      if (productSearch.trim()) {
+        pickProductFromSearch()
+        return
+      }
+      if (lineas.length > 0 && !saving) {
+        void guardarMovimiento()
+      }
     }
   }
 
@@ -1200,8 +1313,8 @@ export function MovimientosPage() {
         }
         productosContent={productosContent}
         productosCount={lineasPorProductoDetalle.length}
-        despuesProductos={
-          <div className="flex flex-wrap gap-2">
+        accionesTotal={
+          <>
             {puedeAutorizar && (
               <Button
                 className="rounded-xl"
@@ -1222,7 +1335,7 @@ export function MovimientosPage() {
                 Cancelar
               </Button>
             )}
-          </div>
+          </>
         }
       />
     )
@@ -1246,6 +1359,8 @@ export function MovimientosPage() {
               {createTipo === 'ENVIAR'
                 ? 'Mandás productos desde un sector hacia otro'
                 : 'Pedís productos que están en otros sectores'}
+              {' · '}
+              Enter avanza entre campos
             </p>
           </div>
 
@@ -1276,6 +1391,7 @@ export function MovimientosPage() {
                 type="date"
                 value={fecha}
                 onChange={(e) => setFecha(e.target.value)}
+                onKeyDown={(e) => handleDatosKeyDown(e, sectorContextoRef)}
               />
               <div>
                 <label className="mb-1 block text-sm font-medium text-slate-700">
@@ -1285,6 +1401,7 @@ export function MovimientosPage() {
                   ref={sectorContextoRef}
                   value={sectorContextoId}
                   onChange={(e) => setSectorContextoId(e.target.value)}
+                  onKeyDown={(e) => handleDatosKeyDown(e, nextDatosAfterSectorContexto())}
                   className="w-full rounded-xl border border-surface-border px-3 py-2.5 text-sm shadow-sm focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20"
                 >
                   <option value="">Seleccionar...</option>
@@ -1300,6 +1417,7 @@ export function MovimientosPage() {
                     ref={sectorDestinoRef}
                     value={sectorDestinoDefaultId}
                     onChange={(e) => setSectorDestinoDefaultId(e.target.value)}
+                    onKeyDown={(e) => handleDatosKeyDown(e, nextDatosAfterSectorDestino())}
                     className="w-full rounded-xl border border-surface-border px-3 py-2.5 text-sm shadow-sm focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20"
                   >
                     <option value="">Seleccionar...</option>
@@ -1318,11 +1436,13 @@ export function MovimientosPage() {
                   <div>
                     <label className="mb-1 block text-sm font-medium text-slate-700">Ubicación destino</label>
                     <select
+                      ref={defaultUbicacionRef}
                       value={defaultUbicacionDestinoId}
                       onChange={(e) => {
                         setDefaultUbicacionDestinoId(e.target.value)
                         setLineUbicacionDestinoId(e.target.value)
                       }}
+                      onKeyDown={(e) => handleDatosKeyDown(e, observacionRef)}
                       className="w-full rounded-xl border border-surface-border px-3 py-2.5 text-sm shadow-sm focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20"
                     >
                       <option value="">Sin ubicación</option>
@@ -1337,11 +1457,14 @@ export function MovimientosPage() {
                 )
               })()}
               <Input
+                ref={observacionRef}
                 label="Observación"
                 value={observacion}
                 onChange={(e) => setObservacion(e.target.value)}
+                onKeyDown={(e) => handleDatosKeyDown(e)}
                 placeholder="Opcional"
               />
+              <p className="text-xs text-slate-400">Enter en observación → carga de productos</p>
               <Button type="button" className="w-full rounded-xl" onClick={avanzarACarga}>
                 Continuar a productos
               </Button>
@@ -1373,7 +1496,7 @@ export function MovimientosPage() {
             <div key={grupo.producto.producto_id} className="border-b border-surface-border last:border-0">
               <div
                 className={cn(
-                  'flex items-center gap-3 px-4 py-3 transition-colors sm:px-5',
+                  'flex items-center gap-3 px-4 py-2.5 transition-colors sm:px-5',
                   isExpanded ? 'bg-brand-50/50' : 'hover:bg-slate-50/80'
                 )}
               >
@@ -1393,14 +1516,18 @@ export function MovimientosPage() {
                 <button
                   type="button"
                   onClick={() => toggleProductoExpand(grupo.producto.producto_id)}
-                  className="min-w-0 flex-1 text-left"
+                  className="flex min-w-0 flex-1 items-center gap-2 text-left"
                 >
-                  <span className="inline-flex rounded-md bg-slate-100 px-2 py-0.5 font-mono text-xs font-semibold text-slate-700">
+                  <span className="shrink-0 rounded-md bg-slate-100 px-2 py-0.5 font-mono text-xs font-semibold text-slate-700">
                     {grupo.producto.codigo_interno}
                   </span>
-                  <p className="mt-1 truncate text-sm font-semibold text-slate-900">{grupo.producto.nombre}</p>
+                  <span className="min-w-0 truncate text-sm font-semibold text-slate-900">
+                    {grupo.producto.nombre}
+                  </span>
                   {!isExpanded && grupo.lineas.length > 1 && (
-                    <p className="mt-0.5 text-xs text-slate-500">{grupo.lineas.length} líneas</p>
+                    <span className="shrink-0 text-xs text-slate-500">
+                      · {grupo.lineas.length} líneas
+                    </span>
                   )}
                 </button>
                 <span className="inline-flex shrink-0 items-center rounded-lg bg-brand-50 px-2.5 py-1.5 text-sm font-bold tabular-nums text-brand-700 ring-1 ring-brand-100">
@@ -1607,7 +1734,11 @@ export function MovimientosPage() {
                         onKeyDown={(e) => {
                           if (e.key === 'Enter') {
                             e.preventDefault()
-                            focusField(tipoBultoRef)
+                            if (sectorUsaUbicaciones(destinoSectorIdCreate())) {
+                              focusField(lineUbicacionDestinoRef)
+                            } else {
+                              focusField(tipoBultoRef)
+                            }
                           }
                         }}
                         className="w-full rounded-lg border border-surface-border px-2 py-1.5 text-sm"
@@ -1710,7 +1841,7 @@ export function MovimientosPage() {
                   <span className="font-medium text-slate-600">Botellerio:</span> 1 × 4 = 1 caja con 4 botellas.
                 </p>
                 <p className="mt-1 text-xs text-slate-500">
-                  Enter en el último campo agrega la línea y vuelve al buscador
+                  Enter avanza entre campos · último campo agrega la línea · buscador vacío + Enter guarda
                 </p>
               </div>
             )}
@@ -1721,19 +1852,6 @@ export function MovimientosPage() {
           ref={listScrollRef}
           className="relative z-0 min-h-0 flex-1 overflow-y-auto bg-white"
         >
-          <div className="sticky top-0 z-[2] border-b border-surface-border bg-white/95 px-4 py-3 backdrop-blur-sm sm:px-5">
-            <div className="flex items-center justify-between gap-3">
-              <div>
-                <p className="text-sm font-semibold text-slate-900">Líneas cargadas</p>
-                <p className="text-xs text-slate-500">{lineas.length} línea(s)</p>
-              </div>
-              {lineas.length > 0 && (
-                <span className="inline-flex items-center rounded-full bg-brand-50 px-3 py-1 text-sm font-bold tabular-nums text-brand-700 ring-1 ring-brand-100">
-                  {formatCantidad(totalGeneral)} total
-                </span>
-              )}
-            </div>
-          </div>
           {lineasListContent}
         </div>
 
@@ -1742,6 +1860,10 @@ export function MovimientosPage() {
             <div>
               <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">Total general</p>
               <p className="text-2xl font-bold tabular-nums text-brand-700">{formatCantidad(totalGeneral)}</p>
+              <p className="mt-1 text-xs text-slate-500">
+                {lineas.length} línea{lineas.length === 1 ? '' : 's'} cargada
+                {lineas.length === 1 ? '' : 's'}
+              </p>
             </div>
             {hasPermiso('movimientos_internos.crear') && (
               <Button
@@ -1782,15 +1904,56 @@ export function MovimientosPage() {
           </p>
         </div>
         {hasPermiso('movimientos_internos.crear') && (
-          <div className="flex flex-wrap gap-2">
-            <Button className="rounded-xl px-4" onClick={() => iniciarCreacion('ENVIAR')}>
-              <Send className="h-4 w-4" />
-              Enviar
-            </Button>
-            <Button variant="secondary" className="rounded-xl px-4" onClick={() => iniciarCreacion('RECIBIR')}>
-              <ArrowLeftRight className="h-4 w-4" />
-              Recibir
-            </Button>
+          <div className="flex flex-col items-stretch gap-2 sm:items-end">
+            <p className="text-xs text-slate-400 sm:text-right">
+              {listTipoPickerActive
+                ? '← → para elegir · Enter confirma · Esc cancela'
+                : movimientosDelDia.length > 0
+                  ? 'Enter o ↓ en movimientos · Enter abre detalle'
+                  : 'Enter → Enviar o Recibir'}
+            </p>
+            <div
+              className={cn(
+                'flex flex-wrap gap-2 rounded-xl p-1 transition-all',
+                listTipoPickerActive && 'bg-brand-50 ring-2 ring-brand-400 ring-offset-2'
+              )}
+            >
+              <Button
+                ref={enviarBtnRef}
+                type="button"
+                className={cn(
+                  'rounded-xl px-4',
+                  listTipoPickerActive &&
+                    listTipoHighlight === 'ENVIAR' &&
+                    'ring-2 ring-brand-600 ring-offset-1'
+                )}
+                onFocus={() => {
+                  if (listTipoPickerActive) setListTipoHighlight('ENVIAR')
+                }}
+                onClick={() => iniciarCreacion('ENVIAR')}
+              >
+                <Send className="h-4 w-4" />
+                Enviar
+              </Button>
+              <Button
+                ref={recibirBtnRef}
+                type="button"
+                variant="secondary"
+                className={cn(
+                  'rounded-xl px-4',
+                  listTipoPickerActive &&
+                    listTipoHighlight === 'RECIBIR' &&
+                    'ring-2 ring-brand-600 ring-offset-1'
+                )}
+                onFocus={() => {
+                  if (listTipoPickerActive) setListTipoHighlight('RECIBIR')
+                }}
+                onClick={() => iniciarCreacion('RECIBIR')}
+              >
+                <ArrowLeftRight className="h-4 w-4" />
+                Recibir
+              </Button>
+            </div>
           </div>
         )}
       </section>
@@ -1814,6 +1977,7 @@ export function MovimientosPage() {
                   placeholder="Buscar por sector, producto..."
                   value={listSearch}
                   onChange={(e) => setListSearch(e.target.value)}
+                  onKeyDown={registroListKb.handleListSearchKeyDown}
                   className="w-full rounded-xl border border-surface-border bg-white py-2.5 pl-10 pr-4 text-sm shadow-sm focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20"
                 />
               </div>
@@ -1944,10 +2108,13 @@ export function MovimientosPage() {
             </div>
           ) : (
             <ul className="divide-y divide-surface-border">
-              {movimientosDelDia.map((m) => (
+              {movimientosDelDia.map((m, index) => (
                 <li
                   key={m.id}
-                  className="flex flex-col gap-3 px-4 py-4 transition-colors hover:bg-slate-50/80 sm:flex-row sm:items-center sm:gap-4 sm:px-6"
+                  {...registroListKb.listItemProps(
+                    index,
+                    'flex flex-col gap-3 px-4 py-4 transition-colors hover:bg-slate-50/80 sm:flex-row sm:items-center sm:gap-4 sm:px-6'
+                  )}
                 >
                   <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-center gap-2">

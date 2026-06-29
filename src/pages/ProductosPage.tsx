@@ -19,6 +19,8 @@ import { prepareProductImage } from '@/lib/image'
 import type { Producto, ProductoForm } from '@/types'
 import { useAuth } from '@/context/AuthContext'
 import { useEscHandler } from '@/hooks/useEscHandler'
+import { useRegistroListKeyboard } from '@/hooks/useRegistroListKeyboard'
+import { focusAndScrollIntoView } from '@/lib/scroll'
 import { ImagePreviewModal } from '@/components/ImagePreviewModal'
 import { ProductImage } from '@/components/ProductImage'
 import { Button } from '@/components/ui/Button'
@@ -117,35 +119,9 @@ export function ProductosPage() {
     return true
   })
 
-  function shouldAbrirFormularioConEnter(target: EventTarget | null): boolean {
-    if (!(target instanceof HTMLElement)) return true
-    if (target.closest('button, a, textarea, [contenteditable="true"]')) return false
-    if (target instanceof HTMLInputElement && target.type === 'date') return false
-    if (target instanceof HTMLSelectElement) return false
-    return true
-  }
-
   function abrirNuevoProducto() {
     openCreate()
   }
-
-  function handleSearchKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
-    if (e.key !== 'Enter' || !hasPermiso('productos.crear')) return
-    e.preventDefault()
-    abrirNuevoProducto()
-  }
-
-  useEffect(() => {
-    if (view !== 'list' || showScanner || imagePreview || !hasPermiso('productos.crear')) return
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key !== 'Enter' || e.repeat) return
-      if (!shouldAbrirFormularioConEnter(e.target)) return
-      e.preventDefault()
-      abrirNuevoProducto()
-    }
-    window.addEventListener('keydown', onKeyDown)
-    return () => window.removeEventListener('keydown', onKeyDown)
-  }, [view, showScanner, imagePreview, hasPermiso])
 
   const load = useCallback(async (q?: string) => {
     setLoading(true)
@@ -164,7 +140,7 @@ export function ProductosPage() {
 
   useEffect(() => {
     if (view !== 'list') return
-    const timer = setTimeout(() => searchRef.current?.focus(), 80)
+    const timer = setTimeout(() => focusAndScrollIntoView(searchRef.current), 80)
     return () => clearTimeout(timer)
   }, [view])
 
@@ -217,6 +193,17 @@ export function ProductosPage() {
     setView('form')
     setTimeout(() => focusField(codigoInternoRef), 50)
   }
+
+  const registroListKb = useRegistroListKeyboard({
+    enabled: view === 'list' && !showScanner && !imagePreview && !barcodePrint,
+    items: productos,
+    listSearchRef: searchRef,
+    canCreate: hasPermiso('productos.crear'),
+    onCreate: abrirNuevoProducto,
+    onOpenDetail: (p) => {
+      if (hasPermiso('productos.editar')) openEdit(p)
+    }
+  })
 
   async function handleGenerarCodigos() {
     try {
@@ -607,19 +594,17 @@ export function ProductosPage() {
             Códigos internos, barras, imágenes y estado de cada artículo del depósito.
           </p>
         </div>
-        <div className="flex flex-wrap items-center gap-2">
-          {hasPermiso('productos.crear') && (
-            <>
-              <span className="hidden rounded-full border border-surface-border bg-white px-2.5 py-1 text-[11px] font-medium text-slate-500 shadow-card sm:inline-flex">
-                Enter = nuevo producto
-              </span>
-              <Button className="rounded-xl px-4" onClick={openCreate}>
-                <Plus className="h-4 w-4" />
-                Nuevo producto
-              </Button>
-            </>
-          )}
-        </div>
+        {hasPermiso('productos.crear') && (
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="hidden rounded-full border border-surface-border bg-white px-2.5 py-1 text-[11px] font-medium text-slate-500 shadow-card sm:inline-flex">
+              Enter = nuevo producto
+            </span>
+            <Button className="rounded-xl px-4" onClick={openCreate}>
+              <Plus className="h-4 w-4" />
+              Nuevo producto
+            </Button>
+          </div>
+        )}
       </section>
 
       <Card className="overflow-hidden shadow-panel">
@@ -639,7 +624,7 @@ export function ProductosPage() {
                 placeholder="Buscar por código, barras o nombre..."
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                onKeyDown={handleSearchKeyDown}
+                onKeyDown={registroListKb.handleListSearchKeyDown}
                 className="w-full rounded-xl border border-surface-border bg-white py-2.5 pl-10 pr-4 text-sm shadow-sm focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20"
               />
             </div>
@@ -678,10 +663,13 @@ export function ProductosPage() {
             </div>
           ) : (
             <ul className="divide-y divide-surface-border">
-              {productos.map((p) => (
+              {productos.map((p, index) => (
                 <li
                   key={p.id}
-                  className="flex flex-col gap-3 px-4 py-4 transition-colors hover:bg-slate-50/80 sm:flex-row sm:items-center sm:gap-4 sm:px-6"
+                  {...registroListKb.listItemProps(
+                    index,
+                    'flex flex-col gap-3 px-4 py-4 transition-colors hover:bg-slate-50/80 sm:flex-row sm:items-center sm:gap-4 sm:px-6'
+                  )}
                 >
                   <div className="flex min-w-0 flex-1 items-center gap-3">
                     <ProductImage

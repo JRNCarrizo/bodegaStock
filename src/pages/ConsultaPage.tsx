@@ -15,6 +15,7 @@ import { ImagePreviewModal } from '@/components/ImagePreviewModal'
 import { ProductImage } from '@/components/ProductImage'
 import { ReorganizarStockForm } from '@/components/ReorganizarStockForm'
 import { formatCantidad } from '@/lib/desglose'
+import { scrollElementFullyIntoView, focusAndScrollIntoView } from '@/lib/scroll'
 import { api, cn } from '@/lib/utils'
 import type {
   ConsultaDetalle,
@@ -25,34 +26,8 @@ import type {
 import { Card, CardBody } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { useAuth } from '@/context/AuthContext'
+import { useSidebarNav } from '@/context/SidebarNavContext'
 import { useEscHandler } from '@/hooks/useEscHandler'
-
-function scrollElementFullyIntoView(el: HTMLElement, margin = 20) {
-  el.scrollIntoView({ block: 'nearest' })
-
-  let scrollParent: HTMLElement | null = el.parentElement
-  while (scrollParent) {
-    const { overflowY } = getComputedStyle(scrollParent)
-    if (/(auto|scroll|overlay)/.test(overflowY) && scrollParent.scrollHeight > scrollParent.clientHeight) {
-      break
-    }
-    scrollParent = scrollParent.parentElement
-  }
-
-  const container = scrollParent
-  if (!container) return
-
-  const elRect = el.getBoundingClientRect()
-  const containerRect = container.getBoundingClientRect()
-  const overflowBottom = elRect.bottom - containerRect.bottom + margin
-  const overflowTop = containerRect.top + margin - elRect.top
-
-  if (overflowBottom > 0) {
-    container.scrollTop += overflowBottom
-  } else if (overflowTop > 0) {
-    container.scrollTop -= overflowTop
-  }
-}
 
 function StockDetallePanel({
   detalle,
@@ -208,6 +183,7 @@ export function ConsultaPage() {
   const searchInputRef = useRef<HTMLInputElement>(null)
   const resultadosListRef = useRef<HTMLUListElement>(null)
   const expandedItemRef = useRef<HTMLLIElement | null>(null)
+  const { registerEscHandler } = useSidebarNav()
 
   const expandedDetalle = expandedId != null ? detalleCache[expandedId] : undefined
 
@@ -380,6 +356,15 @@ export function ConsultaPage() {
     }
   }
 
+  useEffect(() => {
+    if (highlightIndex < 0) return
+    return registerEscHandler(() => {
+      focusSearchInput({ scrollIntoView: true })
+      setHighlightIndex(-1)
+      return true
+    })
+  }, [highlightIndex, registerEscHandler])
+
   useEscHandler(true, () => {
     if (showScanner) {
       setShowScanner(false)
@@ -397,13 +382,6 @@ export function ConsultaPage() {
       setExpandedId(null)
       return true
     }
-    if (resultados.length > 0 && search.trim()) {
-      if (document.activeElement !== searchInputRef.current || highlightIndex >= 0) {
-        searchInputRef.current?.focus()
-        setHighlightIndex(-1)
-        return true
-      }
-    }
     return false
   })
 
@@ -416,7 +394,11 @@ export function ConsultaPage() {
     searchInputRef.current?.focus({ preventScroll: true })
   }, [])
 
-  function focusSearchInput() {
+  function focusSearchInput(options?: { scrollIntoView?: boolean }) {
+    if (options?.scrollIntoView) {
+      focusAndScrollIntoView(searchInputRef.current)
+      return
+    }
     searchInputRef.current?.focus({ preventScroll: true })
   }
 

@@ -39,6 +39,7 @@ import type {
 } from '@/types'
 import { useAuth } from '@/context/AuthContext'
 import { useEscHandler } from '@/hooks/useEscHandler'
+import { useRegistroListKeyboard } from '@/hooks/useRegistroListKeyboard'
 
 function newTempId(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
@@ -269,6 +270,7 @@ export function RoturasPage() {
     if (detalle) setSelectedDay(detalle.rotura.fecha)
     setDetalle(null)
     setView('list')
+    setTimeout(() => listSearchRef.current?.focus({ preventScroll: true }), 80)
   }
 
   useEscHandler(view === 'detail' && !!detalle, () => {
@@ -309,27 +311,6 @@ export function RoturasPage() {
     setView('create')
     setTimeout(() => focusField(fechaRef), 50)
   }
-
-  function handleListSearchKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
-    if (e.key !== 'Enter' || !hasPermiso('roturas.crear')) return
-    e.preventDefault()
-    abrirNuevoRegistro()
-  }
-
-  useEffect(() => {
-    if (view !== 'list' || !hasPermiso('roturas.crear')) return
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key !== 'Enter' || e.repeat) return
-      if (!(e.target instanceof HTMLElement)) return
-      if (e.target.closest('button, a, textarea, [contenteditable="true"]')) return
-      if (e.target instanceof HTMLInputElement && e.target.type === 'date') return
-      if (e.target instanceof HTMLSelectElement) return
-      e.preventDefault()
-      abrirNuevoRegistro()
-    }
-    window.addEventListener('keydown', onKeyDown)
-    return () => window.removeEventListener('keydown', onKeyDown)
-  }, [view, hasPermiso])
 
   function validarDatos(): boolean {
     if (!fecha) {
@@ -433,7 +414,6 @@ export function RoturasPage() {
         cantidad_cajas: qty
       }
     ])
-    setExpandedProductos((prev) => new Set(prev).add(selectedProduct.id))
     setSelectedProduct(null)
     setProductSearch('')
     setCantidadCajas('')
@@ -483,6 +463,17 @@ export function RoturasPage() {
       setError(err instanceof Error ? err.message : 'Error al cargar detalle')
     }
   }
+
+  const registroListKb = useRegistroListKeyboard({
+    enabled: view === 'list' && !showResumenDia,
+    items: roturasDelDia,
+    listSearchRef,
+    canCreate: hasPermiso('roturas.crear'),
+    onCreate: abrirNuevoRegistro,
+    onOpenDetail: (r) => {
+      void abrirDetalle(r.id)
+    }
+  })
 
   async function abrirResumenDia() {
     setLoadingResumen(true)
@@ -638,7 +629,7 @@ export function RoturasPage() {
             <div key={grupo.producto.producto_id} className="border-b border-surface-border last:border-0">
               <div
                 className={cn(
-                  'flex items-center gap-3 px-4 py-3 transition-colors sm:px-5',
+                  'flex items-center gap-3 px-4 py-2.5 transition-colors sm:px-5',
                   isExpanded ? 'bg-red-50/50' : 'hover:bg-slate-50/80'
                 )}
               >
@@ -657,12 +648,19 @@ export function RoturasPage() {
                 <button
                   type="button"
                   onClick={() => toggleProductoExpand(grupo.producto.producto_id)}
-                  className="min-w-0 flex-1 text-left"
+                  className="flex min-w-0 flex-1 items-center gap-2 text-left"
                 >
-                  <span className="inline-flex rounded-md bg-slate-100 px-2 py-0.5 font-mono text-xs font-semibold text-slate-700">
+                  <span className="shrink-0 rounded-md bg-slate-100 px-2 py-0.5 font-mono text-xs font-semibold text-slate-700">
                     {grupo.producto.codigo_interno}
                   </span>
-                  <p className="mt-1 truncate text-sm font-semibold text-slate-900">{grupo.producto.nombre}</p>
+                  <span className="min-w-0 truncate text-sm font-semibold text-slate-900">
+                    {grupo.producto.nombre}
+                  </span>
+                  {!isExpanded && grupo.lineas.length > 1 && (
+                    <span className="shrink-0 text-xs text-slate-500">
+                      · {grupo.lineas.length} líneas
+                    </span>
+                  )}
                 </button>
                 <span className="inline-flex shrink-0 items-center rounded-lg bg-red-50 px-2.5 py-1.5 text-sm font-bold tabular-nums text-red-700 ring-1 ring-red-100">
                   {formatTotalCajas(grupo.total)}
@@ -878,19 +876,6 @@ export function RoturasPage() {
           </div>
         </div>
         <div ref={listScrollRef} className="relative z-0 min-h-0 flex-1 overflow-y-auto bg-white">
-          <div className="sticky top-0 z-[2] border-b border-surface-border bg-white/95 px-4 py-3 backdrop-blur-sm sm:px-5">
-            <div className="flex items-center justify-between gap-3">
-              <div>
-                <p className="text-sm font-semibold text-slate-900">Líneas cargadas</p>
-                <p className="text-xs text-slate-500">{lineas.length} línea(s)</p>
-              </div>
-              {lineas.length > 0 && (
-                <span className="inline-flex items-center rounded-full bg-red-50 px-3 py-1 text-sm font-bold tabular-nums text-red-700 ring-1 ring-red-100">
-                  {formatTotalCajas(totalGeneral)} total
-                </span>
-              )}
-            </div>
-          </div>
           {lineasListContent}
         </div>
         <div className="shrink-0 border-t border-surface-border bg-white px-4 py-4 shadow-[0_-4px_12px_rgba(0,0,0,0.04)] sm:px-5">
@@ -898,6 +883,10 @@ export function RoturasPage() {
             <div>
               <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">Total a descontar</p>
               <p className="text-2xl font-bold tabular-nums text-red-700">{formatTotalCajas(totalGeneral)}</p>
+              <p className="mt-1 text-xs text-slate-500">
+                {lineas.length} línea{lineas.length === 1 ? '' : 's'} cargada
+                {lineas.length === 1 ? '' : 's'}
+              </p>
             </div>
             {hasPermiso('roturas.crear') && (
               <Button
@@ -961,7 +950,7 @@ export function RoturasPage() {
                   placeholder="Buscar por producto u observación..."
                   value={listSearch}
                   onChange={(e) => setListSearch(e.target.value)}
-                  onKeyDown={handleListSearchKeyDown}
+                  onKeyDown={registroListKb.handleListSearchKeyDown}
                   className="w-full rounded-xl border border-surface-border bg-white py-2.5 pl-10 pr-4 text-sm shadow-sm focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20"
                 />
               </div>
@@ -1078,10 +1067,13 @@ export function RoturasPage() {
             </div>
           ) : (
             <ul className="divide-y divide-surface-border">
-              {roturasDelDia.map((r) => (
+              {roturasDelDia.map((r, index) => (
                 <li
                   key={r.id}
-                  className="flex flex-col gap-3 px-4 py-4 transition-colors hover:bg-slate-50/80 sm:flex-row sm:items-center sm:gap-4 sm:px-6"
+                  {...registroListKb.listItemProps(
+                    index,
+                    'flex flex-col gap-3 px-4 py-4 transition-colors hover:bg-slate-50/80 sm:flex-row sm:items-center sm:gap-4 sm:px-6'
+                  )}
                 >
                   <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-center gap-2">

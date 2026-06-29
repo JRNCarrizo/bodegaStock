@@ -10,6 +10,26 @@ import type { NavItem } from '@/types'
 
 const SIDEBAR_COLLAPSED_KEY = 'sidebar-collapsed'
 
+function userInitials(name?: string): string {
+  if (!name?.trim()) return '?'
+  const parts = name.trim().split(/\s+/)
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase()
+  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase()
+}
+
+function SidebarGroupLabel({ group, collapsed }: { group: string; collapsed?: boolean }) {
+  if (collapsed) return null
+
+  return (
+    <div className="mb-2 flex items-center gap-2 px-3">
+      <p className="shrink-0 text-[10px] font-semibold uppercase tracking-wider text-slate-400">
+        {group}
+      </p>
+      <div className="h-px flex-1 bg-surface-border/80" />
+    </div>
+  )
+}
+
 function useSidebarCollapsed() {
   const [collapsed, setCollapsed] = useState(() => {
     try {
@@ -73,9 +93,9 @@ function AppLayoutShell({
     <div className="flex h-screen bg-surface-muted">
       <aside
         className={cn(
-          'hidden shrink-0 flex-col border-r border-surface-border bg-white transition-[width] duration-200 ease-in-out lg:flex',
+          'hidden shrink-0 flex-col border-r border-surface-border bg-gradient-to-b from-white via-white to-slate-50/70 shadow-sm transition-[width] duration-200 ease-in-out lg:flex',
           collapsed ? 'w-[4.25rem]' : 'w-64',
-          sidebarActive && 'ring-2 ring-inset ring-brand-200'
+          sidebarActive && 'ring-2 ring-inset ring-brand-200/80'
         )}
       >
         <SidebarHeader collapsed={collapsed} onToggle={toggleCollapsed} />
@@ -87,15 +107,13 @@ function AppLayoutShell({
           )}
           aria-label="Menú principal"
         >
-          <div className="flex-1 overflow-y-auto overflow-x-hidden">
+          <div className="scrollbar-thin flex-1 overflow-y-auto overflow-x-hidden">
             {groups.map((group, groupIndex) => (
               <div key={group} className={cn(!collapsed && 'mb-5')}>
                 {!collapsed ? (
-                  <p className="mb-2 px-3 text-xs font-semibold uppercase tracking-wider text-slate-400">
-                    {group}
-                  </p>
+                  <SidebarGroupLabel group={group} />
                 ) : (
-                  groupIndex > 0 && <div className="mx-1 my-2 border-t border-surface-border" />
+                  groupIndex > 0 && <div className="mx-1 my-2.5 border-t border-surface-border/80" />
                 )}
 
                 <ul className="space-y-0.5">
@@ -117,7 +135,7 @@ function AppLayoutShell({
             ))}
 
             {!collapsed && (
-              <p className="mt-2 px-3 text-[11px] text-slate-400">
+              <p className="mx-1 mt-3 rounded-lg bg-slate-50 px-2.5 py-2 text-[10px] leading-relaxed text-slate-400 ring-1 ring-surface-border/60">
                 ↑↓ navegar · Enter abrir · Esc volver al menú
               </p>
             )}
@@ -151,8 +169,8 @@ function AppLayoutShell({
         <div className="fixed inset-0 z-40 lg:hidden">
           <div className="absolute inset-0 bg-slate-900/40" onClick={() => setMobileOpen(false)} />
 
-          <aside className="relative flex h-full w-72 flex-col bg-white shadow-panel">
-            <div className="flex items-center justify-between border-b border-surface-border p-4">
+          <aside className="relative flex h-full w-72 flex-col bg-gradient-to-b from-white via-white to-slate-50/70 shadow-panel">
+            <div className="flex items-center justify-between border-b border-brand-100/80 bg-gradient-to-r from-brand-50/50 via-white to-white p-4">
               <SidebarHeader compact />
               <button
                 type="button"
@@ -165,16 +183,26 @@ function AppLayoutShell({
             </div>
 
             <nav className="flex flex-1 flex-col overflow-hidden px-3 py-4" aria-label="Menú principal">
-              <div className="flex-1 overflow-y-auto">
-                {visibleItems.map((item, index) => (
-                  <SidebarNavItem
-                    key={item.id}
-                    item={item}
-                    index={index}
-                    end={item.path === '/'}
-                    onNavigate={() => setMobileOpen(false)}
-                    mobile
-                  />
+              <div className="scrollbar-thin flex-1 overflow-y-auto">
+                {groups.map((group) => (
+                  <div key={group} className="mb-5">
+                    <SidebarGroupLabel group={group} />
+                    <ul className="space-y-0.5">
+                      {visibleItems
+                        .map((item, index) => ({ item, index }))
+                        .filter(({ item }) => item.group === group)
+                        .map(({ item, index }) => (
+                          <SidebarNavItem
+                            key={item.id}
+                            item={item}
+                            index={index}
+                            end={item.path === '/'}
+                            onNavigate={() => setMobileOpen(false)}
+                            mobile
+                          />
+                        ))}
+                    </ul>
+                  </div>
                 ))}
               </div>
 
@@ -268,25 +296,32 @@ function SidebarNavItem({
       }}
       className={({ isActive }) =>
         cn(
-          'flex items-center rounded-lg text-sm font-medium transition-colors',
+          'relative flex items-center rounded-xl text-sm font-medium transition-all duration-150',
           collapsed && !mobile ? 'justify-center px-2 py-2.5' : 'gap-3 px-3 py-2',
           mobile ? 'mb-0.5' : '',
           item.disabled
-            ? 'cursor-not-allowed text-slate-300'
+            ? 'cursor-not-allowed text-slate-300 [&>svg]:text-slate-300'
             : keyboardFocused
-              ? 'bg-brand-100 text-brand-800 ring-2 ring-brand-500 ring-offset-1'
+              ? 'bg-brand-100 text-brand-800 shadow-sm ring-2 ring-brand-500/40 ring-offset-1 [&>svg]:text-brand-600'
               : isActive
-                ? 'bg-brand-50 text-brand-700'
-                : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
+                ? cn(
+                    'bg-brand-50 text-brand-800 shadow-sm ring-1 ring-brand-100/90 [&>svg]:text-brand-600',
+                    !collapsed || mobile
+                      ? 'before:absolute before:inset-y-1.5 before:left-0 before:w-1 before:rounded-r-full before:bg-brand-600'
+                      : 'ring-2 ring-brand-200'
+                  )
+                : 'text-slate-600 hover:bg-white hover:text-slate-900 hover:shadow-sm hover:ring-1 hover:ring-surface-border/80 [&>svg]:text-slate-400'
         )
       }
     >
-      <Icon className="h-4 w-4 shrink-0" />
+      <Icon className="h-4 w-4 shrink-0 transition-colors" />
       {(!collapsed || mobile) && (
         <>
           <span className="truncate">{item.label}</span>
           {item.disabled && (
-            <span className="ml-auto shrink-0 text-[10px] text-slate-300">pronto</span>
+            <span className="ml-auto shrink-0 rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium text-slate-400 ring-1 ring-surface-border">
+              pronto
+            </span>
           )}
         </>
       )}
@@ -310,7 +345,7 @@ function SidebarHeader({
   if (compact) {
     return (
       <div className="flex items-center gap-3">
-        <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-brand-600 text-white">
+        <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-brand-600 text-white shadow-sm ring-4 ring-brand-600/10">
           <Boxes className="h-5 w-5" />
         </div>
       </div>
@@ -319,9 +354,9 @@ function SidebarHeader({
 
   if (collapsed) {
     return (
-      <div className="flex flex-col items-center gap-2 border-b border-surface-border px-2 py-3">
+      <div className="flex flex-col items-center gap-2 border-b border-surface-border/80 bg-gradient-to-b from-brand-50/40 to-white px-2 py-3">
         <div
-          className="flex h-9 w-9 items-center justify-center rounded-lg bg-brand-600 text-white"
+          className="flex h-9 w-9 items-center justify-center rounded-xl bg-brand-600 text-white shadow-sm ring-4 ring-brand-600/10"
           title="ControlStock"
         >
           <Boxes className="h-5 w-5" />
@@ -342,13 +377,13 @@ function SidebarHeader({
   }
 
   return (
-    <div className="flex items-center gap-3 border-b border-surface-border p-5">
-      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-brand-600 text-white">
+    <div className="flex items-center gap-3 border-b border-surface-border/80 bg-gradient-to-r from-brand-50/50 via-white to-white p-5">
+      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-brand-600 text-white shadow-sm ring-4 ring-brand-600/10">
         <Boxes className="h-5 w-5" />
       </div>
 
       <div className="min-w-0 flex-1">
-        <h1 className="truncate text-base font-bold text-slate-900">ControlStock</h1>
+        <h1 className="truncate text-base font-bold tracking-tight text-slate-900">ControlStock</h1>
         <p className="truncate text-xs text-slate-500">Bodega Esmeralda</p>
       </div>
 
@@ -378,11 +413,11 @@ function SidebarFooter({
 }) {
   if (collapsed) {
     return (
-      <div className="border-t border-surface-border p-2">
+      <div className="border-t border-surface-border/80 bg-white/60 p-2">
         <Button
           variant="ghost"
           size="sm"
-          className="w-full justify-center px-2"
+          className="w-full justify-center rounded-xl px-2 text-slate-500 hover:text-slate-800"
           onClick={onLogout}
           title="Cerrar sesión"
           aria-label="Cerrar sesión"
@@ -394,9 +429,25 @@ function SidebarFooter({
   }
 
   return (
-    <div className="border-t border-surface-border p-4">
-      <p className="truncate text-sm font-medium text-slate-900">{userName}</p>
-      <Button variant="ghost" size="sm" className="mt-2 w-full justify-start px-2" onClick={onLogout}>
+    <div className="border-t border-surface-border/80 bg-white/60 p-4">
+      <div className="flex items-center gap-3">
+        <div
+          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-brand-100 text-xs font-bold text-brand-800 ring-2 ring-brand-50"
+          aria-hidden
+        >
+          {userInitials(userName)}
+        </div>
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-sm font-semibold text-slate-900">{userName}</p>
+          <p className="truncate text-xs text-slate-500">Sesión activa</p>
+        </div>
+      </div>
+      <Button
+        variant="ghost"
+        size="sm"
+        className="mt-3 w-full justify-start rounded-xl px-2 text-slate-600 hover:bg-slate-100 hover:text-slate-900"
+        onClick={onLogout}
+      >
         <LogOut className="h-4 w-4" />
         Cerrar sesión
       </Button>

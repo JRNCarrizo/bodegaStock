@@ -1,8 +1,11 @@
-import { useEffect, useMemo, useState } from 'react'
-import { Loader2, Pencil, Plus, Shield, UserCog, X } from 'lucide-react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { Loader2, Pencil, Plus, Search, Shield, UserCog, X } from 'lucide-react'
 import { api, cn } from '@/lib/utils'
 import type { Rol, UsuarioListItem } from '@/types'
 import { useAuth } from '@/context/AuthContext'
+import { useEscHandler } from '@/hooks/useEscHandler'
+import { useRegistroListKeyboard } from '@/hooks/useRegistroListKeyboard'
+import { focusAndScrollIntoView } from '@/lib/scroll'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { Card, CardBody } from '@/components/ui/Card'
@@ -56,6 +59,7 @@ export function UsuariosPage() {
   const { hasPermiso } = useAuth()
   const [usuarios, setUsuarios] = useState<UsuarioListItem[]>([])
   const [roles, setRoles] = useState<Rol[]>([])
+  const [search, setSearch] = useState('')
   const [loading, setLoading] = useState(true)
   const [showForm, setShowForm] = useState(false)
   const [editingId, setEditingId] = useState<number | null>(null)
@@ -68,6 +72,20 @@ export function UsuariosPage() {
     activo: true,
     password: ''
   })
+  const searchRef = useRef<HTMLInputElement>(null)
+
+  const listadoActivo = !showForm && editingId === null
+
+  const usuariosFiltrados = useMemo(() => {
+    const q = search.trim().toLowerCase()
+    if (!q) return usuarios
+    return usuarios.filter(
+      (u) =>
+        u.nombre.toLowerCase().includes(q) ||
+        u.username.toLowerCase().includes(q) ||
+        (u.rol_nombre?.toLowerCase().includes(q) ?? false)
+    )
+  }, [usuarios, search])
 
   const defaultRolId = useMemo(() => {
     const preferred =
@@ -124,6 +142,36 @@ export function UsuariosPage() {
     setEditingId(null)
     setEditForm({ nombre: '', rol_id: '', activo: true, password: '' })
   }
+
+  const registroListKb = useRegistroListKeyboard({
+    enabled: listadoActivo,
+    items: usuariosFiltrados,
+    listSearchRef: searchRef,
+    canCreate: hasPermiso('usuarios.crear'),
+    onCreate: abrirNuevo,
+    onOpenDetail: (u) => {
+      if (hasPermiso('usuarios.editar')) abrirEditar(u)
+    }
+  })
+
+  useEscHandler(showForm || editingId !== null, () => {
+    if (saving) return false
+    if (showForm) {
+      setShowForm(false)
+      return true
+    }
+    if (editingId !== null) {
+      cancelarEditar()
+      return true
+    }
+    return false
+  })
+
+  useEffect(() => {
+    if (!listadoActivo) return
+    const timer = setTimeout(() => focusAndScrollIntoView(searchRef.current), 80)
+    return () => clearTimeout(timer)
+  }, [listadoActivo])
 
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault()
@@ -201,11 +249,16 @@ export function UsuariosPage() {
             verificar retornos).
           </p>
         </div>
-        {hasPermiso('usuarios.crear') && !showForm && editingId === null && (
-          <Button className="rounded-xl px-4" onClick={abrirNuevo}>
-            <Plus className="h-4 w-4" />
-            Nuevo usuario
-          </Button>
+        {hasPermiso('usuarios.crear') && listadoActivo && (
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="hidden rounded-full border border-surface-border bg-white px-2.5 py-1 text-[11px] font-medium text-slate-500 shadow-card sm:inline-flex">
+              Enter = nuevo usuario
+            </span>
+            <Button className="rounded-xl px-4" onClick={abrirNuevo}>
+              <Plus className="h-4 w-4" />
+              Nuevo usuario
+            </Button>
+          </div>
         )}
       </section>
 
@@ -355,12 +408,31 @@ export function UsuariosPage() {
           </CardBody>
         )}
 
-        <div className="flex items-center justify-between gap-3 border-b border-surface-border bg-slate-50/80 px-5 py-3.5 sm:px-6">
+        <div className="flex flex-col gap-3 border-b border-surface-border bg-slate-50/80 px-5 py-3.5 sm:flex-row sm:items-center sm:justify-between sm:px-6">
           <div>
             <h2 className="text-sm font-semibold text-slate-900">Listado</h2>
-            <p className="text-xs text-slate-500">{usuarios.length} usuario(s) registrado(s)</p>
+            <p className="text-xs text-slate-500">
+              {loading
+                ? 'Cargando usuarios...'
+                : search.trim()
+                  ? `${usuariosFiltrados.length} de ${usuarios.length} usuario(s)`
+                  : `${usuarios.length} usuario(s) registrado(s)`}
+            </p>
           </div>
-          {loading && <Loader2 className="h-5 w-5 shrink-0 animate-spin text-brand-600" />}
+          <div className="relative w-full sm:max-w-xs">
+            <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-brand-400" />
+            <input
+              ref={searchRef}
+              type="search"
+              placeholder="Buscar por nombre, usuario o rol..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              onKeyDown={registroListKb.handleListSearchKeyDown}
+              disabled={!listadoActivo}
+              className="w-full rounded-xl border border-surface-border bg-white py-2.5 pl-10 pr-4 text-sm shadow-sm focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20 disabled:bg-slate-100"
+            />
+          </div>
+          {loading && <Loader2 className="hidden h-5 w-5 shrink-0 animate-spin text-brand-600 sm:block" />}
         </div>
 
         <CardBody className="p-0">
@@ -374,14 +446,20 @@ export function UsuariosPage() {
               <Loader2 className="h-5 w-5 animate-spin text-brand-600" />
               Cargando usuarios...
             </div>
-          ) : usuarios.length === 0 ? (
+          ) : usuariosFiltrados.length === 0 ? (
             <div className="flex flex-col items-center px-6 py-16 text-center">
               <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-slate-100 text-slate-400">
                 <UserCog className="h-7 w-7" />
               </div>
-              <p className="mt-4 text-sm font-medium text-slate-700">No hay usuarios</p>
-              <p className="mt-1 text-xs text-slate-500">Creá el primer usuario con rol asignado</p>
-              {hasPermiso('usuarios.crear') && (
+              <p className="mt-4 text-sm font-medium text-slate-700">
+                {search.trim() ? 'No hay usuarios con esa búsqueda' : 'No hay usuarios'}
+              </p>
+              <p className="mt-1 text-xs text-slate-500">
+                {search.trim()
+                  ? 'Probá con otro término'
+                  : 'Creá el primer usuario con rol asignado'}
+              </p>
+              {!search.trim() && hasPermiso('usuarios.crear') && (
                 <Button className="mt-4 rounded-xl" size="sm" onClick={abrirNuevo}>
                   <Plus className="h-4 w-4" />
                   Nuevo usuario
@@ -390,12 +468,15 @@ export function UsuariosPage() {
             </div>
           ) : (
             <ul className="divide-y divide-surface-border">
-              {usuarios.map((u) => (
+              {usuariosFiltrados.map((u, index) => (
                 <li
                   key={u.id}
-                  className={cn(
-                    'flex flex-col gap-3 px-4 py-4 transition-colors sm:flex-row sm:items-center sm:gap-4 sm:px-6',
-                    editingId === u.id ? 'bg-amber-50/50' : 'hover:bg-slate-50/80'
+                  {...registroListKb.listItemProps(
+                    index,
+                    cn(
+                      'flex flex-col gap-3 px-4 py-4 transition-colors sm:flex-row sm:items-center sm:gap-4 sm:px-6',
+                      editingId === u.id ? 'bg-amber-50/50' : 'hover:bg-slate-50/80'
+                    )
                   )}
                 >
                   <div className="min-w-0 flex-1">

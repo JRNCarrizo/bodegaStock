@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import {
   ArrowDownCircle,
   ArrowUpCircle,
@@ -16,7 +16,9 @@ import { formatCantidad, formatPeriodoFechas, todayIsoDate } from '@/lib/desglos
 import { api, cn } from '@/lib/utils'
 import type { MovimientosDiaReport, ReporteDetalle, ReporteDetalleTipo } from '@/types'
 import { useAuth } from '@/context/AuthContext'
+import { useSidebarNav } from '@/context/SidebarNavContext'
 import { useEscHandler } from '@/hooks/useEscHandler'
+import { shouldAbrirFormularioConEnter } from '@/hooks/useRegistroListKeyboard'
 
 function formatSignedCantidad(value: number, sign: '+' | '-'): string {
   if (value === 0) return '0'
@@ -63,7 +65,10 @@ function StatCard({
   iconClass,
   valueClass,
   actions,
-  onClick
+  onClick,
+  highlighted,
+  cardIndex,
+  onMouseEnterCard
 }: {
   title: string
   value: string
@@ -73,20 +78,29 @@ function StatCard({
   valueClass?: string
   actions?: React.ReactNode
   onClick?: () => void
+  highlighted?: boolean
+  cardIndex?: number
+  onMouseEnterCard?: () => void
 }) {
   return (
     <Card
       className={cn(
-        'overflow-hidden shadow-panel transition-all',
+        'overflow-hidden shadow-panel transition-all outline-none',
         accentClass,
-        onClick && 'cursor-pointer hover:shadow-lg hover:-translate-y-0.5'
+        onClick && 'cursor-pointer hover:shadow-lg hover:-translate-y-0.5',
+        highlighted && 'ring-2 ring-brand-500 ring-offset-2'
       )}
       role={onClick ? 'button' : undefined}
       tabIndex={onClick ? 0 : undefined}
+      data-reporte-card={cardIndex}
       onClick={onClick}
+      onMouseEnter={onMouseEnterCard}
       onKeyDown={
         onClick
           ? (e) => {
+              if (highlighted && (e.key === 'ArrowDown' || e.key === 'ArrowUp' || e.key === 'ArrowLeft' || e.key === 'ArrowRight')) {
+                return
+              }
               if (e.key === 'Enter' || e.key === ' ') {
                 e.preventDefault()
                 onClick()
@@ -230,11 +244,11 @@ function DetalleModal({
                       key={`${item.codigo_interno}-${item.nombre}`}
                       className="flex items-center justify-between gap-3 rounded-lg border border-surface-border bg-white px-4 py-3 shadow-sm"
                     >
-                      <div className="min-w-0">
-                        <span className="inline-flex rounded-md bg-slate-100 px-2 py-0.5 font-mono text-xs font-semibold text-slate-700">
+                      <div className="flex min-w-0 items-center gap-2">
+                        <span className="inline-flex shrink-0 rounded-md bg-slate-100 px-2 py-0.5 font-mono text-xs font-semibold text-slate-700">
                           {item.codigo_interno}
                         </span>
-                        <p className="mt-1 truncate text-sm font-medium text-slate-800">{item.nombre}</p>
+                        <p className="min-w-0 truncate text-sm font-medium text-slate-800">{item.nombre}</p>
                       </div>
                       <span className="inline-flex shrink-0 rounded-lg bg-brand-50 px-2.5 py-1.5 text-sm font-bold tabular-nums text-brand-700 ring-1 ring-brand-100">
                         {formatCantidad(item.cantidad_cajas)}
@@ -251,8 +265,18 @@ function DetalleModal({
   )
 }
 
+const REPORTE_CARD_TIPOS: ReporteDetalleTipo[] = [
+  'stock_inicial',
+  'ingresos',
+  'retornos',
+  'planillas',
+  'roturas',
+  'balance_final'
+]
+
 export function ReportesPage() {
   const { hasPermiso } = useAuth()
+  const { registerEscHandler, registerMainContentFocus, focusSidebar } = useSidebarNav()
   const canExport = hasPermiso('reportes.exportar')
 
   const [fechaDesde, setFechaDesde] = useState('')
@@ -264,6 +288,28 @@ export function ReportesPage() {
   const [loadingDetalle, setLoadingDetalle] = useState(false)
   const [detalleError, setDetalleError] = useState('')
   const [showDetalle, setShowDetalle] = useState(false)
+  const [cardHighlight, setCardHighlight] = useState(-1)
+  const keyboardNavRef = useRef(false)
+  const reportRef = useRef(report)
+  const loadingRef = useRef(loading)
+  const showDetalleRef = useRef(showDetalle)
+  reportRef.current = report
+  loadingRef.current = loading
+  showDetalleRef.current = showDetalle
+
+  const focusStockInicialCard = useCallback(() => {
+    if (!reportRef.current || loadingRef.current || showDetalleRef.current) return false
+    setCardHighlight(0)
+    requestAnimationFrame(() => {
+      const el = document.querySelector('[data-reporte-card="0"]') as HTMLElement | null
+      el?.focus({ preventScroll: true })
+    })
+    return true
+  }, [])
+
+  useEffect(() => {
+    return registerMainContentFocus(focusStockInicialCard)
+  }, [registerMainContentFocus, focusStockInicialCard])
 
   const loadReport = useCallback(async () => {
     setLoading(true)
@@ -287,6 +333,72 @@ export function ReportesPage() {
     return () => clearTimeout(timer)
   }, [loadReport])
 
+  useEffect(() => {
+    if (!report || loading) return
+    focusStockInicialCard()
+  }, [report, loading, focusStockInicialCard])
+
+  useLayoutEffect(() => {
+    if (cardHighlight < 0) return
+    keyboardNavRef.current = true
+    const el = document.querySelector(`[data-reporte-card="${cardHighlight}"]`) as HTMLElement | null
+    if (!el) return
+    el.focus({ preventScroll: true })
+    el.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
+  }, [cardHighlight])
+
+  useEffect(() => {
+    if (!report || showDetalle) return
+    const onMouseMove = () => {
+      keyboardNavRef.current = false
+    }
+    window.addEventListener('mousemove', onMouseMove, { passive: true })
+    return () => window.removeEventListener('mousemove', onMouseMove)
+  }, [report, showDetalle])
+
+  useEffect(() => {
+    if (!report || showDetalle) return
+
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'ArrowDown' || e.key === 'ArrowRight') {
+        e.preventDefault()
+        keyboardNavRef.current = true
+        setCardHighlight((i) => Math.min(Math.max(i, 0) + 1, REPORTE_CARD_TIPOS.length - 1))
+        return
+      }
+      if (e.key === 'ArrowUp' || e.key === 'ArrowLeft') {
+        e.preventDefault()
+        keyboardNavRef.current = true
+        setCardHighlight((i) => Math.max(Math.max(i, 0) - 1, 0))
+        return
+      }
+      if (e.key === 'Enter') {
+        if (!shouldAbrirFormularioConEnter(e.target)) return
+        e.preventDefault()
+        const idx = Math.max(cardHighlight, 0)
+        const tipo = REPORTE_CARD_TIPOS[idx]
+        if (tipo) void abrirDetalle(tipo)
+      }
+    }
+
+    window.addEventListener('keydown', onKeyDown, true)
+    return () => window.removeEventListener('keydown', onKeyDown, true)
+  }, [report, showDetalle, cardHighlight])
+
+  useEffect(() => {
+    if (!report || showDetalle || cardHighlight < 0) return
+    return registerEscHandler(() => {
+      setCardHighlight(-1)
+      focusSidebar()
+      return true
+    })
+  }, [report, showDetalle, cardHighlight, registerEscHandler, focusSidebar])
+
+  function focusCard(index: number) {
+    if (keyboardNavRef.current) return
+    setCardHighlight(index)
+  }
+
   async function abrirDetalle(tipo: ReporteDetalleTipo) {
     setShowDetalle(true)
     setLoadingDetalle(true)
@@ -303,6 +415,18 @@ export function ReportesPage() {
     } finally {
       setLoadingDetalle(false)
     }
+  }
+
+  function cerrarDetalle() {
+    setShowDetalle(false)
+    setDetalle(null)
+    setDetalleError('')
+    requestAnimationFrame(() => {
+      if (cardHighlight < 0) setCardHighlight(0)
+      const idx = cardHighlight >= 0 ? cardHighlight : 0
+      const el = document.querySelector(`[data-reporte-card="${idx}"]`) as HTMLElement | null
+      el?.focus({ preventScroll: true })
+    })
   }
 
   function handleExport(label: string) {
@@ -338,6 +462,18 @@ export function ReportesPage() {
         <p className="mt-2 max-w-xl text-sm leading-relaxed text-slate-500">
           Estadísticas de stock por período: ingresos, salidas, retornos y balance.
         </p>
+        {report && !loading && (
+          <div className="mt-3 flex flex-wrap gap-1.5">
+            {['↑↓←→ navegar', 'Enter detalle', 'Esc cerrar'].map((hint) => (
+              <span
+                key={hint}
+                className="rounded-full border border-surface-border bg-white px-2.5 py-1 text-[11px] font-medium text-slate-500 shadow-card"
+              >
+                {hint}
+              </span>
+            ))}
+          </div>
+        )}
       </section>
 
       <Card className="overflow-hidden shadow-panel">
@@ -347,6 +483,7 @@ export function ReportesPage() {
               <span className="pl-1 text-xs font-medium text-slate-500">Desde</span>
               <input
                 type="date"
+                tabIndex={-1}
                 value={fechaDesde}
                 onChange={(e) => setFechaDesde(e.target.value)}
                 title="Fecha desde — solo este campo = ese día"
@@ -356,6 +493,7 @@ export function ReportesPage() {
               <span className="text-xs font-medium text-slate-500">Hasta</span>
               <input
                 type="date"
+                tabIndex={-1}
                 value={fechaHasta}
                 onChange={(e) => setFechaHasta(e.target.value)}
                 title="Fecha hasta — solo este campo = ese día"
@@ -410,6 +548,9 @@ export function ReportesPage() {
       ) : report ? (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           <StatCard
+            cardIndex={0}
+            highlighted={cardHighlight === 0}
+            onMouseEnterCard={() => focusCard(0)}
             title="Stock inicial"
             value={formatCantidad(report.stock_inicial)}
             icon={Package}
@@ -419,6 +560,9 @@ export function ReportesPage() {
             onClick={() => void abrirDetalle('stock_inicial')}
           />
           <StatCard
+            cardIndex={1}
+            highlighted={cardHighlight === 1}
+            onMouseEnterCard={() => focusCard(1)}
             title="Ingresos"
             value={formatSignedCantidad(report.ingresos, '+')}
             icon={ArrowDownCircle}
@@ -429,6 +573,9 @@ export function ReportesPage() {
             onClick={() => void abrirDetalle('ingresos')}
           />
           <StatCard
+            cardIndex={2}
+            highlighted={cardHighlight === 2}
+            onMouseEnterCard={() => focusCard(2)}
             title="Retornos y devoluciones"
             value={formatSignedCantidad(report.retornos, '+')}
             icon={ArrowUpCircle}
@@ -439,6 +586,9 @@ export function ReportesPage() {
             onClick={() => void abrirDetalle('retornos')}
           />
           <StatCard
+            cardIndex={3}
+            highlighted={cardHighlight === 3}
+            onMouseEnterCard={() => focusCard(3)}
             title="Carga de planillas"
             value={formatSignedCantidad(report.planillas, '-')}
             icon={ClipboardList}
@@ -449,6 +599,9 @@ export function ReportesPage() {
             onClick={() => void abrirDetalle('planillas')}
           />
           <StatCard
+            cardIndex={4}
+            highlighted={cardHighlight === 4}
+            onMouseEnterCard={() => focusCard(4)}
             title="Roturas y pérdidas"
             value={formatSignedCantidad(report.roturas, '-')}
             icon={HeartCrack}
@@ -459,6 +612,9 @@ export function ReportesPage() {
             onClick={() => void abrirDetalle('roturas')}
           />
           <StatCard
+            cardIndex={5}
+            highlighted={cardHighlight === 5}
+            onMouseEnterCard={() => focusCard(5)}
             title="Balance final"
             value={formatCantidad(report.balance_final)}
             icon={Scale}
@@ -475,11 +631,7 @@ export function ReportesPage() {
           detalle={detalle}
           loading={loadingDetalle}
           error={detalleError}
-          onClose={() => {
-            setShowDetalle(false)
-            setDetalle(null)
-            setDetalleError('')
-          }}
+          onClose={cerrarDetalle}
         />
       )}
     </div>

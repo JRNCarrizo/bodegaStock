@@ -1,5 +1,5 @@
 import { cn } from '@/lib/utils'
-import type { ButtonHTMLAttributes } from 'react'
+import { forwardRef, type ButtonHTMLAttributes } from 'react'
 
 const variants = {
   primary: 'bg-brand-600 text-white hover:bg-brand-700 shadow-sm',
@@ -19,14 +19,13 @@ interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   size?: keyof typeof sizes
 }
 
-export function Button({
-  className,
-  variant = 'primary',
-  size = 'md',
-  ...props
-}: ButtonProps) {
+export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button(
+  { className, variant = 'primary', size = 'md', ...props },
+  ref
+) {
   return (
     <button
+      ref={ref}
       className={cn(
         'inline-flex items-center justify-center gap-2 rounded-lg font-medium transition-colors',
         'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-2',
@@ -38,4 +37,4 @@ export function Button({
       {...props}
     />
   )
-}
+})

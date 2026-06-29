@@ -28,6 +28,7 @@ export function RegistroDetallePanel({
   encabezadoExtra,
   antesProductos,
   despuesProductos,
+  accionesTotal,
   productosContent,
   productosCount
 }: {
@@ -41,6 +42,8 @@ export function RegistroDetallePanel({
   encabezadoExtra?: ReactNode
   antesProductos?: ReactNode
   despuesProductos?: ReactNode
+  /** Botones u otras acciones alineadas a la derecha del total (estilo carga de planilla) */
+  accionesTotal?: ReactNode
   productosContent?: ReactNode
   productosCount?: number
 }) {
@@ -61,6 +64,7 @@ export function RegistroDetallePanel({
   }, [lineasLista])
 
   const cantidadProductos = productosCount ?? lineasPorProducto.length
+  const totalLabel = totalEtiqueta === 'Total' ? 'Total general' : totalEtiqueta
 
   function toggleProductoExpand(productoId: number) {
     setExpandedProductos((prev) => {
@@ -72,9 +76,14 @@ export function RegistroDetallePanel({
   }
 
   return (
-    <div className="mx-auto flex max-w-5xl flex-col gap-3">
+    <div className="mx-auto flex max-w-5xl flex-col gap-4">
       <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-        <Button variant="ghost" size="sm" className="-ml-2 h-8 shrink-0 px-2" onClick={onVolver}>
+        <Button
+          variant="ghost"
+          size="sm"
+          className="-ml-2 h-8 shrink-0 rounded-lg px-2"
+          onClick={onVolver}
+        >
           <ChevronLeft className="h-4 w-4" />
           Volver
         </Button>
@@ -85,14 +94,6 @@ export function RegistroDetallePanel({
         <span className="text-xs text-slate-400">
           {cantidadProductos} producto{cantidadProductos === 1 ? '' : 's'}
         </span>
-        <div className="ml-auto shrink-0 text-right">
-          <p className="text-[10px] font-medium uppercase tracking-wider text-slate-400">
-            {totalEtiqueta}
-          </p>
-          <p className="text-lg font-bold tabular-nums leading-tight text-brand-700">
-            {formatCantidad(total)}
-          </p>
-        </div>
       </div>
 
       {meta && <div className="flex flex-wrap items-center gap-1.5 text-xs">{meta}</div>}
@@ -100,13 +101,13 @@ export function RegistroDetallePanel({
       {antesProductos}
 
       {productosContent ?? (
-      <Card className="overflow-hidden">
-        <div className="flex items-center justify-between border-b border-surface-border bg-slate-50/80 px-4 py-2">
+      <Card className="overflow-hidden shadow-panel">
+        <div className="flex items-center justify-between border-b border-surface-border bg-slate-50/80 px-4 py-3 sm:px-5">
           <div className="flex items-center gap-2">
             <Package className="h-4 w-4 text-slate-400" />
-            <h2 className="text-sm font-semibold text-slate-700">Productos</h2>
+            <h2 className="text-sm font-semibold text-slate-800">Productos</h2>
           </div>
-          <span className="text-xs text-slate-400">{lineasLista.length} líneas</span>
+          <span className="text-xs text-slate-500">{lineasLista.length} línea{lineasLista.length === 1 ? '' : 's'}</span>
         </div>
         <div className="divide-y divide-surface-border">
           {lineasPorProducto.map((grupo) => {
@@ -178,6 +179,20 @@ export function RegistroDetallePanel({
         </div>
       </Card>
       )}
+
+      <div className="rounded-xl border border-surface-border bg-white px-4 py-4 shadow-sm sm:px-5">
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+              {totalLabel}
+            </p>
+            <p className="text-2xl font-bold tabular-nums text-brand-700">{formatCantidad(total)}</p>
+          </div>
+          {accionesTotal && (
+            <div className="flex shrink-0 flex-wrap items-center gap-2">{accionesTotal}</div>
+          )}
+        </div>
+      </div>
 
       {despuesProductos}
     </div>

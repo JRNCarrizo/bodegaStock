@@ -39,7 +39,7 @@ export function useRegistroListKeyboard<T extends { id: number }>(options: {
 
   const [highlightIndex, setHighlightIndex] = useState(-1)
   const keyboardNavRef = useRef(false)
-  const { registerEscHandler } = useSidebarNav()
+  const { registerEscHandler, registerMainContentFocus } = useSidebarNav()
 
   const onCreateRef = useRef(onCreate)
   const onOpenDetailRef = useRef(onOpenDetail)
@@ -84,6 +84,22 @@ export function useRegistroListKeyboard<T extends { id: number }>(options: {
   function focusSearch() {
     focusAndScrollIntoView(listSearchRef.current)
   }
+
+  useLayoutEffect(() => {
+    const el = listSearchRef.current
+    if (!el || !enabled) return
+    el.dataset.listSearch = 'true'
+  }, [enabled, listSearchRef, items.length])
+
+  useEffect(() => {
+    if (!enabled) return
+    return registerMainContentFocus(() => {
+      const el = listSearchRef.current
+      if (!el || el.disabled || el.readOnly) return false
+      focusAndScrollIntoView(el)
+      return true
+    })
+  }, [enabled, registerMainContentFocus, listSearchRef])
 
   useEffect(() => {
     if (!enabled || highlightIndex < 0) return

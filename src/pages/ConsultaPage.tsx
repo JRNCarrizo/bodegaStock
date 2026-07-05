@@ -183,7 +183,7 @@ export function ConsultaPage() {
   const searchInputRef = useRef<HTMLInputElement>(null)
   const resultadosListRef = useRef<HTMLUListElement>(null)
   const expandedItemRef = useRef<HTMLLIElement | null>(null)
-  const { registerEscHandler } = useSidebarNav()
+  const { registerEscHandler, registerMainContentFocus } = useSidebarNav()
 
   const expandedDetalle = expandedId != null ? detalleCache[expandedId] : undefined
 
@@ -402,6 +402,13 @@ export function ConsultaPage() {
     searchInputRef.current?.focus({ preventScroll: true })
   }
 
+  useEffect(() => {
+    return registerMainContentFocus(() => {
+      focusSearchInput({ scrollIntoView: true })
+      return !!searchInputRef.current
+    })
+  }, [registerMainContentFocus])
+
   return (
     <div className="mx-auto max-w-4xl space-y-6">
       <section className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
@@ -444,6 +451,7 @@ export function ConsultaPage() {
               <input
                 ref={searchInputRef}
                 type="search"
+                data-list-search
                 placeholder="Código interno, barras o nombre del producto..."
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}

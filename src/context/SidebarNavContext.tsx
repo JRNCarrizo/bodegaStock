@@ -44,6 +44,7 @@ function focusMainSearchOrContent(mainFocusHandlers: Set<() => boolean>) {
   const active = document.activeElement
   if (active instanceof HTMLElement && main.contains(active)) {
     if (active.closest('[data-reporte-card]')) return
+    if (active.closest('[data-list-search]')) return
     const input = active instanceof HTMLInputElement ? active : null
     if (input?.type === 'search' && !input.disabled && !input.readOnly) return
   }
@@ -52,18 +53,32 @@ function focusMainSearchOrContent(mainFocusHandlers: Set<() => boolean>) {
     for (const handler of [...mainFocusHandlers].reverse()) {
       if (handler()) return true
     }
-    const search = main.querySelector('input[type="search"]')
-    if (search instanceof HTMLInputElement && !search.disabled && !search.readOnly) {
+    const search =
+      main.querySelector<HTMLInputElement>('[data-list-search]') ??
+      main.querySelector<HTMLInputElement>('input[type="search"]')
+    if (search && !search.disabled && !search.readOnly) {
       focusAndScrollIntoView(search)
       return true
     }
     return false
   }
 
-  requestAnimationFrame(() => {
+  let attempts = 0
+  const retry = () => {
     if (tryFocus()) return
-    requestAnimationFrame(tryFocus)
-  })
+    attempts += 1
+    if (attempts < 4) requestAnimationFrame(retry)
+  }
+
+  requestAnimationFrame(retry)
+  window.setTimeout(tryFocus, 100)
+  window.setTimeout(tryFocus, 280)
+}
+
+function isFocusInMain(): boolean {
+  const main = document.querySelector('main')
+  const active = document.activeElement
+  return !!(main && active instanceof HTMLElement && main.contains(active))
 }
 
 export function SidebarNavProvider({
@@ -154,14 +169,32 @@ export function SidebarNavProvider({
       if (disabled) return
       setHighlightIndex(index)
       setSidebarActive(false)
+      requestAnimationFrame(() => focusMainSearchOrContent(mainFocusHandlersRef.current))
     },
     []
   )
 
   useEffect(() => {
+    function onFocusIn(e: FocusEvent) {
+      if (!(e.target instanceof HTMLElement)) return
+      const main = document.querySelector('main')
+      if (!main?.contains(e.target)) return
+      setSidebarActive(false)
+    }
+
+    document.addEventListener('focusin', onFocusIn)
+    return () => document.removeEventListener('focusin', onFocusIn)
+  }, [])
+
+  useEffect(() => {
     if (!sidebarActive) return
 
     function onKeyDown(e: KeyboardEvent) {
+      if (isFocusInMain()) {
+        setSidebarActive(false)
+        return
+      }
+
       if (e.key === 'ArrowDown') {
         e.preventDefault()
         moveHighlight(1)

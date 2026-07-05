@@ -1,5 +1,5 @@
 param(
-  [string]$Version = "0.2.5"
+  [string]$Version = "0.2.6"
 )
 
 $ErrorActionPreference = "Stop"
@@ -49,11 +49,12 @@ $exeName = Split-Path $exe -Leaf
 $notes = @"
 ## ControlStock v$Version
 
-Corrección en la pantalla de actualizaciones.
+Corrección de foco y navegación por teclado al entrar desde el menú lateral.
 
 ### Corregido
-- **Actualizaciones:** las notas del release ya no muestran HTML crudo (``<p>``, ``<a>``, etc.)
-- Si GitHub no incluye changelog útil, se muestra un mensaje claro en lugar del enlace "Full Changelog"
+- **Menú lateral + buscador:** al entrar a una sección con Enter, el foco va al buscador
+- El menú lateral ya no captura el teclado cuando hacés clic o escribís en el buscador
+- Flechas ↓↑ navegan registros como corresponde
 
 ### Actualización
 - Desde **v0.2.2 o superior:** Configuración → Buscar actualizaciones

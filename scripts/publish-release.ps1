@@ -1,5 +1,5 @@
 param(
-  [string]$Version = "0.2.6"
+  [string]$Version = "0.2.7"
 )
 
 $ErrorActionPreference = "Stop"
@@ -8,6 +8,7 @@ $root = Join-Path $PSScriptRoot ".."
 Set-Location $root
 
 $exeCandidates = @(
+  (Join-Path $root "release\ControlStock-Setup-$Version.exe"),
   (Join-Path $root "release\ControlStock Setup $Version.exe"),
   (Join-Path $root "release\BodegaStock Setup $Version.exe")
 )
@@ -49,16 +50,19 @@ $exeName = Split-Path $exe -Leaf
 $notes = @"
 ## ControlStock v$Version
 
-Corrección de foco y navegación por teclado al entrar desde el menú lateral.
+Corrección crítica de actualizaciones automáticas.
 
 ### Corregido
-- **Menú lateral + buscador:** al entrar a una sección con Enter, el foco va al buscador
-- El menú lateral ya no captura el teclado cuando hacés clic o escribís en el buscador
-- Flechas ↓↑ navegan registros como corresponde
+- **Descarga de actualizaciones:** el instalador en GitHub ahora coincide con ``latest.yml`` (antes fallaba con "No se encontró un release compatible")
+- Verificación en CI para evitar que vuelva a pasar
+
+### Incluye (desde v0.2.6)
+- Foco en el buscador al entrar desde el menú lateral
+- Notas de actualización legibles (sin HTML crudo)
 
 ### Actualización
-- Desde **v0.2.2 o superior:** Configuración → Buscar actualizaciones
-- O instalá el ``.exe`` de este release manualmente
+- Si la descarga automática falló antes, instalá este ``.exe`` manualmente **una vez**
+- Desde esta versión: Configuración → Buscar actualizaciones debería funcionar
 
 Login inicial: **admin** / **admin123**
 "@

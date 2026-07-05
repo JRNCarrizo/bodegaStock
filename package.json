@@ -1,6 +1,6 @@
 {
   "name": "bodega-stock",
-  "version": "0.2.6",
+  "version": "0.2.7",
   "description": "Sistema de gestión de stock para bodega",
   "author": "JRNCarrizo",
   "main": "out/main/index.js",
@@ -80,6 +80,7 @@
     "afterPack": "./scripts/after-pack.mjs",
     "win": {
       "icon": "build/icon.ico",
+      "artifactName": "${productName}-Setup-${version}.${ext}",
       "signAndEditExecutable": false,
       "target": [
         {

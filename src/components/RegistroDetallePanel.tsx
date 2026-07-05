@@ -165,7 +165,10 @@ export function RegistroDetallePanel({
                         key={l.id}
                         className="flex items-center justify-between gap-2 py-2.5 pl-11 pr-4 text-sm"
                       >
-                        <span className="text-slate-700">{l.etiqueta}</span>
+                        <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
+                          <span className="text-slate-700">{l.etiqueta}</span>
+                          {l.extra}
+                        </div>
                         <span className="shrink-0 font-semibold tabular-nums text-slate-900">
                           {formatCantidad(l.cantidad)}
                         </span>

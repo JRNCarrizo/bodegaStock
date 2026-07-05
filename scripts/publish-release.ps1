@@ -1,5 +1,5 @@
 param(
-  [string]$Version = "0.2.7"
+  [string]$Version = "0.2.8"
 )
 
 $ErrorActionPreference = "Stop"
@@ -50,19 +50,14 @@ $exeName = Split-Path $exe -Leaf
 $notes = @"
 ## ControlStock v$Version
 
-Corrección crítica de actualizaciones automáticas.
+Mejora en el detalle de retornos.
 
-### Corregido
-- **Descarga de actualizaciones:** el instalador en GitHub ahora coincide con ``latest.yml`` (antes fallaba con "No se encontró un release compatible")
-- Verificación en CI para evitar que vuelva a pasar
-
-### Incluye (desde v0.2.6)
-- Foco en el buscador al entrar desde el menú lateral
-- Notas de actualización legibles (sin HTML crudo)
+### Mejorado
+- **Detalle de retornos:** al desplegar un producto, cada línea muestra su estado (Buen estado / Incompleta / Mal estado)
 
 ### Actualización
-- Si la descarga automática falló antes, instalá este ``.exe`` manualmente **una vez**
-- Desde esta versión: Configuración → Buscar actualizaciones debería funcionar
+- Desde **v0.2.7 o superior:** Configuración → Buscar actualizaciones
+- O instalá el ``.exe`` de este release manualmente
 
 Login inicial: **admin** / **admin123**
 "@

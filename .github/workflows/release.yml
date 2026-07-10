@@ -68,16 +68,21 @@ jobs:
           body: |
             ## ControlStock ${{ steps.tag.outputs.name }}
 
-            Mejoras de inventario, reconteo y vista previa de cierre.
+            Retornos, reportes e inventario.
 
             ### Nuevo
-            - **Reconteo:** misma vista que el primer conteo, líneas precargadas editables y referencia vos vs compañero
-            - **Consulta por sector:** stock por sector separado de la configuración de sectores
+            - **Retornos:** aviso de pendientes en el menú lateral (punto ámbar) y en pestañas de día
+            - **Retornos:** filtros por día con conteos del día seleccionado
 
             ### Mejorado
-            - **Vista previa de cierre:** cajas y botellas en líneas separadas, código más visible, tabla más ancha
-            - **Diferencias:** etiqueta botella/s en lugar de suelto
-            - **Totales pallet + cajas sueltas** corregidos en inventario
+            - **Retornos:** listado más claro (pendientes primero, menos avisos redundantes)
+            - **Movimientos del día:** stock inicial incluye ajustes de inventario (coincide con el detalle)
+            - **Inventario:** fechas en sesiones con hora local correcta
+            - **Consulta:** foco en el buscador al cambiar de pantalla (Electron)
+
+            ### Corregido
+            - Productos que desaparecían del stock inicial tras un inventario
+            - Diferencias entre total de tarjeta y detalle en movimientos del día
 
             ### Actualización
             - Desde **v0.2.7 o superior:** Configuración → Buscar actualizaciones

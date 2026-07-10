@@ -1,6 +1,8 @@
 import type { FastifyInstance } from 'fastify'
 import { getDb } from '../db'
-import { requirePermiso } from '../plugins/auth'
+import { requirePermiso, requirePermisoAny } from '../plugins/auth'
+
+const puedeVerSectores = requirePermisoAny('sectores.ver', 'consulta.ver')
 import {
   formatEtiquetaLinea,
   getProductoDefaults,
@@ -235,7 +237,7 @@ function getSectorStock(
 
 export async function sectoresRoutes(app: FastifyInstance): Promise<void> {
   app.get('/api/sectores', {
-    preHandler: requirePermiso('sectores.ver')
+    preHandler: puedeVerSectores
   }, async (request) => {
     const { q, activo } = request.query as { q?: string; activo?: string }
     const db = getDb()
@@ -297,7 +299,7 @@ export async function sectoresRoutes(app: FastifyInstance): Promise<void> {
   })
 
   app.get('/api/sectores/:id/ubicaciones', {
-    preHandler: requirePermiso('sectores.ver')
+    preHandler: puedeVerSectores
   }, async (request, reply) => {
     const id = Number((request.params as { id: string }).id)
     const db = getDb()
@@ -315,7 +317,7 @@ export async function sectoresRoutes(app: FastifyInstance): Promise<void> {
   })
 
   app.get('/api/sectores/:id/stock', {
-    preHandler: requirePermiso('sectores.ver')
+    preHandler: puedeVerSectores
   }, async (request, reply) => {
     const id = Number((request.params as { id: string }).id)
     const { ubicacion_id, sin_ubicacion } = request.query as {

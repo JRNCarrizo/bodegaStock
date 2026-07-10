@@ -25,7 +25,10 @@ export function calcTotalEnCajas(
   botellasPorCaja = 6
 ): number {
   if (linea.tipo_bulto === 'PALLET') {
-    return Number(linea.cantidad_bultos ?? 0) * Number(linea.unidades_por_bulto ?? 0)
+    return (
+      Number(linea.cantidad_bultos ?? 0) * Number(linea.unidades_por_bulto ?? 0) +
+      Number(linea.cantidad_suelta ?? 0)
+    )
   }
   if (linea.tipo_bulto === 'CAJA') {
     return Number(linea.cantidad_bultos ?? 0)
@@ -49,12 +52,15 @@ export interface TotalesInventarioDesglose {
   suelto: number
 }
 
-/** Botellas / pucherio de una línea de conteo (tipo SUELTO o sueltas en CAJA/PALLET). */
+/** Botellas / pucherio de una línea de conteo (CAJA extra o SUELTO; en PALLET cantidad_suelta = cajas). */
 export function totalSueltoLineaConteo(linea: LineaDesgloseInput): number {
   if (linea.tipo_bulto === 'SUELTO') {
     return calcTotalUnidades(linea)
   }
-  return Number(linea.cantidad_suelta ?? 0)
+  if (linea.tipo_bulto === 'CAJA') {
+    return Number(linea.cantidad_suelta ?? 0)
+  }
+  return 0
 }
 
 /** Cajas / pallets de una línea de conteo (suelto puro no suma). */

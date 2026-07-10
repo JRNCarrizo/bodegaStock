@@ -4,6 +4,7 @@ import { requirePermiso, requirePermisoAny } from '../plugins/auth'
 import { getInventarioActivo, inventarioActivoErrorPayload } from '../utils/inventario-block'
 import {
   aplicarCierreInventario,
+  asegurarPrecargaReconteo,
   assertContadorEnSector,
   assertSectorEditable,
   assertSectorFinalizable,
@@ -346,6 +347,9 @@ export async function inventarioRoutes(app: FastifyInstance): Promise<void> {
       const c1 = Number(sector.contador_1_id)
       const c2 = Number(sector.contador_2_id)
 
+      asegurarPrecargaReconteo(db, inventarioSectorId)
+      sector = getInventarioSector(db, inventarioSectorId)
+
       const lineas = db.prepare(`
         SELECT icl.*, p.codigo_interno, p.nombre, p.unidad
         FROM inventario_conteo_lineas icl
@@ -379,6 +383,9 @@ export async function inventarioRoutes(app: FastifyInstance): Promise<void> {
       if (mostrarComparacion) {
         comparacion = compararContadores(db, inventarioSectorId, ronda)
       }
+
+      const referencia_reconteo =
+        ronda > 1 ? compararContadores(db, inventarioSectorId, ronda - 1) : null
 
       const sectorId = Number(sector.sector_id)
       const sectorMeta = db.prepare(`
@@ -423,7 +430,8 @@ export async function inventarioRoutes(app: FastifyInstance): Promise<void> {
         mis_lineas: rol ? mapLineas(rol === 1 ? c1 : c2) : [],
         lineas_contador_1: mostrarLineasCompanero || canSupervise ? mapLineas(c1) : undefined,
         lineas_contador_2: mostrarLineasCompanero || canSupervise ? mapLineas(c2) : undefined,
-        comparacion
+        comparacion,
+        referencia_reconteo
       }
     }
   )
@@ -486,6 +494,76 @@ export async function inventarioRoutes(app: FastifyInstance): Promise<void> {
           }
         })
         tx()
+        return { ok: true, total_unidades: total }
+      } catch (e) {
+        return reply.status(400).send({ error: (e as Error).message })
+      }
+    }
+  )
+
+  app.put<{ Params: { sectorId: string; lineaId: string }; Body: ConteoLineaInput }>(
+    '/api/inventario/sectores/:sectorId/lineas/:lineaId',
+    { preHandler: requirePermiso('inventario.contar') },
+    async (req, reply) => {
+      const db = getDb()
+      const inventarioSectorId = Number(req.params.sectorId)
+      const lineaId = Number(req.params.lineaId)
+      const userId = req.user!.id
+
+      try {
+        const { rol, sector } = assertContadorEnSector(db, inventarioSectorId, userId)
+        assertSectorEditable(sector, rol)
+
+        const sesion = getSesionOrThrow(db, Number(sector.sesion_id))
+        if (String(sesion.estado) !== 'EN_PROGRESO') {
+          return reply.status(400).send({ error: 'El inventario no está en curso' })
+        }
+
+        const existente = db.prepare(`
+          SELECT * FROM inventario_conteo_lineas
+          WHERE id = ? AND inventario_sector_id = ?
+        `).get(lineaId, inventarioSectorId) as
+          | { contador_id: number; ronda: number; producto_id: number }
+          | undefined
+
+        if (!existente) return reply.status(404).send({ error: 'Línea no encontrada' })
+
+        const contadorId = rol === 1 ? Number(sector.contador_1_id) : Number(sector.contador_2_id)
+        if (
+          existente.contador_id !== contadorId ||
+          existente.ronda !== Number(sector.ronda_actual)
+        ) {
+          return reply.status(403).send({ error: 'No podés editar esta línea' })
+        }
+
+        const body = req.body
+        const productoId = body.producto_id ?? existente.producto_id
+        const { total } = validarYCalcularLinea(db, productoId, {
+          ...body,
+          producto_id: productoId
+        })
+
+        db.prepare(`
+          UPDATE inventario_conteo_lineas SET
+            tipo_bulto = ?,
+            cantidad_bultos = ?,
+            unidades_por_bulto = ?,
+            cantidad_suelta = ?,
+            ubicacion = ?,
+            ubicacion_id = ?,
+            total_unidades = ?
+          WHERE id = ?
+        `).run(
+          body.tipo_bulto,
+          body.tipo_bulto === 'SUELTO' ? null : body.cantidad_bultos ?? null,
+          body.tipo_bulto === 'SUELTO' ? null : body.unidades_por_bulto ?? null,
+          body.tipo_bulto === 'SUELTO' ? body.cantidad_suelta ?? null : body.cantidad_suelta ?? null,
+          body.ubicacion ?? null,
+          body.ubicacion_id ?? null,
+          total,
+          lineaId
+        )
+
         return { ok: true, total_unidades: total }
       } catch (e) {
         return reply.status(400).send({ error: (e as Error).message })
@@ -568,8 +646,8 @@ export async function inventarioRoutes(app: FastifyInstance): Promise<void> {
       const inventarioSectorId = Number(req.params.id)
       try {
         assertContadorEnSector(db, inventarioSectorId, req.user!.id)
-        iniciarReconteoSector(db, inventarioSectorId)
-        return { ok: true }
+        const result = iniciarReconteoSector(db, inventarioSectorId)
+        return { ok: true, ...result }
       } catch (e) {
         return reply.status(400).send({ error: (e as Error).message })
       }

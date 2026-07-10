@@ -11,6 +11,7 @@ import {
   Warehouse
 } from 'lucide-react'
 import { BarcodeScannerModal } from '@/components/BarcodeScannerModal'
+import { ConsultaPorSectorPanel } from '@/components/ConsultaPorSectorPanel'
 import { ImagePreviewModal } from '@/components/ImagePreviewModal'
 import { ProductImage } from '@/components/ProductImage'
 import { ReorganizarStockForm } from '@/components/ReorganizarStockForm'
@@ -161,9 +162,13 @@ function StockDetallePanel({
   )
 }
 
+type ConsultaModo = 'producto' | 'sector'
+
 export function ConsultaPage() {
   const { hasPermiso } = useAuth()
   const canReorganizar = hasPermiso('ajustes.crear')
+  const [modo, setModo] = useState<ConsultaModo>('producto')
+  const [sectorDetailOpen, setSectorDetailOpen] = useState(false)
   const [search, setSearch] = useState('')
   const [resultados, setResultados] = useState<ConsultaResumen[]>([])
   const [expandedId, setExpandedId] = useState<number | null>(null)
@@ -366,6 +371,9 @@ export function ConsultaPage() {
   }, [highlightIndex, registerEscHandler])
 
   useEscHandler(true, () => {
+    if (modo === 'sector' && sectorDetailOpen) {
+      return false
+    }
     if (showScanner) {
       setShowScanner(false)
       return true
@@ -403,11 +411,40 @@ export function ConsultaPage() {
   }
 
   useEffect(() => {
+    if (modo !== 'producto') return
     return registerMainContentFocus(() => {
       focusSearchInput({ scrollIntoView: true })
       return !!searchInputRef.current
     })
-  }, [registerMainContentFocus])
+  }, [registerMainContentFocus, modo])
+
+  const modoTabs = (
+    <div className="flex flex-wrap gap-2">
+      {(
+        [
+          { id: 'producto' as const, label: 'Por producto' },
+          { id: 'sector' as const, label: 'Por sector' }
+        ] as const
+      ).map((tab) => (
+        <button
+          key={tab.id}
+          type="button"
+          onClick={() => {
+            setModo(tab.id)
+            if (tab.id === 'producto') setSectorDetailOpen(false)
+          }}
+          className={cn(
+            'rounded-full border px-4 py-2 text-sm font-medium transition-colors',
+            modo === tab.id
+              ? 'border-brand-500 bg-brand-600 text-white shadow-sm'
+              : 'border-surface-border bg-white text-slate-600 hover:border-brand-300'
+          )}
+        >
+          {tab.label}
+        </button>
+      ))}
+    </div>
+  )
 
   return (
     <div className="mx-auto max-w-4xl space-y-6">
@@ -417,25 +454,34 @@ export function ConsultaPage() {
             Consulta de stock
           </p>
           <h1 className="mt-1 text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">
-            Buscar productos
+            {modo === 'producto' ? 'Buscar productos' : 'Consultar por sector'}
           </h1>
           <p className="mt-2 max-w-xl text-sm leading-relaxed text-slate-500">
-            Código interno, código de barras o nombre. Desplegá cada resultado para ver el stock
-            por sector y ubicación.
+            {modo === 'producto'
+              ? 'Código interno, código de barras o nombre. Desplegá cada resultado para ver el stock por sector y ubicación.'
+              : 'Elegí un sector para ver todos los productos con stock, filtrando por ubicación interna si aplica.'}
           </p>
         </div>
-        <div className="flex flex-wrap gap-1.5">
-          {['↑↓ navegar', 'Enter abrir', 'Esc cerrar'].map((hint) => (
-            <span
-              key={hint}
-              className="rounded-full border border-surface-border bg-white px-2.5 py-1 text-[11px] font-medium text-slate-500 shadow-card"
-            >
-              {hint}
-            </span>
-          ))}
-        </div>
+        {modo === 'producto' && (
+          <div className="flex flex-wrap gap-1.5">
+            {['↑↓ navegar', 'Enter abrir', 'Esc cerrar'].map((hint) => (
+              <span
+                key={hint}
+                className="rounded-full border border-surface-border bg-white px-2.5 py-1 text-[11px] font-medium text-slate-500 shadow-card"
+              >
+                {hint}
+              </span>
+            ))}
+          </div>
+        )}
       </section>
 
+      {modoTabs}
+
+      {modo === 'sector' ? (
+        <ConsultaPorSectorPanel onSectorSelectedChange={setSectorDetailOpen} />
+      ) : (
+        <>
       <Card className="overflow-hidden shadow-panel">
         <div className="border-b border-brand-100 bg-gradient-to-r from-brand-50/80 via-white to-white px-5 py-4 sm:px-6">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
@@ -665,12 +711,17 @@ export function ConsultaPage() {
         </Card>
       )}
 
-      <BarcodeScannerModal
-        open={showScanner}
-        onClose={() => setShowScanner(false)}
-        onScan={handleScan}
-        title="Escanear para consultar"
-      />
+        </>
+      )}
+
+      {modo === 'producto' && (
+        <BarcodeScannerModal
+          open={showScanner}
+          onClose={() => setShowScanner(false)}
+          onScan={handleScan}
+          title="Escanear para consultar"
+        />
+      )}
 
       <ImagePreviewModal
         src={imagePreview?.src ?? null}

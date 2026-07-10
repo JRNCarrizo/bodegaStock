@@ -31,6 +31,7 @@ import {
   formatEtiqueta,
   formatTotalesInventarioResumen,
   formatValorLineaConteo,
+  normalizarUnidadProducto,
   sumarTotalesInventarioLineas,
   totalesInventarioCoinciden,
   type TipoBulto,
@@ -215,16 +216,108 @@ function sumarTotalesMisLineas(lineas: InventarioConteoLinea[]): TotalesInventar
   return { cajas, suelto }
 }
 
+const TABLA_CIERRE_CLASS = 'min-w-[72rem] text-sm'
+
+function CeldaCodigoProducto({ codigo }: { codigo: string }) {
+  return (
+    <span className="inline-flex shrink-0 rounded-md bg-slate-800 px-2.5 py-1 font-mono text-xs font-bold tracking-wide text-white shadow-sm">
+      {codigo}
+    </span>
+  )
+}
+
+function CeldaNombreProducto({ nombre }: { nombre: string }) {
+  return <p className="min-w-[14rem] whitespace-nowrap font-medium text-slate-900">{nombre}</p>
+}
+
+function CeldaTotalesInventario({
+  totales,
+  unidad,
+  variant = 'default'
+}: {
+  totales: TotalesInventarioDesglose
+  unidad?: string
+  variant?: 'default' | 'muted' | 'emphasis'
+}) {
+  const u = normalizarUnidadProducto(unidad)
+  const hasCajas = totales.cajas > 0
+  const hasSuelto = totales.suelto > 0
+
+  if (!hasCajas && !hasSuelto) {
+    return <span className="tabular-nums text-slate-300">0</span>
+  }
+
+  return (
+    <div
+      className={cn(
+        'inline-flex flex-col items-end gap-0.5 tabular-nums leading-snug',
+        variant === 'muted' && 'text-slate-600',
+        variant === 'emphasis' && 'font-semibold text-slate-900'
+      )}
+    >
+      {(hasCajas || !hasSuelto) && (
+        <span className={cn(!hasCajas && 'text-slate-400')}>
+          {formatCantidad(totales.cajas)} caja{totales.cajas === 1 ? '' : 's'}
+        </span>
+      )}
+      {hasSuelto && (
+        <span
+          className={cn(
+            'text-xs',
+            variant === 'emphasis' ? 'font-medium text-slate-700' : 'text-slate-500'
+          )}
+        >
+          {formatCantidad(totales.suelto)} {u}
+          {totales.suelto === 1 ? '' : 's'}
+        </span>
+      )}
+    </div>
+  )
+}
+
+function CeldaDiferenciaInventario({
+  difCajas,
+  difSuelto
+}: {
+  difCajas: number
+  difSuelto: number
+}) {
+  if (difCajas === 0 && difSuelto === 0) {
+    return <span className="text-emerald-600">—</span>
+  }
+
+  return (
+    <div className="inline-flex flex-col items-end gap-0.5 tabular-nums leading-snug">
+      {difCajas !== 0 && (
+        <span className={cn('font-medium', difCajas > 0 ? 'text-amber-700' : 'text-red-700')}>
+          {difCajas > 0 ? '+' : ''}
+          {formatCantidad(difCajas)} cajas
+        </span>
+      )}
+      {difSuelto !== 0 && (
+        <span
+          className={cn('text-xs font-medium', difSuelto > 0 ? 'text-amber-700' : 'text-red-700')}
+        >
+          {difSuelto > 0 ? '+' : ''}
+          {formatCantidad(difSuelto)} botella/s
+        </span>
+      )}
+    </div>
+  )
+}
+
 function DesgloseComparacionParalelo({
   lineasSistema,
   lineasContado,
-  resumenSistema,
-  resumenContado
+  totalesSistema,
+  totalesContado,
+  unidad
 }: {
   lineasSistema: DesgloseLineaVista[]
   lineasContado: DesgloseLineaVista[]
-  resumenSistema: string
-  resumenContado: string
+  totalesSistema: TotalesInventarioDesglose
+  totalesContado: TotalesInventarioDesglose
+  unidad?: string
 }) {
   const filas = Math.max(lineasSistema.length, lineasContado.length, 1)
 
@@ -233,11 +326,11 @@ function DesgloseComparacionParalelo({
       <div className="grid grid-cols-2 divide-x divide-surface-border border-b border-surface-border bg-slate-50/80">
         <div className="flex items-center justify-between gap-3 px-4 py-2.5">
           <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">Sistema</span>
-          <span className="text-sm font-bold tabular-nums text-slate-800">{resumenSistema}</span>
+          <CeldaTotalesInventario totales={totalesSistema} unidad={unidad} variant="muted" />
         </div>
         <div className="flex items-center justify-between gap-3 px-4 py-2.5">
           <span className="text-xs font-semibold uppercase tracking-wide text-brand-600">Contado</span>
-          <span className="text-sm font-bold tabular-nums text-brand-800">{resumenContado}</span>
+          <CeldaTotalesInventario totales={totalesContado} unidad={unidad} variant="emphasis" />
         </div>
       </div>
 
@@ -325,11 +418,11 @@ function ReporteDetalleItem({
     return (
       <>
         <tr className="bg-white">
-          <td className="px-4 py-2.5 font-mono text-xs text-slate-600">
-            {String(item.codigo_interno ?? '—')}
+          <td className="whitespace-nowrap px-4 py-2.5">
+            <CeldaCodigoProducto codigo={String(item.codigo_interno ?? '—')} />
           </td>
           <td className="px-4 py-2.5">
-            <p className="font-medium text-slate-900">{String(item.nombre)}</p>
+            <CeldaNombreProducto nombre={String(item.nombre)} />
             {desgloseColapsado ? (
               <DesgloseToggleButton
                 abierto={desgloseAbierto}
@@ -351,8 +444,12 @@ function ReporteDetalleItem({
               {tipoInventarioLabel(tipo)}
             </span>
           </td>
-          <td className="px-4 py-2.5 text-right tabular-nums font-semibold text-slate-900">
-            {resumenTotalesItem(item, 'aplicado')}
+          <td className="px-4 py-2.5 text-right">
+            <CeldaTotalesInventario
+              totales={totalesItem(item, 'aplicado')}
+              unidad={String(item.unidad ?? '')}
+              variant="emphasis"
+            />
           </td>
         </tr>
         {desgloseColapsado && desgloseAbierto && (
@@ -361,8 +458,9 @@ function ReporteDetalleItem({
               <DesgloseComparacionParalelo
                 lineasSistema={lineasDesgloseFromItem(item, 'sistema')}
                 lineasContado={lineasDesgloseFromItem(item, 'contado')}
-                resumenSistema={resumenTotalesItem(item, 'sistema')}
-                resumenContado={resumenTotalesItem(item, 'aplicado')}
+                totalesSistema={totalesItem(item, 'sistema')}
+                totalesContado={totalesItem(item, 'aplicado')}
+                unidad={String(item.unidad ?? '')}
               />
             </td>
           </tr>
@@ -374,11 +472,11 @@ function ReporteDetalleItem({
   return (
     <>
       <tr className="bg-white align-top">
-        <td className="px-4 py-3 font-mono text-xs text-slate-600">
-          {String(item.codigo_interno ?? '—')}
+        <td className="whitespace-nowrap px-4 py-3">
+          <CeldaCodigoProducto codigo={String(item.codigo_interno ?? '—')} />
         </td>
         <td className="px-4 py-3">
-          <p className="font-medium text-slate-900">{String(item.nombre)}</p>
+          <CeldaNombreProducto nombre={String(item.nombre)} />
           {desgloseColapsado ? (
             <DesgloseToggleButton
               abierto={desgloseAbierto}
@@ -407,36 +505,25 @@ function ReporteDetalleItem({
             {tipoInventarioLabel(tipo)}
           </span>
         </td>
-        <td className="px-4 py-3 text-right tabular-nums text-slate-600">
-          {resumenTotalesItem(item, 'sistema')}
+        <td className="px-4 py-3 text-right">
+          <CeldaTotalesInventario
+            totales={totalesItem(item, 'sistema')}
+            unidad={String(item.unidad ?? '')}
+            variant="muted"
+          />
         </td>
-        <td className="px-4 py-3 text-right tabular-nums font-semibold text-slate-900">
-          {resumenTotalesItem(item, 'contado')}
+        <td className="px-4 py-3 text-right">
+          <CeldaTotalesInventario
+            totales={totalesItem(item, 'contado')}
+            unidad={String(item.unidad ?? '')}
+            variant="emphasis"
+          />
         </td>
-        <td className="px-4 py-3 text-right tabular-nums">
-          {dif !== 0 || Number(item.diferencia_suelto ?? 0) !== 0 ? (
-            <div className="space-y-0.5">
-              {dif !== 0 && (
-                <span className={cn('block font-medium', dif > 0 ? 'text-amber-700' : 'text-red-700')}>
-                  {dif > 0 ? '+' : ''}
-                  {formatCantidad(dif)} cajas
-                </span>
-              )}
-              {Number(item.diferencia_suelto ?? 0) !== 0 && (
-                <span
-                  className={cn(
-                    'block text-xs font-medium',
-                    Number(item.diferencia_suelto) > 0 ? 'text-amber-700' : 'text-red-700'
-                  )}
-                >
-                  {Number(item.diferencia_suelto) > 0 ? '+' : ''}
-                  {formatCantidad(Number(item.diferencia_suelto))} suelto
-                </span>
-              )}
-            </div>
-          ) : (
-            <span className="text-emerald-600">—</span>
-          )}
+        <td className="px-4 py-3 text-right">
+          <CeldaDiferenciaInventario
+            difCajas={dif}
+            difSuelto={Number(item.diferencia_suelto ?? 0)}
+          />
         </td>
       </tr>
       {desgloseColapsado && desgloseAbierto && (
@@ -445,8 +532,9 @@ function ReporteDetalleItem({
             <DesgloseComparacionParalelo
               lineasSistema={lineasDesgloseFromItem(item, 'sistema')}
               lineasContado={lineasDesgloseFromItem(item, 'contado')}
-              resumenSistema={resumenTotalesItem(item, 'sistema')}
-              resumenContado={resumenTotalesItem(item, 'contado')}
+              totalesSistema={totalesItem(item, 'sistema')}
+              totalesContado={totalesItem(item, 'contado')}
+              unidad={String(item.unidad ?? '')}
             />
           </td>
         </tr>
@@ -580,11 +668,11 @@ function InventarioReporteCierre({
                     </span>
                   </div>
                   <div className="overflow-x-auto">
-                    <table className="min-w-full text-sm">
+                    <table className={TABLA_CIERRE_CLASS}>
                       <thead className="bg-white text-left text-xs font-semibold uppercase tracking-wide text-slate-400">
                         <tr>
-                          <th className="px-4 py-2">Código</th>
-                          <th className="px-4 py-2">Producto</th>
+                          <th className="whitespace-nowrap px-4 py-2">Código</th>
+                          <th className="min-w-[14rem] px-4 py-2">Producto</th>
                           <th className="px-4 py-2">Resultado</th>
                           {filtro !== 'ok' && (
                             <>
@@ -1071,7 +1159,6 @@ function CorreccionManualModal({
   const botellasPorCaja = Number(item.botellas_por_caja ?? 6)
   const totalesDraft = totalLineasManuales(lineas, botellasPorCaja)
   const totalesSistema = totalesItem(item, 'sistema')
-  const resumenDraft = formatTotalesInventarioResumen(totalesDraft, String(item.unidad ?? ''))
   const difCajas = totalesDraft.cajas - totalesSistema.cajas
   const difSuelto = totalesDraft.suelto - totalesSistema.suelto
   const hayDiferencia = !totalesInventarioCoinciden(totalesDraft, totalesSistema)
@@ -1111,8 +1198,9 @@ function CorreccionManualModal({
           <DesgloseComparacionParalelo
             lineasSistema={lineasDesgloseFromItem(item, 'sistema')}
             lineasContado={lineasDesgloseFromItem(item, 'contado')}
-            resumenSistema={resumenTotalesItem(item, 'sistema')}
-            resumenContado={resumenTotalesItem(item, 'contado')}
+            totalesSistema={totalesItem(item, 'sistema')}
+            totalesContado={totalesItem(item, 'contado')}
+            unidad={String(item.unidad ?? '')}
           />
 
           <div className="flex flex-wrap gap-2">
@@ -1145,21 +1233,17 @@ function CorreccionManualModal({
         <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-t border-surface-border bg-slate-50/80 px-5 py-4">
           <div className="text-sm text-slate-600">
             Total al cerrar:{' '}
-            <strong className="tabular-nums text-slate-900">{resumenDraft}</strong>
+            <span className="inline-block align-top">
+              <CeldaTotalesInventario
+                totales={totalesDraft}
+                unidad={String(item.unidad ?? '')}
+                variant="emphasis"
+              />
+            </span>
             {hayDiferencia && (
-              <span className="ml-2 text-xs tabular-nums font-medium text-slate-600">
-                {difCajas !== 0 && (
-                  <span className={difCajas > 0 ? 'text-amber-700' : 'text-red-700'}>
-                    {difCajas > 0 ? '+' : ''}
-                    {formatCantidad(difCajas)} cajas{' '}
-                  </span>
-                )}
-                {difSuelto !== 0 && (
-                  <span className={difSuelto > 0 ? 'text-amber-700' : 'text-red-700'}>
-                    {difSuelto > 0 ? '+' : ''}
-                    {formatCantidad(difSuelto)} suelto vs sistema
-                  </span>
-                )}
+              <span className="ml-2 inline-block align-top text-xs">
+                <CeldaDiferenciaInventario difCajas={difCajas} difSuelto={difSuelto} />
+                <span className="text-slate-400"> vs sistema</span>
               </span>
             )}
           </div>
@@ -1204,10 +1288,6 @@ function VistaPreviaItemConDecision({
       : decision.modo === 'MANUAL'
         ? totalLineasManuales(decision.lineas, botellasPorCaja)
         : totalesItem(item, 'contado')
-  const resumenAplicado = formatTotalesInventarioResumen(
-    totalesAplicado,
-    String(item.unidad ?? '')
-  )
   const difCajas = totalesAplicado.cajas - totalesSistema.cajas
   const difSuelto = totalesAplicado.suelto - totalesSistema.suelto
   const requiereAjuste = Boolean(item.requiere_ajuste)
@@ -1249,11 +1329,11 @@ function VistaPreviaItemConDecision({
   return (
     <>
       <tr className="bg-white align-top">
-        <td className="px-4 py-3 font-mono text-xs text-slate-600">
-          {String(item.codigo_interno ?? '—')}
+        <td className="whitespace-nowrap px-4 py-3">
+          <CeldaCodigoProducto codigo={String(item.codigo_interno ?? '—')} />
         </td>
         <td className="px-4 py-3">
-          <p className="font-medium text-slate-900">{String(item.nombre)}</p>
+          <CeldaNombreProducto nombre={String(item.nombre)} />
           <DesgloseToggleButton
             abierto={desgloseAbierto}
             onToggle={() => setDesgloseAbierto((v) => !v)}
@@ -1269,39 +1349,28 @@ function VistaPreviaItemConDecision({
             {tipoInventarioLabel(tipo)}
           </span>
         </td>
-        <td className="px-4 py-3 text-right tabular-nums text-slate-600">
-          {resumenTotalesItem(item, 'sistema')}
+        <td className="px-4 py-3 text-right">
+          <CeldaTotalesInventario
+            totales={totalesSistema}
+            unidad={String(item.unidad ?? '')}
+            variant="muted"
+          />
         </td>
-        <td className="px-4 py-3 text-right tabular-nums font-semibold text-slate-900">
-          {resumenTotalesItem(item, 'contado')}
+        <td className="px-4 py-3 text-right">
+          <CeldaTotalesInventario
+            totales={totalesItem(item, 'contado')}
+            unidad={String(item.unidad ?? '')}
+            variant="emphasis"
+          />
         </td>
-        <td className="px-4 py-3 text-right tabular-nums">
-          {dif !== 0 || Number(item.diferencia_suelto ?? 0) !== 0 ? (
-            <div className="space-y-0.5">
-              {dif !== 0 && (
-                <span className={cn('block font-medium', dif > 0 ? 'text-amber-700' : 'text-red-700')}>
-                  {dif > 0 ? '+' : ''}
-                  {formatCantidad(dif)} cajas
-                </span>
-              )}
-              {Number(item.diferencia_suelto ?? 0) !== 0 && (
-                <span
-                  className={cn(
-                    'block text-xs font-medium',
-                    Number(item.diferencia_suelto) > 0 ? 'text-amber-700' : 'text-red-700'
-                  )}
-                >
-                  {Number(item.diferencia_suelto) > 0 ? '+' : ''}
-                  {formatCantidad(Number(item.diferencia_suelto))} suelto
-                </span>
-              )}
-            </div>
-          ) : (
-            <span className="text-emerald-600">—</span>
-          )}
+        <td className="px-4 py-3 text-right">
+          <CeldaDiferenciaInventario
+            difCajas={dif}
+            difSuelto={Number(item.diferencia_suelto ?? 0)}
+          />
         </td>
         {requiereAjuste && (
-          <td className="px-4 py-3">
+          <td className="min-w-[11rem] px-4 py-3">
             <select
               value={selectModo}
               onChange={(e) => cambiarModo(e.target.value as CierreDecisionModo)}
@@ -1322,29 +1391,20 @@ function VistaPreviaItemConDecision({
               </button>
             )}
             {decision.modo !== 'CONTADO' && (
-              <p className="mt-1 text-[11px] text-slate-500">
-                Al cerrar: {resumenAplicado}
+              <div className="mt-1 text-[11px] text-slate-500">
+                <span className="text-slate-400">Al cerrar:</span>{' '}
+                <CeldaTotalesInventario
+                  totales={totalesAplicado}
+                  unidad={String(item.unidad ?? '')}
+                  variant="emphasis"
+                />
                 {(difCajas !== 0 || difSuelto !== 0) && (
-                  <>
-                    {' '}
+                  <span className="ml-1 inline-block align-top">
                     (
-                    {difCajas !== 0 && (
-                      <span>
-                        {difCajas > 0 ? '+' : ''}
-                        {formatCantidad(difCajas)} cajas
-                      </span>
-                    )}
-                    {difCajas !== 0 && difSuelto !== 0 ? ' · ' : null}
-                    {difSuelto !== 0 && (
-                      <span>
-                        {difSuelto > 0 ? '+' : ''}
-                        {formatCantidad(difSuelto)} suelto
-                      </span>
-                    )}
-                    )
-                  </>
+                    <CeldaDiferenciaInventario difCajas={difCajas} difSuelto={difSuelto} />)
+                  </span>
                 )}
-              </p>
+              </div>
             )}
           </td>
         )}
@@ -1355,8 +1415,9 @@ function VistaPreviaItemConDecision({
             <DesgloseComparacionParalelo
               lineasSistema={lineasDesgloseFromItem(item, 'sistema')}
               lineasContado={lineasDesgloseFromItem(item, 'contado')}
-              resumenSistema={resumenTotalesItem(item, 'sistema')}
-              resumenContado={resumenTotalesItem(item, 'contado')}
+              totalesSistema={totalesSistema}
+              totalesContado={totalesItem(item, 'contado')}
+              unidad={String(item.unidad ?? '')}
             />
           </td>
         </tr>
@@ -1601,11 +1662,11 @@ function InventarioVistaPreviaCierre({
                     </span>
                   </div>
                   <div className="overflow-x-auto">
-                    <table className="min-w-full text-sm">
+                    <table className={TABLA_CIERRE_CLASS}>
                       <thead className="bg-white text-left text-xs font-semibold uppercase tracking-wide text-slate-400">
                         <tr>
-                          <th className="px-4 py-2">Código</th>
-                          <th className="px-4 py-2">Producto</th>
+                          <th className="whitespace-nowrap px-4 py-2">Código</th>
+                          <th className="min-w-[14rem] px-4 py-2">Producto</th>
                           <th className="px-4 py-2">Resultado</th>
                           {filtro !== 'ok' && (
                             <>
@@ -1885,9 +1946,15 @@ export function InventarioPage() {
     const todosSectoresOk = sesionDetalle.sectores.every((x) => x.estado === 'CERRADO_OK')
     const listoParaCierre =
       s.estado === 'EN_PROGRESO' && todosSectoresOk && comparacionSistema != null && canClose
+    const anchoCierre = listoParaCierre || sesionDetalle.reporte
 
     return (
-      <div className="mx-auto max-w-5xl space-y-4 p-4 md:p-6">
+      <div
+        className={cn(
+          'mx-auto space-y-4 p-4 md:p-6',
+          anchoCierre ? 'max-w-[88rem]' : 'max-w-5xl'
+        )}
+      >
         <div className="flex flex-wrap items-center gap-3">
           <Button variant="ghost" size="sm" onClick={() => { setView('list'); setSesionDetalle(null) }}>
             <ArrowLeft className="h-4 w-4" />
@@ -2222,6 +2289,27 @@ function CrearSesionForm({
   )
 }
 
+type InventarioDiferenciaContadores = {
+  producto_id: number
+  codigo_interno: string
+  nombre: string
+  resumen_contador_1: string
+  resumen_contador_2: string
+  lineas_contador_1?: InventarioConteoLinea[]
+  lineas_contador_2?: InventarioConteoLinea[]
+}
+
+type InventarioComparacionContadores = {
+  ronda: number
+  ok: Array<Record<string, unknown>>
+  diferencias: InventarioDiferenciaContadores[]
+  coincide: boolean
+}
+
+function resumenContadorDiff(d: InventarioDiferenciaContadores, contador: 1 | 2): string {
+  return contador === 1 ? d.resumen_contador_1 : d.resumen_contador_2
+}
+
 function ConteoSectorView({
   inventarioSectorId,
   onBack
@@ -2233,11 +2321,9 @@ function ConteoSectorView({
   const [error, setError] = useState('')
   const [sectorInfo, setSectorInfo] = useState<Record<string, unknown> | null>(null)
   const [misLineas, setMisLineas] = useState<InventarioConteoLinea[]>([])
-  const [comparacion, setComparacion] = useState<{
-    ok: Array<Record<string, unknown>>
-    diferencias: Array<Record<string, unknown>>
-    coincide: boolean
-  } | null>(null)
+  const [comparacion, setComparacion] = useState<InventarioComparacionContadores | null>(null)
+  const [referenciaReconteo, setReferenciaReconteo] =
+    useState<InventarioComparacionContadores | null>(null)
   const [productSearch, setProductSearch] = useState('')
   const [productResults, setProductResults] = useState<Producto[]>([])
   const [searchingProducts, setSearchingProducts] = useState(false)
@@ -2252,6 +2338,7 @@ function ConteoSectorView({
   const [showScanner, setShowScanner] = useState(false)
   const [saving, setSaving] = useState(false)
   const [expandedProductos, setExpandedProductos] = useState<Set<number>>(new Set())
+  const [editingLineaId, setEditingLineaId] = useState<number | null>(null)
 
   const productSearchRef = useRef<HTMLInputElement>(null)
   const productResultsListRef = useRef<HTMLUListElement>(null)
@@ -2320,7 +2407,7 @@ function ConteoSectorView({
     setProductSearch(p.codigo_interno)
     setProductResults([])
     setProductHighlightIndex(-1)
-    resetLineaForm(p)
+    if (!editingLineaId) resetLineaForm(p)
     setError('')
     setTimeout(() => focusField(tipoRef), 50)
   }
@@ -2398,12 +2485,14 @@ function ConteoSectorView({
         mis_lineas: InventarioConteoLinea[]
         lineas_contador_1?: InventarioConteoLinea[]
         lineas_contador_2?: InventarioConteoLinea[]
-        comparacion: typeof comparacion
+        comparacion: InventarioComparacionContadores | null
+        referencia_reconteo: InventarioComparacionContadores | null
       }>(`/api/inventario/sectores/${inventarioSectorId}`)
       setSectorInfo({ ...data.sector, mi_rol: data.mi_rol ?? null })
       setUbicaciones(data.ubicaciones ?? [])
       setMisLineas(data.mis_lineas)
       setComparacion(data.comparacion)
+      setReferenciaReconteo(data.referencia_reconteo)
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Error al cargar sector')
     } finally {
@@ -2480,6 +2569,26 @@ function ConteoSectorView({
     scrollFieldIntoView(productLineFormRef)
   }, [selectedProduct])
 
+  const ronda = Number(sectorInfo?.ronda_actual ?? 1)
+  const miRol = sectorInfo?.mi_rol === 1 || sectorInfo?.mi_rol === 2 ? sectorInfo.mi_rol : null
+  const enReconteo =
+    estado === 'EN_CONTEO' &&
+    ronda > 1 &&
+    (referenciaReconteo?.diferencias.length ?? 0) > 0
+
+  const referenciaPorProducto = useMemo(() => {
+    const map = new Map<number, InventarioDiferenciaContadores>()
+    for (const d of referenciaReconteo?.diferencias ?? []) {
+      map.set(d.producto_id, d)
+    }
+    return map
+  }, [referenciaReconteo])
+
+  useEffect(() => {
+    if (!enReconteo || !referenciaReconteo) return
+    setExpandedProductos(new Set(referenciaReconteo.diferencias.map((d) => d.producto_id)))
+  }, [enReconteo, referenciaReconteo?.ronda])
+
   const lineasPorProducto = useMemo(() => {
     const map = new Map<number, InventarioConteoLinea[]>()
     for (const l of misLineas) {
@@ -2487,18 +2596,39 @@ function ConteoSectorView({
       arr.push(l)
       map.set(l.producto_id, arr)
     }
-    return [...map.entries()].map(([producto_id, lineas]) => {
+
+    const ids = new Set(map.keys())
+    if (enReconteo && referenciaReconteo) {
+      for (const d of referenciaReconteo.diferencias) {
+        ids.add(d.producto_id)
+      }
+    }
+
+    const orderedIds =
+      enReconteo && referenciaReconteo
+        ? [
+            ...referenciaReconteo.diferencias.map((d) => d.producto_id),
+            ...[...ids].filter(
+              (id) => !referenciaReconteo.diferencias.some((d) => d.producto_id === id)
+            )
+          ]
+        : [...ids]
+
+    return orderedIds.map((producto_id) => {
+      const lineas = map.get(producto_id) ?? []
+      const ref = referenciaPorProducto.get(producto_id)
       const totales = sumarTotalesMisLineas(lineas)
       return {
         producto_id,
-        nombre: lineas[0]?.nombre ?? '',
-        codigo: lineas[0]?.codigo_interno ?? '',
+        nombre: lineas[0]?.nombre ?? ref?.nombre ?? '',
+        codigo: lineas[0]?.codigo_interno ?? ref?.codigo_interno ?? '',
         lineas,
         total: totales,
-        resumen: formatTotalesInventarioResumen(totales)
+        resumen: formatTotalesInventarioResumen(totales),
+        referencia: ref
       }
     })
-  }, [misLineas])
+  }, [misLineas, enReconteo, referenciaReconteo, referenciaPorProducto])
 
   const totalGeneral = useMemo(() => sumarTotalesMisLineas(misLineas), [misLineas])
   const resumenGeneral = useMemo(
@@ -2506,13 +2636,11 @@ function ConteoSectorView({
     [totalGeneral]
   )
 
-  const ronda = Number(sectorInfo?.ronda_actual ?? 1)
   const usaUbicaciones = Boolean(sectorInfo?.usa_ubicaciones) && ubicaciones.length > 0
   const ubicacionSeleccionada = useMemo(
     () => ubicaciones.find((u) => u.id === Number(ubicacionId)) ?? null,
     [ubicaciones, ubicacionId]
   )
-  const miRol = sectorInfo?.mi_rol === 1 || sectorInfo?.mi_rol === 2 ? sectorInfo.mi_rol : null
   const yoFinalice =
     miRol === 1
       ? Boolean(sectorInfo?.contador_1_finalizo)
@@ -2576,11 +2704,19 @@ function ConteoSectorView({
     setSaving(true)
     setError('')
     try {
-      await api(`/api/inventario/sectores/${inventarioSectorId}/lineas`, {
-        method: 'POST',
-        body: JSON.stringify(body)
-      })
+      if (editingLineaId) {
+        await api(`/api/inventario/sectores/${inventarioSectorId}/lineas/${editingLineaId}`, {
+          method: 'PUT',
+          body: JSON.stringify(body)
+        })
+      } else {
+        await api(`/api/inventario/sectores/${inventarioSectorId}/lineas`, {
+          method: 'POST',
+          body: JSON.stringify(body)
+        })
+      }
       setExpandedProductos((prev) => new Set(prev).add(productoId))
+      setEditingLineaId(null)
       setSelectedProduct(null)
       setProductSearch('')
       setProductResults([])
@@ -2589,11 +2725,48 @@ function ConteoSectorView({
       setTimeout(() => productSearchRef.current?.focus(), 50)
       return true
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Error al agregar línea')
+      setError(e instanceof Error ? e.message : 'Error al guardar línea')
       return false
     } finally {
       setSaving(false)
     }
+  }
+
+  async function empezarEditarLinea(l: InventarioConteoLinea) {
+    setEditingLineaId(l.id)
+    setError('')
+    try {
+      const rows = await api<Producto[]>(
+        `/api/productos?q=${encodeURIComponent(l.codigo_interno ?? '')}`
+      )
+      const p = rows.find((r) => r.id === l.producto_id) ?? rows[0]
+      if (p) {
+        setSelectedProduct(p)
+        setProductSearch(p.codigo_interno)
+        setProductResults([])
+      }
+      setTipoBulto(l.tipo_bulto as TipoBulto)
+      if (l.tipo_bulto === 'SUELTO') {
+        setCantidadBultos('')
+        setUnidadesPorBulto('')
+        setCantidadSuelta(String(l.cantidad_suelta ?? l.total_unidades ?? ''))
+      } else {
+        setCantidadBultos(String(l.cantidad_bultos ?? ''))
+        setUnidadesPorBulto(String(l.unidades_por_bulto ?? ''))
+        setCantidadSuelta(l.cantidad_suelta != null ? String(l.cantidad_suelta) : '')
+      }
+      scrollFieldIntoView(productLineFormRef)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Error al cargar línea')
+    }
+  }
+
+  function cancelarLineaForm() {
+    setEditingLineaId(null)
+    setSelectedProduct(null)
+    setProductSearch('')
+    setProductResults([])
+    resetLineaForm()
   }
 
   async function agregarLineaYContinuar() {
@@ -2658,6 +2831,8 @@ function ConteoSectorView({
     ) : (
       lineasPorProducto.map((grupo) => {
         const isExpanded = expandedProductos.has(grupo.producto_id)
+        const ref = grupo.referencia
+
         return (
           <div key={grupo.producto_id} className="border-b border-surface-border last:border-0">
             <div
@@ -2702,37 +2877,68 @@ function ConteoSectorView({
               </span>
             </div>
             {isExpanded && (
-              <ul className="space-y-2 border-t border-brand-100/80 bg-gradient-to-b from-surface-muted/40 to-white px-4 py-3 sm:px-5">
-                {grupo.lineas.map((l, idx) => (
-                  <li
-                    key={l.id}
-                    className="flex items-center justify-between gap-3 rounded-lg border border-surface-border bg-white px-3 py-2.5 text-sm"
-                  >
-                    <div className="min-w-0 text-slate-800">
-                      <span className="text-xs text-slate-400">{idx + 1}.</span> {l.etiqueta}
-                      {l.ubicacion && (
-                        <span className="ml-1.5 text-xs text-slate-500">({l.ubicacion})</span>
-                      )}
-                    </div>
-                    <div className="flex shrink-0 items-center gap-2">
-                      <span className="rounded-md bg-slate-50 px-2 py-1 text-sm font-semibold tabular-nums text-slate-900 ring-1 ring-surface-border">
-                        {formatValorLineaConteo(l)}
-                      </span>
-                      {puedeEditar && (
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="sm"
-                          className="rounded-lg"
-                          onClick={() => void eliminarLinea(l.id)}
-                        >
-                          <Trash2 className="h-4 w-4 text-red-500" />
-                        </Button>
-                      )}
-                    </div>
-                  </li>
-                ))}
-              </ul>
+              <div className="space-y-2 border-t border-brand-100/80 bg-gradient-to-b from-surface-muted/40 to-white px-4 py-3 sm:px-5">
+                {ref && miRol && enReconteo && (
+                  <p className="border-b border-slate-200/90 pb-1.5 text-[10px] leading-snug text-slate-500">
+                    <span className="text-slate-400">Ronda anterior ·</span>{' '}
+                    <span className="font-medium text-slate-600">
+                      Vos {resumenContadorDiff(ref, miRol)}
+                    </span>
+                    <span className="mx-1 text-slate-300">vs</span>
+                    <span className="font-medium text-slate-600">
+                      Compañero {resumenContadorDiff(ref, miRol === 1 ? 2 : 1)}
+                    </span>
+                  </p>
+                )}
+                {grupo.lineas.length === 0 ? (
+                  <p className="rounded-lg border border-dashed border-surface-border bg-white px-3 py-4 text-center text-sm text-slate-500">
+                    Sin líneas — buscá el producto arriba para cargar
+                  </p>
+                ) : (
+                  <ul className="space-y-2">
+                    {grupo.lineas.map((l, idx) => (
+                      <li
+                        key={l.id}
+                        className="flex items-center justify-between gap-3 rounded-lg border border-surface-border bg-white px-3 py-2.5 text-sm"
+                      >
+                        <div className="min-w-0 text-slate-800">
+                          <span className="text-xs text-slate-400">{idx + 1}.</span> {l.etiqueta}
+                          {l.ubicacion && (
+                            <span className="ml-1.5 text-xs text-slate-500">({l.ubicacion})</span>
+                          )}
+                        </div>
+                        <div className="flex shrink-0 items-center gap-1">
+                          <span className="rounded-md bg-slate-50 px-2 py-1 text-sm font-semibold tabular-nums text-slate-900 ring-1 ring-surface-border">
+                            {formatValorLineaConteo(l)}
+                          </span>
+                          {puedeEditar && (
+                            <>
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                className="rounded-lg"
+                                onClick={() => void empezarEditarLinea(l)}
+                              >
+                                <Pencil className="h-4 w-4 text-brand-600" />
+                              </Button>
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                className="rounded-lg"
+                                onClick={() => void eliminarLinea(l.id)}
+                              >
+                                <Trash2 className="h-4 w-4 text-red-500" />
+                              </Button>
+                            </>
+                          )}
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
             )}
           </div>
         )
@@ -2825,29 +3031,18 @@ function ConteoSectorView({
                           '—'
                       )}
                     </p>
-                    {ronda > 1 && (
-                      <div className="mt-2 text-xs text-slate-500">
-                        <p className="font-medium text-slate-600">Referencia ronda anterior:</p>
-                        <p>
-                          Tu desglose:{' '}
-                          {(d.lineas_contador_1 as InventarioConteoLinea[] | undefined)
-                            ?.map((l) => l.etiqueta)
-                            .join(', ') ?? '—'}
-                        </p>
-                        <p>
-                          Compañero:{' '}
-                          {(d.lineas_contador_2 as InventarioConteoLinea[] | undefined)
-                            ?.map((l) => l.etiqueta)
-                            .join(', ') ?? '—'}
-                        </p>
-                      </div>
-                    )}
                   </div>
                 ))}
                 {estado === 'CON_DIFERENCIAS' && (
-                  <Button size="sm" className="rounded-xl" onClick={() => void iniciarReconteo()}>
-                    Iniciar reconteo
-                  </Button>
+                  <div className="space-y-2">
+                    <p className="text-xs text-slate-600">
+                      Al iniciar reconteo se precargan tus líneas anteriores en cada producto con
+                      diferencia. Podés corregirlas, agregar o borrar sin buscar de nuevo.
+                    </p>
+                    <Button size="sm" className="rounded-xl" onClick={() => void iniciarReconteo()}>
+                      Iniciar reconteo
+                    </Button>
+                  </div>
                 )}
               </div>
             )}
@@ -2982,6 +3177,9 @@ function ConteoSectorView({
                     className="h-11 w-11 rounded-xl ring-1 ring-surface-border"
                   />
                   <div className="min-w-0 flex-1">
+                    <p className="text-[11px] font-semibold uppercase tracking-wide text-brand-600">
+                      {editingLineaId ? 'Editar línea' : 'Nueva línea'}
+                    </p>
                     <span className="inline-flex rounded-md bg-white px-2 py-0.5 font-mono text-xs font-semibold text-slate-700 ring-1 ring-surface-border">
                       {selectedProduct.codigo_interno}
                     </span>
@@ -2992,11 +3190,7 @@ function ConteoSectorView({
                   <button
                     type="button"
                     className="rounded-lg p-1.5 text-slate-400 hover:bg-white hover:text-slate-600"
-                    onClick={() => {
-                      setSelectedProduct(null)
-                      setProductSearch('')
-                      productSearchRef.current?.focus()
-                    }}
+                    onClick={cancelarLineaForm}
                   >
                     <X className="h-4 w-4" />
                   </button>
@@ -3113,7 +3307,7 @@ function ConteoSectorView({
                       ) : (
                         <Plus className="h-4 w-4" />
                       )}
-                      Enter ↵
+                      {editingLineaId ? 'Guardar' : 'Enter ↵'}
                     </Button>
                   </div>
                 </div>
@@ -3146,8 +3340,8 @@ function ConteoSectorView({
             <p className="text-lg font-bold tabular-nums text-brand-700 sm:text-2xl">{resumenGeneral}</p>
             <p className="mt-0.5 text-[11px] text-slate-400">Cajas y botellerio por separado</p>
             <p className="mt-1 text-xs text-slate-500">
-              {misLineas.length} línea{misLineas.length === 1 ? '' : 's'} · {lineasPorProducto.length}{' '}
-              producto{lineasPorProducto.length === 1 ? '' : 's'}
+              {misLineas.length} línea{misLineas.length === 1 ? '' : 's'} ·{' '}
+              {lineasPorProducto.length} producto{lineasPorProducto.length === 1 ? '' : 's'}
             </p>
           </div>
           {puedeFinalizar && (

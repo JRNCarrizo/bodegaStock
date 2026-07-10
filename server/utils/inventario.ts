@@ -9,6 +9,8 @@ import {
   STOCK_SECTOR_VISIBLE_SQL,
   sumarTotalesInventarioLineas,
   totalesInventarioCoinciden,
+  totalCajasLineaConteo,
+  totalSueltoLineaConteo,
   validateLineaDesglose,
   type LineaDesgloseInput,
   type TotalesInventarioDesglose
@@ -379,21 +381,155 @@ export function ejecutarComparacionSector(
   return resultado
 }
 
-export function iniciarReconteoSector(db: Database.Database, inventarioSectorId: number): void {
+function copiarLineasReconteoContador(
+  db: Database.Database,
+  inventarioSectorId: number,
+  contadorId: number,
+  rondaDestino: number,
+  rondaOrigen: number,
+  productoIds: number[]
+): number {
+  const insertLinea = db.prepare(`
+    INSERT INTO inventario_conteo_lineas (
+      inventario_sector_id, producto_id, contador_id, ronda,
+      tipo_bulto, cantidad_bultos, unidades_por_bulto, cantidad_suelta,
+      ubicacion, ubicacion_id, total_unidades, orden
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `)
+
+  let lineasCopiadas = 0
+
+  for (const productoId of productoIds) {
+    const yaTiene = db.prepare(`
+      SELECT 1 FROM inventario_conteo_lineas
+      WHERE inventario_sector_id = ? AND contador_id = ? AND ronda = ? AND producto_id = ?
+      LIMIT 1
+    `).get(inventarioSectorId, contadorId, rondaDestino, productoId)
+    if (yaTiene) continue
+
+    const lineasPrevias = db.prepare(`
+      SELECT
+        tipo_bulto, cantidad_bultos, unidades_por_bulto, cantidad_suelta,
+        ubicacion, ubicacion_id, orden
+      FROM inventario_conteo_lineas
+      WHERE inventario_sector_id = ? AND contador_id = ? AND ronda = ? AND producto_id = ?
+      ORDER BY orden, id
+    `).all(inventarioSectorId, contadorId, rondaOrigen, productoId) as Array<{
+      tipo_bulto: string
+      cantidad_bultos: number | null
+      unidades_por_bulto: number | null
+      cantidad_suelta: number | null
+      ubicacion: string | null
+      ubicacion_id: number | null
+      orden: number
+    }>
+
+    for (const l of lineasPrevias) {
+      const { total } = validarYCalcularLinea(db, productoId, {
+        producto_id: productoId,
+        tipo_bulto: l.tipo_bulto as LineaDesgloseInput['tipo_bulto'],
+        cantidad_bultos: l.cantidad_bultos,
+        unidades_por_bulto: l.unidades_por_bulto,
+        cantidad_suelta: l.cantidad_suelta
+      })
+      insertLinea.run(
+        inventarioSectorId,
+        productoId,
+        contadorId,
+        rondaDestino,
+        l.tipo_bulto,
+        l.tipo_bulto === 'SUELTO' ? null : l.cantidad_bultos,
+        l.tipo_bulto === 'SUELTO' ? null : l.unidades_por_bulto,
+        l.tipo_bulto === 'SUELTO' ? l.cantidad_suelta : l.cantidad_suelta ?? null,
+        l.ubicacion,
+        l.ubicacion_id,
+        total,
+        l.orden
+      )
+      lineasCopiadas += 1
+    }
+  }
+
+  return lineasCopiadas
+}
+
+/** Si el sector está en reconteo pero faltan líneas precargadas, las copia desde la ronda anterior. */
+export function asegurarPrecargaReconteo(db: Database.Database, inventarioSectorId: number): void {
+  const sector = getInventarioSector(db, inventarioSectorId)
+  const ronda = Number(sector.ronda_actual)
+  if (ronda <= 1 || String(sector.estado) !== 'EN_CONTEO') return
+
+  const rondaAnterior = ronda - 1
+  const resultado = compararContadores(db, inventarioSectorId, rondaAnterior)
+  const productoIds = resultado.diferencias.map((d) => d.producto_id)
+  if (productoIds.length === 0) return
+
+  const c1 = Number(sector.contador_1_id)
+  const c2 = Number(sector.contador_2_id)
+
+  const tx = db.transaction(() => {
+    copiarLineasReconteoContador(db, inventarioSectorId, c1, ronda, rondaAnterior, productoIds)
+    copiarLineasReconteoContador(db, inventarioSectorId, c2, ronda, rondaAnterior, productoIds)
+  })
+  tx()
+}
+
+export function iniciarReconteoSector(db: Database.Database, inventarioSectorId: number): {
+  ronda: number
+  productos_precargados: number
+} {
   const sector = getInventarioSector(db, inventarioSectorId)
   if (String(sector.estado) !== 'CON_DIFERENCIAS') {
     throw new Error('El sector no tiene diferencias pendientes')
   }
-  const nuevaRonda = Number(sector.ronda_actual) + 1
-  db.prepare(`
-    UPDATE inventario_sectores
-    SET
-      estado = 'EN_CONTEO',
-      ronda_actual = ?,
-      contador_1_finalizo = 0,
-      contador_2_finalizo = 0
-    WHERE id = ?
-  `).run(nuevaRonda, inventarioSectorId)
+  const rondaAnterior = Number(sector.ronda_actual)
+  const nuevaRonda = rondaAnterior + 1
+  const c1 = Number(sector.contador_1_id)
+  const c2 = Number(sector.contador_2_id)
+
+  const resultado = compararContadores(db, inventarioSectorId, rondaAnterior)
+  const productoIds = resultado.diferencias.map((d) => d.producto_id)
+  if (productoIds.length === 0) {
+    throw new Error('No hay productos con diferencias para reconteo')
+  }
+
+  let lineasCopiadas = 0
+
+  const tx = db.transaction(() => {
+    lineasCopiadas += copiarLineasReconteoContador(
+      db,
+      inventarioSectorId,
+      c1,
+      nuevaRonda,
+      rondaAnterior,
+      productoIds
+    )
+    lineasCopiadas += copiarLineasReconteoContador(
+      db,
+      inventarioSectorId,
+      c2,
+      nuevaRonda,
+      rondaAnterior,
+      productoIds
+    )
+
+    db.prepare(`
+      UPDATE inventario_sectores
+      SET
+        estado = 'EN_CONTEO',
+        ronda_actual = ?,
+        contador_1_finalizo = 0,
+        contador_2_finalizo = 0
+      WHERE id = ?
+    `).run(nuevaRonda, inventarioSectorId)
+  })
+
+  tx()
+
+  return {
+    ronda: nuevaRonda,
+    productos_precargados: productoIds.length
+  }
 }
 
 export function crearSnapshotInventario(

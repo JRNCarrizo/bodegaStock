@@ -55,7 +55,10 @@ export function totalSueltoLineaConteo(linea: {
   if (linea.tipo_bulto === 'SUELTO') {
     return calcTotalUnidades(linea)
   }
-  return Number(linea.cantidad_suelta ?? 0)
+  if (linea.tipo_bulto === 'CAJA') {
+    return Number(linea.cantidad_suelta ?? 0)
+  }
+  return 0
 }
 
 export function totalCajasLineaConteo(
@@ -166,7 +169,10 @@ export function calcTotalEnCajas(
   _botellasPorCaja = 6
 ): number {
   if (linea.tipo_bulto === 'PALLET') {
-    return Number(linea.cantidad_bultos ?? 0) * Number(linea.unidades_por_bulto ?? 0)
+    return (
+      Number(linea.cantidad_bultos ?? 0) * Number(linea.unidades_por_bulto ?? 0) +
+      Number(linea.cantidad_suelta ?? 0)
+    )
   }
   if (linea.tipo_bulto === 'CAJA') {
     return Number(linea.cantidad_bultos ?? 0)

@@ -68,17 +68,16 @@ jobs:
           body: |
             ## ControlStock ${{ steps.tag.outputs.name }}
 
-            Nueva generación con inventario completo y mejoras de stock.
+            Mejoras de inventario, reconteo y vista previa de cierre.
 
             ### Nuevo
-            - **Inventario:** conteo por sector, comparación cajas/suelto por separado, reconteo y cierre con ajuste de stock
-            - **Planillas modo botellas:** salidas por botella sin sumar cajas en movimientos del día
-            - **Roles y secciones:** Administrador y Usuario con permisos por sección
+            - **Reconteo:** misma vista que el primer conteo, líneas precargadas editables y referencia vos vs compañero
+            - **Consulta por sector:** stock por sector separado de la configuración de sectores
 
             ### Mejorado
-            - **Stock caja vs suelto:** botellerio/pucherio no mezcla unidades con cajas en reportes
-            - **Usuario contador:** puede contar inventario sin permiso de ver stock completo
-            - **Detalle de retornos:** estado por línea (Buen estado / Incompleta / Mal estado)
+            - **Vista previa de cierre:** cajas y botellas en líneas separadas, código más visible, tabla más ancha
+            - **Diferencias:** etiqueta botella/s en lugar de suelto
+            - **Totales pallet + cajas sueltas** corregidos en inventario
 
             ### Actualización
             - Desde **v0.2.7 o superior:** Configuración → Buscar actualizaciones

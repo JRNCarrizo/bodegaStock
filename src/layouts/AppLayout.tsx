@@ -1,16 +1,17 @@
 import { NavLink } from 'react-router-dom'
 import { Boxes, LogOut, Menu, PanelLeft, PanelLeftClose, X } from 'lucide-react'
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { SidebarNavProvider, useSidebarNav } from '@/context/SidebarNavContext'
 import { InventarioActivoBanner } from '@/components/InventarioActivoBanner'
 import { CONFIG_NAV_ITEM, NAV_ICONS, NAV_ITEMS } from '@/config/navigation'
 import { useAuth } from '@/context/AuthContext'
 import { navItemVisible } from '@/types'
-import { cn } from '@/lib/utils'
+import { api, cn } from '@/lib/utils'
 import { Button } from '@/components/ui/Button'
 import type { NavItem } from '@/types'
 
 const SIDEBAR_COLLAPSED_KEY = 'sidebar-collapsed'
+const RETORNOS_PENDIENTES_EVENT = 'retornos-pendientes-changed'
 
 function userInitials(name?: string): string {
   if (!name?.trim()) return '?'
@@ -110,6 +111,45 @@ function AppLayoutShell({
   const { sidebarActive } = useSidebarNav()
 
   const groups = [...new Set(visibleItems.map((i) => i.group))]
+  const canViewRetornos = visibleItems.some((item) => item.id === 'retornos')
+  const [retornosPendientesCount, setRetornosPendientesCount] = useState(0)
+
+  const refreshRetornosPendientes = useCallback(async () => {
+    if (!canViewRetornos) {
+      setRetornosPendientesCount(0)
+      return
+    }
+
+    try {
+      const data = await api<{ count: number }>('/api/retornos/pendientes-count')
+      setRetornosPendientesCount(data.count)
+    } catch {
+      // Si falla el refresco del aviso, no bloquea la navegación.
+    }
+  }, [canViewRetornos])
+
+  useEffect(() => {
+    if (!canViewRetornos) {
+      setRetornosPendientesCount(0)
+      return
+    }
+
+    void refreshRetornosPendientes()
+    const interval = window.setInterval(() => {
+      void refreshRetornosPendientes()
+    }, 30_000)
+    const handleRefresh = () => {
+      void refreshRetornosPendientes()
+    }
+
+    window.addEventListener('focus', handleRefresh)
+    window.addEventListener(RETORNOS_PENDIENTES_EVENT, handleRefresh)
+    return () => {
+      window.clearInterval(interval)
+      window.removeEventListener('focus', handleRefresh)
+      window.removeEventListener(RETORNOS_PENDIENTES_EVENT, handleRefresh)
+    }
+  }, [canViewRetornos, refreshRetornosPendientes])
 
   return (
     <div className="flex h-screen bg-surface-muted">
@@ -149,6 +189,7 @@ function AppLayoutShell({
                         index={index}
                         collapsed={collapsed}
                         end={item.path === '/'}
+                        notificationCount={item.id === 'retornos' ? retornosPendientesCount : 0}
                         onNavigate={() => setMobileOpen(false)}
                       />
                     ))}
@@ -175,6 +216,7 @@ function AppLayoutShell({
                 item={CONFIG_NAV_ITEM}
                 index={configIndex}
                 collapsed={collapsed}
+                notificationCount={0}
                 onNavigate={() => setMobileOpen(false)}
               />
             </ul>
@@ -220,6 +262,7 @@ function AppLayoutShell({
                             item={item}
                             index={index}
                             end={item.path === '/'}
+                            notificationCount={item.id === 'retornos' ? retornosPendientesCount : 0}
                             onNavigate={() => setMobileOpen(false)}
                             mobile
                           />
@@ -233,6 +276,7 @@ function AppLayoutShell({
                 <SidebarNavItem
                   item={CONFIG_NAV_ITEM}
                   index={configIndex}
+                  notificationCount={0}
                   onNavigate={() => setMobileOpen(false)}
                   mobile
                 />
@@ -283,6 +327,7 @@ function SidebarNavItem({
   index,
   end,
   onNavigate,
+  notificationCount = 0,
   mobile = false,
   collapsed = false
 }: {
@@ -290,6 +335,7 @@ function SidebarNavItem({
   index: number
   end?: boolean
   onNavigate?: () => void
+  notificationCount?: number
   mobile?: boolean
   collapsed?: boolean
 }) {
@@ -297,13 +343,17 @@ function SidebarNavItem({
   const { setNavLinkRef, isNavItemHighlighted, handleNavLinkClick, activateNavItem } =
     useSidebarNav()
   const keyboardFocused = isNavItemHighlighted(index)
+  const hasNotification = notificationCount > 0
+  const notificationTitle = hasNotification
+    ? `${item.label}: ${notificationCount} sin verificar`
+    : item.label
 
   const link = (
     <NavLink
       ref={(node) => setNavLinkRef(index, node)}
       to={item.disabled ? '#' : item.path}
       end={end}
-      title={collapsed && !mobile ? item.label : undefined}
+      title={collapsed && !mobile ? notificationTitle : undefined}
       onClick={(e) => {
         if (item.disabled) {
           e.preventDefault()
@@ -339,10 +389,22 @@ function SidebarNavItem({
         )
       }
     >
-      <Icon className="h-4 w-4 shrink-0 transition-colors" />
+      <span className="relative flex shrink-0">
+        <Icon className="h-4 w-4 transition-colors" />
+        {hasNotification && collapsed && !mobile && (
+          <span className="absolute -right-1.5 -top-1.5 inline-flex h-2.5 w-2.5 rounded-full bg-amber-500 ring-2 ring-white" />
+        )}
+      </span>
       {(!collapsed || mobile) && (
         <>
           <span className="truncate">{item.label}</span>
+          {hasNotification && (
+            <span
+              className="ml-auto inline-flex h-2.5 w-2.5 shrink-0 rounded-full bg-amber-500"
+              title={`${notificationCount} sin verificar`}
+              aria-label={`${notificationCount} sin verificar`}
+            />
+          )}
           {item.disabled && (
             <span className="ml-auto shrink-0 rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium text-slate-400 ring-1 ring-surface-border">
               pronto

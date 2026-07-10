@@ -399,7 +399,14 @@ export function ConsultaPage() {
   }
 
   useLayoutEffect(() => {
-    searchInputRef.current?.focus({ preventScroll: true })
+    ;(document.activeElement as HTMLElement | null)?.blur()
+    focusSearchInput()
+    const t1 = window.setTimeout(() => focusSearchInput(), 80)
+    const t2 = window.setTimeout(() => focusSearchInput(), 250)
+    return () => {
+      window.clearTimeout(t1)
+      window.clearTimeout(t2)
+    }
   }, [])
 
   function focusSearchInput(options?: { scrollIntoView?: boolean }) {
@@ -485,14 +492,7 @@ export function ConsultaPage() {
       <Card className="overflow-hidden shadow-panel">
         <div className="border-b border-brand-100 bg-gradient-to-r from-brand-50/80 via-white to-white px-5 py-4 sm:px-6">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-            <div
-              className="relative min-w-0 flex-1"
-              onMouseDown={(e) => {
-                if (e.target === searchInputRef.current) return
-                e.preventDefault()
-                focusSearchInput()
-              }}
-            >
+            <label className="relative block min-w-0 flex-1 cursor-text">
               <Search className="pointer-events-none absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-brand-400" />
               <input
                 ref={searchInputRef}
@@ -504,7 +504,7 @@ export function ConsultaPage() {
                 onKeyDown={handleSearchKeyDown}
                 className="w-full rounded-xl border border-surface-border bg-white py-3 pl-12 pr-4 text-sm shadow-sm transition-shadow placeholder:text-slate-400 focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20"
               />
-            </div>
+            </label>
             <Button
               variant="secondary"
               className="shrink-0 gap-2 rounded-xl px-4"

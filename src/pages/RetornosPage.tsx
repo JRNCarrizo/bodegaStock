@@ -55,19 +55,32 @@ function labelEstado(condicion: RetornoEstadoCondicion): string {
   return ESTADOS_CONDICION.find((e) => e.value === condicion)?.label ?? condicion
 }
 
-function badgeEstadoRetorno(estado: 'PENDIENTE' | 'VERIFICADO') {
+function badgeEstadoRetorno(estado: 'PENDIENTE' | 'VERIFICADO', size: 'sm' | 'md' = 'md') {
+  const compact = size === 'sm'
+  const base = cn(
+    'inline-flex items-center justify-center gap-1.5 rounded-full font-semibold',
+    compact ? 'min-w-[6.5rem] px-2 py-0.5 text-[10px]' : 'min-w-[7.25rem] px-3 py-1 text-xs'
+  )
   if (estado === 'VERIFICADO') {
     return (
-      <span className="inline-flex items-center rounded-full bg-green-50 px-2.5 py-0.5 text-xs font-medium text-green-800 ring-1 ring-green-100">
+      <span className={cn(base, 'bg-emerald-100 text-emerald-800 ring-1 ring-emerald-200')}>
+        <Check className={compact ? 'h-3 w-3 shrink-0' : 'h-3.5 w-3.5 shrink-0'} />
         Verificado
       </span>
     )
   }
   return (
-    <span className="inline-flex items-center rounded-full bg-amber-50 px-2.5 py-0.5 text-xs font-medium text-amber-800 ring-1 ring-amber-100">
+    <span className={cn(base, 'bg-amber-100 text-amber-950 ring-1 ring-amber-300')}>
+      <span className="h-2 w-2 shrink-0 rounded-full bg-amber-500" />
       Sin verificar
     </span>
   )
+}
+
+function filaRetornoClass(estado: 'PENDIENTE' | 'VERIFICADO') {
+  return estado === 'PENDIENTE'
+    ? 'border-l-amber-400 bg-amber-50/50 hover:bg-amber-50'
+    : 'border-l-emerald-400 bg-white hover:bg-slate-50/80'
 }
 
 function badgeCondicion(condicion: RetornoEstadoCondicion) {
@@ -99,6 +112,10 @@ function labelCamionero(numero: string | null | undefined, nombre: string | null
 
 function newTempId(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+}
+
+function notifyRetornosPendientesChanged() {
+  window.dispatchEvent(new Event('retornos-pendientes-changed'))
 }
 
 export function RetornosPage() {
@@ -234,7 +251,6 @@ export function RetornosPage() {
       }
       if (desde) params.set('fecha_desde', desde)
       if (hasta) params.set('fecha_hasta', hasta)
-      if (filtroEstado !== 'TODOS') params.set('estado', filtroEstado)
 
       const data = await api<RetornoListItem[]>(`/api/retornos?${params}`)
       setRetornos(data)
@@ -243,7 +259,22 @@ export function RetornosPage() {
     } finally {
       setLoadingList(false)
     }
-  }, [listSearch, listFechaDesde, listFechaHasta, filtroEstado])
+  }, [listSearch, listFechaDesde, listFechaHasta])
+
+  const retornosVisibles = useMemo(() => {
+    if (filtroEstado === 'TODOS') return retornos
+    return retornos.filter((r) => r.estado === filtroEstado)
+  }, [retornos, filtroEstado])
+
+  const pendientesPorDia = useMemo(() => {
+    const map = new Map<string, number>()
+    for (const r of retornos) {
+      if (r.estado === 'PENDIENTE') {
+        map.set(r.fecha, (map.get(r.fecha) ?? 0) + 1)
+      }
+    }
+    return map
+  }, [retornos])
 
   useEffect(() => {
     if (listFechaDesde && !listFechaHasta) {
@@ -257,14 +288,37 @@ export function RetornosPage() {
 
   const diasConRetornos = useMemo(() => {
     const dias = new Set<string>()
-    for (const r of retornos) dias.add(r.fecha)
+    for (const r of retornosVisibles) dias.add(r.fecha)
     return [...dias].sort((a, b) => b.localeCompare(a))
-  }, [retornos])
+  }, [retornosVisibles])
 
   const retornosDelDia = useMemo(
-    () => retornos.filter((r) => r.fecha === selectedDay),
-    [retornos, selectedDay]
+    () => retornosVisibles.filter((r) => r.fecha === selectedDay),
+    [retornosVisibles, selectedDay]
   )
+
+  const retornosDelDiaOrdenados = useMemo(
+    () =>
+      [...retornosDelDia].sort((a, b) => {
+        if (a.estado !== b.estado) {
+          return a.estado === 'PENDIENTE' ? -1 : 1
+        }
+        return b.id - a.id
+      }),
+    [retornosDelDia]
+  )
+
+  const conteoEstadoFiltros = useMemo(() => {
+    const source =
+      diasConRetornos.length > 0 ? retornos.filter((r) => r.fecha === selectedDay) : retornos
+    let pendiente = 0
+    let verificado = 0
+    for (const r of source) {
+      if (r.estado === 'PENDIENTE') pendiente += 1
+      else verificado += 1
+    }
+    return { pendiente, verificado }
+  }, [retornos, diasConRetornos.length, selectedDay])
 
   const totalCajasDelDia = useMemo(
     () => retornosDelDia.reduce((s, r) => s + r.total_cajas, 0),
@@ -273,11 +327,11 @@ export function RetornosPage() {
 
   const conteoPorDia = useMemo(() => {
     const map = new Map<string, number>()
-    for (const r of retornos) {
+    for (const r of retornosVisibles) {
       map.set(r.fecha, (map.get(r.fecha) ?? 0) + 1)
     }
     return map
-  }, [retornos])
+  }, [retornosVisibles])
 
   useEffect(() => {
     if (loadingList || diasConRetornos.length === 0) return
@@ -606,6 +660,7 @@ export function RetornosPage() {
         })
       })
       await loadRetornos()
+      notifyRetornosPendientesChanged()
       await abrirRetorno(result.id)
       resetCreateForm()
     } catch (err) {
@@ -637,7 +692,7 @@ export function RetornosPage() {
 
   const registroListKb = useRegistroListKeyboard({
     enabled: view === 'list',
-    items: retornosDelDia,
+    items: retornosDelDiaOrdenados,
     listSearchRef,
     canCreate: hasPermiso('retornos.crear'),
     onCreate: abrirNuevoRetorno,
@@ -697,6 +752,7 @@ export function RetornosPage() {
         body: JSON.stringify({ observacion: obsVerificacion.trim() || null })
       })
       await loadRetornos()
+      notifyRetornosPendientesChanged()
       await abrirRetorno(detalle.retorno.id)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error al completar verificación')
@@ -730,8 +786,8 @@ export function RetornosPage() {
               className={cn(
                 'rounded-xl border px-4 py-3.5 sm:px-5',
                 linea.linea_verificada
-                  ? 'border-green-200 bg-green-50/50'
-                  : 'border-surface-border bg-white'
+                  ? 'border-l-4 border-l-emerald-400 border-emerald-200 bg-emerald-50/40'
+                  : 'border-l-4 border-l-amber-400 border-amber-200 bg-amber-50/50'
               )}
             >
               <div className="flex flex-wrap items-start justify-between gap-3">
@@ -836,7 +892,7 @@ export function RetornosPage() {
                       disabled={saving}
                       onClick={() => void confirmarLinea(linea)}
                     >
-                      Guardar y confirmar
+                      Confirmar
                     </Button>
                     <Button
                       type="button"
@@ -1654,27 +1710,57 @@ export function RetornosPage() {
               {hasPermiso('retornos.crear') && ' · Enter = nuevo retorno'}
             </p>
 
-            <div className="flex flex-wrap gap-2">
-              {(['TODOS', 'PENDIENTE', 'VERIFICADO'] as const).map((e) => (
-                <Button
-                  key={e}
-                  type="button"
-                  size="sm"
-                  className="rounded-xl"
-                  variant={filtroEstado === e ? 'primary' : 'secondary'}
-                  onClick={() => setFiltroEstado(e)}
-                >
-                  {e === 'TODOS' ? 'Todos' : e === 'PENDIENTE' ? 'Sin verificar' : 'Verificados'}
-                </Button>
-              ))}
-            </div>
-
             <DayTabsRow
               days={diasConRetornos}
               selectedDay={selectedDay}
               onSelectDay={setSelectedDay}
               getCount={(dia) => conteoPorDia.get(dia) ?? 0}
+              getPendingCount={(dia) => pendientesPorDia.get(dia) ?? 0}
+              hidePendingDotOnDay={todayIsoDate()}
             />
+
+            <div className="flex flex-wrap gap-2">
+              {(
+                [
+                  ['TODOS', 'Todos', conteoEstadoFiltros.pendiente + conteoEstadoFiltros.verificado],
+                  ['PENDIENTE', 'Sin verificar', conteoEstadoFiltros.pendiente],
+                  ['VERIFICADO', 'Verificados', conteoEstadoFiltros.verificado]
+                ] as const
+              ).map(([e, label, count]) => (
+                <Button
+                  key={e}
+                  type="button"
+                  size="sm"
+                  className={cn(
+                    'rounded-xl',
+                    e === 'PENDIENTE' &&
+                      filtroEstado !== 'PENDIENTE' &&
+                      count > 0 &&
+                      'ring-1 ring-amber-300'
+                  )}
+                  variant={filtroEstado === e ? 'primary' : 'secondary'}
+                  onClick={() => setFiltroEstado(e)}
+                >
+                  {label}
+                  {count > 0 && (
+                    <span
+                      className={cn(
+                        'ml-1.5 rounded-full px-1.5 py-0.5 text-[10px] font-bold tabular-nums',
+                        filtroEstado === e
+                          ? 'bg-white/20 text-white'
+                          : e === 'PENDIENTE'
+                            ? 'bg-amber-100 text-amber-900'
+                            : e === 'VERIFICADO'
+                              ? 'bg-emerald-100 text-emerald-800'
+                              : 'bg-slate-200 text-slate-700'
+                      )}
+                    >
+                      {count}
+                    </span>
+                  )}
+                </Button>
+              ))}
+            </div>
           </div>
         </div>
 
@@ -1685,8 +1771,8 @@ export function RetornosPage() {
             </h2>
             <p className="text-xs text-slate-500">
               {diasConRetornos.length > 0
-                ? `${retornosDelDia.length} retorno(s) · ${formatCantidad(totalCajasDelDia)} en el día`
-                : `${retornos.length} retorno(s)`}
+                ? `${retornosDelDia.length} retorno(s) · ${formatCantidad(totalCajasDelDia)} cajas en el día`
+                : `${retornosVisibles.length} retorno(s)`}
             </p>
           </div>
           {loadingList && <Loader2 className="h-5 w-5 shrink-0 animate-spin text-brand-600" />}
@@ -1703,7 +1789,7 @@ export function RetornosPage() {
               <Loader2 className="h-5 w-5 animate-spin text-brand-600" />
               Cargando retornos...
             </div>
-          ) : retornos.length === 0 ? (
+          ) : retornosVisibles.length === 0 ? (
             <div className="flex flex-col items-center px-6 py-16 text-center">
               <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-slate-100 text-slate-400">
                 <RotateCcw className="h-7 w-7" />
@@ -1735,18 +1821,29 @@ export function RetornosPage() {
               <p className="mt-1 text-xs text-slate-500">Probá otra fecha o ajustá la búsqueda</p>
             </div>
           ) : (
-            <ul className="divide-y divide-surface-border">
-              {retornosDelDia.map((r, index) => (
+            <ul className="divide-y divide-surface-border/80">
+              {retornosDelDiaOrdenados.map((r, index) => {
+                const esPendiente = r.estado === 'PENDIENTE'
+                return (
                 <li
                   key={r.id}
                   {...registroListKb.listItemProps(
                     index,
-                    'flex flex-col gap-3 px-4 py-4 transition-colors hover:bg-slate-50/80 sm:flex-row sm:items-center sm:gap-4 sm:px-6'
+                    cn(
+                      'flex flex-col gap-3 border-l-4 px-4 py-4 transition-colors sm:flex-row sm:items-center sm:gap-4 sm:px-6',
+                      filaRetornoClass(r.estado)
+                    )
                   )}
                 >
                   <div className="min-w-0 flex-1">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <p className="text-base font-semibold text-slate-900">
+                    <div className="flex items-center gap-2">
+                      <p
+                        className={cn(
+                          'w-[12ch] shrink-0 truncate text-base font-semibold tabular-nums',
+                          esPendiente ? 'text-amber-950' : 'text-slate-900'
+                        )}
+                        title={r.numero_planilla ?? `Retorno #${r.id}`}
+                      >
                         {r.numero_planilla ?? `Retorno #${r.id}`}
                       </p>
                       {badgeEstadoRetorno(r.estado)}
@@ -1754,7 +1851,7 @@ export function RetornosPage() {
                     {r.observacion?.trim() ? (
                       <p className="mt-1 line-clamp-2 text-xs text-slate-500">{r.observacion}</p>
                     ) : (
-                      <p className="mt-1 text-xs text-slate-400">
+                      <p className="mt-1 text-xs text-slate-500">
                         {r.camionero_nombre
                           ? `${r.camionero_numero ?? ''} — ${r.camionero_nombre}`.trim()
                           : 'Sin camionero asignado'}
@@ -1767,27 +1864,46 @@ export function RetornosPage() {
                         {r.usuario_nombre}
                       </span>
                       {r.verificado_por_nombre && (
-                        <span className="text-green-700">Verificado por {r.verificado_por_nombre}</span>
+                        <span className="inline-flex items-center gap-1 font-medium text-emerald-700">
+                          <Check className="h-3 w-3" />
+                          {r.verificado_por_nombre}
+                        </span>
                       )}
                     </div>
                   </div>
 
                   <div className="flex shrink-0 items-center gap-2 sm:justify-end">
-                    <span className="inline-flex min-w-[3rem] items-center justify-center rounded-lg bg-brand-50 px-2.5 py-1.5 text-sm font-bold tabular-nums text-brand-700 ring-1 ring-brand-100">
+                    <span
+                      className={cn(
+                        'inline-flex min-w-[3rem] items-center justify-center rounded-lg px-2.5 py-1.5 text-sm font-bold tabular-nums ring-1',
+                        esPendiente
+                          ? 'bg-amber-100 text-amber-900 ring-amber-200'
+                          : 'bg-brand-50 text-brand-700 ring-brand-100'
+                      )}
+                    >
                       {formatCantidad(r.total_cajas)}
                     </span>
                     <Button
-                      variant="secondary"
+                      variant={esPendiente ? 'primary' : 'secondary'}
                       size="sm"
                       className="rounded-lg"
                       onClick={() => void abrirRetorno(r.id)}
                     >
-                      <Eye className="h-4 w-4" />
-                      Ver
+                      {esPendiente && hasPermiso('retornos.verificar') ? (
+                        <>
+                          <Check className="h-4 w-4" />
+                          Verificar
+                        </>
+                      ) : (
+                        <>
+                          <Eye className="h-4 w-4" />
+                          Ver
+                        </>
+                      )}
                     </Button>
                   </div>
                 </li>
-              ))}
+              )})}
             </ul>
           )}
         </CardBody>

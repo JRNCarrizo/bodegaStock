@@ -7,9 +7,20 @@ type DayTabsRowProps = {
   selectedDay: string
   onSelectDay: (day: string) => void
   getCount?: (day: string) => number
+  /** Cantidad sin verificar — muestra un punto ámbar en la pestaña */
+  getPendingCount?: (day: string) => number
+  /** En este día no se muestra el punto (ej. hoy) */
+  hidePendingDotOnDay?: string
 }
 
-export function DayTabsRow({ days, selectedDay, onSelectDay, getCount }: DayTabsRowProps) {
+export function DayTabsRow({
+  days,
+  selectedDay,
+  onSelectDay,
+  getCount,
+  getPendingCount,
+  hidePendingDotOnDay
+}: DayTabsRowProps) {
   const scrollRef = useRef<HTMLDivElement>(null)
   const [canScrollLeft, setCanScrollLeft] = useState(false)
   const [canScrollRight, setCanScrollRight] = useState(false)
@@ -70,18 +81,29 @@ export function DayTabsRow({ days, selectedDay, onSelectDay, getCount }: DayTabs
         {days.map((dia) => {
           const active = dia === selectedDay
           const count = getCount?.(dia) ?? 0
+          const pending = getPendingCount?.(dia) ?? 0
+          const showPendingDot = pending > 0 && dia !== hidePendingDotOnDay
           return (
             <button
               key={dia}
               type="button"
               data-day-tab={dia}
               onClick={() => onSelectDay(dia)}
-              className={`flex shrink-0 items-center gap-2 rounded-lg border px-3 py-2 text-sm transition-colors ${
+              className={`relative flex shrink-0 items-center gap-2 rounded-lg border px-3 py-2 text-sm transition-colors ${
                 active
                   ? 'border-brand-500 bg-brand-50 font-semibold text-brand-800 shadow-sm'
-                  : 'border-surface-border bg-white text-slate-600 hover:border-slate-300 hover:bg-slate-50'
+                  : pending > 0
+                    ? 'border-amber-200 bg-amber-50/60 text-slate-700 hover:border-amber-300 hover:bg-amber-50'
+                    : 'border-surface-border bg-white text-slate-600 hover:border-slate-300 hover:bg-slate-50'
               }`}
             >
+              {showPendingDot && (
+                <span
+                  className="inline-flex h-2 w-2 shrink-0 rounded-full bg-amber-500"
+                  title={`${pending} sin verificar`}
+                  aria-hidden
+                />
+              )}
               <span>{formatDayTabLabel(dia)}</span>
               <span
                 className={`rounded-full px-1.5 py-0.5 text-xs font-medium ${

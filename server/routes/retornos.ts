@@ -167,6 +167,19 @@ function getRetornoHeader(db: ReturnType<typeof getDb>, id: number) {
 }
 
 export async function retornosRoutes(app: FastifyInstance): Promise<void> {
+  app.get('/api/retornos/pendientes-count', {
+    preHandler: requirePermiso('retornos.ver')
+  }, async () => {
+    const db = getDb()
+    const row = db.prepare(`
+      SELECT COUNT(*) AS count
+      FROM retornos
+      WHERE estado = 'PENDIENTE'
+    `).get() as { count: number } | undefined
+
+    return { count: row?.count ?? 0 }
+  })
+
   app.get('/api/retornos', {
     preHandler: requirePermiso('retornos.ver')
   }, async (request) => {

@@ -72,3 +72,36 @@ export async function api<T>(
 
   return data as T
 }
+
+/** SQLite datetime('now') se guarda en UTC sin sufijo de zona horaria. */
+export function parseDbDateTimeUtc(value: string): Date {
+  const trimmed = value.trim()
+  if (!trimmed) return new Date(Number.NaN)
+
+  if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
+    const [y, m, d] = trimmed.split('-').map(Number)
+    return new Date(y, m - 1, d)
+  }
+
+  const normalized = trimmed.includes('T') ? trimmed : trimmed.replace(' ', 'T')
+  if (/[zZ]|[+-]\d{2}:\d{2}$/.test(normalized)) {
+    return new Date(normalized)
+  }
+
+  return new Date(`${normalized}Z`)
+}
+
+export function formatDbDateTimeLocal(
+  value: string,
+  options: Intl.DateTimeFormatOptions = {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit'
+  }
+): string {
+  const d = parseDbDateTimeUtc(value)
+  if (Number.isNaN(d.getTime())) return value
+  return d.toLocaleString('es-AR', options)
+}

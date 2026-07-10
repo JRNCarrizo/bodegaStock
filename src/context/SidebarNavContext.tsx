@@ -37,9 +37,18 @@ function findActiveRouteIndex(items: NavItem[], pathname: string): number {
   return items.findIndex((item) => routeMatches(item.path, pathname))
 }
 
+function blurFocusOutsideMain(main: HTMLElement) {
+  const active = document.activeElement
+  if (!(active instanceof HTMLElement)) return
+  if (main.contains(active)) return
+  active.blur()
+}
+
 function focusMainSearchOrContent(mainFocusHandlers: Set<() => boolean>) {
   const main = document.querySelector('main')
   if (!main) return
+
+  blurFocusOutsideMain(main)
 
   const active = document.activeElement
   if (active instanceof HTMLElement && main.contains(active)) {
@@ -67,12 +76,14 @@ function focusMainSearchOrContent(mainFocusHandlers: Set<() => boolean>) {
   const retry = () => {
     if (tryFocus()) return
     attempts += 1
-    if (attempts < 4) requestAnimationFrame(retry)
+    if (attempts < 6) requestAnimationFrame(retry)
   }
 
   requestAnimationFrame(retry)
-  window.setTimeout(tryFocus, 100)
-  window.setTimeout(tryFocus, 280)
+  window.setTimeout(tryFocus, 50)
+  window.setTimeout(tryFocus, 150)
+  window.setTimeout(tryFocus, 350)
+  window.setTimeout(tryFocus, 600)
 }
 
 export function SidebarNavProvider({
@@ -156,6 +167,7 @@ export function SidebarNavProvider({
       if (!item || item.disabled) return
       navigate(item.path)
       setSidebarActive(false)
+      ;(document.activeElement as HTMLElement | null)?.blur()
       requestAnimationFrame(() => focusMainSearchOrContent(mainFocusHandlersRef.current))
     },
     [navigate, visibleItems]
@@ -166,6 +178,7 @@ export function SidebarNavProvider({
       if (disabled) return
       setHighlightIndex(index)
       setSidebarActive(false)
+      ;(document.activeElement as HTMLElement | null)?.blur()
       requestAnimationFrame(() => focusMainSearchOrContent(mainFocusHandlersRef.current))
     },
     []

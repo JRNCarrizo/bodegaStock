@@ -68,16 +68,6 @@ export function todayIsoDateLocal(): string {
   return `${y}-${m}-${day}`
 }
 
-function addIsoDays(isoDate: string, days: number): string {
-  const [y, m, d] = isoDate.split('-').map(Number)
-  const date = new Date(y, m - 1, d)
-  date.setDate(date.getDate() + days)
-  const ny = date.getFullYear()
-  const nm = String(date.getMonth() + 1).padStart(2, '0')
-  const nd = String(date.getDate()).padStart(2, '0')
-  return `${ny}-${nm}-${nd}`
-}
-
 export function resolveReporteDateRange(
   fechaDesde?: string,
   fechaHasta?: string,
@@ -232,12 +222,23 @@ function sumRoturaCajasAfter(db: Database.Database, fecha: string): number {
   return row.total
 }
 
+function sumAjusteInventarioCajasAfter(db: Database.Database, fecha: string): number {
+  const row = db.prepare(`
+    SELECT COALESCE(SUM(m.cantidad), 0) AS total
+    FROM movimientos m
+    WHERE m.tipo = 'AJUSTE_INVENTARIO'
+      AND date(m.created_at) > date(?)
+  `).get(fecha) as { total: number }
+  return row.total
+}
+
 function netMovimientoAfterDate(db: Database.Database, fecha: string): number {
   const ingresos = sumIngresoCajasAfter(db, fecha)
   const retornos = sumRetornoCajasBuenEstadoAfter(db, fecha)
   const planillas = sumPlanillaCajasAfter(db, fecha)
   const roturas = sumRoturaCajasAfter(db, fecha)
-  return ingresos + retornos - planillas - roturas
+  const inventario = sumAjusteInventarioCajasAfter(db, fecha)
+  return ingresos + retornos + inventario - planillas - roturas
 }
 
 /** Stock al cierre del día `fecha` (incluye movimientos de ese día). */
@@ -245,11 +246,6 @@ function getStockAtEndOfDay(db: Database.Database, fecha: string, today: string)
   if (fecha > today) return 0
   if (fecha >= today) return getStockTotalCajas(db)
   return getStockTotalCajas(db) - netMovimientoAfterDate(db, fecha)
-}
-
-/** Stock al inicio del día `fecha` (antes de movimientos de ese día). */
-function getStockAtStartOfDay(db: Database.Database, fecha: string, today: string): number {
-  return getStockAtEndOfDay(db, addIsoDays(fecha, -1), today)
 }
 
 function aggregateByProducto(
@@ -342,13 +338,15 @@ function detalleStockInicial(
   const retornos = itemsToMap(detalleRetornos(db, desde, hasta))
   const planillas = itemsToMap(detallePlanillas(db, desde, hasta))
   const roturas = itemsToMap(detalleRoturas(db, desde, hasta))
+  const inventario = itemsToMap(detalleAjusteInventario(db, desde, hasta))
 
   const keys = new Set<string>([
     ...actual.keys(),
     ...ingresos.keys(),
     ...retornos.keys(),
     ...planillas.keys(),
-    ...roturas.keys()
+    ...roturas.keys(),
+    ...inventario.keys()
   ])
 
   const items: ReporteDetalleItem[] = []
@@ -359,12 +357,14 @@ function detalleStockInicial(
       ingresos.get(key) ??
       retornos.get(key) ??
       planillas.get(key) ??
-      roturas.get(key)
+      roturas.get(key) ??
+      inventario.get(key)
     if (!ref) continue
 
     const net =
       qtyFromMap(ingresos, key) +
-      qtyFromMap(retornos, key) -
+      qtyFromMap(retornos, key) +
+      qtyFromMap(inventario, key) -
       qtyFromMap(planillas, key) -
       qtyFromMap(roturas, key)
     const inicial = roundCajas(qtyFromMap(actual, key) - net)
@@ -379,6 +379,12 @@ function detalleStockInicial(
 
   return items.sort((a, b) =>
     a.nombre.localeCompare(b.nombre, 'es', { sensitivity: 'base' })
+  )
+}
+
+function sumStockInicialDetalle(db: Database.Database, desde: string, hasta: string): number {
+  return roundCajas(
+    detalleStockInicial(db, desde, hasta).reduce((sum, item) => sum + item.cantidad_cajas, 0)
   )
 }
 
@@ -419,6 +425,45 @@ function detalleRoturas(
     WHERE r.fecha >= ? AND r.fecha <= ?
   `).all(desde, hasta) as LineaStockRow[]
   return aggregateByProducto(db, rows)
+}
+
+function detalleAjusteInventario(
+  db: Database.Database,
+  desde: string,
+  hasta: string
+): ReporteDetalleItem[] {
+  const rows = db.prepare(`
+    SELECT
+      m.producto_id,
+      p.codigo_interno,
+      p.nombre,
+      m.cantidad AS cantidad_cajas
+    FROM movimientos m
+    JOIN productos p ON p.id = m.producto_id
+    WHERE m.tipo = 'AJUSTE_INVENTARIO'
+      AND date(m.created_at) >= date(?)
+      AND date(m.created_at) <= date(?)
+  `).all(desde, hasta) as LineaStockRow[]
+
+  const map = new Map<number, ReporteDetalleItem>()
+  for (const row of rows) {
+    const cajas = Number(row.cantidad_cajas ?? 0)
+    if (Math.abs(cajas) <= 0.0001) continue
+    const existing = map.get(row.producto_id)
+    if (existing) {
+      existing.cantidad_cajas = roundCajas(existing.cantidad_cajas + cajas)
+    } else {
+      map.set(row.producto_id, {
+        codigo_interno: row.codigo_interno ?? '',
+        nombre: row.nombre ?? '',
+        cantidad_cajas: roundCajas(cajas)
+      })
+    }
+  }
+
+  return Array.from(map.values()).sort((a, b) =>
+    a.nombre.localeCompare(b.nombre, 'es', { sensitivity: 'base' })
+  )
 }
 
 function detalleStockPorProducto(db: Database.Database): ReporteDetalleItem[] {
@@ -464,7 +509,7 @@ export function getMovimientosDiaReport(
   const planillas = sumPlanillaCajasInRange(db, desde, hasta)
   const roturas = sumRoturaCajasInRange(db, desde, hasta)
 
-  const stock_inicial = Math.max(0, getStockAtStartOfDay(db, desde, today))
+  const stock_inicial = sumStockInicialDetalle(db, desde, hasta)
   const balance_final = Math.max(0, getStockAtEndOfDay(db, hasta, today))
 
   const perdidosRow = db.prepare(`
@@ -526,8 +571,8 @@ export function getReporteDetalle(
       total = report.roturas
       break
     case 'stock_inicial':
-      total = report.stock_inicial
       items = detalleStockInicial(db, desde, hasta)
+      total = roundCajas(items.reduce((sum, item) => sum + item.cantidad_cajas, 0))
       break
     case 'balance_final':
       total = report.balance_final

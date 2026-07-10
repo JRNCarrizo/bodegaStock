@@ -37,7 +37,7 @@ import {
   type TipoBulto,
   type TotalesInventarioDesglose
 } from '@/lib/desglose'
-import { api, cn } from '@/lib/utils'
+import { api, cn, formatDbDateTimeLocal } from '@/lib/utils'
 import type {
   InventarioConteoLinea,
   InventarioMisSector,
@@ -76,6 +76,18 @@ function estadoSesionLabel(estado: string): string {
     CANCELADA: 'Cancelada'
   }
   return map[estado] ?? estado
+}
+
+function sesionFechasResumen(ses: {
+  fecha_inicio: string | null
+  fecha_cierre: string | null
+  created_at: string
+}): string {
+  if (ses.fecha_cierre && ses.fecha_inicio) {
+    return `${formatDbDateTimeLocal(ses.fecha_inicio)} → ${formatDbDateTimeLocal(ses.fecha_cierre)}`
+  }
+  if (ses.fecha_inicio) return `Inicio: ${formatDbDateTimeLocal(ses.fecha_inicio)}`
+  return `Creada: ${formatDbDateTimeLocal(ses.created_at)}`
 }
 
 function tipoInventarioLabel(tipo: string): string {
@@ -576,7 +588,7 @@ function InventarioReporteCierre({
           <div>
             <h2 className="font-semibold text-slate-800">Reporte de cierre</h2>
             <p className="mt-1 text-xs text-slate-500">
-              Generado el {new Date(created_at).toLocaleString('es-AR')}
+              Generado el {formatDbDateTimeLocal(created_at)}
             </p>
           </div>
           {todoOk && (
@@ -1960,10 +1972,17 @@ export function InventarioPage() {
             <ArrowLeft className="h-4 w-4" />
             Volver
           </Button>
-          <h1 className="text-xl font-semibold text-slate-800">{s.nombre}</h1>
-          <span className="rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-medium text-slate-600">
-            {estadoSesionLabel(s.estado)}
-          </span>
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-2">
+              <h1 className="text-xl font-semibold text-slate-800">{s.nombre}</h1>
+              <span className="rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-medium text-slate-600">
+                {estadoSesionLabel(s.estado)}
+              </span>
+            </div>
+            <p className="mt-0.5 text-sm text-slate-500">
+              {sesionFechasResumen(s)} · {s.creado_por_nombre}
+            </p>
+          </div>
         </div>
 
         {error && (
@@ -2106,8 +2125,9 @@ export function InventarioPage() {
                     onClick={() => void loadSesion(ses.id)}
                     className="flex w-full shrink-0 items-center justify-between rounded-lg border border-surface-border px-3 py-3 text-left hover:bg-slate-50"
                   >
-                    <div>
+                    <div className="min-w-0">
                       <p className="font-medium text-slate-800">{ses.nombre}</p>
+                      <p className="text-xs text-slate-500">{sesionFechasResumen(ses)}</p>
                       <p className="text-xs text-slate-500">
                         {ses.creado_por_nombre} · {ses.sectores_ok}/{ses.sectores_total} sectores OK
                       </p>

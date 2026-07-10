@@ -48,6 +48,12 @@
     "typescript": "^5.7.2",
     "vite": "^5.4.11"
   },
+  "allowScripts": {
+    "better-sqlite3": true,
+    "electron": true,
+    "esbuild": true,
+    "fsevents": true
+  },
   "build": {
     "appId": "com.jrncarrizo.bodegastock",
     "productName": "ControlStock",

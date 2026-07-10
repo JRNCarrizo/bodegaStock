@@ -1,6 +1,4 @@
 export function scrollElementFullyIntoView(el: HTMLElement, margin = 20) {
-  el.scrollIntoView({ block: 'nearest' })
-
   let scrollParent: HTMLElement | null = el.parentElement
   while (scrollParent) {
     const { overflowY } = getComputedStyle(scrollParent)
@@ -11,7 +9,10 @@ export function scrollElementFullyIntoView(el: HTMLElement, margin = 20) {
   }
 
   const container = scrollParent
-  if (!container) return
+  if (!container) {
+    el.scrollIntoView({ block: 'nearest' })
+    return
+  }
 
   const elRect = el.getBoundingClientRect()
   const containerRect = container.getBoundingClientRect()
@@ -25,8 +26,8 @@ export function scrollElementFullyIntoView(el: HTMLElement, margin = 20) {
   }
 }
 
-export function focusAndScrollIntoView(el: HTMLElement | null | undefined) {
+export function focusAndScrollIntoView(el: HTMLElement | null | undefined, margin = 20) {
   if (!el) return
   el.focus({ preventScroll: true })
-  requestAnimationFrame(() => scrollElementFullyIntoView(el))
+  requestAnimationFrame(() => scrollElementFullyIntoView(el, margin))
 }

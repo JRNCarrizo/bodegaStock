@@ -75,12 +75,6 @@ function focusMainSearchOrContent(mainFocusHandlers: Set<() => boolean>) {
   window.setTimeout(tryFocus, 280)
 }
 
-function isFocusInMain(): boolean {
-  const main = document.querySelector('main')
-  const active = document.activeElement
-  return !!(main && active instanceof HTMLElement && main.contains(active))
-}
-
 export function SidebarNavProvider({
   visibleItems,
   children,
@@ -123,6 +117,9 @@ export function SidebarNavProvider({
     const idx = activeRouteIndex >= 0 ? activeRouteIndex : 0
     setHighlightIndex(idx)
     setSidebarActive(true)
+    requestAnimationFrame(() => {
+      navLinkRefs.current[idx]?.focus({ preventScroll: true })
+    })
   }, [activeRouteIndex])
 
   const blurSidebar = useCallback(() => {
@@ -190,11 +187,6 @@ export function SidebarNavProvider({
     if (!sidebarActive) return
 
     function onKeyDown(e: KeyboardEvent) {
-      if (isFocusInMain()) {
-        setSidebarActive(false)
-        return
-      }
-
       if (e.key === 'ArrowDown') {
         e.preventDefault()
         moveHighlight(1)
@@ -257,8 +249,8 @@ export function SidebarNavProvider({
       focusSidebar()
     }
 
-    window.addEventListener('keydown', onKeyDown)
-    return () => window.removeEventListener('keydown', onKeyDown)
+    window.addEventListener('keydown', onKeyDown, true)
+    return () => window.removeEventListener('keydown', onKeyDown, true)
   }, [sidebarActive, blurSidebar, focusSidebar])
 
   useLayoutEffect(() => {

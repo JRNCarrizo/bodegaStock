@@ -21,7 +21,7 @@
 | Perfil | Uso principal |
 |--------|---------------|
 | Administrador/Desktop | Administración, reportes, altas, configuración |
-| Operador de bodega | Ingresos, movimientos, roturas (celular o PC) |
+| Operador de bodega | Roturas, movimientos (celular o PC); ingresos en PC |
 | Planillero | Carga de planillas con camionero asignado |
 | Verificador | Confirma retornos cargados por otro usuario |
 | Contador | Participa en inventarios desde el celular |
@@ -58,7 +58,7 @@
 
 1. **Un solo servidor:** el PC con Electron aloja la base de datos y la API.
 2. **Clientes móviles:** se conectan por IP local (ej. `http://192.168.1.50:3847`).
-3. **Tiempo real:** WebSockets para inventario dual y actualizaciones en vivo.
+3. **Tiempo real:** WebSockets opcionales (inventario y avisos); v1 puede usar REST + polling. Ver [APP-MOVIL.md](APP-MOVIL.md).
 4. **Stock por sector:** un producto puede existir en varios sectores con cantidades distintas.
 5. **Ledger de movimientos:** casi todo cambio de stock genera un registro auditable; no se edita stock "a mano" salvo ajustes autorizados post-inventario.
 6. **Sin internet requerido:** funciona en LAN interna.
@@ -352,7 +352,7 @@ Administración de cuentas y permisos. Ver documento: [USUARIOS-Y-PERMISOS.md](U
 |--------|:-------------:|:-------------:|
 | Productos (alta/edición) | ✓ | Consulta/escaneo |
 | Consulta | ✓ | ✓ |
-| Ingresos | ✓ | ✓ |
+| Ingresos | ✓ | — (v1; solo PC, ver [APP-MOVIL.md](APP-MOVIL.md)) |
 | Carga planillas | ✓ | ✓ |
 | Retornos (cargar) | ✓ | ✓ |
 | Retornos (verificar) | ✓ | ✓ |
@@ -399,7 +399,7 @@ Ver [APP-MOVIL.md](APP-MOVIL.md).
 - [ ] Login + permisos + conexión LAN (IP / QR)
 - [ ] Escaneo de código de barras (cámara)
 - [ ] **Consulta** de stock con desglose
-- [ ] **Ingresos** desde bodega
+- [ ] ~~**Ingresos** desde bodega~~ → solo PC (remito; ver APP-MOVIL.md)
 - [ ] **Retornos** (cargar + verificar)
 - [ ] **Roturas** y pérdidas
 - [ ] Carga de planillas / movimientos internos

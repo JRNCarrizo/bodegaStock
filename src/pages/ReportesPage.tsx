@@ -276,7 +276,8 @@ const REPORTE_CARD_TIPOS: ReporteDetalleTipo[] = [
 
 export function ReportesPage() {
   const { hasPermiso } = useAuth()
-  const { registerEscHandler, registerMainContentFocus, focusSidebar } = useSidebarNav()
+  const { registerEscHandler, registerMainContentFocus, focusSidebar, sidebarActive } =
+    useSidebarNav()
   const canExport = hasPermiso('reportes.exportar')
 
   const [fechaDesde, setFechaDesde] = useState('')
@@ -290,6 +291,8 @@ export function ReportesPage() {
   const [showDetalle, setShowDetalle] = useState(false)
   const [cardHighlight, setCardHighlight] = useState(-1)
   const keyboardNavRef = useRef(false)
+  const sidebarActiveRef = useRef(sidebarActive)
+  sidebarActiveRef.current = sidebarActive
   const reportRef = useRef(report)
   const loadingRef = useRef(loading)
   const showDetalleRef = useRef(showDetalle)
@@ -299,6 +302,7 @@ export function ReportesPage() {
 
   const focusStockInicialCard = useCallback(() => {
     if (!reportRef.current || loadingRef.current || showDetalleRef.current) return false
+    if (sidebarActiveRef.current) return false
     setCardHighlight(0)
     requestAnimationFrame(() => {
       const el = document.querySelector('[data-reporte-card="0"]') as HTMLElement | null
@@ -360,6 +364,16 @@ export function ReportesPage() {
     if (!report || showDetalle) return
 
     const onKeyDown = (e: KeyboardEvent) => {
+      if (sidebarActiveRef.current) return
+
+      if (e.key === 'Escape' && cardHighlight >= 0) {
+        e.preventDefault()
+        setCardHighlight(-1)
+        ;(document.activeElement as HTMLElement | null)?.blur()
+        focusSidebar()
+        return
+      }
+
       if (e.key === 'ArrowDown' || e.key === 'ArrowRight') {
         e.preventDefault()
         keyboardNavRef.current = true
@@ -367,28 +381,29 @@ export function ReportesPage() {
         return
       }
       if (e.key === 'ArrowUp' || e.key === 'ArrowLeft') {
+        if (cardHighlight < 0) return
         e.preventDefault()
         keyboardNavRef.current = true
         setCardHighlight((i) => Math.max(Math.max(i, 0) - 1, 0))
         return
       }
-      if (e.key === 'Enter') {
+      if (e.key === 'Enter' && cardHighlight >= 0) {
         if (!shouldAbrirFormularioConEnter(e.target)) return
         e.preventDefault()
-        const idx = Math.max(cardHighlight, 0)
-        const tipo = REPORTE_CARD_TIPOS[idx]
+        const tipo = REPORTE_CARD_TIPOS[cardHighlight]
         if (tipo) void abrirDetalle(tipo)
       }
     }
 
     window.addEventListener('keydown', onKeyDown, true)
     return () => window.removeEventListener('keydown', onKeyDown, true)
-  }, [report, showDetalle, cardHighlight])
+  }, [report, showDetalle, cardHighlight, focusSidebar])
 
   useEffect(() => {
     if (!report || showDetalle || cardHighlight < 0) return
     return registerEscHandler(() => {
       setCardHighlight(-1)
+      ;(document.activeElement as HTMLElement | null)?.blur()
       focusSidebar()
       return true
     })

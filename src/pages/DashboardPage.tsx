@@ -1,7 +1,8 @@
-import { useMemo } from 'react'
-import { Link } from 'react-router-dom'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { Link, useNavigate } from 'react-router-dom'
 import {
   ArrowRight,
+  BarChart3,
   Boxes,
   ChevronRight,
   ClipboardList,
@@ -11,8 +12,11 @@ import {
 } from 'lucide-react'
 import { NAV_ICONS, NAV_ITEMS } from '@/config/navigation'
 import { useAuth } from '@/context/AuthContext'
+import { useSidebarNav } from '@/context/SidebarNavContext'
 import { Card } from '@/components/ui/Card'
+import { shouldAbrirFormularioConEnter } from '@/hooks/useRegistroListKeyboard'
 import { cn } from '@/lib/utils'
+import { focusAndScrollIntoView } from '@/lib/scroll'
 import type { NavItem } from '@/types'
 import { navItemVisible } from '@/types'
 
@@ -31,68 +35,68 @@ const MODULE_DESCRIPTIONS: Record<string, string> = {
   reportes: 'Resumen de movimientos del día'
 }
 
-const QUICK_LINK_IDS = ['consulta', 'ingresos', 'planillas'] as const
+const QUICK_LINK_IDS = ['consulta', 'planillas', 'reportes'] as const
 
 const GROUP_STYLES: Record<
   string,
   { card: string; iconBox: string; hoverBorder: string }
 > = {
   General: {
-    card: 'border-brand-100 bg-gradient-to-br from-brand-50/80 to-white',
+    card: 'border-brand-200/80 bg-white',
     iconBox: 'bg-brand-600 text-white shadow-sm',
-    hoverBorder: 'hover:border-brand-200'
+    hoverBorder: 'hover:border-brand-300'
   },
   Catálogo: {
-    card: 'border-violet-100 bg-gradient-to-br from-violet-50/80 to-white',
+    card: 'border-violet-200/80 bg-white',
     iconBox: 'bg-violet-600 text-white shadow-sm',
-    hoverBorder: 'hover:border-violet-200'
+    hoverBorder: 'hover:border-violet-300'
   },
   Movimientos: {
-    card: 'border-emerald-100 bg-gradient-to-br from-emerald-50/80 to-white',
+    card: 'border-emerald-200/80 bg-white',
     iconBox: 'bg-emerald-600 text-white shadow-sm',
-    hoverBorder: 'hover:border-emerald-200'
+    hoverBorder: 'hover:border-emerald-300'
   },
   Inventario: {
-    card: 'border-amber-100 bg-gradient-to-br from-amber-50/80 to-white',
+    card: 'border-amber-200/80 bg-white',
     iconBox: 'bg-amber-600 text-white shadow-sm',
-    hoverBorder: 'hover:border-amber-200'
+    hoverBorder: 'hover:border-amber-300'
   },
   Administración: {
-    card: 'border-slate-200 bg-gradient-to-br from-slate-50/90 to-white',
+    card: 'border-slate-200 bg-white',
     iconBox: 'bg-slate-600 text-white shadow-sm',
     hoverBorder: 'hover:border-slate-300'
   },
   Reportes: {
-    card: 'border-orange-100 bg-gradient-to-br from-orange-50/80 to-white',
+    card: 'border-orange-200/80 bg-white',
     iconBox: 'bg-orange-600 text-white shadow-sm',
-    hoverBorder: 'hover:border-orange-200'
+    hoverBorder: 'hover:border-orange-300'
   }
 }
 
 const QUICK_LINK_STYLES = [
   {
     id: 'consulta',
-    card: 'border-brand-100 bg-gradient-to-br from-brand-50/90 to-white',
+    card: 'border-brand-200/80 bg-white',
     iconBox: 'bg-brand-600 text-white shadow-sm',
-    hoverBorder: 'hover:border-brand-200',
+    hoverBorder: 'hover:border-brand-300',
     linkText: 'text-brand-600 group-hover:text-brand-700',
     icon: Search
   },
   {
-    id: 'ingresos',
-    card: 'border-emerald-100 bg-gradient-to-br from-emerald-50/90 to-white',
-    iconBox: 'bg-emerald-600 text-white shadow-sm',
-    hoverBorder: 'hover:border-emerald-200',
-    linkText: 'text-emerald-600 group-hover:text-emerald-700',
-    icon: Boxes
-  },
-  {
     id: 'planillas',
-    card: 'border-violet-100 bg-gradient-to-br from-violet-50/90 to-white',
+    card: 'border-violet-200/80 bg-white',
     iconBox: 'bg-violet-600 text-white shadow-sm',
-    hoverBorder: 'hover:border-violet-200',
+    hoverBorder: 'hover:border-violet-300',
     linkText: 'text-violet-600 group-hover:text-violet-700',
     icon: ClipboardList
+  },
+  {
+    id: 'reportes',
+    card: 'border-orange-200/80 bg-white',
+    iconBox: 'bg-orange-600 text-white shadow-sm',
+    hoverBorder: 'hover:border-orange-300',
+    linkText: 'text-orange-600 group-hover:text-orange-700',
+    icon: BarChart3
   }
 ] as const
 
@@ -140,7 +144,22 @@ function SectionHeading({
   )
 }
 
-function ModuleCard({ item }: { item: NavItem }) {
+const CARD_HIGHLIGHT =
+  'ring-2 ring-brand-500 ring-offset-2 ring-offset-slate-100/80 z-[1]'
+
+const CARD_SCROLL_MARGIN = 40
+
+function ModuleCard({
+  item,
+  cardIndex,
+  highlighted,
+  onMouseEnterCard
+}: {
+  item: NavItem
+  cardIndex?: number
+  highlighted?: boolean
+  onMouseEnterCard?: () => void
+}) {
   const Icon = NAV_ICONS[item.id] ?? Boxes
   const styles = GROUP_STYLES[item.group] ?? GROUP_STYLES.General
   const description = MODULE_DESCRIPTIONS[item.id] ?? item.label
@@ -173,11 +192,16 @@ function ModuleCard({ item }: { item: NavItem }) {
   return (
     <Link
       to={item.path}
+      data-dashboard-card={cardIndex}
+      tabIndex={-1}
+      onMouseEnter={onMouseEnterCard}
       className={cn(
-        'group relative flex h-full flex-col rounded-xl border p-5 shadow-panel transition-all duration-200',
+        'group relative flex h-full flex-col rounded-xl border p-5 shadow-md transition-all duration-200 outline-none scroll-m-10',
         'hover:-translate-y-0.5 hover:shadow-lg',
+        'focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-2',
         styles.card,
-        styles.hoverBorder
+        styles.hoverBorder,
+        highlighted && CARD_HIGHLIGHT
       )}
     >
       <div className="flex items-start justify-between gap-3">
@@ -201,8 +225,16 @@ function ModuleCard({ item }: { item: NavItem }) {
 }
 
 export function DashboardPage() {
+  const navigate = useNavigate()
   const { user, hasPermiso } = useAuth()
+  const { registerEscHandler, registerMainContentFocus, focusSidebar, sidebarActive } =
+    useSidebarNav()
   const firstName = user?.nombre?.split(' ')[0] ?? 'Usuario'
+  const [cardHighlight, setCardHighlight] = useState(-1)
+  const keyboardNavRef = useRef(false)
+  const navigableCountRef = useRef(0)
+  const sidebarActiveRef = useRef(sidebarActive)
+  sidebarActiveRef.current = sidebarActive
 
   const visibleItems = useMemo(
     () =>
@@ -225,6 +257,111 @@ export function DashboardPage() {
     () => [...new Set(visibleItems.map((item) => item.group))],
     [visibleItems]
   )
+
+  const navigableCount = useMemo(() => {
+    const moduleCount = visibleItems.filter((item) => !item.disabled).length
+    return quickLinks.length + moduleCount
+  }, [quickLinks, visibleItems])
+
+  navigableCountRef.current = navigableCount
+
+  const focusFirstCard = useCallback(() => {
+    if (navigableCountRef.current === 0 || sidebarActiveRef.current) return false
+    setCardHighlight(0)
+    return true
+  }, [])
+
+  useEffect(() => {
+    return registerMainContentFocus(focusFirstCard)
+  }, [registerMainContentFocus, focusFirstCard])
+
+  useEffect(() => {
+    setCardHighlight(-1)
+  }, [navigableCount])
+
+  useLayoutEffect(() => {
+    if (cardHighlight < 0) return
+    keyboardNavRef.current = true
+    const el = document.querySelector(
+      `[data-dashboard-card="${cardHighlight}"]`
+    ) as HTMLElement | null
+    if (!el) return
+    focusAndScrollIntoView(el, CARD_SCROLL_MARGIN)
+  }, [cardHighlight])
+
+  useEffect(() => {
+    if (navigableCount === 0) return
+    const onMouseMove = () => {
+      keyboardNavRef.current = false
+    }
+    window.addEventListener('mousemove', onMouseMove, { passive: true })
+    return () => window.removeEventListener('mousemove', onMouseMove)
+  }, [navigableCount])
+
+  useEffect(() => {
+    if (navigableCount === 0) return
+
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (sidebarActiveRef.current) return
+
+      if (e.key === 'Escape' && cardHighlight >= 0) {
+        e.preventDefault()
+        setCardHighlight(-1)
+        ;(document.activeElement as HTMLElement | null)?.blur()
+        focusSidebar()
+        return
+      }
+
+      if (e.key === 'ArrowDown' || e.key === 'ArrowRight') {
+        if (cardHighlight < 0) {
+          e.preventDefault()
+          keyboardNavRef.current = true
+          setCardHighlight(0)
+          return
+        }
+        e.preventDefault()
+        keyboardNavRef.current = true
+        setCardHighlight((i) => Math.min(i + 1, navigableCountRef.current - 1))
+        return
+      }
+      if (e.key === 'ArrowUp' || e.key === 'ArrowLeft') {
+        if (cardHighlight < 0) return
+        e.preventDefault()
+        keyboardNavRef.current = true
+        setCardHighlight((i) => Math.max(i - 1, 0))
+        return
+      }
+      if (e.key === 'Enter' && cardHighlight >= 0) {
+        if (!shouldAbrirFormularioConEnter(e.target)) return
+        e.preventDefault()
+        const el = document.querySelector(
+          `[data-dashboard-card="${cardHighlight}"]`
+        ) as HTMLAnchorElement | null
+        const path = el?.getAttribute('href')
+        if (path) navigate(path)
+      }
+    }
+
+    window.addEventListener('keydown', onKeyDown, true)
+    return () => window.removeEventListener('keydown', onKeyDown, true)
+  }, [navigableCount, cardHighlight, navigate, focusSidebar])
+
+  useEffect(() => {
+    if (cardHighlight < 0) return
+    return registerEscHandler(() => {
+      setCardHighlight(-1)
+      ;(document.activeElement as HTMLElement | null)?.blur()
+      focusSidebar()
+      return true
+    })
+  }, [cardHighlight, registerEscHandler, focusSidebar])
+
+  function focusCard(index: number) {
+    if (keyboardNavRef.current) return
+    setCardHighlight(index)
+  }
+
+  let nextCardIndex = 0
 
   return (
     <div className="mx-auto max-w-6xl space-y-6">
@@ -266,97 +403,124 @@ export function DashboardPage() {
         </div>
       </Card>
 
-      {quickLinks.length > 0 && (
-        <section>
-          <SectionHeading
-            eyebrow="Atajos"
-            title="Accesos rápidos"
-            description="Las tareas más frecuentes del día"
-          />
+      <div className="relative overflow-hidden rounded-2xl border border-slate-200/80 bg-gradient-to-br from-slate-200/55 via-slate-100/70 to-brand-100/35 p-5 shadow-inner sm:p-6">
+        <div className="pointer-events-none absolute -right-16 -top-16 h-48 w-48 rounded-full bg-brand-200/25 blur-3xl" />
+        <div className="pointer-events-none absolute -bottom-20 left-1/4 h-40 w-40 rounded-full bg-slate-300/20 blur-3xl" />
 
-          <div className="mt-4 grid gap-3 sm:grid-cols-3">
-            {quickLinks.map(({ id, card, iconBox, hoverBorder, linkText, icon: QuickIcon, item }) => (
-              <Link
-                key={id}
-                to={item.path}
-                className={cn(
-                  'group relative flex flex-col rounded-xl border p-5 shadow-panel transition-all duration-200',
-                  'hover:-translate-y-0.5 hover:shadow-lg',
-                  card,
-                  hoverBorder
-                )}
-              >
-                <div className="flex items-center justify-between gap-3">
-                  <div>
-                    <p className="text-xs font-medium uppercase tracking-wide text-slate-400">Ir a</p>
-                    <p className="mt-1 text-lg font-semibold text-slate-900">{item.label}</p>
-                  </div>
-                  <div
+        <div className="relative space-y-8">
+          {quickLinks.length > 0 && (
+            <section>
+              <SectionHeading
+                eyebrow="Atajos"
+                title="Accesos rápidos"
+                description="Las tareas más frecuentes del día"
+              />
+
+              <div className="mt-4 grid gap-3 sm:grid-cols-3">
+                {quickLinks.map(({ id, card, iconBox, hoverBorder, linkText, icon: QuickIcon, item }) => {
+                  const cardIndex = nextCardIndex++
+                  return (
+                  <Link
+                    key={id}
+                    to={item.path}
+                    data-dashboard-card={cardIndex}
+                    tabIndex={-1}
+                    onMouseEnter={() => focusCard(cardIndex)}
                     className={cn(
-                      'flex h-11 w-11 shrink-0 items-center justify-center rounded-xl',
-                      iconBox
+                      'group relative flex flex-col rounded-xl border p-5 shadow-md transition-all duration-200 outline-none scroll-m-10',
+                      'hover:-translate-y-0.5 hover:shadow-lg',
+                      'focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-2',
+                      card,
+                      hoverBorder,
+                      cardHighlight === cardIndex && CARD_HIGHLIGHT
                     )}
                   >
-                    <QuickIcon className="h-5 w-5" />
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Ir a</p>
+                        <p className="mt-1 text-lg font-semibold text-slate-900">{item.label}</p>
+                      </div>
+                      <div
+                        className={cn(
+                          'flex h-11 w-11 shrink-0 items-center justify-center rounded-xl',
+                          iconBox
+                        )}
+                      >
+                        <QuickIcon className="h-5 w-5" />
+                      </div>
+                    </div>
+                    <div
+                      className={cn(
+                        'mt-4 inline-flex items-center gap-1 text-sm font-medium',
+                        linkText
+                      )}
+                    >
+                      Abrir
+                      <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
+                    </div>
+                  </Link>
+                  )
+                })}
+              </div>
+            </section>
+          )}
+
+          <section className="space-y-8">
+            <SectionHeading
+              eyebrow="Módulos"
+              title="Todo el sistema"
+              description="Accedé a cada sección según tus permisos"
+            />
+
+            {groups.map((group) => {
+              const items = visibleItems.filter((item) => item.group === group)
+              if (items.length === 0) return null
+
+              return (
+                <div key={group}>
+                  <div className="mb-4 flex items-center gap-3">
+                    <h3 className="text-xs font-semibold uppercase tracking-wider text-slate-500">
+                      {group}
+                    </h3>
+                    <div className="h-px flex-1 bg-slate-300/60" />
+                    <span className="rounded-full bg-white/80 px-2 py-0.5 text-[10px] font-medium tabular-nums text-slate-600 ring-1 ring-slate-200/80">
+                      {items.length}
+                    </span>
+                  </div>
+
+                  <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                    {items.map((item) => {
+                      if (item.disabled) {
+                        return <ModuleCard key={item.id} item={item} />
+                      }
+                      const cardIndex = nextCardIndex++
+                      return (
+                        <ModuleCard
+                          key={item.id}
+                          item={item}
+                          cardIndex={cardIndex}
+                          highlighted={cardHighlight === cardIndex}
+                          onMouseEnterCard={() => focusCard(cardIndex)}
+                        />
+                      )
+                    })}
                   </div>
                 </div>
-                <div
-                  className={cn(
-                    'mt-4 inline-flex items-center gap-1 text-sm font-medium',
-                    linkText
-                  )}
-                >
-                  Abrir
-                  <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
-                </div>
-              </Link>
-            ))}
-          </div>
-        </section>
-      )}
+              )
+            })}
+          </section>
 
-      <section className="space-y-8">
-        <SectionHeading
-          eyebrow="Módulos"
-          title="Todo el sistema"
-          description="Accedé a cada sección según tus permisos"
-        />
-
-        {groups.map((group) => {
-          const items = visibleItems.filter((item) => item.group === group)
-          if (items.length === 0) return null
-
-          return (
-            <div key={group}>
-              <div className="mb-4 flex items-center gap-3">
-                <h3 className="text-xs font-semibold uppercase tracking-wider text-slate-400">
-                  {group}
-                </h3>
-                <div className="h-px flex-1 bg-surface-border" />
-                <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-medium tabular-nums text-slate-500 ring-1 ring-surface-border">
-                  {items.length}
-                </span>
-              </div>
-
-              <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-                {items.map((item) => (
-                  <ModuleCard key={item.id} item={item} />
-                ))}
-              </div>
+          {visibleItems.length === 0 && (
+            <div className="flex flex-col items-center rounded-xl border border-dashed border-slate-300/80 bg-white/90 px-6 py-12 text-center shadow-md">
+              <LayoutGrid className="h-10 w-10 text-slate-300" />
+              <p className="mt-3 text-sm font-semibold text-slate-700">Sin módulos disponibles</p>
+              <p className="mt-1 max-w-sm text-sm text-slate-500">
+                Tu usuario no tiene permisos asignados. Contactá al administrador.
+              </p>
             </div>
-          )
-        })}
-      </section>
-
-      {visibleItems.length === 0 && (
-        <div className="flex flex-col items-center rounded-xl border border-dashed border-surface-border bg-white px-6 py-12 text-center shadow-panel">
-          <LayoutGrid className="h-10 w-10 text-slate-300" />
-          <p className="mt-3 text-sm font-semibold text-slate-700">Sin módulos disponibles</p>
-          <p className="mt-1 max-w-sm text-sm text-slate-500">
-            Tu usuario no tiene permisos asignados. Contactá al administrador.
-          </p>
+          )}
         </div>
-      )}
+      </div>
     </div>
   )
 }

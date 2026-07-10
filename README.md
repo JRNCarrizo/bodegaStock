@@ -13,7 +13,7 @@ Toda la especificación del proyecto está en la carpeta [`docs/`](docs/):
 | [USUARIOS-Y-PERMISOS.md](docs/USUARIOS-Y-PERMISOS.md) | Roles, permisos por sección y reglas de acceso |
 | [INVENTARIO.md](docs/INVENTARIO.md) | Inventario dual: líneas independientes, comparación, reconteo |
 | [DESGLOSE-DE-CANTIDADES.md](docs/DESGLOSE-DE-CANTIDADES.md) | Formato pallet × unidades + sueltos (todo el sistema) |
-| [APP-MOVIL.md](docs/APP-MOVIL.md) | APK Android: conexión LAN, módulos móviles, inventario en celular |
+| [APP-MOVIL.md](docs/APP-MOVIL.md) | APK Android: terminal de bodega, módulos, roles, fases y priorización |
 
 ## Estado del proyecto
 

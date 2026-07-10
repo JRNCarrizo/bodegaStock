@@ -1,5 +1,5 @@
 param(
-  [string]$Version = "0.2.8"
+  [string]$Version = "0.3.0"
 )
 
 $ErrorActionPreference = "Stop"
@@ -50,10 +50,17 @@ $exeName = Split-Path $exe -Leaf
 $notes = @"
 ## ControlStock v$Version
 
-Mejora en el detalle de retornos.
+Nueva generación con inventario completo y mejoras de stock.
+
+### Nuevo
+- **Inventario:** conteo por sector, comparación cajas/suelto por separado, reconteo y cierre con ajuste de stock
+- **Planillas modo botellas:** salidas por botella sin sumar cajas en movimientos del día
+- **Roles y secciones:** Administrador y Usuario con permisos por sección
 
 ### Mejorado
-- **Detalle de retornos:** al desplegar un producto, cada línea muestra su estado (Buen estado / Incompleta / Mal estado)
+- **Stock caja vs suelto:** botellerio/pucherio no mezcla unidades con cajas en reportes
+- **Usuario contador:** puede contar inventario sin permiso de ver stock completo
+- **Detalle de retornos:** estado por línea (Buen estado / Incompleta / Mal estado)
 
 ### Actualización
 - Desde **v0.2.7 o superior:** Configuración → Buscar actualizaciones

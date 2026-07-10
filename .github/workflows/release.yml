@@ -9,7 +9,7 @@ on:
       version:
         description: 'Versión sin v (ej. 0.1.0)'
         required: true
-        default: '0.2.8'
+        default: '0.3.0'
 
 permissions:
   contents: write
@@ -68,7 +68,21 @@ jobs:
           body: |
             ## ControlStock ${{ steps.tag.outputs.name }}
 
-            Actualización de ControlStock. Instalá desde este release o usá **Configuración → Buscar actualizaciones** en la app instalada.
+            Nueva generación con inventario completo y mejoras de stock.
+
+            ### Nuevo
+            - **Inventario:** conteo por sector, comparación cajas/suelto por separado, reconteo y cierre con ajuste de stock
+            - **Planillas modo botellas:** salidas por botella sin sumar cajas en movimientos del día
+            - **Roles y secciones:** Administrador y Usuario con permisos por sección
+
+            ### Mejorado
+            - **Stock caja vs suelto:** botellerio/pucherio no mezcla unidades con cajas en reportes
+            - **Usuario contador:** puede contar inventario sin permiso de ver stock completo
+            - **Detalle de retornos:** estado por línea (Buen estado / Incompleta / Mal estado)
+
+            ### Actualización
+            - Desde **v0.2.7 o superior:** Configuración → Buscar actualizaciones
+            - O instalá el `.exe` de este release manualmente
           files: |
             release/ControlStock-Setup-*.exe
             release/latest.yml

@@ -17,7 +17,7 @@ Toda la especificación del proyecto está en la carpeta [`docs/`](docs/):
 
 ## Estado del proyecto
 
-**v0.2.8** — Productos, sectores, consulta, ingresos, planillas, retornos, roturas, reportes, usuarios y camioneros en PC. Inventario: especificación definida, pendiente de implementación.
+**v0.3.0** — Productos, sectores, consulta, ingresos, planillas, retornos, roturas, reportes, usuarios, camioneros e inventario en PC. Actualizaciones automáticas desde Configuración.
 
 ## Desarrollo local
 

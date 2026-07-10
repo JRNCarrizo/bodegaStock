@@ -1,6 +1,6 @@
 {
   "name": "bodega-stock",
-  "version": "0.2.8",
+  "version": "0.3.0",
   "description": "Sistema de gestión de stock para bodega",
   "author": "JRNCarrizo",
   "main": "out/main/index.js",

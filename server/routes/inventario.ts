@@ -1,0 +1,626 @@
+import type { FastifyInstance } from 'fastify'
+import { getDb } from '../db'
+import { requirePermiso, requirePermisoAny } from '../plugins/auth'
+import { getInventarioActivo, inventarioActivoErrorPayload } from '../utils/inventario-block'
+import {
+  aplicarCierreInventario,
+  assertContadorEnSector,
+  assertSectorEditable,
+  assertSectorFinalizable,
+  compararContadores,
+  compararVsSistema,
+  crearSnapshotInventario,
+  ejecutarComparacionSector,
+  getSesionOrThrow,
+  getInventarioSector,
+  iniciarReconteoSector,
+  mapConteoLinea,
+  validarYCalcularLinea,
+  type ConteoLineaInput,
+  type CierreDecisionInput
+} from '../utils/inventario'
+import { getProductoDefaults } from '../utils/stock'
+
+interface SectorAsignacion {
+  sector_id: number
+  contador_1_id: number
+  contador_2_id: number
+}
+
+interface CrearSesionBody {
+  nombre?: string
+  observacion?: string | null
+  sectores?: SectorAsignacion[]
+}
+
+function mapSesionListItem(row: Record<string, unknown>) {
+  return {
+    id: Number(row.id),
+    nombre: String(row.nombre),
+    estado: String(row.estado),
+    creado_por_nombre: String(row.creado_por_nombre),
+    fecha_inicio: row.fecha_inicio as string | null,
+    fecha_cierre: row.fecha_cierre as string | null,
+    sectores_total: Number(row.sectores_total ?? 0),
+    sectores_ok: Number(row.sectores_ok ?? 0),
+    created_at: String(row.created_at)
+  }
+}
+
+function getSectoresSesion(db: ReturnType<typeof getDb>, sesionId: number) {
+  return db.prepare(`
+    SELECT
+      isec.*,
+      s.nombre AS sector_nombre,
+      s.codigo AS sector_codigo,
+      u1.nombre AS contador_1_nombre,
+      u2.nombre AS contador_2_nombre
+    FROM inventario_sectores isec
+    JOIN sectores s ON s.id = isec.sector_id
+    JOIN usuarios u1 ON u1.id = isec.contador_1_id
+    JOIN usuarios u2 ON u2.id = isec.contador_2_id
+    WHERE isec.sesion_id = ?
+    ORDER BY s.nombre
+  `).all(sesionId) as Array<Record<string, unknown>>
+}
+
+export async function inventarioRoutes(app: FastifyInstance): Promise<void> {
+  /** Visible para cualquier usuario autenticado (banner global). */
+  app.get('/api/inventario/activo-banner', async () => {
+    const db = getDb()
+    const activo = getInventarioActivo(db)
+    if (!activo) return { activo: null }
+
+    const counts = db.prepare(`
+      SELECT
+        COUNT(*) AS sectores_total,
+        SUM(CASE WHEN estado = 'CERRADO_OK' THEN 1 ELSE 0 END) AS sectores_ok
+      FROM inventario_sectores WHERE sesion_id = ?
+    `).get(activo.id) as { sectores_total: number; sectores_ok: number }
+
+    return {
+      activo: {
+        id: activo.id,
+        nombre: activo.nombre,
+        estado: activo.estado,
+        sectores_total: Number(counts.sectores_total ?? 0),
+        sectores_ok: Number(counts.sectores_ok ?? 0)
+      }
+    }
+  })
+
+  app.get('/api/inventario/activo', { preHandler: requirePermiso('inventario.ver') }, async () => {
+    const db = getDb()
+    return { activo: getInventarioActivo(db) }
+  })
+
+  app.get('/api/inventario/sesiones', { preHandler: requirePermiso('inventario.ver') }, async () => {
+    const db = getDb()
+    const rows = db.prepare(`
+      SELECT
+        s.*,
+        u.nombre AS creado_por_nombre,
+        (SELECT COUNT(*) FROM inventario_sectores WHERE sesion_id = s.id) AS sectores_total,
+        (SELECT COUNT(*) FROM inventario_sectores WHERE sesion_id = s.id AND estado = 'CERRADO_OK') AS sectores_ok
+      FROM inventario_sesiones s
+      JOIN usuarios u ON u.id = s.creado_por_id
+      ORDER BY s.id DESC
+    `).all() as Array<Record<string, unknown>>
+    return rows.map(mapSesionListItem)
+  })
+
+  app.get<{ Params: { id: string } }>(
+    '/api/inventario/sesiones/:id',
+    { preHandler: requirePermiso('inventario.ver') },
+    async (req) => {
+      const db = getDb()
+      const sesionId = Number(req.params.id)
+      const sesion = getSesionOrThrow(db, sesionId)
+      const sectores = getSectoresSesion(db, sesionId)
+      const reporte = db.prepare(`
+        SELECT * FROM inventario_reportes WHERE sesion_id = ?
+      `).get(sesionId)
+      return {
+        sesion: {
+          id: Number(sesion.id),
+          nombre: String(sesion.nombre),
+          estado: String(sesion.estado),
+          observacion: sesion.observacion as string | null,
+          creado_por_id: Number(sesion.creado_por_id),
+          creado_por_nombre: String(sesion.creado_por_nombre),
+          cerrado_por_id: sesion.cerrado_por_id ? Number(sesion.cerrado_por_id) : null,
+          fecha_inicio: sesion.fecha_inicio as string | null,
+          fecha_cierre: sesion.fecha_cierre as string | null,
+          created_at: String(sesion.created_at)
+        },
+        sectores: sectores.map((s) => ({
+          id: Number(s.id),
+          sector_id: Number(s.sector_id),
+          sector_nombre: String(s.sector_nombre),
+          sector_codigo: String(s.sector_codigo),
+          contador_1_id: Number(s.contador_1_id),
+          contador_2_id: Number(s.contador_2_id),
+          contador_1_nombre: String(s.contador_1_nombre),
+          contador_2_nombre: String(s.contador_2_nombre),
+          estado: String(s.estado),
+          ronda_actual: Number(s.ronda_actual),
+          contador_1_finalizo: Boolean(s.contador_1_finalizo),
+          contador_2_finalizo: Boolean(s.contador_2_finalizo)
+        })),
+        reporte: reporte
+          ? {
+              resumen: JSON.parse(String((reporte as { resumen: string }).resumen)),
+              detalle: JSON.parse(String((reporte as { detalle: string }).detalle)),
+              ajustes_aplicados: JSON.parse(String((reporte as { ajustes_aplicados: string }).ajustes_aplicados)),
+              created_at: String((reporte as { created_at: string }).created_at)
+            }
+          : null
+      }
+    }
+  )
+
+  app.post<{ Body: CrearSesionBody }>(
+    '/api/inventario/sesiones',
+    { preHandler: requirePermiso('inventario.crear_sesion') },
+    async (req, reply) => {
+      const db = getDb()
+      if (getInventarioActivo(db)) {
+        return reply.status(409).send({ error: 'Ya hay un inventario en curso' })
+      }
+
+      const nombre = req.body.nombre?.trim()
+      const sectores = req.body.sectores ?? []
+      if (!nombre) return reply.status(400).send({ error: 'Nombre requerido' })
+      if (sectores.length === 0) return reply.status(400).send({ error: 'Seleccioná al menos un sector' })
+
+      for (const s of sectores) {
+        if (!s.sector_id || !s.contador_1_id || !s.contador_2_id) {
+          return reply.status(400).send({ error: 'Cada sector requiere dos contadores' })
+        }
+        if (s.contador_1_id === s.contador_2_id) {
+          return reply.status(400).send({ error: 'Los dos contadores deben ser distintos' })
+        }
+        const sector = db.prepare('SELECT id FROM sectores WHERE id = ? AND activo = 1').get(s.sector_id)
+        if (!sector) return reply.status(400).send({ error: `Sector ${s.sector_id} no válido` })
+      }
+
+      const userId = req.user!.id
+      const tx = db.transaction(() => {
+        const result = db.prepare(`
+          INSERT INTO inventario_sesiones (nombre, observacion, creado_por_id, estado)
+          VALUES (?, ?, ?, 'ABIERTA')
+        `).run(nombre, req.body.observacion ?? null, userId)
+        const sesionId = Number(result.lastInsertRowid)
+
+        const insertSec = db.prepare(`
+          INSERT INTO inventario_sectores (sesion_id, sector_id, contador_1_id, contador_2_id)
+          VALUES (?, ?, ?, ?)
+        `)
+        for (const s of sectores) {
+          insertSec.run(sesionId, s.sector_id, s.contador_1_id, s.contador_2_id)
+        }
+        return sesionId
+      })
+
+      const sesionId = tx()
+      return { id: sesionId }
+    }
+  )
+
+  app.post<{ Params: { id: string } }>(
+    '/api/inventario/sesiones/:id/iniciar',
+    { preHandler: requirePermiso('inventario.crear_sesion') },
+    async (req, reply) => {
+      const db = getDb()
+      const sesionId = Number(req.params.id)
+      const sesion = getSesionOrThrow(db, sesionId)
+
+      if (String(sesion.estado) !== 'ABIERTA') {
+        return reply.status(400).send({ error: 'La sesión no está en estado ABIERTA' })
+      }
+      if (getInventarioActivo(db)) {
+        return reply.status(409).send({ error: 'Ya hay un inventario en curso' })
+      }
+
+      const sectorIds = db.prepare(`
+        SELECT sector_id FROM inventario_sectores WHERE sesion_id = ?
+      `).all(sesionId) as Array<{ sector_id: number }>
+
+      const tx = db.transaction(() => {
+        db.prepare(`
+          UPDATE inventario_sesiones
+          SET estado = 'EN_PROGRESO', fecha_inicio = datetime('now')
+          WHERE id = ?
+        `).run(sesionId)
+        crearSnapshotInventario(
+          db,
+          sesionId,
+          sectorIds.map((s) => s.sector_id)
+        )
+      })
+      tx()
+      return { ok: true }
+    }
+  )
+
+  app.post<{ Params: { id: string } }>(
+    '/api/inventario/sesiones/:id/cancelar',
+    { preHandler: requirePermiso('inventario.crear_sesion') },
+    async (req, reply) => {
+      const db = getDb()
+      const sesionId = Number(req.params.id)
+      const sesion = getSesionOrThrow(db, sesionId)
+      if (!['ABIERTA', 'EN_PROGRESO'].includes(String(sesion.estado))) {
+        return reply.status(400).send({ error: 'No se puede cancelar esta sesión' })
+      }
+      db.prepare(`
+        UPDATE inventario_sesiones SET estado = 'CANCELADA' WHERE id = ?
+      `).run(sesionId)
+      return { ok: true }
+    }
+  )
+
+  app.get(
+    '/api/inventario/mis-sectores',
+    { preHandler: requirePermiso('inventario.contar') },
+    async (req) => {
+      const db = getDb()
+      const userId = req.user!.id
+      const activo = getInventarioActivo(db)
+      if (!activo) return { activo: null, sectores: [] }
+
+      const sectores = db.prepare(`
+        SELECT
+          isec.*,
+          s.nombre AS sector_nombre,
+          s.codigo AS sector_codigo,
+          u1.nombre AS contador_1_nombre,
+          u2.nombre AS contador_2_nombre
+        FROM inventario_sectores isec
+        JOIN inventario_sesiones ses ON ses.id = isec.sesion_id
+        JOIN sectores s ON s.id = isec.sector_id
+        JOIN usuarios u1 ON u1.id = isec.contador_1_id
+        JOIN usuarios u2 ON u2.id = isec.contador_2_id
+        WHERE ses.estado = 'EN_PROGRESO'
+          AND (isec.contador_1_id = ? OR isec.contador_2_id = ?)
+        ORDER BY s.nombre
+      `).all(userId, userId) as Array<Record<string, unknown>>
+
+      return {
+        activo,
+        sectores: sectores.map((s) => ({
+          id: Number(s.id),
+          sesion_id: Number(s.sesion_id),
+          sector_id: Number(s.sector_id),
+          sector_nombre: String(s.sector_nombre),
+          sector_codigo: String(s.sector_codigo),
+          estado: String(s.estado),
+          ronda_actual: Number(s.ronda_actual),
+          contador_1_id: Number(s.contador_1_id),
+          contador_2_id: Number(s.contador_2_id),
+          contador_1_nombre: String(s.contador_1_nombre),
+          contador_2_nombre: String(s.contador_2_nombre),
+          contador_1_finalizo: Boolean(s.contador_1_finalizo),
+          contador_2_finalizo: Boolean(s.contador_2_finalizo),
+          soy_contador_1: Number(s.contador_1_id) === userId
+        }))
+      }
+    }
+  )
+
+  app.get<{ Params: { id: string } }>(
+    '/api/inventario/sectores/:id',
+    { preHandler: requirePermisoAny('inventario.ver', 'inventario.contar') },
+    async (req, reply) => {
+      const db = getDb()
+      const inventarioSectorId = Number(req.params.id)
+      const userId = req.user!.id
+      const canSupervise = req.user!.permisos.includes('inventario.supervisar')
+
+      let sector: Record<string, unknown>
+      let rol: 1 | 2 | null = null
+      try {
+        sector = getInventarioSector(db, inventarioSectorId)
+        try {
+          const assigned = assertContadorEnSector(db, inventarioSectorId, userId)
+          rol = assigned.rol
+        } catch (assignErr) {
+          if (!canSupervise) {
+            throw assignErr
+          }
+        }
+      } catch (e) {
+        return reply.status(403).send({ error: (e as Error).message })
+      }
+
+      if (
+        Number(sector.contador_1_finalizo) &&
+        Number(sector.contador_2_finalizo) &&
+        String(sector.estado) === 'ESPERANDO_COMPANERO'
+      ) {
+        ejecutarComparacionSector(db, inventarioSectorId)
+        sector = getInventarioSector(db, inventarioSectorId)
+      }
+
+      const ronda = Number(sector.ronda_actual)
+      const c1 = Number(sector.contador_1_id)
+      const c2 = Number(sector.contador_2_id)
+
+      const lineas = db.prepare(`
+        SELECT icl.*, p.codigo_interno, p.nombre, p.unidad
+        FROM inventario_conteo_lineas icl
+        JOIN productos p ON p.id = icl.producto_id
+        WHERE icl.inventario_sector_id = ? AND icl.ronda = ?
+        ORDER BY icl.producto_id, icl.contador_id, icl.orden, icl.id
+      `).all(inventarioSectorId, ronda) as Array<Record<string, unknown>>
+
+      const mapLineas = (contadorId: number | null) => {
+        const filtered = lineas.filter(
+          (l) => contadorId === null || Number(l.contador_id) === contadorId
+        )
+        return filtered.map((l) => {
+          const { botellasPorCaja } = getProductoDefaults(db, Number(l.producto_id))
+          return mapConteoLinea(l as Parameters<typeof mapConteoLinea>[0], botellasPorCaja)
+        })
+      }
+
+      const mostrarComparacion =
+        canSupervise ||
+        (Boolean(sector.contador_1_finalizo) &&
+          Boolean(sector.contador_2_finalizo) &&
+          ['CON_DIFERENCIAS', 'CERRADO_OK'].includes(String(sector.estado)))
+
+      const mostrarLineasCompanero =
+        canSupervise ||
+        (Boolean(sector.contador_1_finalizo) &&
+          Boolean(sector.contador_2_finalizo))
+
+      let comparacion = null
+      if (mostrarComparacion) {
+        comparacion = compararContadores(db, inventarioSectorId, ronda)
+      }
+
+      const sectorId = Number(sector.sector_id)
+      const sectorMeta = db.prepare(`
+        SELECT usa_ubicaciones FROM sectores WHERE id = ?
+      `).get(sectorId) as { usa_ubicaciones: number } | undefined
+      const usa_ubicaciones = Boolean(sectorMeta?.usa_ubicaciones)
+      const ubicaciones = usa_ubicaciones
+        ? (db.prepare(`
+            SELECT id, sector_id, codigo, nombre, orden, activo, created_at
+            FROM sector_ubicaciones
+            WHERE sector_id = ? AND activo = 1
+            ORDER BY orden ASC, nombre COLLATE NOCASE ASC, id ASC
+          `).all(sectorId) as Array<{
+            id: number
+            sector_id: number
+            codigo: string
+            nombre: string
+            orden: number
+            activo: number
+            created_at: string
+          }>)
+        : []
+
+      return {
+        sector: {
+          id: Number(sector.id),
+          sesion_id: Number(sector.sesion_id),
+          sector_id: sectorId,
+          sector_nombre: String(sector.sector_nombre),
+          estado: String(sector.estado),
+          ronda_actual: ronda,
+          contador_1_id: c1,
+          contador_2_id: c2,
+          contador_1_nombre: String(sector.contador_1_nombre),
+          contador_2_nombre: String(sector.contador_2_nombre),
+          contador_1_finalizo: Boolean(sector.contador_1_finalizo),
+          contador_2_finalizo: Boolean(sector.contador_2_finalizo),
+          usa_ubicaciones
+        },
+        ubicaciones,
+        mi_rol: rol,
+        mis_lineas: rol ? mapLineas(rol === 1 ? c1 : c2) : [],
+        lineas_contador_1: mostrarLineasCompanero || canSupervise ? mapLineas(c1) : undefined,
+        lineas_contador_2: mostrarLineasCompanero || canSupervise ? mapLineas(c2) : undefined,
+        comparacion
+      }
+    }
+  )
+
+  app.post<{ Params: { id: string }; Body: ConteoLineaInput }>(
+    '/api/inventario/sectores/:id/lineas',
+    { preHandler: requirePermiso('inventario.contar') },
+    async (req, reply) => {
+      const db = getDb()
+      const inventarioSectorId = Number(req.params.id)
+      const userId = req.user!.id
+
+      try {
+        const { rol, sector } = assertContadorEnSector(db, inventarioSectorId, userId)
+        assertSectorEditable(sector, rol)
+
+        const sesion = getSesionOrThrow(db, Number(sector.sesion_id))
+        if (String(sesion.estado) !== 'EN_PROGRESO') {
+          return reply.status(400).send({ error: 'El inventario no está en curso' })
+        }
+
+        const body = req.body
+        if (!body.producto_id) return reply.status(400).send({ error: 'producto_id requerido' })
+
+        const { total } = validarYCalcularLinea(db, body.producto_id, body)
+        const ronda = Number(sector.ronda_actual)
+        const contadorId = rol === 1 ? Number(sector.contador_1_id) : Number(sector.contador_2_id)
+
+        const maxOrden = db.prepare(`
+          SELECT COALESCE(MAX(orden), 0) AS m FROM inventario_conteo_lineas
+          WHERE inventario_sector_id = ? AND contador_id = ? AND ronda = ? AND producto_id = ?
+        `).get(inventarioSectorId, contadorId, ronda, body.producto_id) as { m: number }
+
+        const tx = db.transaction(() => {
+          db.prepare(`
+            INSERT INTO inventario_conteo_lineas (
+              inventario_sector_id, producto_id, contador_id, ronda,
+              tipo_bulto, cantidad_bultos, unidades_por_bulto, cantidad_suelta,
+              ubicacion, ubicacion_id, total_unidades, orden
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          `).run(
+            inventarioSectorId,
+            body.producto_id,
+            contadorId,
+            ronda,
+            body.tipo_bulto,
+            body.tipo_bulto === 'SUELTO' ? null : body.cantidad_bultos ?? null,
+            body.tipo_bulto === 'SUELTO' ? null : body.unidades_por_bulto ?? null,
+            body.tipo_bulto === 'SUELTO' ? body.cantidad_suelta ?? null : body.cantidad_suelta ?? null,
+            body.ubicacion ?? null,
+            body.ubicacion_id ?? null,
+            total,
+            Number(maxOrden.m) + 1
+          )
+
+          if (String(sector.estado) === 'PENDIENTE') {
+            db.prepare(`
+              UPDATE inventario_sectores SET estado = 'EN_CONTEO' WHERE id = ?
+            `).run(inventarioSectorId)
+          }
+        })
+        tx()
+        return { ok: true, total_unidades: total }
+      } catch (e) {
+        return reply.status(400).send({ error: (e as Error).message })
+      }
+    }
+  )
+
+  app.delete<{ Params: { sectorId: string; lineaId: string } }>(
+    '/api/inventario/sectores/:sectorId/lineas/:lineaId',
+    { preHandler: requirePermiso('inventario.contar') },
+    async (req, reply) => {
+      const db = getDb()
+      const inventarioSectorId = Number(req.params.sectorId)
+      const lineaId = Number(req.params.lineaId)
+      const userId = req.user!.id
+
+      try {
+        const { rol, sector } = assertContadorEnSector(db, inventarioSectorId, userId)
+        assertSectorEditable(sector, rol)
+
+        const linea = db.prepare(`
+          SELECT * FROM inventario_conteo_lineas
+          WHERE id = ? AND inventario_sector_id = ?
+        `).get(lineaId, inventarioSectorId) as { contador_id: number; ronda: number } | undefined
+
+        if (!linea) return reply.status(404).send({ error: 'Línea no encontrada' })
+        const contadorId = rol === 1 ? Number(sector.contador_1_id) : Number(sector.contador_2_id)
+        if (linea.contador_id !== contadorId || linea.ronda !== Number(sector.ronda_actual)) {
+          return reply.status(403).send({ error: 'No podés eliminar esta línea' })
+        }
+
+        db.prepare('DELETE FROM inventario_conteo_lineas WHERE id = ?').run(lineaId)
+        return { ok: true }
+      } catch (e) {
+        return reply.status(400).send({ error: (e as Error).message })
+      }
+    }
+  )
+
+  app.post<{ Params: { id: string } }>(
+    '/api/inventario/sectores/:id/finalizar',
+    { preHandler: requirePermiso('inventario.contar') },
+    async (req, reply) => {
+      const db = getDb()
+      const inventarioSectorId = Number(req.params.id)
+      const userId = req.user!.id
+
+      try {
+        const { rol, sector } = assertContadorEnSector(db, inventarioSectorId, userId)
+        assertSectorFinalizable(sector, rol)
+
+        const col = rol === 1 ? 'contador_1_finalizo' : 'contador_2_finalizo'
+        db.prepare(`UPDATE inventario_sectores SET ${col} = 1 WHERE id = ?`).run(inventarioSectorId)
+
+        const updated = db.prepare('SELECT * FROM inventario_sectores WHERE id = ?').get(
+          inventarioSectorId
+        ) as Record<string, unknown>
+
+        let comparacion = null
+        if (Number(updated.contador_1_finalizo) && Number(updated.contador_2_finalizo)) {
+          comparacion = ejecutarComparacionSector(db, inventarioSectorId)
+        } else {
+          db.prepare(`
+            UPDATE inventario_sectores SET estado = 'ESPERANDO_COMPANERO' WHERE id = ?
+          `).run(inventarioSectorId)
+        }
+
+        return { ok: true, comparacion }
+      } catch (e) {
+        return reply.status(400).send({ error: (e as Error).message })
+      }
+    }
+  )
+
+  app.post<{ Params: { id: string } }>(
+    '/api/inventario/sectores/:id/reconteo',
+    { preHandler: requirePermiso('inventario.contar') },
+    async (req, reply) => {
+      const db = getDb()
+      const inventarioSectorId = Number(req.params.id)
+      try {
+        assertContadorEnSector(db, inventarioSectorId, req.user!.id)
+        iniciarReconteoSector(db, inventarioSectorId)
+        return { ok: true }
+      } catch (e) {
+        return reply.status(400).send({ error: (e as Error).message })
+      }
+    }
+  )
+
+  app.get<{ Params: { id: string } }>(
+    '/api/inventario/sesiones/:id/comparacion-sistema',
+    { preHandler: requirePermiso('inventario.supervisar', 'inventario.cerrar') },
+    async (req, reply) => {
+      const db = getDb()
+      try {
+        return compararVsSistema(db, Number(req.params.id))
+      } catch (e) {
+        return reply.status(400).send({ error: (e as Error).message })
+      }
+    }
+  )
+
+  app.post<{ Params: { id: string }; Body: { decisiones?: CierreDecisionInput[] } }>(
+    '/api/inventario/sesiones/:id/cerrar',
+    { preHandler: requirePermiso('inventario.cerrar', 'ajustes.crear') },
+    async (req, reply) => {
+      const db = getDb()
+      const sesionId = Number(req.params.id)
+      const sesion = getSesionOrThrow(db, sesionId)
+      if (String(sesion.estado) !== 'EN_PROGRESO') {
+        return reply.status(400).send({ error: 'La sesión no está en curso' })
+      }
+      try {
+        const decisiones = req.body?.decisiones ?? []
+        const result = aplicarCierreInventario(db, sesionId, req.user!.id, decisiones)
+        return result
+      } catch (e) {
+        return reply.status(400).send({ error: (e as Error).message })
+      }
+    }
+  )
+
+  app.get('/api/inventario/usuarios-contadores', {
+    preHandler: requirePermiso('inventario.crear_sesion')
+  }, async () => {
+    const db = getDb()
+    return db.prepare(`
+      SELECT u.id, u.username, u.nombre, r.nombre AS rol_nombre
+      FROM usuarios u
+      LEFT JOIN roles r ON r.id = u.rol_id
+      WHERE u.activo = 1
+      ORDER BY u.nombre
+    `).all()
+  })
+}
+
+export { inventarioActivoErrorPayload }

@@ -436,7 +436,7 @@ export function ConfiguracionPage() {
                   {networkInfo?.connectionUrls.length ? (
                     <div className="space-y-2">
                       <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">
-                        URLs para clientes y celulares
+                        URLs para abrir en celular o navegador
                       </p>
                       <ul className="space-y-2">
                         {networkInfo.connectionUrls.map((url) => (
@@ -482,11 +482,11 @@ export function ConfiguracionPage() {
                       <div className="min-w-0 space-y-1.5">
                         <div className="flex items-center gap-2 text-sm font-semibold text-slate-900">
                           <Smartphone className="h-4 w-4 text-brand-600" />
-                          Conexión para celulares (APK)
+                          Abrir desde celular o navegador
                         </div>
                         <p className="text-xs leading-relaxed text-slate-500">
-                          Cuando la app móvil esté lista, podrán escanear este QR o ingresar la IP
-                          manualmente.
+                          Entrá a esta misma URL en el navegador del celular (misma WiFi). Vas a ver el
+                          login de ControlStock. La app APK podrá usar el mismo QR más adelante.
                         </p>
                         <p className="inline-flex rounded-md bg-brand-50 px-2 py-1 font-mono text-xs text-brand-800 ring-1 ring-brand-100">
                           {primaryConnectionUrl}

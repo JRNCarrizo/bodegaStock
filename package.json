@@ -1,6 +1,6 @@
 {
   "name": "bodega-stock",
-  "version": "0.3.2",
+  "version": "0.3.3",
   "description": "Sistema de gestión de stock para bodega",
   "author": "JRNCarrizo",
   "main": "out/main/index.js",
@@ -14,6 +14,7 @@
   },
   "dependencies": {
     "@fastify/cors": "^10.0.2",
+    "@fastify/static": "^8.3.0",
     "bcryptjs": "^2.4.3",
     "better-sqlite3": "^12.11.1",
     "clsx": "^2.1.1",

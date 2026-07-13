@@ -1,7 +1,10 @@
 import Fastify from 'fastify'
 import cors from '@fastify/cors'
+import fastifyStatic from '@fastify/static'
 import { app } from 'electron'
+import { existsSync } from 'fs'
 import http from 'http'
+import { join } from 'path'
 import { initDatabase } from './db'
 import {
   buildConnectionUrls,
@@ -22,6 +25,17 @@ import { inventarioRoutes } from './routes/inventario'
 import { productosRoutes } from './routes/productos'
 import { sectoresRoutes } from './routes/sectores'
 import { usuariosRoutes } from './routes/usuarios'
+
+function resolveRendererDir(): string | null {
+  const candidates = [
+    join(__dirname, '../renderer'),
+    join(process.cwd(), 'out/renderer')
+  ]
+  for (const dir of candidates) {
+    if (existsSync(join(dir, 'index.html'))) return dir
+  }
+  return null
+}
 
 export interface StartServerOptions {
   host?: string
@@ -123,9 +137,29 @@ export async function startServer(options: StartServerOptions = {}): Promise<voi
   await server.register(reportesRoutes)
   await server.register(inventarioRoutes)
 
+  const rendererDir = resolveRendererDir()
+  if (rendererDir) {
+    await server.register(fastifyStatic, {
+      root: rendererDir,
+      prefix: '/',
+      wildcard: false
+    })
+
+    // SPA (HashRouter): cualquier ruta no-API sirve la UI web
+    server.setNotFoundHandler((request, reply) => {
+      if (request.url.startsWith('/api/')) {
+        return reply.status(404).send({ error: 'No encontrado' })
+      }
+      return reply.sendFile('index.html')
+    })
+  }
+
   try {
     await server.listen({ port, host })
     console.log(`[ControlStock] API escuchando en ${host}:${port}`)
+    if (rendererDir) {
+      console.log(`[ControlStock] UI web disponible en http://<IP-local>:${port}`)
+    }
   } catch (err: unknown) {
     const code = (err as NodeJS.ErrnoException)?.code
     if (code === 'EADDRINUSE') {

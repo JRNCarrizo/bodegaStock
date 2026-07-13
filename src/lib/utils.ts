@@ -24,11 +24,16 @@ export async function initApiFromBridge(): Promise<void> {
     return
   }
 
-  // Navegador (celular/PC sin Electron): API en el mismo host, puerto 3847
-  if (typeof window !== 'undefined' && window.location?.hostname) {
-    const host = window.location.hostname
-    if (host && host !== 'localhost' && host !== '127.0.0.1') {
-      setApiUrl(`http://${host}:3847`)
+  // Navegador / celular: misma PC y puerto que sirven la UI (API + web en :3847)
+  if (typeof window !== 'undefined' && window.location?.origin) {
+    const { protocol, hostname, port } = window.location
+    if (hostname && hostname !== 'localhost' && hostname !== '127.0.0.1') {
+      // Vite en :5173 → API en :3847; UI empaquetada ya viene en :3847
+      if (port === '5173' || port === '4173') {
+        setApiUrl(`${protocol}//${hostname}:3847`)
+      } else {
+        setApiUrl(window.location.origin)
+      }
     }
   }
 }

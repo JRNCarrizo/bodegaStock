@@ -61,6 +61,9 @@ export function registerAuthHook(app: FastifyInstance): void {
   app.decorateRequest('user', undefined)
 
   app.addHook('onRequest', async (request: FastifyRequest, reply: FastifyReply) => {
+    // UI web / assets estáticos — no requieren JWT
+    if (!request.url.startsWith('/api/')) return
+
     const publicRoutes = ['/api/auth/login', '/api/health', '/api/server/info']
     if (publicRoutes.some((r) => request.url.startsWith(r))) return
 

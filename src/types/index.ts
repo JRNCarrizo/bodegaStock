@@ -115,11 +115,13 @@ export interface SectorStockLinea {
 
 export interface SectorStockProducto {
   producto_id: number
+  stock_sector_id: number
   codigo_interno: string
   nombre: string
   imagen_path: string | null
   unidad: string
   cantidad_total: number
+  reorganizar: ReorganizarLineaInfo
   lineas: SectorStockLinea[]
 }
 
@@ -568,6 +570,8 @@ export interface MovimientoInternoLineaDraft {
   sector_destino_nombre: string
   ubicacion_destino_id: number | null
   ubicacion_destino_nombre: string | null
+  ubicacion_origen_id: number | null
+  ubicacion_origen_nombre: string | null
 }
 
 export interface MovimientoInternoListItem {
@@ -602,6 +606,8 @@ export interface MovimientoInternoDetalleLinea {
   sector_destino_nombre: string
   ubicacion_destino_id: number | null
   ubicacion_destino_nombre: string | null
+  ubicacion_origen_id: number | null
+  ubicacion_origen_nombre: string | null
   cancelada: boolean
   orden: number
 }

@@ -50,14 +50,14 @@
               │                 │                 │
         ┌─────▼─────┐     ┌─────▼─────┐     ┌─────▼─────┐
         │ Celular 1 │     │ Celular 2 │     │ Celular N │
-        │  (APK)    │     │  (APK)    │     │  (APK)    │
+        │ web / APK │     │ web / APK │     │ web / APK │
         └───────────┘     └───────────┘     └───────────┘
 ```
 
 ### Principios técnicos
 
-1. **Un solo servidor:** el PC con Electron aloja la base de datos y la API.
-2. **Clientes móviles:** se conectan por IP local (ej. `http://192.168.1.50:3847`).
+1. **Un solo servidor:** el PC con Electron aloja la base de datos, la API y la **UI web** (puerto `3847`).
+2. **Clientes móviles:** se conectan por IP local (ej. `http://192.168.1.50:3847`) — **navegador** y/o **APK**.
 3. **Tiempo real:** WebSockets opcionales (inventario y avisos); v1 puede usar REST + polling. Ver [APP-MOVIL.md](APP-MOVIL.md).
 4. **Stock por sector:** un producto puede existir en varios sectores con cantidades distintas.
 5. **Ledger de movimientos:** casi todo cambio de stock genera un registro auditable; no se edita stock "a mano" salvo ajustes autorizados post-inventario.
@@ -65,11 +65,10 @@
 
 ### Conexión móvil
 
-- App **APK Android** separada del instalador de PC (no es la misma app Electron).
-- Al iniciar: ingreso manual de **IP del servidor** + puerto `3847`, o escaneo de **código QR** generado por el PC servidor.
+- **Web (siempre):** abrir la URL/QR de Configuración en el navegador del celular (misma WiFi).
+- **APK (cuando exista):** app Android separada del instalador de PC; misma API; **no reemplaza** la web.
 - Login con usuario/contraseña; permisos determinan pantallas visibles.
 - Detalle completo: [APP-MOVIL.md](APP-MOVIL.md).
-
 ---
 
 ## 3. Módulos funcionales
@@ -305,7 +304,7 @@ Estadísticas y reportes basados en el ledger de movimientos.
 
 ### 3.11 Inventario (módulo principal)
 
-Conteo físico realizado por **dos personas** conectadas desde celulares (navegador en v1; APK después). Cada uno registra **líneas independientes** con desglose (pallet × unidades, sueltos). Ver documentos:
+Conteo físico realizado por **dos personas** desde celulares (**navegador web** y, cuando exista, **APK** — canales en **paralelo**; ver [APP-MOVIL.md](APP-MOVIL.md)). Cada uno registra **líneas independientes** con desglose (pallet × unidades, sueltos). Ver documentos:
 
 - [INVENTARIO.md](INVENTARIO.md) — flujo completo
 - [DESGLOSE-DE-CANTIDADES.md](DESGLOSE-DE-CANTIDADES.md) — formato de cantidades
@@ -348,7 +347,7 @@ Administración de cuentas y permisos. Ver documento: [USUARIOS-Y-PERMISOS.md](U
 
 ## 5. Plataformas por módulo
 
-| Módulo | PC (Electron) | Celular (APK) |
+| Módulo | PC (Electron) | Celular (web / APK) |
 |--------|:-------------:|:-------------:|
 | Productos (alta/edición) | ✓ | Consulta/escaneo |
 | Consulta | ✓ | ✓ |

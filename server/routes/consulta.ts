@@ -110,6 +110,17 @@ function getStockDetalle(db: ReturnType<typeof getDb>, productoId: number) {
     )
 
     const cantidad_total = lineas.reduce((sum, l) => sum + l.total_cajas, 0)
+    const ubicacionIds = [...new Set(lineas.map((l) => l.ubicacion_id))]
+    const baseReorg = getReorganizarSectorInfo(db, productoId, cantidad_total)
+    const reorganizar =
+      ubicacionIds.length > 1
+        ? {
+            ...baseReorg,
+            puede: false as const,
+            motivo:
+              'Hay varias ubicaciones. Reorganizá en Consulta → Por sector eligiendo una ubicación.'
+          }
+        : baseReorg
 
     return {
       stock_sector_id: sector.stock_sector_id,
@@ -117,7 +128,7 @@ function getStockDetalle(db: ReturnType<typeof getDb>, productoId: number) {
       sector_codigo: sector.sector_codigo,
       sector_nombre: sector.sector_nombre,
       cantidad_total,
-      reorganizar: getReorganizarSectorInfo(db, productoId, cantidad_total),
+      reorganizar,
       lineas
     }
   })
@@ -195,7 +206,10 @@ export async function consultaRoutes(app: FastifyInstance): Promise<void> {
     const db = getDb()
     const user = request.user!
 
-    const body = (request.body ?? {}) as Partial<ReorganizarDesgloseInput>
+    const body = (request.body ?? {}) as Partial<ReorganizarDesgloseInput> & {
+      ubicacion_id?: number | null
+      sin_ubicacion?: boolean
+    }
     const bultos = Array.isArray(body.bultos) ? body.bultos : []
 
     const desglose: ReorganizarDesgloseInput = {
@@ -207,6 +221,13 @@ export async function consultaRoutes(app: FastifyInstance): Promise<void> {
       unidades_sueltas: Number(body.unidades_sueltas ?? 0)
     }
 
+    let scope: { ubicacion_id?: number | null; sin_ubicacion?: boolean } | undefined
+    if (body.sin_ubicacion === true) {
+      scope = { sin_ubicacion: true }
+    } else if (body.ubicacion_id != null && Number(body.ubicacion_id) > 0) {
+      scope = { ubicacion_id: Number(body.ubicacion_id) }
+    }
+
     try {
       const sectorRow = db.prepare(`
         SELECT producto_id FROM stock_sector WHERE id = ?
@@ -216,7 +237,7 @@ export async function consultaRoutes(app: FastifyInstance): Promise<void> {
         return reply.status(404).send({ error: 'Stock del sector no encontrado' })
       }
 
-      const result = reorganizeStockSector(db, stockSectorId, user.id, desglose)
+      const result = reorganizeStockSector(db, stockSectorId, user.id, desglose, scope)
 
       const producto = db.prepare(`
         SELECT id, codigo_interno, codigo_barras, nombre, descripcion, imagen_path, activo, unidad

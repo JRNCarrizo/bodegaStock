@@ -12,10 +12,18 @@ import {
 } from 'lucide-react'
 import { formatCantidad } from '@/lib/desglose'
 import { api, cn } from '@/lib/utils'
-import type { Sector, SectorStockDetalle, SectorUbicacion } from '@/types'
+import type {
+  ReorganizarDesglosePayload,
+  Sector,
+  SectorStockDetalle,
+  SectorStockProducto,
+  SectorUbicacion
+} from '@/types'
 import { ProductImage } from '@/components/ProductImage'
+import { ReorganizarStockForm } from '@/components/ReorganizarStockForm'
 import { Button } from '@/components/ui/Button'
 import { Badge, Card, CardBody } from '@/components/ui/Card'
+import { useAuth } from '@/context/AuthContext'
 
 type UbicacionFilter = 'all' | 'sin' | number
 
@@ -28,6 +36,8 @@ export function SectorStockView({
   onBack?: () => void
   autoFocusSearch?: boolean
 }) {
+  const { hasPermiso } = useAuth()
+  const canReorganizar = hasPermiso('ajustes.crear')
   const [ubicaciones, setUbicaciones] = useState<SectorUbicacion[]>([])
   const [loadingUbicaciones, setLoadingUbicaciones] = useState(false)
   const [ubicacionFilter, setUbicacionFilter] = useState<UbicacionFilter>('all')
@@ -36,6 +46,9 @@ export function SectorStockView({
   const [stockError, setStockError] = useState('')
   const [expandedStockProductos, setExpandedStockProductos] = useState<Set<number>>(() => new Set())
   const [stockSearch, setStockSearch] = useState('')
+  const [reorganizingProductoId, setReorganizingProductoId] = useState<number | null>(null)
+  const [confirmProductoId, setConfirmProductoId] = useState<number | null>(null)
+  const [reorgError, setReorgError] = useState('')
   const stockSearchRef = useRef<HTMLInputElement>(null)
 
   const loadUbicaciones = useCallback(async (sectorId: number) => {
@@ -92,6 +105,8 @@ export function SectorStockView({
 
   function changeUbicacionFilter(filter: UbicacionFilter) {
     setUbicacionFilter(filter)
+    setConfirmProductoId(null)
+    setReorgError('')
     void loadSectorStock(sector.id, filter)
   }
 
@@ -102,6 +117,32 @@ export function SectorStockView({
       else next.add(productoId)
       return next
     })
+  }
+
+  async function confirmReorganizarProducto(
+    producto: SectorStockProducto,
+    desglose: ReorganizarDesglosePayload
+  ) {
+    setReorganizingProductoId(producto.producto_id)
+    setReorgError('')
+    const scopeBody =
+      ubicacionFilter === 'sin'
+        ? { sin_ubicacion: true }
+        : typeof ubicacionFilter === 'number'
+          ? { ubicacion_id: ubicacionFilter }
+          : {}
+    try {
+      await api(`/api/consulta/stock-sector/${producto.stock_sector_id}/reorganizar`, {
+        method: 'POST',
+        body: JSON.stringify({ ...desglose, ...scopeBody })
+      })
+      setConfirmProductoId(null)
+      await loadSectorStock(sector.id, ubicacionFilter)
+    } catch (err) {
+      setReorgError(err instanceof Error ? err.message : 'Error al reorganizar')
+    } finally {
+      setReorganizingProductoId(null)
+    }
   }
 
   const productosStockFiltrados = useMemo(() => {
@@ -237,6 +278,16 @@ export function SectorStockView({
           {stockError}
         </div>
       )}
+      {reorgError && (
+        <div className="shrink-0 border-b border-red-100 bg-red-50 px-4 py-2 text-sm text-red-700 sm:px-6">
+          {reorgError}
+        </div>
+      )}
+      {!!sector.usa_ubicaciones && ubicacionFilter === 'all' && (
+        <div className="shrink-0 border-b border-amber-100 bg-amber-50/80 px-4 py-2 text-xs text-amber-800 sm:px-6">
+          Para armar / reorganizar sin mezclar posiciones, elegí una ubicación (o “Sin ubicación”).
+        </div>
+      )}
 
       <div className="shrink-0 border-b border-surface-border bg-white px-4 py-3 sm:px-6">
         <div className="relative">
@@ -281,76 +332,116 @@ export function SectorStockView({
                 <ul className="divide-y divide-surface-border">
                   {productosStockFiltrados.map((producto) => {
                     const isExpanded = expandedStockProductos.has(producto.producto_id)
+                    const showReorg = confirmProductoId === producto.producto_id
+                    const puedeReorganizar =
+                      canReorganizar && producto.reorganizar.puede && !showReorg
                     return (
                       <li key={producto.producto_id}>
-                        <button
-                          type="button"
-                          onClick={() => toggleStockProducto(producto.producto_id)}
+                        <div
                           className={cn(
                             'flex w-full items-center gap-3 px-4 py-3.5 text-left transition-colors sm:px-5',
                             isExpanded ? 'bg-brand-50/60' : 'hover:bg-slate-50/80'
                           )}
                         >
-                          <span
-                            className={cn(
-                              'shrink-0 rounded-lg p-1',
-                              isExpanded ? 'bg-brand-100 text-brand-700' : 'text-slate-400'
-                            )}
-                            aria-hidden
+                          <button
+                            type="button"
+                            onClick={() => toggleStockProducto(producto.producto_id)}
+                            className="flex min-w-0 flex-1 items-center gap-3 text-left"
                           >
-                            {isExpanded ? (
-                              <ChevronDown className="h-4 w-4" />
-                            ) : (
-                              <ChevronRight className="h-4 w-4" />
-                            )}
-                          </span>
-                          <ProductImage
-                            productoId={producto.producto_id}
-                            hasImage={!!producto.imagen_path}
-                            alt={producto.nombre}
-                            className="h-11 w-11 shrink-0 rounded-xl ring-1 ring-surface-border"
-                          />
-                          <div className="min-w-0 flex-1 text-left">
-                            <span className="inline-flex rounded-md bg-slate-100 px-2 py-0.5 font-mono text-xs font-semibold text-slate-700">
-                              {producto.codigo_interno}
+                            <span
+                              className={cn(
+                                'shrink-0 rounded-lg p-1',
+                                isExpanded ? 'bg-brand-100 text-brand-700' : 'text-slate-400'
+                              )}
+                              aria-hidden
+                            >
+                              {isExpanded ? (
+                                <ChevronDown className="h-4 w-4" />
+                              ) : (
+                                <ChevronRight className="h-4 w-4" />
+                              )}
                             </span>
-                            <p className="mt-1 truncate text-sm font-semibold text-slate-900">
-                              {producto.nombre}
-                            </p>
-                          </div>
+                            <ProductImage
+                              productoId={producto.producto_id}
+                              hasImage={!!producto.imagen_path}
+                              alt={producto.nombre}
+                              className="h-11 w-11 shrink-0 rounded-xl ring-1 ring-surface-border"
+                            />
+                            <div className="min-w-0 flex-1 text-left">
+                              <span className="inline-flex rounded-md bg-slate-100 px-2 py-0.5 font-mono text-xs font-semibold text-slate-700">
+                                {producto.codigo_interno}
+                              </span>
+                              <p className="mt-1 truncate text-sm font-semibold text-slate-900">
+                                {producto.nombre}
+                              </p>
+                            </div>
+                          </button>
+                          {puedeReorganizar && (
+                            <Button
+                              type="button"
+                              variant="secondary"
+                              className="h-8 shrink-0 gap-1.5 px-2.5 text-xs"
+                              disabled={reorganizingProductoId !== null}
+                              onClick={() => {
+                                setConfirmProductoId(producto.producto_id)
+                                setExpandedStockProductos((prev) => new Set(prev).add(producto.producto_id))
+                                setReorgError('')
+                              }}
+                            >
+                              <Layers className="h-3.5 w-3.5" />
+                              Armar / reorganizar
+                            </Button>
+                          )}
                           <span className="inline-flex shrink-0 items-center rounded-lg bg-brand-50 px-2.5 py-1.5 text-sm font-bold tabular-nums text-brand-700 ring-1 ring-brand-100">
                             {formatCantidad(producto.cantidad_total)}
                           </span>
-                        </button>
+                        </div>
                         {isExpanded && (
-                          <ul className="space-y-2 border-t border-brand-100/80 bg-gradient-to-b from-surface-muted/40 to-white px-4 py-3 sm:px-5">
-                            {producto.lineas.map((linea, idx) => (
-                              <li
-                                key={linea.id}
-                                className="flex items-center justify-between gap-3 rounded-lg border border-surface-border bg-white px-3 py-2 text-sm"
-                              >
-                                <div className="min-w-0">
-                                  <div className="flex items-center gap-2">
-                                    <span className="inline-flex h-5 min-w-[1.25rem] items-center justify-center rounded bg-slate-100 px-1 text-[10px] font-semibold text-slate-400">
-                                      {idx + 1}
-                                    </span>
-                                    <span className="font-medium text-slate-800">
-                                      {linea.etiqueta}
-                                    </span>
+                          <div className="space-y-2 border-t border-brand-100/80 bg-gradient-to-b from-surface-muted/40 to-white px-4 py-3 sm:px-5">
+                            {!producto.reorganizar.puede && producto.reorganizar.motivo && (
+                              <p className="text-xs text-slate-400">{producto.reorganizar.motivo}</p>
+                            )}
+                            {showReorg && (
+                              <ReorganizarStockForm
+                                titulo={`${producto.codigo_interno} · ${filtroLabel}`}
+                                info={producto.reorganizar}
+                                unidadProducto={producto.unidad}
+                                loading={reorganizingProductoId === producto.producto_id}
+                                onConfirm={(desglose) =>
+                                  void confirmReorganizarProducto(producto, desglose)
+                                }
+                                onCancel={() => setConfirmProductoId(null)}
+                              />
+                            )}
+                            <ul className="space-y-2">
+                              {producto.lineas.map((linea, idx) => (
+                                <li
+                                  key={linea.id}
+                                  className="flex items-center justify-between gap-3 rounded-lg border border-surface-border bg-white px-3 py-2 text-sm"
+                                >
+                                  <div className="min-w-0">
+                                    <div className="flex items-center gap-2">
+                                      <span className="inline-flex h-5 min-w-[1.25rem] items-center justify-center rounded bg-slate-100 px-1 text-[10px] font-semibold text-slate-400">
+                                        {idx + 1}
+                                      </span>
+                                      <span className="font-medium text-slate-800">
+                                        {linea.etiqueta}
+                                      </span>
+                                    </div>
+                                    {ubicacionFilter === 'all' && linea.ubicacion && (
+                                      <p className="mt-1 flex items-center gap-1 pl-7 text-xs text-slate-500">
+                                        <MapPin className="h-3 w-3 shrink-0" />
+                                        {linea.ubicacion}
+                                      </p>
+                                    )}
                                   </div>
-                                  {ubicacionFilter === 'all' && linea.ubicacion && (
-                                    <p className="mt-1 flex items-center gap-1 pl-7 text-xs text-slate-500">
-                                      <MapPin className="h-3 w-3 shrink-0" />
-                                      {linea.ubicacion}
-                                    </p>
-                                  )}
-                                </div>
-                                <span className="shrink-0 rounded-md bg-slate-50 px-2 py-1 text-sm font-semibold tabular-nums text-slate-900 ring-1 ring-surface-border">
-                                  {formatCantidad(linea.total_unidades)}
-                                </span>
-                              </li>
-                            ))}
-                          </ul>
+                                  <span className="shrink-0 rounded-md bg-slate-50 px-2 py-1 text-sm font-semibold tabular-nums text-slate-900 ring-1 ring-surface-border">
+                                    {formatCantidad(linea.total_unidades)}
+                                  </span>
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
                         )}
                       </li>
                     )

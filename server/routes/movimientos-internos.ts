@@ -18,6 +18,7 @@ interface LineaBody {
   sector_origen_id: number
   sector_destino_id: number
   ubicacion_destino_id?: number | null
+  ubicacion_origen_id?: number | null
   tipo_bulto?: 'PALLET' | 'CAJA' | null
   cantidad_bultos?: number | null
   unidades_por_bulto?: number | null
@@ -30,6 +31,7 @@ interface LineaUpdateBody {
   sector_origen_id?: number
   sector_destino_id?: number
   ubicacion_destino_id?: number | null
+  ubicacion_origen_id?: number | null
 }
 
 interface MovimientoBody {
@@ -69,6 +71,46 @@ function resolveUbicacionDestino(
   return Number(ubicacionDestinoId)
 }
 
+function resolveUbicacionOrigen(
+  db: ReturnType<typeof getDb>,
+  sectorOrigenId: number,
+  ubicacionOrigenId: number | null | undefined
+): number | null {
+  if (ubicacionOrigenId == null || ubicacionOrigenId === 0) return null
+  const ub = db.prepare(`
+    SELECT id FROM sector_ubicaciones
+    WHERE id = ? AND sector_id = ? AND activo = 1
+  `).get(Number(ubicacionOrigenId), sectorOrigenId)
+  if (!ub) throw new Error('Ubicación origen no válida para el sector')
+  return Number(ubicacionOrigenId)
+}
+
+/** Reubicación dentro del mismo sector: exige ubicaciones distintas (origen puede ser sin ubicación). */
+function assertMovimientoLineaSectoresOk(
+  db: ReturnType<typeof getDb>,
+  origenId: number,
+  destinoId: number,
+  ubicacionOrigenId: number | null,
+  ubicacionDestinoId: number | null
+): void {
+  if (origenId !== destinoId) return
+
+  const sector = db.prepare(`
+    SELECT usa_ubicaciones FROM sectores WHERE id = ?
+  `).get(origenId) as { usa_ubicaciones: number } | undefined
+  if (!sector?.usa_ubicaciones) {
+    throw new Error('Origen y destino deben ser distintos')
+  }
+  if (ubicacionDestinoId == null && ubicacionOrigenId == null) {
+    throw new Error(
+      'Para reubicar en el mismo sector, elegí una ubicación destino distinta a “sin ubicación”'
+    )
+  }
+  if (ubicacionOrigenId === ubicacionDestinoId) {
+    throw new Error('En el mismo sector, la ubicación origen y destino deben ser distintas')
+  }
+}
+
 function getMovimientoLineas(db: ReturnType<typeof getDb>, movimientoId: number, soloActivas = false) {
   let sql = `
     SELECT
@@ -76,6 +118,7 @@ function getMovimientoLineas(db: ReturnType<typeof getDb>, movimientoId: number,
       ml.sector_origen_id, so.nombre AS sector_origen_nombre,
       ml.sector_destino_id, sd.nombre AS sector_destino_nombre,
       ml.ubicacion_destino_id, su.nombre AS ubicacion_destino_nombre,
+      ml.ubicacion_origen_id, suo.nombre AS ubicacion_origen_nombre,
       ml.cantidad_cajas, ml.tipo_bulto, ml.cantidad_bultos, ml.unidades_por_bulto, ml.etiqueta,
       ml.cancelada, ml.orden
     FROM movimiento_interno_lineas ml
@@ -83,6 +126,7 @@ function getMovimientoLineas(db: ReturnType<typeof getDb>, movimientoId: number,
     JOIN sectores so ON so.id = ml.sector_origen_id
     JOIN sectores sd ON sd.id = ml.sector_destino_id
     LEFT JOIN sector_ubicaciones su ON su.id = ml.ubicacion_destino_id
+    LEFT JOIN sector_ubicaciones suo ON suo.id = ml.ubicacion_origen_id
     WHERE ml.movimiento_interno_id = ?
   `
   if (soloActivas) sql += ' AND ml.cancelada = 0'
@@ -99,6 +143,8 @@ function getMovimientoLineas(db: ReturnType<typeof getDb>, movimientoId: number,
     sector_destino_nombre: string
     ubicacion_destino_id: number | null
     ubicacion_destino_nombre: string | null
+    ubicacion_origen_id: number | null
+    ubicacion_origen_nombre: string | null
     cantidad_cajas: number
     tipo_bulto: string | null
     cantidad_bultos: number | null
@@ -290,12 +336,28 @@ export async function movimientosInternosRoutes(app: FastifyInstance): Promise<v
   }, async (request) => {
     const productoId = Number((request.params as { id: string }).id)
     const sectorId = Number((request.params as { sectorId: string }).sectorId)
+    const { sin_ubicacion, ubicacion_id } = request.query as {
+      sin_ubicacion?: string
+      ubicacion_id?: string
+    }
     const db = getDb()
     assertProductoActivo(db, productoId)
     assertSectorActivo(db, sectorId, 'Sector')
 
+    let ubicacionFilter: { ubicacion_id: number | null } | null = null
+    if (sin_ubicacion === '1') {
+      ubicacionFilter = { ubicacion_id: null }
+    } else if (ubicacion_id) {
+      ubicacionFilter = { ubicacion_id: Number(ubicacion_id) }
+    }
+
     return {
-      stock_disponible_cajas: getStockDisponibleCajasEnSector(db, productoId, sectorId)
+      stock_disponible_cajas: getStockDisponibleCajasEnSector(
+        db,
+        productoId,
+        sectorId,
+        ubicacionFilter
+      )
     }
   })
 
@@ -434,9 +496,6 @@ export async function movimientosInternosRoutes(app: FastifyInstance): Promise<v
       if (!linea.producto_id || !qty || qty <= 0 || !origenId || !destinoId) {
         return reply.status(400).send({ error: 'Línea inválida' })
       }
-      if (origenId === destinoId) {
-        return reply.status(400).send({ error: 'Origen y destino deben ser distintos en cada línea' })
-      }
       try {
         assertProductoActivo(db, linea.producto_id)
         assertSectorActivo(db, origenId, 'Origen')
@@ -454,8 +513,13 @@ export async function movimientosInternosRoutes(app: FastifyInstance): Promise<v
       if (tipo === 'RECIBIR' && origenId === sectorContextoId) {
         return reply.status(400).send({ error: 'El origen debe ser un sector distinto al destino' })
       }
+
+      let ubicacionDestinoId: number | null
+      let ubicacionOrigenId: number | null
       try {
-        resolveUbicacionDestino(db, destinoId, linea.ubicacion_destino_id)
+        ubicacionDestinoId = resolveUbicacionDestino(db, destinoId, linea.ubicacion_destino_id)
+        ubicacionOrigenId = resolveUbicacionOrigen(db, origenId, linea.ubicacion_origen_id)
+        assertMovimientoLineaSectoresOk(db, origenId, destinoId, ubicacionOrigenId, ubicacionDestinoId)
       } catch (err) {
         return reply.status(400).send({ error: err instanceof Error ? err.message : 'Ubicación inválida' })
       }
@@ -509,15 +573,16 @@ export async function movimientosInternosRoutes(app: FastifyInstance): Promise<v
       db.prepare(`
         INSERT INTO movimiento_interno_lineas (
           movimiento_interno_id, producto_id, sector_origen_id, sector_destino_id,
-          ubicacion_destino_id,
+          ubicacion_destino_id, ubicacion_origen_id,
           cantidad_cajas, tipo_bulto, cantidad_bultos, unidades_por_bulto, etiqueta, orden
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).run(
         movimientoId,
         linea.producto_id,
         linea.sector_origen_id,
         linea.sector_destino_id,
         resolveUbicacionDestino(db, linea.sector_destino_id, linea.ubicacion_destino_id),
+        resolveUbicacionOrigen(db, linea.sector_origen_id, linea.ubicacion_origen_id),
         Number(linea.cantidad_cajas),
         tipoBulto,
         cantidadBultos,
@@ -573,9 +638,13 @@ export async function movimientosInternosRoutes(app: FastifyInstance): Promise<v
           let destinoId = linea.sector_destino_id
           let cancelada = upd.cancelada ? 1 : 0
           const currentUb = db.prepare(`
-            SELECT ubicacion_destino_id FROM movimiento_interno_lineas WHERE id = ?
-          `).get(upd.id) as { ubicacion_destino_id: number | null } | undefined
+            SELECT ubicacion_destino_id, ubicacion_origen_id FROM movimiento_interno_lineas WHERE id = ?
+          `).get(upd.id) as {
+            ubicacion_destino_id: number | null
+            ubicacion_origen_id: number | null
+          } | undefined
           let ubicacionDestinoId: number | null = currentUb?.ubicacion_destino_id ?? null
+          let ubicacionOrigenId: number | null = currentUb?.ubicacion_origen_id ?? null
 
           if (upd.sector_origen_id !== undefined) {
             origenId = Number(upd.sector_origen_id)
@@ -583,6 +652,9 @@ export async function movimientosInternosRoutes(app: FastifyInstance): Promise<v
             if (movimiento.tipo === 'RECIBIR') {
               const stock = getStockDisponibleCajasEnSector(db, linea.producto_id, origenId)
               if (stock <= 0) throw new Error(`Sin stock en ${origenId} para el producto`)
+            }
+            if (upd.ubicacion_origen_id === undefined && origenId !== destinoId) {
+              ubicacionOrigenId = null
             }
           }
           if (upd.sector_destino_id !== undefined) {
@@ -592,15 +664,20 @@ export async function movimientosInternosRoutes(app: FastifyInstance): Promise<v
               ubicacionDestinoId = null
             }
           }
-          if (origenId === destinoId) {
-            throw new Error('Origen y destino deben ser distintos')
-          }
 
           if (upd.ubicacion_destino_id !== undefined) {
             ubicacionDestinoId = resolveUbicacionDestino(db, destinoId, upd.ubicacion_destino_id)
           } else if (ubicacionDestinoId != null) {
             resolveUbicacionDestino(db, destinoId, ubicacionDestinoId)
           }
+
+          if (upd.ubicacion_origen_id !== undefined) {
+            ubicacionOrigenId = resolveUbicacionOrigen(db, origenId, upd.ubicacion_origen_id)
+          } else if (ubicacionOrigenId != null) {
+            resolveUbicacionOrigen(db, origenId, ubicacionOrigenId)
+          }
+
+          assertMovimientoLineaSectoresOk(db, origenId, destinoId, ubicacionOrigenId, ubicacionDestinoId)
 
           if (upd.cancelada === undefined) {
             const current = db.prepare(`
@@ -611,9 +688,17 @@ export async function movimientosInternosRoutes(app: FastifyInstance): Promise<v
 
           db.prepare(`
             UPDATE movimiento_interno_lineas
-            SET sector_origen_id = ?, sector_destino_id = ?, ubicacion_destino_id = ?, cancelada = ?
+            SET sector_origen_id = ?, sector_destino_id = ?,
+                ubicacion_destino_id = ?, ubicacion_origen_id = ?, cancelada = ?
             WHERE id = ?
-          `).run(origenId, destinoId, ubicacionDestinoId, cancelada ? 1 : 0, upd.id)
+          `).run(
+            origenId,
+            destinoId,
+            ubicacionDestinoId,
+            ubicacionOrigenId,
+            cancelada ? 1 : 0,
+            upd.id
+          )
         }
       })
 
@@ -655,6 +740,11 @@ export async function movimientosInternosRoutes(app: FastifyInstance): Promise<v
     try {
       const tx = db.transaction(() => {
         for (const linea of lineas) {
+          const origenMeta = db.prepare(`
+            SELECT usa_ubicaciones FROM sectores WHERE id = ?
+          `).get(linea.sector_origen_id) as { usa_ubicaciones: number } | undefined
+          const filtrarOrigen = Boolean(origenMeta?.usa_ubicaciones)
+
           applyMovimientoInternoDespachoLine(db, {
             producto_id: linea.producto_id,
             sector_origen_id: linea.sector_origen_id,
@@ -662,7 +752,9 @@ export async function movimientosInternosRoutes(app: FastifyInstance): Promise<v
             movimiento_id: id,
             movimiento_linea_id: linea.id,
             usuario_id: user.id,
-            observacion
+            observacion,
+            ubicacion_origen_id: linea.ubicacion_origen_id,
+            filtrar_ubicacion_origen: filtrarOrigen
           })
 
           applyMovimientoInternoRecepcionLine(db, {
@@ -672,7 +764,10 @@ export async function movimientosInternosRoutes(app: FastifyInstance): Promise<v
             movimiento_id: id,
             usuario_id: user.id,
             observacion,
-            ubicacion_destino_id: linea.ubicacion_destino_id
+            ubicacion_destino_id: linea.ubicacion_destino_id,
+            tipo_bulto: linea.tipo_bulto,
+            cantidad_bultos: linea.cantidad_bultos,
+            unidades_por_bulto: linea.unidades_por_bulto
           })
         }
 

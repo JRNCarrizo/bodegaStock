@@ -455,6 +455,13 @@ export function runMigrations(db: Database.Database): void {
     `)
   }
 
+  if (tableExists(db, 'movimiento_interno_lineas') && !columnExists(db, 'movimiento_interno_lineas', 'ubicacion_origen_id')) {
+    db.exec(`
+      ALTER TABLE movimiento_interno_lineas
+      ADD COLUMN ubicacion_origen_id INTEGER REFERENCES sector_ubicaciones(id) ON DELETE SET NULL
+    `)
+  }
+
   if (!tableExists(db, 'inventario_sesiones')) {
     db.exec(`
       CREATE TABLE inventario_sesiones (

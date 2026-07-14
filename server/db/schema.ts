@@ -280,6 +280,7 @@ CREATE TABLE IF NOT EXISTS movimiento_interno_lineas (
   etiqueta TEXT,
   cancelada INTEGER NOT NULL DEFAULT 0,
   ubicacion_destino_id INTEGER REFERENCES sector_ubicaciones(id) ON DELETE SET NULL,
+  ubicacion_origen_id INTEGER REFERENCES sector_ubicaciones(id) ON DELETE SET NULL,
   orden INTEGER NOT NULL DEFAULT 0
 );
 

@@ -120,9 +120,11 @@ export function MovimientosPage() {
   const [sectorContextoId, setSectorContextoId] = useState('')
   const [sectorDestinoDefaultId, setSectorDestinoDefaultId] = useState('')
   const [defaultUbicacionDestinoId, setDefaultUbicacionDestinoId] = useState('')
+  const [defaultUbicacionOrigenId, setDefaultUbicacionOrigenId] = useState('')
   const [observacion, setObservacion] = useState('')
   const [sectores, setSectores] = useState<Sector[]>([])
   const [ubicacionesDestino, setUbicacionesDestino] = useState<SectorUbicacion[]>([])
+  const [ubicacionesOrigen, setUbicacionesOrigen] = useState<SectorUbicacion[]>([])
   const [ubicacionesCache, setUbicacionesCache] = useState<Record<number, SectorUbicacion[]>>({})
 
   const [productSearch, setProductSearch] = useState('')
@@ -136,6 +138,7 @@ export function MovimientosPage() {
   const [cantidadBultos, setCantidadBultos] = useState('')
   const [unidadesPorBulto, setUnidadesPorBulto] = useState('')
   const [lineUbicacionDestinoId, setLineUbicacionDestinoId] = useState('')
+  const [lineUbicacionOrigenId, setLineUbicacionOrigenId] = useState('')
   const [stockDisponible, setStockDisponible] = useState<number | null>(null)
   const [lineas, setLineas] = useState<MovimientoInternoLineaDraft[]>([])
   const [expandedProductos, setExpandedProductos] = useState<Set<number>>(() => new Set())
@@ -149,6 +152,7 @@ export function MovimientosPage() {
   const sectorContextoRef = useRef<HTMLSelectElement>(null)
   const sectorDestinoRef = useRef<HTMLSelectElement>(null)
   const defaultUbicacionRef = useRef<HTMLSelectElement>(null)
+  const defaultUbicacionOrigenRef = useRef<HTMLSelectElement>(null)
   const observacionRef = useRef<HTMLInputElement>(null)
   const productSearchRef = useRef<HTMLInputElement>(null)
   const cargaPanelRef = useRef<HTMLDivElement>(null)
@@ -159,6 +163,7 @@ export function MovimientosPage() {
   const unidadesPorBultoRef = useRef<HTMLInputElement>(null)
   const lineOrigenRef = useRef<HTMLSelectElement>(null)
   const lineUbicacionDestinoRef = useRef<HTMLSelectElement>(null)
+  const lineUbicacionOrigenRef = useRef<HTMLSelectElement>(null)
   const listSearchRef = useRef<HTMLInputElement>(null)
   const enviarBtnRef = useRef<HTMLButtonElement>(null)
   const recibirBtnRef = useRef<HTMLButtonElement>(null)
@@ -297,13 +302,33 @@ export function MovimientosPage() {
 
   useEffect(() => {
     if (view !== 'create') return
-    const sectorId = destinoSectorIdCreate()
-    if (!sectorId || !sectorUsaUbicaciones(sectorId)) {
+    const destId = destinoSectorIdCreate()
+    if (!destId || !sectorUsaUbicaciones(destId)) {
       setUbicacionesDestino([])
       return
     }
-    void loadUbicacionesSector(sectorId).then(setUbicacionesDestino)
+    void loadUbicacionesSector(destId).then(setUbicacionesDestino)
   }, [view, createPhase, createTipo, sectorContextoId, sectorDestinoDefaultId, sectores])
+
+  useEffect(() => {
+    if (view !== 'create') return
+    const origenId =
+      createTipo === 'ENVIAR'
+        ? Number(sectorContextoId) || 0
+        : Number(lineOrigenId) || 0
+    if (!origenId || !sectorUsaUbicaciones(origenId)) {
+      setUbicacionesOrigen([])
+      return
+    }
+    void loadUbicacionesSector(origenId).then(setUbicacionesOrigen)
+  }, [
+    view,
+    createPhase,
+    createTipo,
+    sectorContextoId,
+    lineOrigenId,
+    sectores
+  ])
 
   useEffect(() => {
     setDefaultUbicacionDestinoId('')
@@ -311,8 +336,18 @@ export function MovimientosPage() {
   }, [sectorDestinoDefaultId, sectorContextoId, createTipo])
 
   useEffect(() => {
+    setDefaultUbicacionOrigenId('')
+    setLineUbicacionOrigenId('')
+  }, [sectorContextoId, createTipo])
+
+  useEffect(() => {
     if (!detalle) return
-    const sectorIds = [...new Set(editLineas.map((l) => l.sector_destino_id))]
+    const sectorIds = [
+      ...new Set([
+        ...editLineas.map((l) => l.sector_destino_id),
+        ...editLineas.map((l) => l.sector_origen_id)
+      ])
+    ]
     for (const id of sectorIds) {
       if (sectorUsaUbicaciones(id)) void loadUbicacionesSector(id)
     }
@@ -368,12 +403,25 @@ export function MovimientosPage() {
       setStockDisponible(null)
       return
     }
+    const filterPorUbicacion = sectorUsaUbicaciones(Number(sectorStockId))
+    const qs = filterPorUbicacion
+      ? lineUbicacionOrigenId
+        ? `?ubicacion_id=${lineUbicacionOrigenId}`
+        : '?sin_ubicacion=1'
+      : ''
     void api<{ stock_disponible_cajas: number }>(
-      `/api/movimientos-internos/producto/${selectedProduct.id}/stock-sector/${sectorStockId}`
+      `/api/movimientos-internos/producto/${selectedProduct.id}/stock-sector/${sectorStockId}${qs}`
     )
       .then((r) => setStockDisponible(r.stock_disponible_cajas))
       .catch(() => setStockDisponible(null))
-  }, [selectedProduct, createTipo, sectorContextoId, lineOrigenId])
+  }, [
+    selectedProduct,
+    createTipo,
+    sectorContextoId,
+    lineOrigenId,
+    lineUbicacionOrigenId,
+    sectores
+  ])
 
   useLayoutEffect(() => {
     if (productHighlightIndex < 0) return
@@ -433,7 +481,9 @@ export function MovimientosPage() {
     setSectorContextoId('')
     setSectorDestinoDefaultId('')
     setDefaultUbicacionDestinoId('')
+    setDefaultUbicacionOrigenId('')
     setLineUbicacionDestinoId('')
+    setLineUbicacionOrigenId('')
     setObservacion('')
     setLineas([])
     setError('')
@@ -464,8 +514,10 @@ export function MovimientosPage() {
       return
     }
     if (createTipo === 'ENVIAR' && sectorContextoId === sectorDestinoDefaultId) {
-      setError('Origen y destino deben ser distintos')
-      return
+      if (!sectorUsaUbicaciones(Number(sectorContextoId))) {
+        setError('Origen y destino deben ser distintos')
+        return
+      }
     }
     setError('')
     setCreatePhase('carga')
@@ -490,6 +542,7 @@ export function MovimientosPage() {
     setCantidadBultos('')
     setUnidadesPorBulto(defaultUnidadesPorBulto('PALLET', p))
     setLineUbicacionDestinoId(defaultUbicacionDestinoId)
+    setLineUbicacionOrigenId(defaultUbicacionOrigenId)
   }
 
   function handleTipoBultoChange(tipo: 'PALLET' | 'CAJA') {
@@ -590,8 +643,16 @@ export function MovimientosPage() {
 
   function ubicacionNombre(sectorId: number, ubicacionId: number | null): string | null {
     if (!ubicacionId) return null
-    const list = ubicacionesCache[sectorId] ?? ubicacionesDestino
+    const list =
+      ubicacionesCache[sectorId] ??
+      (Number(sectorContextoId) === sectorId || Number(lineOrigenId) === sectorId
+        ? ubicacionesOrigen
+        : ubicacionesDestino)
     return list.find((u) => u.id === ubicacionId)?.nombre ?? null
+  }
+
+  function origenSectorIdCreate(): number {
+    return createTipo === 'ENVIAR' ? Number(sectorContextoId) : Number(lineOrigenId)
   }
 
   function agregarLinea(): boolean {
@@ -643,6 +704,25 @@ export function MovimientosPage() {
       destinoId = Number(sectorContextoId)
     }
 
+    const origenUbId = lineUbicacionOrigenId ? Number(lineUbicacionOrigenId) : null
+    const destinoUbId = lineUbicacionDestinoId ? Number(lineUbicacionDestinoId) : null
+    const origenTieneUbicaciones = sectorUsaUbicaciones(origenId)
+
+    if (origenId === destinoId) {
+      if (!origenTieneUbicaciones) {
+        setError('Origen y destino deben ser distintos')
+        return false
+      }
+      if (origenUbId === destinoUbId) {
+        setError('En el mismo sector, elegí una ubicación destino distinta a la origen')
+        return false
+      }
+      if (destinoUbId == null && origenUbId == null) {
+        setError('Elegí una ubicación destino para reubicar')
+        return false
+      }
+    }
+
     setLineas((prev) => [
       ...prev,
       {
@@ -659,11 +739,14 @@ export function MovimientosPage() {
         sector_origen_nombre: sectorNombre(origenId),
         sector_destino_id: destinoId,
         sector_destino_nombre: sectorNombre(destinoId),
-        ubicacion_destino_id: lineUbicacionDestinoId ? Number(lineUbicacionDestinoId) : null,
-        ubicacion_destino_nombre: ubicacionNombre(
-          destinoId,
-          lineUbicacionDestinoId ? Number(lineUbicacionDestinoId) : null
-        )
+        ubicacion_destino_id: destinoUbId,
+        ubicacion_destino_nombre: ubicacionNombre(destinoId, destinoUbId),
+        ubicacion_origen_id: origenTieneUbicaciones ? origenUbId : null,
+        ubicacion_origen_nombre: origenTieneUbicaciones
+          ? origenUbId
+            ? ubicacionNombre(origenId, origenUbId)
+            : 'Sin ubicación'
+          : null
       }
     ])
     resetLineaForm()
@@ -712,7 +795,8 @@ export function MovimientosPage() {
             etiqueta: l.etiqueta,
             sector_origen_id: l.sector_origen_id,
             sector_destino_id: l.sector_destino_id,
-            ubicacion_destino_id: l.ubicacion_destino_id
+            ubicacion_destino_id: l.ubicacion_destino_id,
+            ubicacion_origen_id: l.ubicacion_origen_id
           }))
         })
       })
@@ -732,6 +816,7 @@ export function MovimientosPage() {
       sector_origen_id: number
       sector_destino_id: number
       ubicacion_destino_id: number | null
+      ubicacion_origen_id: number | null
     }>
   ) {
     if (patch.sector_origen_id !== undefined || patch.sector_destino_id !== undefined || patch.cancelada) {
@@ -747,6 +832,10 @@ export function MovimientosPage() {
         const next = { ...l, ...patch }
         if (patch.sector_origen_id !== undefined) {
           next.sector_origen_nombre = sectorNombre(patch.sector_origen_id)
+          if (patch.ubicacion_origen_id === undefined) {
+            next.ubicacion_origen_id = null
+            next.ubicacion_origen_nombre = null
+          }
         }
         if (patch.sector_destino_id !== undefined) {
           next.sector_destino_nombre = sectorNombre(patch.sector_destino_id)
@@ -761,6 +850,14 @@ export function MovimientosPage() {
             next.sector_destino_id,
             patch.ubicacion_destino_id
           )
+        }
+        if (patch.ubicacion_origen_id !== undefined) {
+          next.ubicacion_origen_id = patch.ubicacion_origen_id
+          next.ubicacion_origen_nombre = patch.ubicacion_origen_id
+            ? ubicacionNombre(next.sector_origen_id, patch.ubicacion_origen_id)
+            : sectorUsaUbicaciones(next.sector_origen_id)
+              ? 'Sin ubicación'
+              : null
         }
         if (patch.cancelada !== undefined) next.cancelada = patch.cancelada
         return next
@@ -809,7 +906,12 @@ export function MovimientosPage() {
 
   function updateSectorLineasGrupo(
     lineas: MovimientoInternoDetalleLinea[],
-    patch: Partial<{ sector_origen_id: number; sector_destino_id: number; ubicacion_destino_id: number | null }>
+    patch: Partial<{
+      sector_origen_id: number
+      sector_destino_id: number
+      ubicacion_destino_id: number | null
+      ubicacion_origen_id: number | null
+    }>
   ) {
     for (const l of lineasActivasGrupo(lineas)) {
       updateEditLinea(l.id, patch)
@@ -830,7 +932,8 @@ export function MovimientosPage() {
               cancelada: l.cancelada,
               sector_origen_id: l.sector_origen_id,
               sector_destino_id: l.sector_destino_id,
-              ubicacion_destino_id: l.ubicacion_destino_id
+              ubicacion_destino_id: l.ubicacion_destino_id,
+              ubicacion_origen_id: l.ubicacion_origen_id
             }))
           })
         })
@@ -875,6 +978,10 @@ export function MovimientosPage() {
       focusField(lineOrigenRef)
       return
     }
+    if (sectorUsaUbicaciones(origenSectorIdCreate())) {
+      focusField(lineUbicacionOrigenRef)
+      return
+    }
     if (sectorUsaUbicaciones(destinoSectorIdCreate())) {
       focusField(lineUbicacionDestinoRef)
       return
@@ -883,7 +990,10 @@ export function MovimientosPage() {
   }
 
   function nextDatosAfterSectorContexto(): React.RefObject<HTMLElement | null> {
-    if (createTipo === 'ENVIAR') return sectorDestinoRef
+    if (createTipo === 'ENVIAR') {
+      if (sectorUsaUbicaciones(Number(sectorContextoId))) return defaultUbicacionOrigenRef
+      return sectorDestinoRef
+    }
     const destId = destinoSectorIdCreate()
     if (destId && sectorUsaUbicaciones(destId)) return defaultUbicacionRef
     return observacionRef
@@ -1123,7 +1233,10 @@ export function MovimientosPage() {
                             value={lineaRef.sector_origen_id}
                             className="h-7 w-[100px] shrink-0 py-0 text-xs sm:w-[130px]"
                             onChange={(id) =>
-                              updateSectorLineasGrupo(grupo.lineas, { sector_origen_id: id })
+                              updateSectorLineasGrupo(grupo.lineas, {
+                                sector_origen_id: id,
+                                ubicacion_origen_id: null
+                              })
                             }
                           />
                         ) : (
@@ -1138,15 +1251,56 @@ export function MovimientosPage() {
                             className="h-7 w-[100px] shrink-0 rounded border border-surface-border px-1 py-0 text-xs sm:w-[130px]"
                           >
                             {sectores
-                              .filter((s) => s.id !== lineaRef.sector_origen_id)
+                              .filter(
+                                (s) =>
+                                  s.id !== lineaRef.sector_origen_id ||
+                                  !!s.usa_ubicaciones
+                              )
                               .map((s) => (
-                                <option key={s.id} value={s.id}>{s.nombre}</option>
+                                <option key={s.id} value={s.id}>
+                                  {s.nombre}
+                                  {s.id === lineaRef.sector_origen_id ? ' (reubicar)' : ''}
+                                </option>
                               ))}
                           </select>
                         )}
+                        {m.tipo === 'RECIBIR' &&
+                          sectorUsaUbicaciones(lineaRef.sector_origen_id) && (
+                            <>
+                              <span className="text-xs text-slate-500">Ubic.</span>
+                              <UbicacionDestinoSelect
+                                sectorId={lineaRef.sector_origen_id}
+                                value={lineaRef.ubicacion_origen_id}
+                                className="h-7 w-[90px] shrink-0 rounded border border-surface-border px-1 py-0 text-xs sm:w-[110px]"
+                                onChange={(id) =>
+                                  updateSectorLineasGrupo(grupo.lineas, {
+                                    ubicacion_origen_id: id
+                                  })
+                                }
+                              />
+                            </>
+                          )}
+                        {m.tipo === 'ENVIAR' &&
+                          sectorUsaUbicaciones(lineaRef.sector_origen_id) && (
+                            <>
+                              <span className="text-xs text-slate-500">Desde</span>
+                              <UbicacionDestinoSelect
+                                sectorId={lineaRef.sector_origen_id}
+                                value={lineaRef.ubicacion_origen_id}
+                                className="h-7 w-[90px] shrink-0 rounded border border-surface-border px-1 py-0 text-xs sm:w-[110px]"
+                                onChange={(id) =>
+                                  updateSectorLineasGrupo(grupo.lineas, {
+                                    ubicacion_origen_id: id
+                                  })
+                                }
+                              />
+                            </>
+                          )}
                         {sectorUsaUbicaciones(lineaRef.sector_destino_id) && (
                           <>
-                            <span className="text-xs text-slate-500">Ubic.</span>
+                            <span className="text-xs text-slate-500">
+                              {m.tipo === 'ENVIAR' ? 'A ubic.' : 'Ubic.'}
+                            </span>
                             <UbicacionDestinoSelect
                               sectorId={lineaRef.sector_destino_id}
                               value={lineaRef.ubicacion_destino_id}
@@ -1169,12 +1323,20 @@ export function MovimientosPage() {
                         >
                           {sectorNombre(sectorId)}
                         </span>
+                        {lineaRef.ubicacion_origen_nombre && (
+                          <span
+                            className="max-w-[72px] truncate text-slate-500"
+                            title={lineaRef.ubicacion_origen_nombre}
+                          >
+                            · {lineaRef.ubicacion_origen_nombre}
+                          </span>
+                        )}
                         {lineaRef.ubicacion_destino_nombre && (
                           <span
                             className="max-w-[72px] truncate text-slate-500"
                             title={lineaRef.ubicacion_destino_nombre}
                           >
-                            · {lineaRef.ubicacion_destino_nombre}
+                            → {lineaRef.ubicacion_destino_nombre}
                           </span>
                         )}
                       </span>
@@ -1237,6 +1399,9 @@ export function MovimientosPage() {
                       >
                         <span className="text-slate-700">
                           {etiquetaLineaDetalle(l)}
+                          {l.ubicacion_origen_nombre && (
+                            <span className="ml-1 text-slate-400">{l.ubicacion_origen_nombre}</span>
+                          )}
                           {l.ubicacion_destino_nombre && (
                             <span className="ml-1 text-slate-400">→ {l.ubicacion_destino_nombre}</span>
                           )}
@@ -1410,31 +1575,82 @@ export function MovimientosPage() {
                   ))}
                 </select>
               </div>
+              {createTipo === 'ENVIAR' &&
+                !!sectorContextoId &&
+                sectorUsaUbicaciones(Number(sectorContextoId)) && (
+                  <div>
+                    <label className="mb-1 block text-sm font-medium text-slate-700">
+                      Ubicación origen
+                    </label>
+                    <select
+                      ref={defaultUbicacionOrigenRef}
+                      value={defaultUbicacionOrigenId}
+                      onChange={(e) => {
+                        setDefaultUbicacionOrigenId(e.target.value)
+                        setLineUbicacionOrigenId(e.target.value)
+                      }}
+                      onKeyDown={(e) => handleDatosKeyDown(e, sectorDestinoRef)}
+                      className="w-full rounded-xl border border-surface-border px-3 py-2.5 text-sm shadow-sm focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20"
+                    >
+                      <option value="">Sin ubicación</option>
+                      {ubicacionesOrigen.map((u) => (
+                        <option key={u.id} value={u.id}>{u.nombre}</option>
+                      ))}
+                    </select>
+                    <p className="mt-1 text-xs text-slate-500">
+                      Desde dónde se descuenta el stock · podés cambiarla en cada línea
+                    </p>
+                  </div>
+                )}
               {createTipo === 'ENVIAR' && (
                 <div>
                   <label className="mb-1 block text-sm font-medium text-slate-700">Sector destino *</label>
                   <select
                     ref={sectorDestinoRef}
                     value={sectorDestinoDefaultId}
-                    onChange={(e) => setSectorDestinoDefaultId(e.target.value)}
+                    onChange={(e) => {
+                      setSectorDestinoDefaultId(e.target.value)
+                      setDefaultUbicacionDestinoId('')
+                      setLineUbicacionDestinoId('')
+                    }}
                     onKeyDown={(e) => handleDatosKeyDown(e, nextDatosAfterSectorDestino())}
                     className="w-full rounded-xl border border-surface-border px-3 py-2.5 text-sm shadow-sm focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20"
                   >
                     <option value="">Seleccionar...</option>
                     {sectores
-                      .filter((s) => String(s.id) !== sectorContextoId)
+                      .filter(
+                        (s) =>
+                          String(s.id) !== sectorContextoId ||
+                          !!s.usa_ubicaciones
+                      )
                       .map((s) => (
-                        <option key={s.id} value={s.id}>{s.nombre}</option>
+                        <option key={s.id} value={s.id}>
+                          {s.nombre}
+                          {String(s.id) === sectorContextoId ? ' (reubicar)' : ''}
+                        </option>
                       ))}
                   </select>
+                  {sectorContextoId &&
+                    sectorContextoId === sectorDestinoDefaultId && (
+                      <p className="mt-1 text-xs text-amber-700">
+                        Reubicación en el mismo sector: sacás de una ubicación (o sin ubicación) y
+                        lo pasás a otra.
+                      </p>
+                    )}
                 </div>
               )}
               {(() => {
                 const destinoId = destinoSectorIdCreate()
                 if (!destinoId || !sectorUsaUbicaciones(destinoId)) return null
+                const sameSector =
+                  createTipo === 'ENVIAR' &&
+                  sectorContextoId !== '' &&
+                  Number(sectorContextoId) === destinoId
                 return (
                   <div>
-                    <label className="mb-1 block text-sm font-medium text-slate-700">Ubicación destino</label>
+                    <label className="mb-1 block text-sm font-medium text-slate-700">
+                      Ubicación destino
+                    </label>
                     <select
                       ref={defaultUbicacionRef}
                       value={defaultUbicacionDestinoId}
@@ -1451,7 +1667,9 @@ export function MovimientosPage() {
                       ))}
                     </select>
                     <p className="mt-1 text-xs text-slate-500">
-                      Por defecto al cargar productos · podés cambiarla en cada línea
+                      {sameSector
+                        ? 'Tiene que diferir de la ubicación de donde sacás el stock'
+                        : 'Por defecto al cargar productos · podés cambiarla en cada línea'}
                     </p>
                   </div>
                 )
@@ -1545,6 +1763,11 @@ export function MovimientosPage() {
                         {l.etiqueta}
                         {createTipo === 'RECIBIR' && (
                           <span className="ml-1 text-slate-400">desde {l.sector_origen_nombre}</span>
+                        )}
+                        {l.ubicacion_origen_nombre && (
+                          <span className="ml-1 text-slate-400">
+                            {l.ubicacion_origen_nombre}
+                          </span>
                         )}
                         {l.ubicacion_destino_nombre && (
                           <span className="ml-1 text-slate-400">→ {l.ubicacion_destino_nombre}</span>
@@ -1705,7 +1928,13 @@ export function MovimientosPage() {
                     <p className="mt-1 truncate text-sm font-semibold text-slate-900">{selectedProduct.nombre}</p>
                     {stockDisponible !== null && (
                       <p className="text-xs text-slate-500">
-                        Disponible: {formatCantidad(stockDisponible)} cajas
+                        Disponible
+                        {sectorUsaUbicaciones(origenSectorIdCreate())
+                          ? lineUbicacionOrigenId
+                            ? ' (ubicación origen)'
+                            : ' (sin ubicación)'
+                          : ''}
+                        : {formatCantidad(stockDisponible)} cajas
                       </p>
                     )}
                   </div>
@@ -1730,11 +1959,16 @@ export function MovimientosPage() {
                       <select
                         ref={lineOrigenRef}
                         value={lineOrigenId}
-                        onChange={(e) => setLineOrigenId(e.target.value)}
+                        onChange={(e) => {
+                          setLineOrigenId(e.target.value)
+                          setLineUbicacionOrigenId('')
+                        }}
                         onKeyDown={(e) => {
                           if (e.key === 'Enter') {
                             e.preventDefault()
-                            if (sectorUsaUbicaciones(destinoSectorIdCreate())) {
+                            if (sectorUsaUbicaciones(Number(e.currentTarget.value) || Number(lineOrigenId))) {
+                              focusField(lineUbicacionOrigenRef)
+                            } else if (sectorUsaUbicaciones(destinoSectorIdCreate())) {
                               focusField(lineUbicacionDestinoRef)
                             } else {
                               focusField(tipoBultoRef)
@@ -1748,6 +1982,44 @@ export function MovimientosPage() {
                             {o.sector_nombre} ({formatCantidad(o.stock_cajas)})
                           </option>
                         ))}
+                      </select>
+                    </div>
+                  )}
+
+                  {sectorUsaUbicaciones(origenSectorIdCreate()) && (
+                    <div>
+                      <label className="mb-0.5 block text-xs font-medium text-slate-600">
+                        Ubicación origen
+                      </label>
+                      <select
+                        ref={lineUbicacionOrigenRef}
+                        value={lineUbicacionOrigenId}
+                        onChange={(e) => setLineUbicacionOrigenId(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault()
+                            if (sectorUsaUbicaciones(destinoSectorIdCreate())) {
+                              focusField(lineUbicacionDestinoRef)
+                            } else {
+                              focusField(tipoBultoRef)
+                            }
+                          }
+                        }}
+                        className="w-full rounded-lg border border-surface-border px-2 py-1.5 text-sm"
+                      >
+                        <option value="">Sin ubicación</option>
+                        {ubicacionesOrigen
+                          .filter(
+                            (u) =>
+                              !(
+                                createTipo === 'ENVIAR' &&
+                                sectorContextoId === sectorDestinoDefaultId &&
+                                String(u.id) === lineUbicacionDestinoId
+                              )
+                          )
+                          .map((u) => (
+                            <option key={u.id} value={u.id}>{u.nombre}</option>
+                          ))}
                       </select>
                     </div>
                   )}

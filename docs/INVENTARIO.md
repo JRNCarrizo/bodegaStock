@@ -8,7 +8,7 @@ Ver también: [DESGLOSE-DE-CANTIDADES.md](DESGLOSE-DE-CANTIDADES.md) · [MODELO-
 
 ## 1. Propósito
 
-Realizar un **conteo físico** del stock en la bodega, sector por sector, con **dos personas contando en paralelo** desde el celular (navegador en v1; APK en fase posterior). Cada contador registra **líneas independientes** por ubicación/pila (pallet × unidades, pucherios sueltos).
+Realizar un **conteo físico** del stock en la bodega, sector por sector, con **dos personas contando en paralelo** desde el celular (**navegador web** y, cuando exista, **APK** — ambos canales conviven; ver [APP-MOVIL.md](APP-MOVIL.md)). Cada contador registra **líneas independientes** por ubicación/pila (pallet × unidades, pucherios sueltos).
 
 El inventario cumple **dos funciones**:
 
@@ -35,10 +35,13 @@ En la operación diaria es muy común mover mercadería entre sectores **sin reg
 
 ### Plataforma de conteo
 
-| Fase | Dispositivo |
-|------|-------------|
-| **v1** | Navegador del celular (misma app web, responsive) |
-| **Posterior** | APK Android nativa |
+| Canal | Dispositivo | Estado |
+|-------|-------------|--------|
+| **Web** | Navegador del celular (URL `:3847` del PC servidor) | Disponible; se **mantiene** |
+| **APK** | App Android (otro instalador) | Fase posterior; **no reemplaza** la web |
+| **Supervisor** | PC (Electron) | Crear sesión, supervisar, cerrar |
+
+Contadores pueden usar **web y/o APK** en la misma sesión (misma API). Ver decisión en [APP-MOVIL.md](APP-MOVIL.md).
 
 Supervisor siempre opera desde **PC (Electron)**.
 
@@ -581,7 +584,7 @@ Ver [MODELO-DE-DATOS.md](MODELO-DE-DATOS.md).
 - [x] **D7:** Producto no catalogado — rechazar en v1.
 - [x] **D8:** No operar con inventario abierto — bloqueo global de movimientos.
 - [x] **D9:** Bloquear **todos** los movimientos del depósito mientras `EN_PROGRESO`.
-- [x] **D10:** Conteo desde navegador del celular en v1; APK después.
+- [x] **D10:** Conteo desde celular por **navegador**; APK después **en paralelo** (no reemplaza la web).
 - [x] **D11:** En reconteo, desglose anterior visible como referencia; cada uno puede contar distinto si el total coincide.
 - [x] **D12:** Inventario parcial — elegir sectores al crear sesión.
 - [x] **D13:** Snapshot del sistema al iniciar sesión.

@@ -68,14 +68,17 @@ jobs:
           body: |
             ## ControlStock ${{ steps.tag.outputs.name }}
 
-            Acceso web desde celular/navegador para inventario y operación en red local.
+            Correcciones de armado de stock, reubicación en el mismo sector y reorganización por ubicación.
 
             ### Nuevo
-            - **UI web en el puerto 3847:** al abrir la URL de Configuración en el celular o navegador se muestra el login (ya no el error "No autorizado")
-            - Misma API + interfaz para probar conteo de inventario desde el teléfono
+            - **Movimientos:** reubicación en el mismo sector (sin ubicación ↔ ubicación), con origen y destino por ubicación
+            - **Reorganizar por ubicación:** en Consulta → Por sector, eligiendo una ubicación (sin mezclar posiciones)
 
-            ### Mejorado
-            - Textos de Configuración: URLs claras para celular/navegador
+            ### Corregido
+            - **Retornos:** ya no desarman pallets inventariados al devolver cajas; suman a la pila más chica respetando el tamaño de pallet del producto
+            - **Roturas / deducciones:** resto de pallet queda coherente (sin cajas fantasma)
+            - **Movimientos:** al completar se conserva el desglose pallet/cajas en destino
+            - **Consulta producto:** reorganizar con varias ubicaciones bloqueado (evitar volcar todo a “sin ubicación”)
 
             ### Actualización
             - Desde **v0.2.7 o superior:** Configuración → Buscar actualizaciones

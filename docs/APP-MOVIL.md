@@ -1,14 +1,22 @@
-# BodegaStock — App móvil (APK Android)
+# BodegaStock — App móvil (APK Android) y acceso web
 
-> Documento de referencia para la fase móvil. La app de celular es **otra aplicación** (APK), distinta del instalador de PC, pero usa **la misma API y la misma base de datos** del PC servidor.
+> Documento de referencia para la fase móvil. La **APK** es **otra aplicación**, distinta del instalador de PC, pero usa **la misma API y la misma base de datos** del PC servidor.
+>
+> **Decisión acordada (julio 2026):** el acceso por **navegador/celular (web)** y la futura **APK** **conviven**. La web no se reemplaza al salir la APK: son dos puertas al mismo servidor.
 
 ---
 
 ## 1. Visión
 
-La APK no es solo un accesorio para inventario: es la **terminal de operación en bodega** para el día a día.
+La operación en bodega desde el celular no depende de un solo canal. Hay **dos clientes móviles** previstos (y el desktop):
 
-Varios usuarios en el depósito la usarían para:
+| Canal | Qué es | Rol |
+|--------|--------|-----|
+| **Web (navegador)** | Misma UI servida por el PC en el puerto **3847** (URL/QR de Configuración) | Disponible **ya**; pruebas, inventario, operación sin instalar APK |
+| **APK Android** | App instalable, otra build / otro instalador | Día a día más cómodo (ícono fijo, cámara, sin barra del navegador) |
+| **PC (Electron)** | Instalador ControlStock | Servidor + administración + supervisión |
+
+Varios usuarios en el depósito usarían celular (web y/o APK) para:
 
 - **Consulta** de stock (escaneo o búsqueda)
 - **Retornos** (cargar y verificar)
@@ -24,44 +32,59 @@ El **PC (Electron)** sigue siendo el centro de administración: catálogo, secto
 ```
                     ┌─────────────────────────┐
                     │   PC servidor (Electron) │
-                    │   API + SQLite           │
+                    │   API + UI web + SQLite  │
                     │   Admin + supervisor     │
                     └───────────┬─────────────┘
                                 │  WiFi / LAN :3847
           ┌─────────────────────┼─────────────────────┐
           │                     │                     │
     ┌─────▼─────┐         ┌─────▼─────┐         ┌─────▼─────┐
-    │ Celular 1 │         │ Celular 2 │         │ Celular N │
-    │   (APK)   │         │   (APK)   │         │   (APK)   │
-    │ operación │         │ operación │         │ operación │
+    │ Celular   │         │ Celular   │         │ Celular N │
+    │ navegador │         │  (APK)    │         │ web/APK   │
+    │   (web)   │         │ operación │         │           │
     └───────────┘         └───────────┘         └───────────┘
 ```
 
+Los tres caminos (PC, web, APK) consumen la **misma API**, mismos usuarios y permisos.
+
 ---
 
-## 2. ¿Por qué APK y no un link web?
+## 2. Web y APK en paralelo (decisión)
 
-Con **muchos usuarios** y **varios módulos**, repartir un link del navegador genera fricción operativa:
+### No son excluyentes
 
-| Riesgo con web (link) | Con APK instalada |
-|------------------------|-------------------|
-| Cada uno guarda el link distinto o usa favoritos viejos | Icono fijo en el celular |
-| No refrescan y ven datos desactualizados | La app controla cuándo pedir datos nuevos |
-| Entran a pantallas que no les corresponden | Menú acotado por permisos del usuario |
+- La **web** permanece siempre disponible mientras el PC servidor esté en modo servidor.
+- La **APK** se suma después como canal adicional; **no** obliga a sacar la web.
+- En una misma sesión de inventario puede haber contadores por **navegador** y, más adelante, otros por **APK**, siempre que hablen con el mismo servidor.
+
+### Por qué mantener la web
+
+| Beneficio | Detalle |
+|-----------|---------|
+| Sin instalación | Abrir la URL de Configuración en el celular (misma WiFi) |
+| Pruebas y capacitación | Inventario / flujos sin distribuir APK |
+| Contingencia | Si un teléfono no tiene la APK, sigue operando por navegador |
+| Base para Capacitor | Si el stack móvil reutiliza React, la web responsive es el punto de partida |
+
+### Por qué igualmente conviene la APK (después)
+
+Con **muchos usuarios** y **varios módulos**, la APK reduce fricción operativa:
+
+| Riesgo con solo web (link) | Con APK instalada |
+|----------------------------|-------------------|
+| Cada uno guarda el link distinto o usa favoritos viejos | Ícono fijo en el celular |
 | Botón "atrás" del navegador sale del flujo | Navegación interna sin barra del navegador |
 | Cambia la IP del servidor → links rotos | IP se configura una vez (o QR desde PC) |
 | Escaneo de barras más incómodo | Cámara integrada, pensada para depósito |
 
-**Conclusión acordada:** el navegador puede servir para **probar** flujos; para **producción con muchos operarios**, la APK es más organizada y predecible.
+**Conclusión acordada:** web **siempre** como opción; APK como **mejora de operación diaria**, no como reemplazo obligatorio.
 
-### Web como etapa intermedia (opcional)
+### Cómo abrir la web hoy
 
-| Etapa | Uso |
-|-------|-----|
-| **Web responsive** | Validar flujos con pocos usuarios antes de invertir en APK |
-| **APK** | Operación diaria en bodega con muchos usuarios |
-
-No son excluyentes: la misma API y permisos sirven para ambos.
+1. PC con ControlStock en modo **servidor**.
+2. En **Configuración**, copiar la URL (ej. `http://192.168.1.50:3847`) o usar el QR.
+3. En el celular (misma WiFi), abrir esa URL → pantalla de **login**.
+4. Firewall de Windows: permitir el puerto **3847**.
 
 ---
 
@@ -69,11 +92,12 @@ No son excluyentes: la misma API y permisos sirven para ambos.
 
 | Pieza | Qué es |
 |-------|--------|
-| **PC servidor** | Electron + API + SQLite (única fuente de verdad) |
+| **PC servidor** | Electron + API + **UI web estática** + SQLite (única fuente de verdad) |
 | **PC cliente** | Misma app Electron, modo cliente → IP del servidor |
-| **Celular (APK)** | App Android → misma API por WiFi/LAN |
+| **Celular (web)** | Navegador → misma URL `:3847` (login + módulos según permiso) |
+| **Celular (APK)** | App Android → misma API por WiFi/LAN (otro artefacto de instalación) |
 
-**No** lleva base de datos propia en v1. **No** funciona sin red local hacia el servidor (salvo cache temporal de UI, no planificado en v1).
+La APK **no** lleva base de datos propia en v1. **No** funciona sin red local hacia el servidor (salvo cache temporal de UI, no planificado en v1). Offline total de inventario (recolectar y volcar al final) **se descartó**: rompe comparación y reconteo en el momento.
 
 ---
 
@@ -81,22 +105,22 @@ No son excluyentes: la misma API y permisos sirven para ambos.
 
 1. El **PC servidor** debe estar encendido con ControlStock en modo servidor.
 2. Celular y PC en la **misma red WiFi** de la empresa.
-3. En la APK: configurar **IP del servidor** (ej. `192.168.1.50`) y puerto **`3847`**.
-4. Alternativa planificada: **escanear QR** generado desde el PC servidor.
+3. **Web:** abrir la URL de Configuración (ej. `http://192.168.1.50:3847`) en el navegador del celular.
+4. **APK (cuando exista):** configurar **IP del servidor** + puerto **`3847`**, o escanear el **QR** del PC.
 5. **Login** con usuario/contraseña (mismos usuarios que en escritorio).
 6. Permisos del usuario determinan qué pantallas ve en el celular.
 
 ```
-Celular (APK)  ──HTTP (+ WebSocket opcional)──►  PC servidor :3847  ──►  SQLite
+Celular (navegador o APK)  ──HTTP (+ WebSocket opcional)──►  PC servidor :3847  ──►  SQLite + UI web
 ```
 
 ---
 
 ## 5. Módulos en celular
 
-Pensado para **usar con las manos en el depósito**, escaneando códigos con la cámara del teléfono.
+Pensado para **usar con las manos en el depósito**, escaneando códigos con la cámara del teléfono. Aplica tanto a **web** como a **APK** (misma API).
 
-### Operación diaria (prioridad alta en APK)
+### Operación diaria (prioridad alta en celular)
 
 | Módulo | Para qué en el celular | Notas |
 |--------|------------------------|-------|
@@ -113,7 +137,7 @@ Pensado para **usar con las manos en el depósito**, escaneando códigos con la 
 | **Planillas** | Salidas con camionero y vehículo |
 | **Reportes** | Vista limitada (ej. movimientos del día) |
 
-### Solo en PC (no APK en v1)
+### Solo en PC (no en celular v1)
 
 | Módulo | Motivo |
 |--------|--------|
@@ -279,13 +303,13 @@ Orden sugerido para ir sumando valor en bodega. **Sujeto a priorización** con e
 | **7** | WebSocket, pulido de escaneo, reportes móviles limitados | Mejora de UX y coordinación |
 | *—* | *Ingresos en APK* | *Fuera de v1; cargar en PC con remito. Evaluar después.* |
 
-### Alternativa: web móvil antes de APK
+### Alternativa histórica: “solo web antes de APK”
 
-Si se quiere validar sin compilar APK:
+Eso ya está **superado por la decisión de convivencia**:
 
-1. UI responsive en la app web actual, **menú móvil acotado** (sin admin).
-2. Probar con operarios reales en LAN.
-3. Empaquetar con **Capacitor** → misma UI en APK.
+1. UI web en `:3847` (desde v0.3.3) — login y operación en LAN.
+2. Probar con operarios reales (inventario incluido).
+3. Cuando se haga la APK (p. ej. Capacitor u otro stack), la **web sigue** como canal paralelo.
 
 ---
 
@@ -295,29 +319,32 @@ Si se quiere validar sin compilar APK:
 
 - [x] **Ingresos fuera de APK v1:** se cargan en **PC** con el remito físico; no es prioritario en celular.
 - [x] **Consulta primero** en la APK (después de infra + app base).
+- [x] **Web + APK en paralelo:** el acceso por navegador se **mantiene**; la APK no lo reemplaza (julio 2026).
+- [x] **UI web en el puerto 3847:** el PC servidor sirve API + interfaz (desde v0.3.3).
+- [x] **Inventario online:** no se adopta conteo offline-hasta-volcar; hace falta comparación/reconteo en el momento.
 
 ### Pendientes
 
 - [ ] **Stack APK:** Flutter vs React Native vs Capacitor (reutilizar React del PC).
 - [ ] **Planillas en móvil:** ¿en la primera versión de APK o después de retornos?
-- [ ] **Web intermedia:** ¿probar en navegador antes de APK o ir directo a APK?
 - [ ] **WebSocket:** ¿en la misma entrega que inventario móvil o después?
 - [ ] **Ingresos en APK** (fase futura): ¿hace falta algún día cargar en el pasillo?
-- [ ] **Cache offline mínimo** (solo consulta) — probablemente no en v1.
+- [ ] **Cache offline mínimo** (solo consulta / cola corta si corta WiFi) — no inventario offline total.
 - [ ] **Versión mínima de Android** soportada.
 - [ ] **Distribución y actualización** de la APK (fuera de Play Store vs cuenta interna).
+- [ ] **Repo:** monorepo (`mobile/`) vs repositorio aparte (recomendado monorepo si Capacitor).
 
 ---
 
 ## 14. Resumen
 
-**Una APK Android que se conecta por WiFi al PC servidor y funciona como terminal de bodega:** consulta, retornos, roturas, movimientos, planillas e inventario — según permisos. **Ingresos solo en PC** (remito físico, carga posterior en escritorio). El PC sigue siendo administración y supervisión.
+**Terminales de bodega:** celular por **navegador (web siempre disponible)** y, cuando exista, **APK Android** — ambos contra el PC servidor por WiFi. Mismos módulos según permisos: consulta, retornos, roturas, movimientos, planillas e inventario. **Ingresos solo en PC**. El PC sigue siendo administración y supervisión. Web y APK **no se excluyen**.
 
 ---
 
 ## 15. Próximo paso (para decidir con el equipo)
 
-1. Confirmar **orden de módulos** (tabla fase 12).
-2. Elegir **stack** (Capacitor vs nativo).
-3. Definir si hay **web móvil intermedia** o se va directo a APK.
-4. Arrancar por **fase 0 + 1 + 2** (infra + APK base + consulta).
+1. Confirmar **orden de módulos** APK (tabla fase 12); la web ya cubre pruebas.
+2. Elegir **stack** de la APK (Capacitor vs nativo).
+3. Arrancar fase APK cuando haga falta operación diaria más cómoda (sin apagar la web).
+4. Seguir puliendo la **experiencia web en celular** (menú/UX) en paralelo.

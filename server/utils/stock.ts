@@ -766,7 +766,8 @@ export function reorganizeStockSector(
   db: Database.Database,
   stockSectorId: number,
   usuario_id: number,
-  desglose: ReorganizarDesgloseInput
+  desglose: ReorganizarDesgloseInput,
+  scope?: { ubicacion_id?: number | null; sin_ubicacion?: boolean }
 ): { etiqueta_resultante: string } {
   const sector = db.prepare(`
     SELECT ss.id, ss.producto_id, ss.sector_id
@@ -777,7 +778,7 @@ export function reorganizeStockSector(
 
   if (!sector) throw new Error('Stock del sector no encontrado')
 
-  const lineas = db.prepare(`
+  const allLineas = db.prepare(`
     SELECT
       id, tipo_bulto, cantidad_bultos, unidades_por_bulto, cantidad_suelta,
       total_unidades, ubicacion_id, ubicacion
@@ -794,8 +795,29 @@ export function reorganizeStockSector(
     ubicacion: string | null
   }>
 
+  const scoped =
+    scope?.sin_ubicacion === true
+      ? allLineas.filter((l) => l.ubicacion_id == null)
+      : scope?.ubicacion_id != null
+        ? allLineas.filter((l) => l.ubicacion_id === scope.ubicacion_id)
+        : allLineas
+
+  if (scoped.length === 0) {
+    throw new Error('No hay stock en esa ubicación para reorganizar')
+  }
+
+  // Sin scope explícito: no mezclar ubicaciones distintas (evita volcar todo a “sin ubicación”)
+  if (scope == null) {
+    const ubicacionIds = [...new Set(scoped.map((l) => l.ubicacion_id))]
+    if (ubicacionIds.length > 1) {
+      throw new Error(
+        'Hay stock en varias ubicaciones. Reorganizá desde Consulta → Por sector eligiendo una ubicación.'
+      )
+    }
+  }
+
   const { botellasPorCaja } = getProductoDefaults(db, sector.producto_id)
-  const totalCajas = lineas.reduce(
+  const totalCajas = scoped.reduce(
     (sum, row) => sum + lineaTotalEnCajas(row, botellasPorCaja),
     0
   )
@@ -805,7 +827,7 @@ export function reorganizeStockSector(
 
   const unidad = getProductoUnidad(db, sector.producto_id)
   const etiqueta_resultante = formatReorganizarEtiqueta(desglose, unidad)
-  const etiquetasAnteriores = lineas
+  const etiquetasAnteriores = scoped
     .map((row) =>
       formatEtiquetaLinea(
         {
@@ -819,15 +841,30 @@ export function reorganizeStockSector(
     )
     .join(' + ')
 
-  const ubicacionIds = [...new Set(lineas.map((l) => l.ubicacion_id))]
-  const ubicacion_id = ubicacionIds.length === 1 ? ubicacionIds[0] ?? null : null
-  const ubicacion =
-    ubicacion_id != null && lineas.length > 0
-      ? lineas.find((l) => l.ubicacion_id === ubicacion_id)?.ubicacion ?? null
-      : null
+  let ubicacion_id: number | null
+  let ubicacion: string | null
+  if (scope?.sin_ubicacion === true) {
+    ubicacion_id = null
+    ubicacion = null
+  } else if (scope?.ubicacion_id != null) {
+    ubicacion_id = scope.ubicacion_id
+    const ub = db.prepare(`
+      SELECT nombre FROM sector_ubicaciones WHERE id = ?
+    `).get(ubicacion_id) as { nombre: string } | undefined
+    ubicacion = ub?.nombre ?? scoped[0]?.ubicacion ?? null
+  } else {
+    ubicacion_id = scoped[0]?.ubicacion_id ?? null
+    ubicacion = scoped[0]?.ubicacion ?? null
+  }
 
   const tx = db.transaction(() => {
-    db.prepare('DELETE FROM stock_lineas WHERE stock_sector_id = ?').run(stockSectorId)
+    for (const line of scoped) {
+      db.prepare('DELETE FROM stock_lineas WHERE id = ?').run(line.id)
+    }
+
+    const maxOrdenRow = db.prepare(`
+      SELECT COALESCE(MAX(orden), 0) AS m FROM stock_lineas WHERE stock_sector_id = ?
+    `).get(stockSectorId) as { m: number }
 
     applyReorganizarDesgloseToStockSector(db, {
       stock_sector_id: stockSectorId,
@@ -835,9 +872,18 @@ export function reorganizeStockSector(
       desglose,
       ubicacion_id,
       ubicacion,
-      startOrden: 0,
+      startOrden: maxOrdenRow.m,
       sueltosModo: 'cajas'
     })
+
+    refreshStockSectorTotal(db, stockSectorId)
+
+    const alcance =
+      ubicacion_id != null
+        ? `ubicación ${ubicacion ?? ubicacion_id}`
+        : scope?.sin_ubicacion
+          ? 'sin ubicación'
+          : 'sector'
 
     db.prepare(`
       INSERT INTO movimientos (
@@ -849,7 +895,7 @@ export function reorganizeStockSector(
       sector.sector_id,
       stockSectorId,
       usuario_id,
-      `Reorganización sector: ${etiquetasAnteriores || `${totalCajas} cajas`} → ${etiqueta_resultante}`
+      `Reorganización (${alcance}): ${etiquetasAnteriores || `${totalCajas} cajas`} → ${etiqueta_resultante}`
     )
   })
 
@@ -1047,14 +1093,14 @@ export function applyRetornoLineToStock(
   }
 
   if (params.linea.tipo_bulto === 'CAJA') {
-    addCajasToStockSectorSmart(db, {
-      stock_sector_id: stockSector.id,
-      numCajas: totalCajas,
+    // Sumar a la pila de cajas más chica; respetar tamaño de pallet ya armado (no forzar 112)
+    addCajasPreferSmallestPile(
+      db,
+      stockSector.id,
+      totalCajas,
       botellasPorCaja,
-      cajasPorPallet,
-      ubicacion_id: null,
-      ubicacion: null
-    })
+      cajasPorPallet
+    )
   } else {
     const maxOrden = db.prepare(`
       SELECT COALESCE(MAX(orden), 0) AS m FROM stock_lineas WHERE stock_sector_id = ?
@@ -1201,13 +1247,19 @@ function simulateSectorDeduction(
   amount: number,
   modo: ModoSalidaPlanilla,
   unidadProducto: string,
-  botellasPorCaja: number
+  botellasPorCaja: number,
+  ubicacionFilter?: { ubicacion_id: number | null } | null
 ): { descuentos: DescuentoAplicado[]; remaining: number } {
-  const lineas = db.prepare(`
-    SELECT id, tipo_bulto, cantidad_bultos, unidades_por_bulto, cantidad_suelta, total_unidades
+  const lineasRaw = db.prepare(`
+    SELECT id, tipo_bulto, cantidad_bultos, unidades_por_bulto, cantidad_suelta, total_unidades, ubicacion_id
     FROM stock_lineas
     WHERE stock_sector_id = ?
-  `).all(stock_sector_id) as StockLineaRow[]
+  `).all(stock_sector_id) as Array<StockLineaRow & { ubicacion_id: number | null }>
+
+  const lineas =
+    ubicacionFilter == null
+      ? lineasRaw
+      : lineasRaw.filter((l) => (l.ubicacion_id ?? null) === (ubicacionFilter.ubicacion_id ?? null))
 
   const ordered =
     modo === 'CAJA'
@@ -1307,36 +1359,36 @@ function setPalletLineCajas(
     return
   }
 
-  const fullPallets = Math.floor(totalCajas / cajasPorPallet)
-  const loose = totalCajas % cajasPorPallet
-
-  if (loose === 0) {
-    db.prepare(`
-      UPDATE stock_lineas SET
-        cantidad_bultos = ?, unidades_por_bulto = ?, total_unidades = ?,
-        updated_at = datetime('now')
-      WHERE id = ?
-    `).run(fullPallets, cajasPorPallet, fullPallets * cajasPorPallet, lineId)
+  if (cajasPorPallet <= 0) {
+    db.prepare('DELETE FROM stock_lineas WHERE id = ?').run(lineId)
+    addCajasFullToStockSector(
+      db,
+      stock_sector_id,
+      totalCajas,
+      botellasPorCaja,
+      ubicacion_id,
+      ubicacion
+    )
     return
   }
+
+  const fullPallets = Math.floor(totalCajas / cajasPorPallet)
+  const loose = totalCajas % cajasPorPallet
 
   if (fullPallets > 0) {
     db.prepare(`
       UPDATE stock_lineas SET
-        cantidad_bultos = ?, unidades_por_bulto = ?, total_unidades = ?,
-        updated_at = datetime('now')
+        cantidad_bultos = ?, unidades_por_bulto = ?, cantidad_suelta = NULL,
+        total_unidades = ?, updated_at = datetime('now')
       WHERE id = ?
     `).run(fullPallets, cajasPorPallet, fullPallets * cajasPorPallet, lineId)
-    addCajasFullToStockSector(db, stock_sector_id, loose, botellasPorCaja, ubicacion_id, ubicacion)
-    return
+  } else {
+    db.prepare('DELETE FROM stock_lineas WHERE id = ?').run(lineId)
   }
 
-  db.prepare(`
-    UPDATE stock_lineas SET
-      cantidad_bultos = 1, unidades_por_bulto = ?, total_unidades = ?,
-      updated_at = datetime('now')
-    WHERE id = ?
-  `).run(cajasPorPallet, totalCajas, lineId)
+  if (loose > 0) {
+    addCajasFullToStockSector(db, stock_sector_id, loose, botellasPorCaja, ubicacion_id, ubicacion)
+  }
 }
 
 function incrementFullPalletLine(
@@ -1406,10 +1458,35 @@ function countLooseCajasInSector(
     if (line.tipo_bulto === 'CAJA') {
       total += lineaTotalEnCajas(line, botellasPorCaja)
     } else if (line.tipo_bulto === 'PALLET') {
-      const cpp = Number(line.unidades_por_bulto ?? 0)
-      if (cpp > 0) total += line.total_unidades % cpp
+      // Solo hueco real de pallet incompleto; el desglose inventariado (pallet + sueltas)
+      // no cuenta como "cajas sueltas" a rearmar
+      total += palletIncompleteRemainder(line)
     }
   }
+  return total
+}
+
+/**
+ * Hueco para completar un pallet incompleto.
+ * Un "1 pallet × 112 + 56 sueltas" (inventario) NO es incompleto: esas 56 son
+ * desglose inventariado en la misma línea, no un resto a rearmar.
+ * Solo cuenta incompletos "verdaderos" (sin bultos llenos, total < cpp).
+ */
+function palletIncompleteRemainder(linea: {
+  cantidad_bultos?: number | null
+  unidades_por_bulto?: number | null
+  cantidad_suelta?: number | null
+  total_unidades?: number | null
+}): number {
+  const cpp = Number(linea.unidades_por_bulto ?? 0)
+  if (cpp <= 0) return 0
+
+  const bultos = Number(linea.cantidad_bultos ?? 0)
+  // Desglose inventario / pallet lleno (+ opcional sueltas): no hay hueco a completar
+  if (bultos > 0) return 0
+
+  const total = Number(linea.total_unidades ?? 0)
+  if (total <= 0 || total >= cpp) return 0
   return total
 }
 
@@ -1425,12 +1502,14 @@ function consolidateLooseCajasToFullPallets(
 
   for (let guard = 0; guard < 500; guard += 1) {
     const partialPallets = db.prepare(`
-      SELECT id, unidades_por_bulto, total_unidades
+      SELECT id, cantidad_bultos, unidades_por_bulto, cantidad_suelta, total_unidades
       FROM stock_lineas
       WHERE stock_sector_id = ? AND tipo_bulto = 'PALLET'
     `).all(stock_sector_id) as Array<{
       id: number
+      cantidad_bultos: number | null
       unidades_por_bulto: number | null
+      cantidad_suelta: number | null
       total_unidades: number
     }>
 
@@ -1438,7 +1517,7 @@ function consolidateLooseCajasToFullPallets(
     for (const pl of partialPallets) {
       const cpp = Number(pl.unidades_por_bulto ?? cajasPorPallet)
       if (cpp <= 0) continue
-      const rem = pl.total_unidades % cpp
+      const rem = palletIncompleteRemainder(pl)
       if (rem === 0) continue
       const gap = cpp - rem
       const fromCajas = deductCajasFromCajaLines(db, stock_sector_id, gap, botellasPorCaja)
@@ -1446,7 +1525,7 @@ function consolidateLooseCajasToFullPallets(
       setPalletLineCajas(
         db,
         pl.id,
-        pl.total_unidades + fromCajas,
+        Number(pl.total_unidades ?? 0) + fromCajas,
         cpp,
         stock_sector_id,
         botellasPorCaja,
@@ -1481,13 +1560,15 @@ function addCajasToStockSectorSmart(
   if (remaining <= 0) return
 
   const partialPallets = db.prepare(`
-    SELECT id, unidades_por_bulto, total_unidades
+    SELECT id, cantidad_bultos, unidades_por_bulto, cantidad_suelta, total_unidades
     FROM stock_lineas
     WHERE stock_sector_id = ? AND tipo_bulto = 'PALLET'
     ORDER BY id ASC
   `).all(params.stock_sector_id) as Array<{
     id: number
+    cantidad_bultos: number | null
     unidades_por_bulto: number | null
+    cantidad_suelta: number | null
     total_unidades: number
   }>
 
@@ -1495,14 +1576,14 @@ function addCajasToStockSectorSmart(
     if (remaining <= 0) break
     const cpp = Number(pl.unidades_por_bulto ?? params.cajasPorPallet)
     if (cpp <= 0) continue
-    const rem = pl.total_unidades % cpp
+    const rem = palletIncompleteRemainder(pl)
     if (rem === 0) continue
     const gap = cpp - rem
     const add = Math.min(remaining, gap)
     setPalletLineCajas(
       db,
       pl.id,
-      pl.total_unidades + add,
+      Number(pl.total_unidades ?? 0) + add,
       cpp,
       params.stock_sector_id,
       params.botellasPorCaja,
@@ -1630,6 +1711,178 @@ function addPartialBultoToStockSector(
   )
 }
 
+function resolveCajasPorPalletInStockSector(
+  db: Database.Database,
+  stock_sector_id: number,
+  fallback: number
+): number {
+  // Preferir el tamaño de pallet que ya está armado en el stock (no asumir 112)
+  const fromPallets = db.prepare(`
+    SELECT unidades_por_bulto AS cpp, SUM(COALESCE(cantidad_bultos, 0)) AS bultos
+    FROM stock_lineas
+    WHERE stock_sector_id = ?
+      AND tipo_bulto = 'PALLET'
+      AND unidades_por_bulto IS NOT NULL
+      AND unidades_por_bulto > 0
+    GROUP BY unidades_por_bulto
+    ORDER BY bultos DESC, cpp DESC
+    LIMIT 1
+  `).get(stock_sector_id) as { cpp: number; bultos: number } | undefined
+
+  if (fromPallets?.cpp && Number(fromPallets.cpp) > 0) {
+    return Number(fromPallets.cpp)
+  }
+  return fallback > 0 ? fallback : 112
+}
+
+/**
+ * Suma cajas respetando el armado existente:
+ * - No toca pallets llenos
+ * - Prefiere sumar a la pila de cajas más chica (o sueltas de un desglose inventariado)
+ * - Si al sumar se completa un pallet (tamaño del sector/producto), lo arma
+ */
+function addCajasPreferSmallestPile(
+  db: Database.Database,
+  stock_sector_id: number,
+  numCajas: number,
+  botellasPorCaja: number,
+  cajasPorPalletFallback: number
+): void {
+  if (numCajas <= 0) return
+
+  const cpp = resolveCajasPorPalletInStockSector(
+    db,
+    stock_sector_id,
+    cajasPorPalletFallback
+  )
+
+  // 1) Desglose inventariado: 1×N + sueltas → sumar a las sueltas
+  const inventariados = db.prepare(`
+    SELECT id, cantidad_bultos, unidades_por_bulto, cantidad_suelta, total_unidades,
+           ubicacion_id, ubicacion
+    FROM stock_lineas
+    WHERE stock_sector_id = ?
+      AND tipo_bulto = 'PALLET'
+      AND COALESCE(cantidad_bultos, 0) > 0
+      AND COALESCE(cantidad_suelta, 0) > 0
+    ORDER BY cantidad_suelta ASC, id ASC
+  `).all(stock_sector_id) as Array<{
+    id: number
+    cantidad_bultos: number | null
+    unidades_por_bulto: number | null
+    cantidad_suelta: number | null
+    total_unidades: number
+    ubicacion_id: number | null
+    ubicacion: string | null
+  }>
+
+  if (inventariados.length > 0) {
+    const line = inventariados[0]
+    const lineCpp = Number(line.unidades_por_bulto ?? cpp)
+    let bultos = Number(line.cantidad_bultos ?? 0)
+    let suelta = Number(line.cantidad_suelta ?? 0) + numCajas
+
+    if (lineCpp > 0 && suelta >= lineCpp) {
+      const extraPallets = Math.floor(suelta / lineCpp)
+      bultos += extraPallets
+      suelta = suelta % lineCpp
+    }
+
+    const newTotal = bultos * (lineCpp > 0 ? lineCpp : 0) + suelta
+    db.prepare(`
+      UPDATE stock_lineas SET
+        cantidad_bultos = ?,
+        cantidad_suelta = ?,
+        total_unidades = ?,
+        updated_at = datetime('now')
+      WHERE id = ?
+    `).run(bultos, suelta > 0 ? suelta : null, newTotal, line.id)
+    return
+  }
+
+  // 2) Líneas CAJA: preferir la más chica (mismo botellas/caja)
+  const cajaLines = db.prepare(`
+    SELECT id, cantidad_bultos, ubicacion_id, ubicacion
+    FROM stock_lineas
+    WHERE stock_sector_id = ?
+      AND tipo_bulto = 'CAJA'
+      AND unidades_por_bulto = ?
+      AND COALESCE(cantidad_bultos, 0) >= 1
+    ORDER BY cantidad_bultos ASC, id ASC
+  `).all(stock_sector_id, botellasPorCaja) as Array<{
+    id: number
+    cantidad_bultos: number | null
+    ubicacion_id: number | null
+    ubicacion: string | null
+  }>
+
+  if (cajaLines.length > 0) {
+    const line = cajaLines[0]
+    let newCajas = Number(line.cantidad_bultos ?? 0) + numCajas
+    const ubicacionId = line.ubicacion_id
+    const ubicacion = line.ubicacion
+
+    if (cpp > 1 && newCajas >= cpp) {
+      const fullPallets = Math.floor(newCajas / cpp)
+      const rem = newCajas % cpp
+      if (fullPallets > 0) {
+        incrementFullPalletLine(db, stock_sector_id, fullPallets, cpp, ubicacionId, ubicacion)
+      }
+      if (rem > 0) {
+        db.prepare(`
+          UPDATE stock_lineas SET
+            cantidad_bultos = ?, total_unidades = ?, updated_at = datetime('now')
+          WHERE id = ?
+        `).run(rem, rem * botellasPorCaja, line.id)
+      } else {
+        db.prepare('DELETE FROM stock_lineas WHERE id = ?').run(line.id)
+      }
+      return
+    }
+
+    db.prepare(`
+      UPDATE stock_lineas SET
+        cantidad_bultos = ?, total_unidades = ?, updated_at = datetime('now')
+      WHERE id = ?
+    `).run(newCajas, newCajas * botellasPorCaja, line.id)
+    return
+  }
+
+  // 3) Sin cajas sueltas: preferir la ubicación del stock existente (si hay una sola)
+  const ubicRows = db.prepare(`
+    SELECT ubicacion_id, ubicacion, COUNT(*) AS n
+    FROM stock_lineas
+    WHERE stock_sector_id = ?
+    GROUP BY ubicacion_id, ubicacion
+    ORDER BY n DESC
+  `).all(stock_sector_id) as Array<{
+    ubicacion_id: number | null
+    ubicacion: string | null
+    n: number
+  }>
+
+  let ubicacionId: number | null = null
+  let ubicacion: string | null = null
+  if (ubicRows.length === 1) {
+    ubicacionId = ubicRows[0].ubicacion_id
+    ubicacion = ubicRows[0].ubicacion
+  }
+
+  if (cpp > 1 && numCajas >= cpp) {
+    const fullPallets = Math.floor(numCajas / cpp)
+    const rem = numCajas % cpp
+    if (fullPallets > 0) {
+      incrementFullPalletLine(db, stock_sector_id, fullPallets, cpp, ubicacionId, ubicacion)
+    }
+    if (rem > 0) {
+      addCajasFullToStockSector(db, stock_sector_id, rem, botellasPorCaja, ubicacionId, ubicacion)
+    }
+    return
+  }
+
+  addCajasFullToStockSector(db, stock_sector_id, numCajas, botellasPorCaja, ubicacionId, ubicacion)
+}
+
 function addCajasFullToStockSector(
   db: Database.Database,
   stock_sector_id: number,
@@ -1645,7 +1898,7 @@ function addCajasFullToStockSector(
     FROM stock_lineas
     WHERE stock_sector_id = ? AND tipo_bulto = 'CAJA'
       AND unidades_por_bulto = ?
-      AND cantidad_bultos > 1
+      AND cantidad_bultos >= 1
       AND (
         (ubicacion_id IS NULL AND ? IS NULL)
         OR ubicacion_id = ?
@@ -1721,34 +1974,57 @@ function applyPalletLineDeductionCajas(
   botellasPorCaja: number
 ): void {
   const cajasPorPallet = Number(linea.unidades_por_bulto ?? 0)
-  const newTotalCajas = linea.total_unidades - takeCajas
+  // Preferir el desglose real: total_unidades a veces no coincide si quedó cantidad_suelta vieja
+  const currentCajas =
+    cajasPorPallet > 0
+      ? Number(linea.cantidad_bultos ?? 0) * cajasPorPallet + Number(linea.cantidad_suelta ?? 0)
+      : Number(linea.total_unidades ?? 0)
+  const newTotalCajas = currentCajas - takeCajas
 
   if (newTotalCajas <= 0) {
     db.prepare('DELETE FROM stock_lineas WHERE id = ?').run(linea.id)
+    refreshStockSectorTotal(db, linea.stock_sector_id)
+    return
+  }
+
+  if (cajasPorPallet <= 0) {
+    db.prepare('DELETE FROM stock_lineas WHERE id = ?').run(linea.id)
+    addCajasFullToStockSector(
+      db,
+      linea.stock_sector_id,
+      newTotalCajas,
+      botellasPorCaja,
+      linea.ubicacion_id,
+      linea.ubicacion
+    )
+    refreshStockSectorTotal(db, linea.stock_sector_id)
+    return
+  }
+
+  const fullPallets = Math.floor(newTotalCajas / cajasPorPallet)
+  const looseCajas = newTotalCajas % cajasPorPallet
+
+  if (fullPallets > 0) {
+    // cantidad_suelta debe quedar en 0: lo suelto va como líneas CAJA aparte
+    db.prepare(`
+      UPDATE stock_lineas
+      SET cantidad_bultos = ?, unidades_por_bulto = ?, cantidad_suelta = NULL,
+          total_unidades = ?, updated_at = datetime('now')
+      WHERE id = ?
+    `).run(fullPallets, cajasPorPallet, fullPallets * cajasPorPallet, linea.id)
   } else {
-    const fullPallets = cajasPorPallet > 0 ? Math.floor(newTotalCajas / cajasPorPallet) : 0
-    const looseCajas = cajasPorPallet > 0 ? newTotalCajas % cajasPorPallet : newTotalCajas
+    db.prepare('DELETE FROM stock_lineas WHERE id = ?').run(linea.id)
+  }
 
-    if (fullPallets > 0) {
-      db.prepare(`
-        UPDATE stock_lineas
-        SET cantidad_bultos = ?, total_unidades = ?, updated_at = datetime('now')
-        WHERE id = ?
-      `).run(fullPallets, fullPallets * cajasPorPallet, linea.id)
-    } else {
-      db.prepare('DELETE FROM stock_lineas WHERE id = ?').run(linea.id)
-    }
-
-    if (looseCajas > 0) {
-      addCajasFullToStockSector(
-        db,
-        linea.stock_sector_id,
-        looseCajas,
-        botellasPorCaja,
-        linea.ubicacion_id,
-        linea.ubicacion
-      )
-    }
+  if (looseCajas > 0) {
+    addCajasFullToStockSector(
+      db,
+      linea.stock_sector_id,
+      looseCajas,
+      botellasPorCaja,
+      linea.ubicacion_id,
+      linea.ubicacion
+    )
   }
 
   refreshStockSectorTotal(db, linea.stock_sector_id)
@@ -1765,7 +2041,11 @@ function applyPalletLineDeductionBotellas(
   botellasPorCaja: number
 ): void {
   const cajasPorPallet = Number(linea.unidades_por_bulto ?? 0)
-  const totalBotellas = linea.total_unidades * botellasPorCaja
+  const cajasActuales =
+    cajasPorPallet > 0
+      ? Number(linea.cantidad_bultos ?? 0) * cajasPorPallet + Number(linea.cantidad_suelta ?? 0)
+      : Number(linea.total_unidades ?? 0)
+  const totalBotellas = cajasActuales * botellasPorCaja
   const newTotalBotellas = totalBotellas - takeBotellas
 
   if (newTotalBotellas <= 0) {
@@ -1782,9 +2062,10 @@ function applyPalletLineDeductionBotellas(
   if (fullPallets > 0) {
     db.prepare(`
       UPDATE stock_lineas
-      SET cantidad_bultos = ?, total_unidades = ?, updated_at = datetime('now')
+      SET cantidad_bultos = ?, unidades_por_bulto = ?, cantidad_suelta = NULL,
+          total_unidades = ?, updated_at = datetime('now')
       WHERE id = ?
-    `).run(fullPallets, fullPallets * cajasPorPallet, linea.id)
+    `).run(fullPallets, cajasPorPallet, fullPallets * cajasPorPallet, linea.id)
   } else {
     db.prepare('DELETE FROM stock_lineas WHERE id = ?').run(linea.id)
   }
@@ -1799,7 +2080,6 @@ function applyPalletLineDeductionBotellas(
       linea.ubicacion
     )
   }
-
   if (partialBotellas > 0) {
     addPartialBultoToStockSector(
       db,
@@ -2078,7 +2358,8 @@ export function applyProductDeduction(
 export function getStockDisponibleCajasEnSector(
   db: Database.Database,
   producto_id: number,
-  sector_id: number
+  sector_id: number,
+  ubicacionFilter?: { ubicacion_id: number | null } | null
 ): number {
   const { botellasPorCaja } = getProductoDefaults(db, producto_id)
   const stockSector = db.prepare(`
@@ -2088,10 +2369,15 @@ export function getStockDisponibleCajasEnSector(
 
   if (!stockSector) return 0
 
-  const lineas = db.prepare(`
-    SELECT tipo_bulto, cantidad_bultos, unidades_por_bulto, cantidad_suelta, total_unidades
+  const lineasRaw = db.prepare(`
+    SELECT tipo_bulto, cantidad_bultos, unidades_por_bulto, cantidad_suelta, total_unidades, ubicacion_id
     FROM stock_lineas WHERE stock_sector_id = ?
-  `).all(stockSector.id) as StockLineaRow[]
+  `).all(stockSector.id) as Array<StockLineaRow & { ubicacion_id: number | null }>
+
+  const lineas =
+    ubicacionFilter == null
+      ? lineasRaw
+      : lineasRaw.filter((l) => (l.ubicacion_id ?? null) === (ubicacionFilter.ubicacion_id ?? null))
 
   return lineas.reduce((sum, l) => sum + lineaCajasDisponibles(l, botellasPorCaja), 0)
 }
@@ -2100,7 +2386,8 @@ export function computeSectorProductDeduction(
   db: Database.Database,
   producto_id: number,
   sector_id: number,
-  cantidad_cajas: number
+  cantidad_cajas: number,
+  ubicacionFilter?: { ubicacion_id: number | null } | null
 ): DescuentoAplicado[] {
   if (cantidad_cajas <= 0) throw new Error('Cantidad inválida')
 
@@ -2118,11 +2405,18 @@ export function computeSectorProductDeduction(
   }
 
   const { unidad, botellasPorCaja } = getProductoDefaults(db, producto_id)
-  const disponible = getStockDisponibleCajasEnSector(db, producto_id, sector_id)
+  const disponible = getStockDisponibleCajasEnSector(db, producto_id, sector_id, ubicacionFilter)
+
+  const alcance =
+    ubicacionFilter == null
+      ? 'en el sector'
+      : ubicacionFilter.ubicacion_id == null
+        ? 'sin ubicación'
+        : 'en la ubicación origen'
 
   if (disponible < cantidad_cajas) {
     throw new Error(
-      `Stock insuficiente en el sector (disponible: ${disponible} cajas, solicitado: ${cantidad_cajas} cajas)`
+      `Stock insuficiente ${alcance} (disponible: ${disponible} cajas, solicitado: ${cantidad_cajas} cajas)`
     )
   }
 
@@ -2134,11 +2428,12 @@ export function computeSectorProductDeduction(
     cantidad_cajas,
     'CAJA',
     unidad,
-    botellasPorCaja
+    botellasPorCaja,
+    ubicacionFilter
   )
 
   if (remaining > 0) {
-    throw new Error('Stock insuficiente en el sector para completar el descuento')
+    throw new Error(`Stock insuficiente ${alcance} para completar el descuento`)
   }
 
   return descuentos
@@ -2236,14 +2531,21 @@ export function applyMovimientoInternoDespachoLine(
     movimiento_linea_id: number
     usuario_id: number
     observacion: string | null
+    /** Si se pasa, solo descuenta líneas de esa ubicación (null = sin ubicación). */
+    ubicacion_origen_id?: number | null
+    filtrar_ubicacion_origen?: boolean
   }
 ): DescuentoAplicado[] {
   const { botellasPorCaja } = getProductoDefaults(db, params.producto_id)
+  const ubicacionFilter = params.filtrar_ubicacion_origen
+    ? { ubicacion_id: params.ubicacion_origen_id ?? null }
+    : null
   const descuentos = computeSectorProductDeduction(
     db,
     params.producto_id,
     params.sector_origen_id,
-    params.cantidad_cajas
+    params.cantidad_cajas,
+    ubicacionFilter
   )
 
   for (const d of descuentos) {
@@ -2296,9 +2598,12 @@ export function applyMovimientoInternoRecepcionLine(
     usuario_id: number
     observacion: string | null
     ubicacion_destino_id?: number | null
+    tipo_bulto?: string | null
+    cantidad_bultos?: number | null
+    unidades_por_bulto?: number | null
   }
 ): void {
-  const { botellasPorCaja, cajasPorPallet } = getProductoDefaults(db, params.producto_id)
+  const { botellasPorCaja } = getProductoDefaults(db, params.producto_id)
   if (params.cantidad_cajas <= 0) throw new Error('Cantidad inválida')
 
   let ubicacionId: number | null = params.ubicacion_destino_id ?? null
@@ -2316,14 +2621,74 @@ export function applyMovimientoInternoRecepcionLine(
 
   const stockSector = ensureStockSector(db, params.producto_id, params.sector_destino_id)
 
-  addCajasToStockSectorSmart(db, {
-    stock_sector_id: stockSector.id,
-    numCajas: params.cantidad_cajas,
-    botellasPorCaja,
-    cajasPorPallet,
-    ubicacion_id: ubicacionId,
-    ubicacion: ubicacionNombre
-  })
+  const tipo = params.tipo_bulto
+  const bultos = Number(params.cantidad_bultos ?? 0)
+  const unidades = Number(params.unidades_por_bulto ?? 0)
+
+  if (tipo === 'PALLET' && bultos > 0 && unidades > 0) {
+    // Conservar desglose: insertar pallet (no aplanar a cajas)
+    // Solo mergea con pallets “llenos” sin sueltas inventariadas
+    const existing = db.prepare(`
+      SELECT id, cantidad_bultos, total_unidades
+      FROM stock_lineas
+      WHERE stock_sector_id = ? AND tipo_bulto = 'PALLET' AND unidades_por_bulto = ?
+        AND (cantidad_suelta IS NULL OR cantidad_suelta = 0)
+        AND total_unidades = COALESCE(cantidad_bultos, 0) * unidades_por_bulto
+        AND (
+          (ubicacion_id IS NULL AND ? IS NULL)
+          OR ubicacion_id = ?
+        )
+    `).get(stockSector.id, unidades, ubicacionId, ubicacionId) as
+      | { id: number; cantidad_bultos: number | null; total_unidades: number }
+      | undefined
+
+    if (existing) {
+      const newBultos = Number(existing.cantidad_bultos ?? 0) + bultos
+      db.prepare(`
+        UPDATE stock_lineas SET
+          cantidad_bultos = ?, cantidad_suelta = NULL, total_unidades = ?,
+          updated_at = datetime('now')
+        WHERE id = ?
+      `).run(newBultos, newBultos * unidades, existing.id)
+    } else {
+      const maxOrden = db.prepare(`
+        SELECT COALESCE(MAX(orden), 0) AS m FROM stock_lineas WHERE stock_sector_id = ?
+      `).get(stockSector.id) as { m: number }
+
+      db.prepare(`
+        INSERT INTO stock_lineas (
+          stock_sector_id, tipo_bulto, cantidad_bultos, unidades_por_bulto,
+          cantidad_suelta, ubicacion, ubicacion_id, total_unidades, orden
+        ) VALUES (?, 'PALLET', ?, ?, NULL, ?, ?, ?, ?)
+      `).run(
+        stockSector.id,
+        bultos,
+        unidades,
+        ubicacionNombre,
+        ubicacionId,
+        bultos * unidades,
+        maxOrden.m + 1
+      )
+    }
+  } else if (tipo === 'CAJA' && bultos > 0) {
+    addCajasFullToStockSector(
+      db,
+      stockSector.id,
+      bultos,
+      botellasPorCaja,
+      ubicacionId,
+      ubicacionNombre
+    )
+  } else {
+    addCajasFullToStockSector(
+      db,
+      stockSector.id,
+      params.cantidad_cajas,
+      botellasPorCaja,
+      ubicacionId,
+      ubicacionNombre
+    )
+  }
 
   refreshStockSectorTotal(db, stockSector.id)
 
@@ -2351,19 +2716,29 @@ export function revertMovimientoInternoDespachoLine(
     movimiento_id: number
     usuario_id: number
     observacion: string | null
+    ubicacion_origen_id?: number | null
   }
 ): void {
-  const { botellasPorCaja, cajasPorPallet } = getProductoDefaults(db, params.producto_id)
+  const { botellasPorCaja } = getProductoDefaults(db, params.producto_id)
   const stockSector = ensureStockSector(db, params.producto_id, params.sector_origen_id)
 
-  addCajasToStockSectorSmart(db, {
-    stock_sector_id: stockSector.id,
-    numCajas: params.cantidad_cajas,
+  let ubicacionNombre: string | null = null
+  const ubicacionId = params.ubicacion_origen_id ?? null
+  if (ubicacionId != null) {
+    const ub = db.prepare(`
+      SELECT nombre FROM sector_ubicaciones WHERE id = ?
+    `).get(ubicacionId) as { nombre: string } | undefined
+    ubicacionNombre = ub?.nombre ?? null
+  }
+
+  addCajasFullToStockSector(
+    db,
+    stockSector.id,
+    params.cantidad_cajas,
     botellasPorCaja,
-    cajasPorPallet,
-    ubicacion_id: null,
-    ubicacion: null
-  })
+    ubicacionId,
+    ubicacionNombre
+  )
 
   refreshStockSectorTotal(db, stockSector.id)
 

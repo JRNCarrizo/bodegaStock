@@ -219,7 +219,18 @@ export function ConsultaPage() {
   }
 
   async function confirmReorganizar(stockSectorId: number, desglose: ReorganizarDesglosePayload) {
-    if (!expandedId) return
+    if (!expandedId || !detalleCache[expandedId]) return
+
+    const sector = detalleCache[expandedId].sectores.find(
+      (s) => s.stock_sector_id === stockSectorId
+    )
+    const ubicIds = [...new Set((sector?.lineas ?? []).map((l) => l.ubicacion_id))]
+    const scopeBody =
+      ubicIds.length === 1
+        ? ubicIds[0] == null
+          ? { sin_ubicacion: true }
+          : { ubicacion_id: ubicIds[0] }
+        : {}
 
     setReorganizingSectorId(stockSectorId)
     setError('')
@@ -229,7 +240,7 @@ export function ConsultaPage() {
         detalle?: ConsultaDetalle
       }>(`/api/consulta/stock-sector/${stockSectorId}/reorganizar`, {
         method: 'POST',
-        body: JSON.stringify(desglose)
+        body: JSON.stringify({ ...desglose, ...scopeBody })
       })
 
       if (res.detalle) {

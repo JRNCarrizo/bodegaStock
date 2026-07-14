@@ -6,6 +6,7 @@ const puedeVerSectores = requirePermisoAny('sectores.ver', 'consulta.ver')
 import {
   formatEtiquetaLinea,
   getProductoDefaults,
+  getReorganizarSectorInfo,
   lineaTotalEnCajas,
   STOCK_SECTOR_VISIBLE_SQL
 } from '../utils/stock'
@@ -203,16 +204,30 @@ function getSectorStock(
 
       const cantidad_total =
         options?.sinUbicacion || options?.ubicacionId != null
-          ? lineas.reduce((sum, l) => sum + l.total_unidades, 0)
+          ? lineas.reduce((sum, l) => sum + lineaTotalEnCajas(l, botellasPorCaja), 0)
           : row.cantidad_total
+
+      const scoped = options?.sinUbicacion || options?.ubicacionId != null
+      const baseReorg = getReorganizarSectorInfo(db, row.producto_id, cantidad_total)
+      const reorganizar = scoped
+        ? baseReorg
+        : sector.usa_ubicaciones
+          ? {
+              ...baseReorg,
+              puede: false as const,
+              motivo: 'Elegí una ubicación (o “Sin ubicación”) para reorganizar sin mezclar posiciones.'
+            }
+          : baseReorg
 
       return {
         producto_id: row.producto_id,
+        stock_sector_id: row.stock_sector_id,
         codigo_interno: row.codigo_interno,
         nombre: row.nombre,
         imagen_path: row.imagen_path,
         unidad: row.unidad,
         cantidad_total,
+        reorganizar,
         lineas
       }
     })

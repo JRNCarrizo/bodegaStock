@@ -38,10 +38,12 @@ En la operación diaria es muy común mover mercadería entre sectores **sin reg
 | Canal | Dispositivo | Estado |
 |-------|-------------|--------|
 | **Web** | Navegador del celular (URL `:3847` del PC servidor) | Disponible; se **mantiene** |
-| **APK** | App Android (otro instalador) | Fase posterior; **no reemplaza** la web |
+| **APK** | App Android (otro instalador) | Necesaria para **modo offline** de inventario; no reemplaza la web online |
 | **Supervisor** | PC (Electron) | Crear sesión, supervisar, cerrar |
 
-Contadores pueden usar **web y/o APK** en la misma sesión (misma API). Ver decisión en [APP-MOVIL.md](APP-MOVIL.md).
+Contadores pueden usar **web y/o APK** en la misma sesión. Ver [APP-MOVIL.md](APP-MOVIL.md).
+
+**Modo de conectividad del conteo:** se puede elegir **con red al PC** u **offline entre celulares** (alternativa cuando no hay WiFi en el depósito). Ver §3.1.
 
 Supervisor siempre opera desde **PC (Electron)**.
 
@@ -124,6 +126,107 @@ Supervisor siempre opera desde **PC (Electron)**.
 │  • Sesión → CERRADA → DESBLOQUEO de movimientos                 │
 └─────────────────────────────────────────────────────────────────┘
 ```
+
+Las fases 1–3 son las mismas en espíritu; cambia **dónde** viven el conteo y la Comparación A según el **modo de conectividad** (§3.1).
+
+---
+
+## 3.1 Modos de conectividad (con red vs offline)
+
+> **Contexto operativo (julio 2026):** en el lugar de trabajo puede no haber WiFi en el depósito (solo en oficina). Por eso el inventario admite **dos modos elegibles**. No se reemplazan entre sí.
+
+### Resumen
+
+| | **Modo con red** | **Modo offline** |
+|--|------------------|------------------|
+| Cuándo | Hay WiFi/LAN del celular al PC servidor | Depósito sin WiFi hacia el PC |
+| Cliente típico | Web `:3847` y/o APK online | **APK** (base local; la web sola no alcanza para P2P cómodo) |
+| Catálogo | Online al servidor | Se **baja en la oficina** al PC |
+| Conteo | Líneas van al servidor en vivo | Cada celular guarda **su** conteo en base local |
+| Comparación A | El **PC** la dispara cuando ambos finalizan | Los **dos celulares** sincronizan entre sí al final del sector |
+| Comparación B / cierre | En el PC | En el PC, **después de importar** el sector |
+
+En una misma sesión puede haber sectores contados **con red** y otros **offline**. El PC solo exige que cada sector llegue a estado “OK entre contadores” antes de la Comparación B.
+
+### Cómo se elige
+
+- Al preparar el sector (supervisor o contador al “Preparar”): **Con red** u **Offline**.
+- El modo queda asociado al sector de esa sesión (detalle de UI a definir en implementación).
+
+### Modo con red
+
+1. Celulares conectados al PC (`:3847`).
+2. Cuentan; las líneas se persisten en el servidor.
+3. Ambos marcan “Finalicé” → el **servidor** hace Comparación A.
+4. Reconteo online si hace falta.
+5. Cuando todos los sectores OK → Comparación B + cierre en PC.
+
+### Modo offline — flujo acordado
+
+```
+OFICINA (WiFi al PC)              DEPÓSITO (sin WiFi al PC)           OFICINA de nuevo
+─────────────────────             ─────────────────────────           ─────────────────
+Ambos celulares al sistema        Cada uno cuenta solo                Conectar al PC
+Bajan paquete offline             (base local propia)                 Importar sector(es)
+(sesión, sector, rol,             Ambos marcan “Finalicé”             PC ensambla
+ catálogo, ubicaciones)           Se conectan entre sí (hotspot)      Comparación B + cierre
+                                  Sync → Comparación A
+                                  OK o diferencias → reconteo local
+```
+
+#### 1) Carga en oficina (ambos al PC)
+
+Los dos contadores se conectan al sistema en la oficina y reciben un **paquete offline** por sector asignado:
+
+- Id de sesión y sector
+- Rol (Contador 1 / Contador 2)
+- **Catálogo de productos** (código interno, barras, nombre, unidad, defaults pallet/caja)
+- Ubicaciones del sector (si aplica)
+- Opcional: referencia del snapshot del sistema (solo lectura, para reconteo)
+
+Cada celular guarda eso en **su base local**. No hace falta que los celulares se conecten entre sí todavía.
+
+#### 2) Conteo en depósito (independiente)
+
+- Cada uno cuenta **solo su vista** (no ve el desglose del compañero mientras cuenta).
+- Líneas independientes; mismas reglas que online (no fusionar).
+- Trabajan **sin red al PC**.
+
+#### 3) Sync solo al final del sector (ambos terminaron)
+
+Modelo acordado: **ambos tienen base local**; **no** hace falta un servidor permanente entre ellos mientras cuentan.
+
+1. Contador 1 marca “Finalicé este sector”.
+2. Contador 2 marca “Finalicé este sector”.
+3. Se juntan / uno activa hotspot; el otro se conecta.
+4. **Sincronizan** el conteo de ese sector / ronda.
+5. La app detecta que hay **dos conteos completos** → dispara **Comparación A** (totales por producto).
+6. Resultado:
+   - **OK** → sector cerrado offline, listo para importar.
+   - **Diferencias** → reconteo con referencia de ambos; al finalizar otra vez → nueva sync.
+
+Quién “sabe” que ambos finalizaron en el depósito: **las apps de los celulares** al sincronizar. El PC **no** se entera hasta el import.
+
+Plan B si falla el hotspot: exportar archivo de conteo y sincronizar/importar en la oficina (salvavidas).
+
+#### 4) Import en oficina
+
+1. Uno o ambos se conectan otra vez al PC.
+2. **Importan** el sector (líneas contador 1, líneas contador 2, resultado Comparación A, ronda, metadatos).
+3. El PC marca el sector como recibido / CERRADO_OK (según corresponda).
+4. Cuando todos los sectores de la sesión están OK → Comparación B vs snapshot → cierre como siempre.
+
+### Qué no es el modo offline
+
+- **No** es editar el stock del PC desde el celular sin red.
+- **No** es un dump ciego de todo el inventario al final sin Comparación A (eso se descartó porque rompe reconteo entre contadores).
+- Offline = conteo + Comparación A **entre pares**; la verdad de stock y Comparación B siguen en el **PC**.
+
+### Estado del sector en el PC mientras está offline
+
+Mientras el conteo ocurre en el depósito, el PC puede mostrar el sector como p. ej. **EN_CONTEO_OFFLINE** / **PENDIENTE_IMPORT** (nombre exacto a definir en implementación), sin levantar el bloqueo global de movimientos de la sesión.
+
+---
 
 ### Las dos comparaciones
 
@@ -584,12 +687,14 @@ Ver [MODELO-DE-DATOS.md](MODELO-DE-DATOS.md).
 - [x] **D7:** Producto no catalogado — rechazar en v1.
 - [x] **D8:** No operar con inventario abierto — bloqueo global de movimientos.
 - [x] **D9:** Bloquear **todos** los movimientos del depósito mientras `EN_PROGRESO`.
-- [x] **D10:** Conteo desde celular por **navegador**; APK después **en paralelo** (no reemplaza la web).
+- [x] **D10:** Conteo desde celular por **navegador**; APK después **en paralelo** (no reemplaza la web). Offline de inventario requiere APK (§3.1).
 - [x] **D11:** En reconteo, desglose anterior visible como referencia; cada uno puede contar distinto si el total coincide.
 - [x] **D12:** Inventario parcial — elegir sectores al crear sesión.
 - [x] **D13:** Snapshot del sistema al iniciar sesión.
 - [x] **D14:** Al cerrar, reorganizar sectores y líneas según conteo físico (movimientos parciales incluidos).
 - [x] **D15:** Reporte persistente antes/después obligatorio al cerrar.
+- [x] **D16:** **Modo dual de conectividad:** se elige **con red al PC** u **offline** (alternativa si no hay WiFi en depósito). Ver §3.1.
+- [x] **D17:** Offline: ambos bajan catálogo en oficina; cada uno cuenta en base local; **sync entre celulares solo cuando ambos finalizaron** el sector → Comparación A; import al PC para ensamble y Comparación B.
 - [x] **Desglose:** pallet × unidades + sueltos en todo el flujo.
 
 ---
@@ -672,5 +777,6 @@ Ver [MODELO-DE-DATOS.md](MODELO-DE-DATOS.md).
 | 5 | UI conteo responsive (celular navegador) |
 | 6 | Comparación B + cierre + ajustes/reorganización |
 | 7 | Reporte persistente |
-| 8 | WebSockets (opcional, mejora UX) |
-| 9 | APK nativa |
+| 8 | WebSockets (opcional, mejora UX online) |
+| 9 | APK nativa (online + **modo offline** §3.1: paquete, sync P2P, import) |
+| 10 | Offline inventario: preparar/descargar, sync al final de sector, import PC |

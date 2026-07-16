@@ -97,7 +97,9 @@ Con **muchos usuarios** y **varios módulos**, la APK reduce fricción operativa
 | **Celular (web)** | Navegador → misma URL `:3847` (login + módulos según permiso) |
 | **Celular (APK)** | App Android → misma API por WiFi/LAN (otro artefacto de instalación) |
 
-La APK **no** lleva base de datos propia en v1. **No** funciona sin red local hacia el servidor (salvo cache temporal de UI, no planificado en v1). Offline total de inventario (recolectar y volcar al final) **se descartó**: rompe comparación y reconteo en el momento.
+La APK **online** habla con la API del PC. Para **inventario en modo offline** (depósito sin WiFi al servidor), la APK **sí** lleva base local del **paquete de sesión/conteo** (no es la SQLite del PC). Ver [INVENTARIO.md](INVENTARIO.md) §3.1.
+
+**No** se adopta un dump ciego de todo el inventario sin Comparación A entre contadores. El offline acordado es: conteo local + sync entre pares al final del sector + import al PC.
 
 ---
 
@@ -210,10 +212,11 @@ Si en el futuro hiciera falta cargar ingresos en el pasillo, la API ya existe; s
 - Modo cajas / botellas según reglas de negocio en PC.
 
 ### Inventario
-- Supervisor crea sesión en PC; contadores entran desde la APK.
+- Supervisor crea sesión en PC; contadores entran desde web y/o APK.
+- **Modo elegible:** **con red** (conteo y Comparación A en el PC) u **offline** (bajar paquete en oficina → contar en depósito → sync entre celulares al final del sector → import al PC). Detalle: [INVENTARIO.md](INVENTARIO.md) §3.1.
 - Cada contador ve **su vista independiente** (no la del compañero durante el conteo).
 - Carga líneas con desglose por ubicación; **no se fusionan** (mismo producto dos veces = dos filas).
-- Al cerrar sector por ambos: **Comparación A** (contador vs contador).
+- Al cerrar sector por ambos: **Comparación A** (en PC si online; entre celulares si offline).
 - Si hay diferencia: **reconteo** con desglose anterior como referencia.
 - Cierre global y Comparación B vs sistema: **solo supervisor en PC**.
 - Mientras `EN_PROGRESO`: **bloqueo global** de movimientos.
@@ -321,7 +324,7 @@ Eso ya está **superado por la decisión de convivencia**:
 - [x] **Consulta primero** en la APK (después de infra + app base).
 - [x] **Web + APK en paralelo:** el acceso por navegador se **mantiene**; la APK no lo reemplaza (julio 2026).
 - [x] **UI web en el puerto 3847:** el PC servidor sirve API + interfaz (desde v0.3.3).
-- [x] **Inventario online:** no se adopta conteo offline-hasta-volcar; hace falta comparación/reconteo en el momento.
+- [x] **Inventario modo dual:** **con red** (Comparación A en el PC) **u offline** (ambos bajan datos en oficina; cuentan en base local; sync entre celulares al final del sector; import al PC). Ver [INVENTARIO.md](INVENTARIO.md) §3.1. Se descartó solo el “volcar todo al final sin comparación entre contadores”.
 
 ### Pendientes
 
@@ -329,7 +332,8 @@ Eso ya está **superado por la decisión de convivencia**:
 - [ ] **Planillas en móvil:** ¿en la primera versión de APK o después de retornos?
 - [ ] **WebSocket:** ¿en la misma entrega que inventario móvil o después?
 - [ ] **Ingresos en APK** (fase futura): ¿hace falta algún día cargar en el pasillo?
-- [ ] **Cache offline mínimo** (solo consulta / cola corta si corta WiFi) — no inventario offline total.
+- [ ] **Inventario offline (implementación):** formato del paquete, sync P2P/hotspot, plan B archivo, pantallas Preparar / Esperando compañero / Importar.
+- [ ] **Cache offline mínimo** (consulta / cola corta si corta WiFi) — aparte del modo inventario offline.
 - [ ] **Versión mínima de Android** soportada.
 - [ ] **Distribución y actualización** de la APK (fuera de Play Store vs cuenta interna).
 - [ ] **Repo:** monorepo (`mobile/`) vs repositorio aparte (recomendado monorepo si Capacitor).
@@ -338,13 +342,13 @@ Eso ya está **superado por la decisión de convivencia**:
 
 ## 14. Resumen
 
-**Terminales de bodega:** celular por **navegador (web siempre disponible)** y, cuando exista, **APK Android** — ambos contra el PC servidor por WiFi. Mismos módulos según permisos: consulta, retornos, roturas, movimientos, planillas e inventario. **Ingresos solo en PC**. El PC sigue siendo administración y supervisión. Web y APK **no se excluyen**.
+**Terminales de bodega:** celular por **navegador (web siempre disponible)** y, cuando exista, **APK Android**. Online contra el PC por WiFi; **inventario** además admite **modo offline** (APK, sync entre contadores, import) cuando no hay WiFi en depósito — ver [INVENTARIO.md](INVENTARIO.md) §3.1. Mismos módulos según permisos. **Ingresos solo en PC**. Web y APK **no se excluyen**.
 
 ---
 
 ## 15. Próximo paso (para decidir con el equipo)
 
-1. Confirmar **orden de módulos** APK (tabla fase 12); la web ya cubre pruebas.
-2. Elegir **stack** de la APK (Capacitor vs nativo).
-3. Arrancar fase APK cuando haga falta operación diaria más cómoda (sin apagar la web).
-4. Seguir puliendo la **experiencia web en celular** (menú/UX) en paralelo.
+1. Confirmar **orden de módulos** APK (tabla fase 12); la web ya cubre pruebas online.
+2. Elegir **stack** de la APK (Capacitor vs nativo), priorizando capacidad **offline + sync P2P** para inventario.
+3. Implementar inventario offline según [INVENTARIO.md](INVENTARIO.md) §3.1 cuando se retome en la PC de trabajo.
+4. Seguir puliendo la **experiencia web en celular** (modo con red) en paralelo.

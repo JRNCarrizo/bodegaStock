@@ -312,10 +312,11 @@ Conteo físico realizado por **dos personas** desde celulares (**navegador web**
 **Resumen:**
 1. Sesión con sectores (todos o parcial) y dos contadores por sector.
 2. Al iniciar: snapshot del stock + bloqueo global de movimientos.
-3. Buscador dinámico o escaneo; líneas independientes (no se fusionan).
-4. Comparación A: contador vs contador al finalizar cada sector; reconteo con referencia del desglose anterior.
-5. Comparación B: total contado vs sistema al cerrar; detecta cantidad y reorganización entre sectores.
-6. Supervisor confirma → `stock_lineas` se alinea con lo contado + reporte antes/después.
+3. **Modo elegible por sector:** **con red** (celulares → PC) u **offline** (bajar catálogo en oficina → contar en depósito → sync entre celulares al final → import al PC). Ver [INVENTARIO.md](INVENTARIO.md) §3.1.
+4. Buscador dinámico o escaneo; líneas independientes (no se fusionan).
+5. Comparación A: contador vs contador al finalizar cada sector (en PC si online; entre celulares si offline); reconteo con referencia del desglose anterior.
+6. Comparación B: total contado vs sistema al cerrar (siempre en PC); detecta cantidad y reorganización entre sectores.
+7. Supervisor confirma → `stock_lineas` se alinea con lo contado + reporte antes/después.
 
 ---
 
@@ -333,7 +334,7 @@ Administración de cuentas y permisos. Ver documento: [USUARIOS-Y-PERMISOS.md](U
 | R2 | Cada movimiento registra: usuario, fecha/hora, tipo, producto, cantidad, sector(es) |
 | R3 | Un producto puede tener stock en múltiples sectores simultáneamente |
 | R4 | Retornos: quien carga ≠ quien verifica |
-| R5 | Inventario: dos contadores distintos por sector; vistas independientes; comparación A al finalizar ambos; reconteo solo con diferencia; comparación B vs sistema al cerrar; reorganización del depósito |
+| R5 | Inventario: dos contadores distintos por sector; vistas independientes; comparación A al finalizar ambos (PC online o sync entre celulares offline); reconteo solo con diferencia; comparación B vs sistema al cerrar; reorganización del depósito; modo con red u offline elegible |
 | R6 | Planillas y retornos deben asociar camionero |
 | R7 | Ingresos deben registrar número de remito |
 | R8 | Permisos por sección determinan acceso a cada módulo |

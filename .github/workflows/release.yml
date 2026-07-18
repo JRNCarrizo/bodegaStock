@@ -1,0 +1,88 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Versión sin v (ej. 0.1.0)'
+        required: true
+        default: '0.3.0'
+
+permissions:
+  contents: write
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build installer
+        run: npm run dist
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: false
+          EPUBLISH: never
+
+      - name: Verify update metadata matches installer
+        shell: pwsh
+        run: |
+          $pathLine = Get-Content release/latest.yml | Where-Object { $_ -match '^path:' } | Select-Object -First 1
+          if (-not $pathLine) { throw 'latest.yml no contiene path' }
+          $expected = ($pathLine -replace '^path:\s*', '').Trim()
+          if (-not (Test-Path "release/$expected")) {
+            Write-Error "latest.yml apunta a '$expected' pero no existe en release/"
+            Get-ChildItem release
+            exit 1
+          }
+          Write-Host "OK: latest.yml -> $expected"
+
+      - name: Resolve tag
+        id: tag
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "name=v${{ inputs.version }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "name=${GITHUB_REF#refs/tags/}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.tag.outputs.name }}
+          name: ControlStock ${{ steps.tag.outputs.name }}
+          generate_release_notes: false
+          body: |
+            ## ControlStock ${{ steps.tag.outputs.name }}
+
+            Correcciones de armado de stock, reubicación en el mismo sector y reorganización por ubicación.
+
+            ### Nuevo
+            - **Movimientos:** reubicación en el mismo sector (sin ubicación ↔ ubicación), con origen y destino por ubicación
+            - **Reorganizar por ubicación:** en Consulta → Por sector, eligiendo una ubicación (sin mezclar posiciones)
+
+            ### Corregido
+            - **Retornos:** ya no desarman pallets inventariados al devolver cajas; suman a la pila más chica respetando el tamaño de pallet del producto
+            - **Roturas / deducciones:** resto de pallet queda coherente (sin cajas fantasma)
+            - **Movimientos:** al completar se conserva el desglose pallet/cajas en destino
+            - **Consulta producto:** reorganizar con varias ubicaciones bloqueado (evitar volcar todo a “sin ubicación”)
+
+            ### Actualización
+            - Desde **v0.2.7 o superior:** Configuración → Buscar actualizaciones
+            - O instalá el `.exe` de este release manualmente
+          files: |
+            release/ControlStock-Setup-*.exe
+            release/latest.yml

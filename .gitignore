@@ -1,0 +1,23 @@
+node_modules
+dist
+out
+release
+*.db
+.env
+.env.*
+!.env.example
+.DS_Store
+Thumbs.db
+*.log
+
+# Capacitor / Android
+android/.gradle
+android/app/build
+android/build
+android/local.properties
+android/captures
+android/.idea
+*.apk
+*.aab
+*.keystore
+!build/*.keystore

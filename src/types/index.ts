@@ -374,6 +374,7 @@ export interface RetornoListItem {
   numero_planilla: string | null
   observacion: string | null
   estado: RetornoEstado
+  ingreso_directo?: number | boolean
   sector_nombre: string
   camionero_nombre: string | null
   camionero_numero: string | null
@@ -424,6 +425,7 @@ export interface RetornoDetalle {
     verificado_por_id: number | null
     verificado_por_nombre: string | null
     observacion_verificacion: string | null
+    ingreso_directo?: boolean
     created_at: string
     verificado_at: string | null
   }
@@ -580,6 +582,7 @@ export interface MovimientoInternoListItem {
   tipo: MovimientoInternoTipo
   estado: MovimientoInternoEstado
   observacion: string | null
+  ingreso_directo?: boolean
   sector_origen_nombre: string
   sector_destino_nombre: string
   creado_por_nombre: string
@@ -629,6 +632,7 @@ export interface MovimientoInternoDetalle {
     recibido_por_nombre: string | null
     cancelado_por_id: number | null
     cancelado_por_nombre: string | null
+    ingreso_directo?: boolean
     recibido_at: string | null
     cancelado_at: string | null
     created_at: string

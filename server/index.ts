@@ -18,6 +18,7 @@ import { consultaRoutes } from './routes/consulta'
 import { ingresosRoutes } from './routes/ingresos'
 import { planillasRoutes } from './routes/planillas'
 import { retornosRoutes } from './routes/retornos'
+import { configuracionRoutes } from './routes/configuracion'
 import { roturasRoutes } from './routes/roturas'
 import { movimientosInternosRoutes } from './routes/movimientos-internos'
 import { reportesRoutes } from './routes/reportes'
@@ -132,6 +133,7 @@ export async function startServer(options: StartServerOptions = {}): Promise<voi
   await server.register(ingresosRoutes)
   await server.register(planillasRoutes)
   await server.register(retornosRoutes)
+  await server.register(configuracionRoutes)
   await server.register(roturasRoutes)
   await server.register(movimientosInternosRoutes)
   await server.register(reportesRoutes)

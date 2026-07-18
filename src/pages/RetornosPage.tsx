@@ -5,6 +5,7 @@ import {
   ChevronDown,
   ChevronLeft,
   ChevronRight,
+  Download,
   Loader2,
   Pencil,
   Plus,
@@ -29,6 +30,7 @@ import { Input } from '@/components/ui/Input'
 import { Card, CardBody } from '@/components/ui/Card'
 import { ProductImage } from '@/components/ProductImage'
 import { formatCantidad, formatDayTabLabel, formatTotalCajas, todayIsoDate } from '@/lib/desglose'
+import { downloadApiFile } from '@/lib/downloadFile'
 import { api, cn } from '@/lib/utils'
 import type {
   Camionero,
@@ -55,7 +57,11 @@ function labelEstado(condicion: RetornoEstadoCondicion): string {
   return ESTADOS_CONDICION.find((e) => e.value === condicion)?.label ?? condicion
 }
 
-function badgeEstadoRetorno(estado: 'PENDIENTE' | 'VERIFICADO', size: 'sm' | 'md' = 'md') {
+function badgeEstadoRetorno(
+  estado: 'PENDIENTE' | 'VERIFICADO',
+  size: 'sm' | 'md' = 'md',
+  ingresoDirecto = false
+) {
   const compact = size === 'sm'
   const base = cn(
     'inline-flex items-center justify-center gap-1.5 rounded-full font-semibold',
@@ -65,7 +71,7 @@ function badgeEstadoRetorno(estado: 'PENDIENTE' | 'VERIFICADO', size: 'sm' | 'md
     return (
       <span className={cn(base, 'bg-emerald-100 text-emerald-800 ring-1 ring-emerald-200')}>
         <Check className={compact ? 'h-3 w-3 shrink-0' : 'h-3.5 w-3.5 shrink-0'} />
-        Verificado
+        {ingresoDirecto ? (compact ? 'Directo' : 'Ingreso directo') : 'Verificado'}
       </span>
     )
   }
@@ -126,6 +132,7 @@ export function RetornosPage() {
   const [loadingList, setLoadingList] = useState(true)
   const [error, setError] = useState('')
   const [saving, setSaving] = useState(false)
+  const [exportingId, setExportingId] = useState<number | null>(null)
 
   const [listSearch, setListSearch] = useState('')
   const [listFechaDesde, setListFechaDesde] = useState('')
@@ -160,6 +167,7 @@ export function RetornosPage() {
   const [editEstado, setEditEstado] = useState<RetornoEstadoCondicion>('BUEN_ESTADO')
   const [editSector, setEditSector] = useState('')
   const [obsVerificacion, setObsVerificacion] = useState('')
+  const [dobleVerificacion, setDobleVerificacion] = useState(true)
 
   const fechaRef = useRef<HTMLInputElement>(null)
   const planillaRef = useRef<HTMLInputElement>(null)
@@ -200,6 +208,17 @@ export function RetornosPage() {
     () => lineas.reduce((s, l) => s + l.cantidad_cajas, 0),
     [lineas]
   )
+
+  useEffect(() => {
+    void (async () => {
+      try {
+        const cfg = await api<{ doble_verificacion: boolean }>('/api/configuracion/retornos')
+        setDobleVerificacion(cfg.doble_verificacion)
+      } catch {
+        setDobleVerificacion(true)
+      }
+    })()
+  }, [])
 
   function scrollListToBottom() {
     requestAnimationFrame(() => {
@@ -436,6 +455,14 @@ export function RetornosPage() {
   }
 
   function abrirNuevoRetorno() {
+    void (async () => {
+      try {
+        const cfg = await api<{ doble_verificacion: boolean }>('/api/configuracion/retornos')
+        setDobleVerificacion(cfg.doble_verificacion)
+      } catch {
+        /* keep previous */
+      }
+    })()
     resetCreateForm()
     setView('create')
     setTimeout(() => focusField(fechaRef), 50)
@@ -642,7 +669,7 @@ export function RetornosPage() {
     setSaving(true)
     setError('')
     try {
-      const result = await api<{ id: number }>('/api/retornos', {
+      const result = await api<{ id: number; ingreso_directo?: boolean }>('/api/retornos', {
         method: 'POST',
         body: JSON.stringify({
           fecha,
@@ -687,6 +714,18 @@ export function RetornosPage() {
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error al cargar retorno')
+    }
+  }
+
+  async function exportarRetorno(id: number) {
+    setExportingId(id)
+    setError('')
+    try {
+      await downloadApiFile(`/api/retornos/${id}/export`, `retorno-${id}.xlsx`)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Error al exportar')
+    } finally {
+      setExportingId(null)
     }
   }
 
@@ -940,7 +979,7 @@ export function RetornosPage() {
         <Card className="overflow-hidden shadow-panel">
           <div className="border-b border-brand-100 bg-gradient-to-r from-brand-50/80 via-white to-white px-5 py-4">
             <div className="flex flex-wrap items-center gap-2">
-              {badgeEstadoRetorno(detalle.retorno.estado)}
+              {badgeEstadoRetorno(detalle.retorno.estado, 'md', !!detalle.retorno.ingreso_directo)}
             </div>
           </div>
           <CardBody className="space-y-2 text-sm">
@@ -1009,7 +1048,7 @@ export function RetornosPage() {
         fecha={r.fecha}
         totalEtiqueta="Total"
         total={detalle.total_cajas}
-        encabezadoExtra={badgeEstadoRetorno(r.estado)}
+        encabezadoExtra={badgeEstadoRetorno(r.estado, 'md', !!r.ingreso_directo)}
         meta={
           <>
             {(r.camionero_numero || r.camionero_nombre) && (
@@ -1037,11 +1076,16 @@ export function RetornosPage() {
             </RegistroDetalleMetaChip>
             {r.verificado_por_nombre && (
               <RegistroDetalleMetaChip>
-                <span className="font-medium text-slate-500">Verificado </span>
+                <span className="font-medium text-slate-500">
+                  {r.ingreso_directo ? 'Ingresado ' : 'Verificado '}
+                </span>
                 {r.verificado_por_nombre}
               </RegistroDetalleMetaChip>
             )}
             {r.observacion && <RegistroDetalleObsChip>{r.observacion}</RegistroDetalleObsChip>}
+            {r.ingreso_directo && r.observacion_verificacion && (
+              <RegistroDetalleObsChip>{r.observacion_verificacion}</RegistroDetalleObsChip>
+            )}
           </>
         }
         antesProductos={
@@ -1574,7 +1618,10 @@ export function RetornosPage() {
                 </div>
                 <p className="mt-3 text-xs leading-relaxed text-slate-500">
                   Enter en el último campo agrega la línea y vuelve al buscador. Solo mercadería en{' '}
-                  <span className="font-medium text-slate-600">buen estado</span> suma stock al verificar.
+                  <span className="font-medium text-slate-600">buen estado</span>{' '}
+                  {dobleVerificacion
+                    ? 'suma stock al verificar.'
+                    : 'suma stock al confirmar el retorno.'}
                 </p>
               </div>
             )}
@@ -1606,7 +1653,11 @@ export function RetornosPage() {
                 disabled={lineas.length === 0 || saving}
               >
                 <Check className="h-4 w-4" />
-                {saving ? 'Registrando...' : 'Confirmar retorno'}
+                {saving
+                  ? 'Registrando...'
+                  : dobleVerificacion
+                    ? 'Confirmar retorno'
+                    : 'Confirmar y sumar stock'}
               </Button>
             )}
           </div>
@@ -1636,7 +1687,9 @@ export function RetornosPage() {
             Retornos
           </h1>
           <p className="mt-2 max-w-xl text-sm leading-relaxed text-slate-500">
-            Mercadería que vuelve a bodega — sin verificar hasta segunda revisión por otro usuario.
+            {dobleVerificacion
+              ? 'Mercadería que vuelve a bodega — sin verificar hasta segunda revisión por otro usuario.'
+              : 'Mercadería que vuelve a bodega — ingreso directo: al confirmar ya suma stock (control en hoja).'}
           </p>
         </div>
         {hasPermiso('retornos.crear') && (
@@ -1846,7 +1899,7 @@ export function RetornosPage() {
                       >
                         {r.numero_planilla ?? `Retorno #${r.id}`}
                       </p>
-                      {badgeEstadoRetorno(r.estado)}
+                      {badgeEstadoRetorno(r.estado, 'md', !!r.ingreso_directo)}
                     </div>
                     {r.observacion?.trim() ? (
                       <p className="mt-1 line-clamp-2 text-xs text-slate-500">{r.observacion}</p>
@@ -1883,6 +1936,21 @@ export function RetornosPage() {
                     >
                       {formatCantidad(r.total_cajas)}
                     </span>
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      className="rounded-lg"
+                      disabled={exportingId === r.id}
+                      onClick={() => void exportarRetorno(r.id)}
+                      title="Exportar Excel del registro"
+                    >
+                      {exportingId === r.id ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <Download className="h-4 w-4" />
+                      )}
+                      Exportar
+                    </Button>
                     <Button
                       variant={esPendiente ? 'primary' : 'secondary'}
                       size="sm"

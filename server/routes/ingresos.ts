@@ -3,6 +3,14 @@ import { getDb } from '../db'
 import { requirePermiso } from '../plugins/auth'
 import { blockIfInventarioActivo } from '../utils/inventario-block'
 import {
+  buildMultiSheetExcel,
+  PRODUCTO_LISTADO_COLUMNS,
+  resumenSheet,
+  sendExcelFile,
+  todayFileStamp,
+  withTotalRow
+} from '../utils/excel-export'
+import {
   applyIngresoLineToStock,
   calcTotalEnCajas,
   formatEtiquetaLinea,
@@ -184,6 +192,74 @@ export async function ingresosRoutes(app: FastifyInstance): Promise<void> {
     const total_unidades = lineas.reduce((s, l) => s + l.total_cajas, 0)
 
     return { ingreso, lineas, total_unidades }
+  })
+
+  app.get('/api/ingresos/:id/export', {
+    preHandler: requirePermiso('ingresos.ver')
+  }, async (request, reply) => {
+    const id = Number((request.params as { id: string }).id)
+    const db = getDb()
+
+    const ingreso = db.prepare(`
+      SELECT id, fecha, numero_remito, observacion
+      FROM ingresos
+      WHERE id = ?
+    `).get(id) as
+      | {
+          id: number
+          fecha: string
+          numero_remito: string
+          observacion: string | null
+        }
+      | undefined
+
+    if (!ingreso) return reply.status(404).send({ error: 'Ingreso no encontrado' })
+
+    const productos = db.prepare(`
+      SELECT
+        p.codigo_interno,
+        p.nombre,
+        COALESCE(p.descripcion, '') AS descripcion,
+        SUM(il.total_unidades) AS cantidad
+      FROM ingreso_lineas il
+      JOIN productos p ON p.id = il.producto_id
+      WHERE il.ingreso_id = ?
+      GROUP BY p.id, p.codigo_interno, p.nombre, p.descripcion
+      ORDER BY p.codigo_interno COLLATE NOCASE ASC, p.nombre COLLATE NOCASE ASC
+    `).all(id) as Array<{
+      codigo_interno: string
+      nombre: string
+      descripcion: string
+      cantidad: number
+    }>
+
+    const rows = productos.map((p) => ({
+      codigo_interno: p.codigo_interno,
+      nombre: p.nombre,
+      descripcion: p.descripcion,
+      cantidad: Number(p.cantidad) || 0
+    }))
+    const total = rows.reduce((s, r) => s + r.cantidad, 0)
+
+    const buffer = await buildMultiSheetExcel([
+      resumenSheet('Resumen', [
+        ['Fecha', ingreso.fecha],
+        ['Nº remito', ingreso.numero_remito],
+        ['Observación', ingreso.observacion],
+        ['Total', total]
+      ]),
+      {
+        name: 'Productos',
+        columns: [...PRODUCTO_LISTADO_COLUMNS],
+        rows: withTotalRow(rows)
+      }
+    ])
+
+    return sendExcelFile(
+      reply,
+      buffer,
+      `ingreso-${ingreso.numero_remito || ingreso.id}-${todayFileStamp()}.xlsx`
+    )
   })
 
   app.post('/api/ingresos', {

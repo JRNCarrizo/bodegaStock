@@ -14,6 +14,7 @@ import { NAV_ICONS, NAV_ITEMS } from '@/config/navigation'
 import { useAuth } from '@/context/AuthContext'
 import { useSidebarNav } from '@/context/SidebarNavContext'
 import { Card } from '@/components/ui/Card'
+import { AppCopyrightFooter } from '@/components/AppCopyrightFooter'
 import { shouldAbrirFormularioConEnter } from '@/hooks/useRegistroListKeyboard'
 import { cn } from '@/lib/utils'
 import { focusAndScrollIntoView } from '@/lib/scroll'
@@ -108,11 +109,13 @@ function getGreeting(): string {
 }
 
 function formatToday(): string {
-  return new Date().toLocaleDateString('es-AR', {
+  const raw = new Date().toLocaleDateString('es-AR', {
     weekday: 'long',
     day: 'numeric',
     month: 'long'
   })
+  // Solo capitaliza el día de la semana; deja "de" en minúscula
+  return raw.replace(/^\p{L}/u, (c) => c.toLocaleUpperCase('es-AR'))
 }
 
 function SectionHeading({
@@ -395,9 +398,9 @@ export function DashboardPage() {
               </div>
             </div>
 
-            <div className="shrink-0 rounded-xl border border-brand-200/60 bg-white/90 px-4 py-3 shadow-sm backdrop-blur-sm sm:text-right">
+            <div className="shrink-0 self-start rounded-xl border border-brand-200/60 bg-white/90 px-4 py-3 text-left shadow-sm backdrop-blur-sm sm:self-auto">
               <p className="text-xs font-semibold uppercase tracking-wider text-brand-600/70">Hoy</p>
-              <p className="mt-0.5 text-sm font-semibold capitalize text-slate-900">{formatToday()}</p>
+              <p className="mt-0.5 text-sm font-semibold text-slate-900">{formatToday()}</p>
             </div>
           </div>
         </div>
@@ -521,6 +524,8 @@ export function DashboardPage() {
           )}
         </div>
       </div>
+
+      <AppCopyrightFooter />
     </div>
   )
 }

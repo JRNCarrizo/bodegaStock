@@ -4,6 +4,7 @@ import {
   ChevronLeft,
   ChevronRight,
   ClipboardList,
+  Download,
   Eye,
   Loader2,
   Plus,
@@ -31,6 +32,7 @@ import {
   todayIsoDate,
   type ModoSalidaPlanilla
 } from '@/lib/desglose'
+import { downloadApiFile } from '@/lib/downloadFile'
 import { api, cn } from '@/lib/utils'
 import type {
   Camionero,
@@ -60,6 +62,7 @@ export function PlanillasPage() {
   const [selectedDay, setSelectedDay] = useState(() => todayIsoDate())
   const [loadingList, setLoadingList] = useState(true)
   const [error, setError] = useState('')
+  const [exportingId, setExportingId] = useState<number | null>(null)
   const [saving, setSaving] = useState(false)
 
   const [fecha, setFecha] = useState(todayIsoDate())
@@ -633,6 +636,18 @@ export function PlanillasPage() {
       setView('detail')
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error al cargar detalle')
+    }
+  }
+
+  async function exportarPlanilla(id: number) {
+    setExportingId(id)
+    setError('')
+    try {
+      await downloadApiFile(`/api/planillas/${id}/export`, `planilla-${id}.xlsx`)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Error al exportar')
+    } finally {
+      setExportingId(null)
     }
   }
 
@@ -1411,6 +1426,21 @@ export function PlanillasPage() {
                     <span className="inline-flex min-w-[3rem] items-center justify-center rounded-lg bg-brand-50 px-2.5 py-1.5 text-sm font-bold tabular-nums text-brand-700 ring-1 ring-brand-100">
                       {formatCantidad(p.total_unidades)}
                     </span>
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      className="rounded-lg"
+                      disabled={exportingId === p.id}
+                      onClick={() => void exportarPlanilla(p.id)}
+                      title="Exportar Excel del registro"
+                    >
+                      {exportingId === p.id ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <Download className="h-4 w-4" />
+                      )}
+                      Exportar
+                    </Button>
                     <Button
                       variant="secondary"
                       size="sm"

@@ -2,6 +2,7 @@ import type { FastifyInstance } from 'fastify'
 import { getDb } from '../db'
 import { requirePermiso } from '../plugins/auth'
 import { blockIfInventarioActivo } from '../utils/inventario-block'
+import { buildExcelBuffer, sendExcelFile, todayFileStamp } from '../utils/excel-export'
 import {
   formatEtiquetaLinea,
   getProductoDefaults,
@@ -135,6 +136,47 @@ function getStockDetalle(db: ReturnType<typeof getDb>, productoId: number) {
 }
 
 export async function consultaRoutes(app: FastifyInstance): Promise<void> {
+  app.get('/api/consulta/export/stock-productos', {
+    preHandler: requirePermiso('consulta.ver')
+  }, async (_request, reply) => {
+    const db = getDb()
+    const rows = db.prepare(`
+      SELECT
+        p.codigo_interno,
+        p.nombre,
+        COALESCE(p.descripcion, '') AS descripcion,
+        COALESCE((
+          SELECT SUM(ss.cantidad_total) FROM stock_sector ss WHERE ss.producto_id = p.id
+        ), 0) AS cantidad_total
+      FROM productos p
+      WHERE p.activo = 1
+      ORDER BY p.codigo_interno COLLATE NOCASE ASC, p.nombre COLLATE NOCASE ASC
+    `).all() as Array<{
+      codigo_interno: string
+      nombre: string
+      descripcion: string
+      cantidad_total: number
+    }>
+
+    const buffer = await buildExcelBuffer(
+      'Stock productos',
+      [
+        { header: 'Código interno', key: 'codigo_interno', width: 18 },
+        { header: 'Nombre', key: 'nombre', width: 36 },
+        { header: 'Descripción', key: 'descripcion', width: 40 },
+        { header: 'Cantidad total', key: 'cantidad_total', width: 16 }
+      ],
+      rows.map((r) => ({
+        codigo_interno: r.codigo_interno,
+        nombre: r.nombre,
+        descripcion: r.descripcion,
+        cantidad_total: Number(r.cantidad_total) || 0
+      }))
+    )
+
+    return sendExcelFile(reply, buffer, `stock-productos-${todayFileStamp()}.xlsx`)
+  })
+
   app.get('/api/consulta', {
     preHandler: requirePermiso('consulta.ver')
   }, async (request, reply) => {

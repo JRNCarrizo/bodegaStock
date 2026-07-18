@@ -190,6 +190,12 @@ CREATE TABLE IF NOT EXISTS planilla_descuentos (
   etiqueta TEXT
 );
 
+CREATE TABLE IF NOT EXISTS app_settings (
+  clave TEXT PRIMARY KEY,
+  valor TEXT NOT NULL,
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
 CREATE TABLE IF NOT EXISTS retornos (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   fecha TEXT NOT NULL,
@@ -202,6 +208,7 @@ CREATE TABLE IF NOT EXISTS retornos (
   cargado_por_id INTEGER NOT NULL REFERENCES usuarios(id),
   verificado_por_id INTEGER REFERENCES usuarios(id),
   observacion_verificacion TEXT,
+  ingreso_directo INTEGER NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   verificado_at TEXT
 );
@@ -262,6 +269,7 @@ CREATE TABLE IF NOT EXISTS movimientos_internos (
   creado_por_id INTEGER NOT NULL REFERENCES usuarios(id),
   recibido_por_id INTEGER REFERENCES usuarios(id),
   cancelado_por_id INTEGER REFERENCES usuarios(id),
+  ingreso_directo INTEGER NOT NULL DEFAULT 0,
   recibido_at TEXT,
   cancelado_at TEXT,
   created_at TEXT NOT NULL DEFAULT (datetime('now'))

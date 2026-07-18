@@ -5,6 +5,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Check,
+  Download,
   Eye,
   Loader2,
   Package,
@@ -28,6 +29,7 @@ import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { Card, CardBody } from '@/components/ui/Card'
 import { calcTotalEnCajas, botellasPorCajaDefault, formatCantidad, formatDayTabLabel, formatEtiqueta, formatTotalCajas, normalizarUnidadProducto, todayIsoDate } from '@/lib/desglose'
+import { downloadApiFile } from '@/lib/downloadFile'
 import { api, cn } from '@/lib/utils'
 import type {
   IngresoDetalle,
@@ -92,6 +94,7 @@ export function IngresosPage() {
   const [loadingList, setLoadingList] = useState(true)
   const [error, setError] = useState('')
   const [saving, setSaving] = useState(false)
+  const [exportingId, setExportingId] = useState<number | null>(null)
 
   const [fecha, setFecha] = useState(todayIsoDate())
   const [numeroRemito, setNumeroRemito] = useState('')
@@ -642,6 +645,18 @@ export function IngresosPage() {
       setView('detail')
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error al cargar detalle')
+    }
+  }
+
+  async function exportarIngreso(id: number) {
+    setExportingId(id)
+    setError('')
+    try {
+      await downloadApiFile(`/api/ingresos/${id}/export`, `ingreso-${id}.xlsx`)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Error al exportar')
+    } finally {
+      setExportingId(null)
     }
   }
 
@@ -1493,6 +1508,21 @@ export function IngresosPage() {
                     <span className="inline-flex min-w-[3rem] items-center justify-center rounded-lg bg-brand-50 px-2.5 py-1.5 text-sm font-bold tabular-nums text-brand-700 ring-1 ring-brand-100">
                       {formatCantidad(i.total_unidades)}
                     </span>
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      className="rounded-lg"
+                      disabled={exportingId === i.id}
+                      onClick={() => void exportarIngreso(i.id)}
+                      title="Exportar Excel del registro"
+                    >
+                      {exportingId === i.id ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <Download className="h-4 w-4" />
+                      )}
+                      Exportar
+                    </Button>
                     <Button
                       variant="secondary"
                       size="sm"

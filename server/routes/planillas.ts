@@ -3,6 +3,14 @@ import { getDb } from '../db'
 import { requirePermiso } from '../plugins/auth'
 import { blockIfInventarioActivo } from '../utils/inventario-block'
 import {
+  buildMultiSheetExcel,
+  PRODUCTO_LISTADO_COLUMNS,
+  resumenSheet,
+  sendExcelFile,
+  todayFileStamp,
+  withTotalRow
+} from '../utils/excel-export'
+import {
   applyLineDeduction,
   applyProductDeduction,
   computeProductDeduction,
@@ -286,6 +294,85 @@ export async function planillasRoutes(app: FastifyInstance): Promise<void> {
     const total_unidades = lineas.reduce((s, l) => s + l.total_unidades, 0)
 
     return { planilla, lineas: lineasConDescuentos, total_unidades }
+  })
+
+  app.get('/api/planillas/:id/export', {
+    preHandler: requirePermiso('planillas.ver')
+  }, async (request, reply) => {
+    const id = Number((request.params as { id: string }).id)
+    const db = getDb()
+
+    const planilla = db.prepare(`
+      SELECT
+        p.id, p.fecha, p.numero, p.observacion,
+        c.nombre AS camionero_nombre,
+        c.numero_interno AS camionero_numero,
+        cv.patente AS vehiculo_patente
+      FROM planillas p
+      JOIN camioneros c ON c.id = p.camionero_id
+      LEFT JOIN camionero_vehiculos cv ON cv.id = p.vehiculo_id
+      WHERE p.id = ?
+    `).get(id) as
+      | {
+          id: number
+          fecha: string
+          numero: string
+          observacion: string | null
+          camionero_nombre: string
+          camionero_numero: string
+          vehiculo_patente: string | null
+        }
+      | undefined
+
+    if (!planilla) return reply.status(404).send({ error: 'Planilla no encontrada' })
+
+    const productos = db.prepare(`
+      SELECT
+        p.codigo_interno,
+        p.nombre,
+        COALESCE(p.descripcion, '') AS descripcion,
+        SUM(pl.total_unidades) AS cantidad
+      FROM planilla_lineas pl
+      JOIN productos p ON p.id = pl.producto_id
+      WHERE pl.planilla_id = ?
+      GROUP BY p.id, p.codigo_interno, p.nombre, p.descripcion
+      ORDER BY p.codigo_interno COLLATE NOCASE ASC, p.nombre COLLATE NOCASE ASC
+    `).all(id) as Array<{
+      codigo_interno: string
+      nombre: string
+      descripcion: string
+      cantidad: number
+    }>
+
+    const rows = productos.map((p) => ({
+      codigo_interno: p.codigo_interno,
+      nombre: p.nombre,
+      descripcion: p.descripcion,
+      cantidad: Number(p.cantidad) || 0
+    }))
+    const total = rows.reduce((s, r) => s + r.cantidad, 0)
+
+    const buffer = await buildMultiSheetExcel([
+      resumenSheet('Resumen', [
+        ['Fecha', planilla.fecha],
+        ['Nº planilla', planilla.numero],
+        ['Camionero', `${planilla.camionero_numero} — ${planilla.camionero_nombre}`],
+        ['Patente', planilla.vehiculo_patente],
+        ['Observación', planilla.observacion],
+        ['Total', total]
+      ]),
+      {
+        name: 'Productos',
+        columns: [...PRODUCTO_LISTADO_COLUMNS],
+        rows: withTotalRow(rows)
+      }
+    ])
+
+    return sendExcelFile(
+      reply,
+      buffer,
+      `planilla-${planilla.numero || planilla.id}-${todayFileStamp()}.xlsx`
+    )
   })
 
   app.get('/api/planillas/producto/:id/referencias', {

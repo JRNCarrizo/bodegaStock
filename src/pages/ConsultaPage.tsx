@@ -2,6 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react
 import {
   ChevronDown,
   ChevronRight,
+  Download,
   Layers,
   Loader2,
   MapPin,
@@ -16,6 +17,7 @@ import { ImagePreviewModal } from '@/components/ImagePreviewModal'
 import { ProductImage } from '@/components/ProductImage'
 import { ReorganizarStockForm } from '@/components/ReorganizarStockForm'
 import { formatCantidad } from '@/lib/desglose'
+import { downloadApiFile } from '@/lib/downloadFile'
 import { scrollElementFullyIntoView, focusAndScrollIntoView } from '@/lib/scroll'
 import { api, cn } from '@/lib/utils'
 import type {
@@ -177,6 +179,7 @@ export function ConsultaPage() {
   const [confirmSectorId, setConfirmSectorId] = useState<number | null>(null)
   const [reorganizingSectorId, setReorganizingSectorId] = useState<number | null>(null)
   const [loading, setLoading] = useState(false)
+  const [exporting, setExporting] = useState(false)
   const [error, setError] = useState('')
   const [showScanner, setShowScanner] = useState(false)
   const [imagePreview, setImagePreview] = useState<{
@@ -191,6 +194,21 @@ export function ConsultaPage() {
   const { registerEscHandler, registerMainContentFocus } = useSidebarNav()
 
   const expandedDetalle = expandedId != null ? detalleCache[expandedId] : undefined
+
+  async function exportarStockProductos() {
+    setExporting(true)
+    setError('')
+    try {
+      await downloadApiFile(
+        '/api/consulta/export/stock-productos',
+        `stock-productos.xlsx`
+      )
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Error al exportar')
+    } finally {
+      setExporting(false)
+    }
+  }
 
   function scrollExpandedIntoView() {
     requestAnimationFrame(() => {
@@ -437,30 +455,47 @@ export function ConsultaPage() {
   }, [registerMainContentFocus, modo])
 
   const modoTabs = (
-    <div className="flex flex-wrap gap-2">
-      {(
-        [
-          { id: 'producto' as const, label: 'Por producto' },
-          { id: 'sector' as const, label: 'Por sector' }
-        ] as const
-      ).map((tab) => (
-        <button
-          key={tab.id}
-          type="button"
-          onClick={() => {
-            setModo(tab.id)
-            if (tab.id === 'producto') setSectorDetailOpen(false)
-          }}
-          className={cn(
-            'rounded-full border px-4 py-2 text-sm font-medium transition-colors',
-            modo === tab.id
-              ? 'border-brand-500 bg-brand-600 text-white shadow-sm'
-              : 'border-surface-border bg-white text-slate-600 hover:border-brand-300'
-          )}
-        >
-          {tab.label}
-        </button>
-      ))}
+    <div className="flex flex-wrap items-center justify-between gap-3">
+      <div className="flex flex-wrap gap-2">
+        {(
+          [
+            { id: 'producto' as const, label: 'Por producto' },
+            { id: 'sector' as const, label: 'Por sector' }
+          ] as const
+        ).map((tab) => (
+          <button
+            key={tab.id}
+            type="button"
+            onClick={() => {
+              setModo(tab.id)
+              if (tab.id === 'producto') setSectorDetailOpen(false)
+            }}
+            className={cn(
+              'rounded-full border px-4 py-2 text-sm font-medium transition-colors',
+              modo === tab.id
+                ? 'border-brand-500 bg-brand-600 text-white shadow-sm'
+                : 'border-surface-border bg-white text-slate-600 hover:border-brand-300'
+            )}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </div>
+      <Button
+        variant="secondary"
+        size="sm"
+        className="rounded-xl"
+        disabled={exporting}
+        onClick={() => void exportarStockProductos()}
+        title="Excel con código interno, nombre, descripción y cantidad total"
+      >
+        {exporting ? (
+          <Loader2 className="h-4 w-4 animate-spin" />
+        ) : (
+          <Download className="h-4 w-4" />
+        )}
+        {exporting ? 'Exportando…' : 'Exportar Excel'}
+      </Button>
     </div>
   )
 
@@ -494,6 +529,12 @@ export function ConsultaPage() {
         )}
       </section>
 
+      {error && (
+        <div className="rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700 ring-1 ring-red-100">
+          {error}
+        </div>
+      )}
+
       {modoTabs}
 
       {modo === 'sector' ? (
@@ -526,14 +567,6 @@ export function ConsultaPage() {
             </Button>
           </div>
         </div>
-
-        {error && (
-          <CardBody className="border-b border-surface-border py-3">
-            <div className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700 ring-1 ring-red-100">
-              {error}
-            </div>
-          </CardBody>
-        )}
 
         {!search.trim() && (
           <CardBody>

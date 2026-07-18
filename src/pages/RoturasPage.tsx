@@ -7,6 +7,7 @@ import {
   ChevronDown,
   ChevronLeft,
   ChevronRight,
+  Download,
   Eye,
   List,
   Loader2,
@@ -28,6 +29,7 @@ import { Input } from '@/components/ui/Input'
 import { Card, CardBody } from '@/components/ui/Card'
 import { ProductImage } from '@/components/ProductImage'
 import { formatCantidad, formatDayTabLabel, formatTotalCajas, todayIsoDate } from '@/lib/desglose'
+import { downloadApiFile } from '@/lib/downloadFile'
 import { api, cn } from '@/lib/utils'
 import type {
   Producto,
@@ -79,6 +81,7 @@ export function RoturasPage() {
   const [showResumenDia, setShowResumenDia] = useState(false)
   const [resumenDia, setResumenDia] = useState<RoturaResumenDia | null>(null)
   const [loadingResumen, setLoadingResumen] = useState(false)
+  const [exportingDia, setExportingDia] = useState(false)
 
   const fechaRef = useRef<HTMLInputElement>(null)
   const observacionRef = useRef<HTMLInputElement>(null)
@@ -488,6 +491,21 @@ export function RoturasPage() {
       setError(err instanceof Error ? err.message : 'Error al cargar resumen')
     } finally {
       setLoadingResumen(false)
+    }
+  }
+
+  async function exportarDia(fechaDia: string = selectedDay) {
+    setExportingDia(true)
+    setError('')
+    try {
+      await downloadApiFile(
+        `/api/roturas/export-dia?fecha=${encodeURIComponent(fechaDia)}`,
+        `roturas-${fechaDia}.xlsx`
+      )
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Error al exportar')
+    } finally {
+      setExportingDia(false)
     }
   }
 
@@ -1012,16 +1030,33 @@ export function RoturasPage() {
           <div className="flex items-center gap-2">
             {loadingList && <Loader2 className="h-5 w-5 shrink-0 animate-spin text-brand-600" />}
             {diasConRoturas.length > 0 && (
-              <Button
-                variant="secondary"
-                size="sm"
-                className="rounded-lg"
-                disabled={loadingResumen}
-                onClick={() => void abrirResumenDia()}
-              >
-                <List className="h-4 w-4" />
-                Productos del día
-              </Button>
+              <>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  className="rounded-lg"
+                  disabled={exportingDia}
+                  onClick={() => void exportarDia()}
+                  title="Exportar Excel de productos del día"
+                >
+                  {exportingDia ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Download className="h-4 w-4" />
+                  )}
+                  Exportar
+                </Button>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  className="rounded-lg"
+                  disabled={loadingResumen}
+                  onClick={() => void abrirResumenDia()}
+                >
+                  <List className="h-4 w-4" />
+                  Productos del día
+                </Button>
+              </>
             )}
           </div>
         </div>
@@ -1129,13 +1164,29 @@ export function RoturasPage() {
                   {resumenDia.registros} registro(s) · {formatCantidad(resumenDia.total_cajas)} total
                 </p>
               </div>
-              <button
-                type="button"
-                onClick={() => setShowResumenDia(false)}
-                className="rounded p-1 text-slate-400 hover:bg-slate-100"
-              >
-                <X className="h-5 w-5" />
-              </button>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  className="rounded-lg"
+                  disabled={exportingDia}
+                  onClick={() => void exportarDia(resumenDia.fecha)}
+                >
+                  {exportingDia ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Download className="h-4 w-4" />
+                  )}
+                  Exportar
+                </Button>
+                <button
+                  type="button"
+                  onClick={() => setShowResumenDia(false)}
+                  className="rounded p-1 text-slate-400 hover:bg-slate-100"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
             </div>
             <div className="p-5">
               {resumenDia.productos.length === 0 ? (

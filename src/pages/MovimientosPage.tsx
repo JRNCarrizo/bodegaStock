@@ -73,7 +73,7 @@ function badgeTipo(tipo: MovimientoInternoTipo) {
   )
 }
 
-function badgeEstado(estado: MovimientoInternoEstado) {
+function badgeEstado(estado: MovimientoInternoEstado, ingresoDirecto = false) {
   switch (estado) {
     case 'PENDIENTE':
       return (
@@ -84,7 +84,7 @@ function badgeEstado(estado: MovimientoInternoEstado) {
     case 'COMPLETADO':
       return (
         <span className="inline-flex items-center rounded-full bg-green-50 px-2.5 py-0.5 text-xs font-medium text-green-800 ring-1 ring-green-100">
-          Completado
+          {ingresoDirecto ? 'Ingreso directo' : 'Completado'}
         </span>
       )
     case 'CANCELADO':
@@ -147,6 +147,7 @@ export function MovimientosPage() {
   const [editLineas, setEditLineas] = useState<MovimientoInternoDetalle['lineas']>([])
   const [lineasConfirmadas, setLineasConfirmadas] = useState<Set<number>>(() => new Set())
   const [expandedProductosDetalle, setExpandedProductosDetalle] = useState<Set<number>>(() => new Set())
+  const [dobleVerificacion, setDobleVerificacion] = useState(true)
 
   const fechaRef = useRef<HTMLInputElement>(null)
   const sectorContextoRef = useRef<HTMLSelectElement>(null)
@@ -173,6 +174,17 @@ export function MovimientosPage() {
     () => lineas.reduce((s, l) => s + l.cantidad_cajas, 0),
     [lineas]
   )
+
+  useEffect(() => {
+    void (async () => {
+      try {
+        const cfg = await api<{ doble_verificacion: boolean }>('/api/configuracion/movimientos')
+        setDobleVerificacion(cfg.doble_verificacion)
+      } catch {
+        setDobleVerificacion(true)
+      }
+    })()
+  }, [])
 
   const lineasPorProducto = useMemo(() => {
     const map = new Map<number, { producto: MovimientoInternoLineaDraft; lineas: MovimientoInternoLineaDraft[] }>()
@@ -226,9 +238,7 @@ export function MovimientosPage() {
   )
 
   const puedeAutorizar =
-    detalle?.movimiento.estado === 'PENDIENTE' &&
-    hasPermiso('movimientos_internos.crear') &&
-    user?.id !== detalle.movimiento.creado_por_id
+    detalle?.movimiento.estado === 'PENDIENTE' && hasPermiso('movimientos_internos.crear')
 
   const puedeCancelarDoc =
     detalle?.movimiento.estado === 'PENDIENTE' && hasPermiso('movimientos_internos.crear')
@@ -473,6 +483,14 @@ export function MovimientosPage() {
   }
 
   function iniciarCreacion(tipo: MovimientoInternoTipo) {
+    void (async () => {
+      try {
+        const cfg = await api<{ doble_verificacion: boolean }>('/api/configuracion/movimientos')
+        setDobleVerificacion(cfg.doble_verificacion)
+      } catch {
+        /* keep previous */
+      }
+    })()
     setListTipoPickerActive(false)
     setCreateTipo(tipo)
     setView('create')
@@ -1430,7 +1448,7 @@ export function MovimientosPage() {
         encabezadoExtra={
           <>
             {badgeTipo(m.tipo)}
-            {badgeEstado(m.estado)}
+            {badgeEstado(m.estado, !!m.ingreso_directo)}
           </>
         }
         meta={
@@ -1467,10 +1485,18 @@ export function MovimientosPage() {
                 <p className="mt-1 text-amber-900/80">
                   Creado por {m.creado_por_nombre}.
                   {puedeAutorizar
-                    ? ' Tildá cada producto revisado; cuando todos estén confirmados podés completar.'
-                    : user?.id === m.creado_por_id
-                      ? ' Esperá a que otra persona lo autorice.'
-                      : ''}
+                    ? user?.id === m.creado_por_id
+                      ? ' Podés revisar y completar vos mismo: tildá cada producto; cuando todos estén confirmados, completá el movimiento.'
+                      : ' Tildá cada producto revisado; cuando todos estén confirmados podés completar.'
+                    : ' Se necesita permiso de crear movimientos para autorizarlo.'}
+                </p>
+              </div>
+            )}
+            {m.estado === 'COMPLETADO' && m.ingreso_directo && (
+              <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-950">
+                <p className="font-medium">Ingreso directo</p>
+                <p className="mt-1 text-emerald-900/80">
+                  Se registró sin doble verificación digital (stock aplicado al crear).
                 </p>
               </div>
             )}
@@ -2146,7 +2172,11 @@ export function MovimientosPage() {
                 disabled={lineas.length === 0 || saving}
               >
                 <Check className="h-4 w-4" />
-                {saving ? 'Guardando...' : 'Crear movimiento pendiente'}
+                {saving
+                  ? 'Guardando...'
+                  : dobleVerificacion
+                    ? 'Crear movimiento pendiente'
+                    : 'Confirmar y mover stock'}
               </Button>
             )}
           </div>
@@ -2174,7 +2204,9 @@ export function MovimientosPage() {
             Movimientos internos
           </h1>
           <p className="mt-2 max-w-xl text-sm leading-relaxed text-slate-500">
-            Traslados de mercadería entre sectores con autorización de otro usuario.
+            {dobleVerificacion
+              ? 'Traslados entre sectores: el mismo usuario que crea puede completar la autorización.'
+              : 'Traslados entre sectores — ingreso directo: al confirmar ya mueve stock.'}
           </p>
         </div>
         {hasPermiso('movimientos_internos.crear') && (
@@ -2394,7 +2426,7 @@ export function MovimientosPage() {
                     <div className="flex flex-wrap items-center gap-2">
                       <p className="text-base font-semibold text-slate-900">Movimiento #{m.id}</p>
                       {badgeTipo(m.tipo)}
-                      {badgeEstado(m.estado)}
+                      {badgeEstado(m.estado, !!m.ingreso_directo)}
                     </div>
                     <p className="mt-1 text-sm text-slate-700">
                       {m.sector_origen_nombre} → {m.sector_destino_nombre}

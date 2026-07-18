@@ -2,6 +2,7 @@ import type { FastifyInstance } from 'fastify'
 import { getDb } from '../db'
 import { requirePermiso } from '../plugins/auth'
 import { blockIfInventarioActivo } from '../utils/inventario-block'
+import { getMovimientosDobleVerificacion } from '../utils/app-settings'
 import {
   applyMovimientoInternoDespachoLine,
   applyMovimientoInternoRecepcionLine,
@@ -158,7 +159,7 @@ function getMovimientoLineas(db: ReturnType<typeof getDb>, movimientoId: number,
 function getMovimientoHeader(db: ReturnType<typeof getDb>, id: number) {
   return db.prepare(`
     SELECT
-      m.id, m.fecha, m.tipo, m.estado, m.observacion, m.created_at,
+      m.id, m.fecha, m.tipo, m.estado, m.observacion, m.created_at, m.ingreso_directo,
       m.sector_origen_id, so.nombre AS sector_origen_nombre,
       m.sector_destino_id, sd.nombre AS sector_destino_nombre,
       m.creado_por_id, uc.nombre AS creado_por_nombre,
@@ -180,6 +181,7 @@ function getMovimientoHeader(db: ReturnType<typeof getDb>, id: number) {
         estado: MovimientoEstado
         observacion: string | null
         created_at: string
+        ingreso_directo: number
         sector_origen_id: number | null
         sector_origen_nombre: string | null
         sector_destino_id: number | null
@@ -209,6 +211,50 @@ function enrichLineaEtiqueta(l: ReturnType<typeof getMovimientoLineas>[number]) 
   )
 }
 
+function aplicarStockLineasActivas(
+  db: ReturnType<typeof getDb>,
+  movimientoId: number,
+  usuarioId: number,
+  observacion: string | null
+) {
+  const lineas = getMovimientoLineas(db, movimientoId, true)
+  if (lineas.length === 0) {
+    throw new Error('No hay productos activos para completar')
+  }
+
+  for (const linea of lineas) {
+    const origenMeta = db.prepare(`
+      SELECT usa_ubicaciones FROM sectores WHERE id = ?
+    `).get(linea.sector_origen_id) as { usa_ubicaciones: number } | undefined
+    const filtrarOrigen = Boolean(origenMeta?.usa_ubicaciones)
+
+    applyMovimientoInternoDespachoLine(db, {
+      producto_id: linea.producto_id,
+      sector_origen_id: linea.sector_origen_id,
+      cantidad_cajas: linea.cantidad_cajas,
+      movimiento_id: movimientoId,
+      movimiento_linea_id: linea.id,
+      usuario_id: usuarioId,
+      observacion,
+      ubicacion_origen_id: linea.ubicacion_origen_id,
+      filtrar_ubicacion_origen: filtrarOrigen
+    })
+
+    applyMovimientoInternoRecepcionLine(db, {
+      producto_id: linea.producto_id,
+      sector_destino_id: linea.sector_destino_id,
+      cantidad_cajas: linea.cantidad_cajas,
+      movimiento_id: movimientoId,
+      usuario_id: usuarioId,
+      observacion,
+      ubicacion_destino_id: linea.ubicacion_destino_id,
+      tipo_bulto: linea.tipo_bulto,
+      cantidad_bultos: linea.cantidad_bultos,
+      unidades_por_bulto: linea.unidades_por_bulto
+    })
+  }
+}
+
 function buildDetalle(db: ReturnType<typeof getDb>, id: number) {
   const movimiento = getMovimientoHeader(db, id)
   if (!movimiento) return null
@@ -221,7 +267,15 @@ function buildDetalle(db: ReturnType<typeof getDb>, id: number) {
   const lineasActivas = lineas.filter((l) => !l.cancelada)
   const total_cajas = lineasActivas.reduce((s, l) => s + l.cantidad_cajas, 0)
 
-  return { movimiento, lineas, total_cajas, lineas_activas: lineasActivas.length }
+  return {
+    movimiento: {
+      ...movimiento,
+      ingreso_directo: !!movimiento.ingreso_directo
+    },
+    lineas,
+    total_cajas,
+    lineas_activas: lineasActivas.length
+  }
 }
 
 function resumenRutaFromLineas(
@@ -375,7 +429,7 @@ export async function movimientosInternosRoutes(app: FastifyInstance): Promise<v
     const db = getDb()
     let sql = `
       SELECT
-        m.id, m.fecha, m.tipo, m.estado, m.observacion, m.created_at,
+        m.id, m.fecha, m.tipo, m.estado, m.observacion, m.created_at, m.ingreso_directo,
         so.nombre AS sector_origen_nombre,
         sd.nombre AS sector_destino_nombre,
         uc.nombre AS creado_por_nombre,
@@ -437,6 +491,7 @@ export async function movimientosInternosRoutes(app: FastifyInstance): Promise<v
       const ruta = resumenRutaFromLineas(lineas, row.tipo)
       return {
         ...row,
+        ingreso_directo: !!row.ingreso_directo,
         sector_origen_nombre: ruta.origen,
         sector_destino_nombre: ruta.destino
       }
@@ -532,74 +587,103 @@ export async function movimientosInternosRoutes(app: FastifyInstance): Promise<v
       ? sectorContextoId
       : (sectorDestinoDefault ?? lineas[0].sector_destino_id)
 
-    const result = db.prepare(`
-      INSERT INTO movimientos_internos (
-        fecha, tipo, sector_origen_id, sector_destino_id, observacion, creado_por_id
-      ) VALUES (?, ?, ?, ?, ?, ?)
-    `).run(
-      fecha,
-      tipo,
-      headerOrigenId,
-      headerDestinoId,
-      body.observacion?.trim() || null,
-      user.id
-    )
+    const dobleVerificacion = getMovimientosDobleVerificacion(db)
+    const observacion = body.observacion?.trim() || null
+    const obsDirecto = dobleVerificacion
+      ? observacion
+      : observacion
+        ? `${observacion} · Ingreso directo (sin doble verificación)`
+        : 'Ingreso directo (sin doble verificación)'
 
-    const movimientoId = Number(result.lastInsertRowid)
-
-    lineas.forEach((linea, index) => {
-      const producto = db.prepare(`
-        SELECT unidad FROM productos WHERE id = ?
-      `).get(linea.producto_id) as { unidad: string | null } | undefined
-
-      const tipoBulto = linea.tipo_bulto ?? null
-      const cantidadBultos =
-        linea.cantidad_bultos != null ? Number(linea.cantidad_bultos) : null
-      const unidadesPorBulto =
-        linea.unidades_por_bulto != null ? Number(linea.unidades_por_bulto) : null
-
-      let etiqueta = linea.etiqueta?.trim() || null
-      if (!etiqueta && tipoBulto && cantidadBultos && unidadesPorBulto) {
-        etiqueta = formatEtiquetaLinea(
-          {
-            tipo_bulto: tipoBulto,
-            cantidad_bultos: cantidadBultos,
-            unidades_por_bulto: unidadesPorBulto
-          },
-          producto?.unidad
+    try {
+      const movimientoId = db.transaction(() => {
+        const result = db.prepare(`
+          INSERT INTO movimientos_internos (
+            fecha, tipo, sector_origen_id, sector_destino_id, observacion,
+            estado, creado_por_id, recibido_por_id, ingreso_directo, recibido_at
+          ) VALUES (
+            ?, ?, ?, ?, ?,
+            ?, ?, ?, ?,
+            CASE WHEN ? = 1 THEN datetime('now') ELSE NULL END
+          )
+        `).run(
+          fecha,
+          tipo,
+          headerOrigenId,
+          headerDestinoId,
+          obsDirecto,
+          dobleVerificacion ? 'PENDIENTE' : 'COMPLETADO',
+          user.id,
+          dobleVerificacion ? null : user.id,
+          dobleVerificacion ? 0 : 1,
+          dobleVerificacion ? 0 : 1
         )
-      }
 
-      db.prepare(`
-        INSERT INTO movimiento_interno_lineas (
-          movimiento_interno_id, producto_id, sector_origen_id, sector_destino_id,
-          ubicacion_destino_id, ubicacion_origen_id,
-          cantidad_cajas, tipo_bulto, cantidad_bultos, unidades_por_bulto, etiqueta, orden
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `).run(
-        movimientoId,
-        linea.producto_id,
-        linea.sector_origen_id,
-        linea.sector_destino_id,
-        resolveUbicacionDestino(db, linea.sector_destino_id, linea.ubicacion_destino_id),
-        resolveUbicacionOrigen(db, linea.sector_origen_id, linea.ubicacion_origen_id),
-        Number(linea.cantidad_cajas),
-        tipoBulto,
-        cantidadBultos,
-        unidadesPorBulto,
-        etiqueta,
-        index + 1
-      )
-    })
+        const movimientoId = Number(result.lastInsertRowid)
 
-    return buildDetalle(db, movimientoId)
+        lineas.forEach((linea, index) => {
+          const producto = db.prepare(`
+            SELECT unidad FROM productos WHERE id = ?
+          `).get(linea.producto_id) as { unidad: string | null } | undefined
+
+          const tipoBulto = linea.tipo_bulto ?? null
+          const cantidadBultos =
+            linea.cantidad_bultos != null ? Number(linea.cantidad_bultos) : null
+          const unidadesPorBulto =
+            linea.unidades_por_bulto != null ? Number(linea.unidades_por_bulto) : null
+
+          let etiqueta = linea.etiqueta?.trim() || null
+          if (!etiqueta && tipoBulto && cantidadBultos && unidadesPorBulto) {
+            etiqueta = formatEtiquetaLinea(
+              {
+                tipo_bulto: tipoBulto,
+                cantidad_bultos: cantidadBultos,
+                unidades_por_bulto: unidadesPorBulto
+              },
+              producto?.unidad
+            )
+          }
+
+          db.prepare(`
+            INSERT INTO movimiento_interno_lineas (
+              movimiento_interno_id, producto_id, sector_origen_id, sector_destino_id,
+              ubicacion_destino_id, ubicacion_origen_id,
+              cantidad_cajas, tipo_bulto, cantidad_bultos, unidades_por_bulto, etiqueta, orden
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          `).run(
+            movimientoId,
+            linea.producto_id,
+            linea.sector_origen_id,
+            linea.sector_destino_id,
+            resolveUbicacionDestino(db, linea.sector_destino_id, linea.ubicacion_destino_id),
+            resolveUbicacionOrigen(db, linea.sector_origen_id, linea.ubicacion_origen_id),
+            Number(linea.cantidad_cajas),
+            tipoBulto,
+            cantidadBultos,
+            unidadesPorBulto,
+            etiqueta,
+            index + 1
+          )
+        })
+
+        if (!dobleVerificacion) {
+          aplicarStockLineasActivas(db, movimientoId, user.id, obsDirecto)
+        }
+
+        return movimientoId
+      })()
+
+      return buildDetalle(db, movimientoId)
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Error al crear movimiento'
+      return reply.status(400).send({ error: message })
+    }
   })
 
   app.patch('/api/movimientos-internos/:id/lineas', {
     preHandler: requirePermiso('movimientos_internos.crear')
   }, async (request, reply) => {
     const id = Number((request.params as { id: string }).id)
-    const user = request.user!
     const db = getDb()
     const body = (request.body ?? {}) as { lineas?: LineaUpdateBody[] }
 
@@ -609,11 +693,6 @@ export async function movimientosInternosRoutes(app: FastifyInstance): Promise<v
     }
     if (movimiento.estado !== 'PENDIENTE') {
       return reply.status(400).send({ error: 'Solo se pueden editar movimientos pendientes' })
-    }
-    if (movimiento.creado_por_id === user.id) {
-      return reply.status(400).send({
-        error: 'Quien creó el movimiento no puede autorizarlo. Pedí a otra persona.'
-      })
     }
 
     const updates = Array.isArray(body.lineas) ? body.lineas : []
@@ -724,52 +803,10 @@ export async function movimientosInternosRoutes(app: FastifyInstance): Promise<v
     if (movimiento.estado !== 'PENDIENTE') {
       return reply.status(400).send({ error: 'Solo se pueden completar movimientos pendientes' })
     }
-    if (movimiento.creado_por_id === user.id) {
-      return reply.status(400).send({
-        error: 'Quien creó el movimiento no puede completarlo. Pedí a otra persona que lo autorice.'
-      })
-    }
-
-    const lineas = getMovimientoLineas(db, id, true)
-    if (lineas.length === 0) {
-      return reply.status(400).send({ error: 'No hay productos activos para completar' })
-    }
-
-    const observacion = movimiento.observacion
 
     try {
       const tx = db.transaction(() => {
-        for (const linea of lineas) {
-          const origenMeta = db.prepare(`
-            SELECT usa_ubicaciones FROM sectores WHERE id = ?
-          `).get(linea.sector_origen_id) as { usa_ubicaciones: number } | undefined
-          const filtrarOrigen = Boolean(origenMeta?.usa_ubicaciones)
-
-          applyMovimientoInternoDespachoLine(db, {
-            producto_id: linea.producto_id,
-            sector_origen_id: linea.sector_origen_id,
-            cantidad_cajas: linea.cantidad_cajas,
-            movimiento_id: id,
-            movimiento_linea_id: linea.id,
-            usuario_id: user.id,
-            observacion,
-            ubicacion_origen_id: linea.ubicacion_origen_id,
-            filtrar_ubicacion_origen: filtrarOrigen
-          })
-
-          applyMovimientoInternoRecepcionLine(db, {
-            producto_id: linea.producto_id,
-            sector_destino_id: linea.sector_destino_id,
-            cantidad_cajas: linea.cantidad_cajas,
-            movimiento_id: id,
-            usuario_id: user.id,
-            observacion,
-            ubicacion_destino_id: linea.ubicacion_destino_id,
-            tipo_bulto: linea.tipo_bulto,
-            cantidad_bultos: linea.cantidad_bultos,
-            unidades_por_bulto: linea.unidades_por_bulto
-          })
-        }
+        aplicarStockLineasActivas(db, id, user.id, movimiento.observacion)
 
         db.prepare(`
           UPDATE movimientos_internos

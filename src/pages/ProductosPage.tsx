@@ -4,16 +4,20 @@ import {
   Camera,
   ChevronLeft,
   Dices,
+  Download,
+  FileSpreadsheet,
   ImagePlus,
   Loader2,
   Package,
   Pencil,
   Plus,
   Printer,
-  Search
+  Search,
+  Upload
 } from 'lucide-react'
 import { BarcodePrintModal } from '@/components/BarcodePrintModal'
 import { BarcodeScannerModal } from '@/components/BarcodeScannerModal'
+import { downloadApiFile } from '@/lib/downloadFile'
 import { api } from '@/lib/utils'
 import { prepareProductImage } from '@/lib/image'
 import type { Producto, ProductoForm } from '@/types'
@@ -53,6 +57,14 @@ export function ProductosPage() {
   const [imagenMime, setImagenMime] = useState<string | null>(null)
   const [eliminarImagen, setEliminarImagen] = useState(false)
   const [saving, setSaving] = useState(false)
+  const [downloadingPlantilla, setDownloadingPlantilla] = useState(false)
+  const [importing, setImporting] = useState(false)
+  const [importResult, setImportResult] = useState<{
+    total_filas: number
+    creados: number
+    omitidos: number
+    detalle: Array<{ fila: number; codigo_interno: string; estado: string; motivo?: string }>
+  } | null>(null)
   const [showScanner, setShowScanner] = useState(false)
   const [barcodePrint, setBarcodePrint] = useState<{
     codigoBarras: string
@@ -72,6 +84,7 @@ export function ProductosPage() {
   const codigoBarrasRef = useRef<HTMLInputElement>(null)
   const activoRef = useRef<HTMLInputElement>(null)
   const imagenInputRef = useRef<HTMLInputElement>(null)
+  const importInputRef = useRef<HTMLInputElement>(null)
 
   function focusField(ref: React.RefObject<HTMLElement | null>) {
     requestAnimationFrame(() => {
@@ -121,6 +134,49 @@ export function ProductosPage() {
 
   function abrirNuevoProducto() {
     openCreate()
+  }
+
+  async function descargarPlantilla() {
+    setDownloadingPlantilla(true)
+    setError('')
+    try {
+      await downloadApiFile('/api/productos/plantilla', 'plantilla-productos.xlsx')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Error al descargar plantilla')
+    } finally {
+      setDownloadingPlantilla(false)
+    }
+  }
+
+  async function importarExcel(file: File) {
+    setImporting(true)
+    setError('')
+    setImportResult(null)
+    try {
+      const buffer = await file.arrayBuffer()
+      const bytes = new Uint8Array(buffer)
+      let binary = ''
+      for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i])
+      const file_base64 = btoa(binary)
+
+      const result = await api<{
+        total_filas: number
+        creados: number
+        omitidos: number
+        detalle: Array<{ fila: number; codigo_interno: string; estado: string; motivo?: string }>
+      }>('/api/productos/import', {
+        method: 'POST',
+        body: JSON.stringify({ file_base64 }),
+        timeoutMs: 60000
+      })
+      setImportResult(result)
+      await load(search)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Error al importar productos')
+    } finally {
+      setImporting(false)
+      if (importInputRef.current) importInputRef.current.value = ''
+    }
   }
 
   const load = useCallback(async (q?: string) => {
@@ -582,7 +638,7 @@ export function ProductosPage() {
 
   return (
     <div className="mx-auto max-w-6xl space-y-6">
-      <section className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+      <section className="space-y-4">
         <div>
           <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">
             Catálogo
@@ -591,21 +647,110 @@ export function ProductosPage() {
             Productos
           </h1>
           <p className="mt-2 max-w-xl text-sm leading-relaxed text-slate-500">
-            Códigos internos, barras, imágenes y estado de cada artículo del depósito.
+            Códigos internos, barras e imágenes. También podés cargar muchos de una vez con la
+            plantilla Excel.
           </p>
         </div>
         {hasPermiso('productos.crear') && (
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="hidden rounded-full border border-surface-border bg-white px-2.5 py-1 text-[11px] font-medium text-slate-500 shadow-card sm:inline-flex">
-              Enter = nuevo producto
-            </span>
-            <Button className="rounded-xl px-4" onClick={openCreate}>
+          <div className="flex items-center gap-2">
+            <div className="flex min-w-0 flex-wrap items-center gap-2">
+              <Button
+                variant="secondary"
+                className="rounded-xl"
+                disabled={downloadingPlantilla || importing}
+                onClick={() => void descargarPlantilla()}
+                title="Excel con Código interno, Nombre y Descripción (sin cantidad)"
+              >
+                {downloadingPlantilla ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Download className="h-4 w-4" />
+                )}
+                Plantilla Excel
+              </Button>
+              <Button
+                variant="secondary"
+                className="rounded-xl"
+                disabled={importing || downloadingPlantilla}
+                onClick={() => importInputRef.current?.click()}
+                title="Importar productos desde la plantilla Excel"
+              >
+                {importing ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Upload className="h-4 w-4" />
+                )}
+                {importing ? 'Importando…' : 'Importar Excel'}
+              </Button>
+              <input
+                ref={importInputRef}
+                type="file"
+                accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                className="hidden"
+                onChange={(e) => {
+                  const file = e.target.files?.[0]
+                  if (file) void importarExcel(file)
+                }}
+              />
+            </div>
+            <Button className="ml-auto shrink-0 rounded-xl px-4" onClick={openCreate}>
               <Plus className="h-4 w-4" />
               Nuevo producto
             </Button>
           </div>
         )}
       </section>
+
+      {error && (
+        <div className="rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700 ring-1 ring-red-100">
+          {error}
+        </div>
+      )}
+
+      {importResult && (
+        <Card className="overflow-hidden shadow-panel">
+          <CardBody className="space-y-3 p-4 sm:p-5">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div className="flex items-start gap-3">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-brand-50 text-brand-700">
+                  <FileSpreadsheet className="h-5 w-5" />
+                </div>
+                <div>
+                  <p className="font-semibold text-slate-900">Resultado de la importación</p>
+                  <p className="mt-0.5 text-sm text-slate-500">
+                    {importResult.creados} creados · {importResult.omitidos} omitidos ·{' '}
+                    {importResult.total_filas} filas leídas
+                  </p>
+                  <p className="mt-1 text-xs text-slate-400">
+                    Descripción opcional. Los códigos que ya existen se omiten (no se duplican).
+                  </p>
+                </div>
+              </div>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="rounded-lg"
+                onClick={() => setImportResult(null)}
+              >
+                Cerrar
+              </Button>
+            </div>
+            {importResult.omitidos > 0 && (
+              <ul className="max-h-40 space-y-1 overflow-y-auto rounded-lg border border-surface-border bg-slate-50/80 px-3 py-2 text-xs text-slate-600">
+                {importResult.detalle
+                  .filter((d) => d.estado === 'omitido')
+                  .slice(0, 40)
+                  .map((d) => (
+                    <li key={`${d.fila}-${d.codigo_interno}`}>
+                      Fila {d.fila} · <span className="font-medium">{d.codigo_interno}</span>
+                      {d.motivo ? ` — ${d.motivo}` : ''}
+                    </li>
+                  ))}
+              </ul>
+            )}
+          </CardBody>
+        </Card>
+      )}
 
       <Card className="overflow-hidden shadow-panel">
         <div className="border-b border-brand-100 bg-gradient-to-r from-brand-50/80 via-white to-white px-5 py-4 sm:px-6">

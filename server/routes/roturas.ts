@@ -3,6 +3,12 @@ import { getDb } from '../db'
 import { requirePermiso } from '../plugins/auth'
 import { blockIfInventarioActivo } from '../utils/inventario-block'
 import {
+  buildMultiSheetExcel,
+  resumenSheet,
+  sendExcelFile,
+  todayFileStamp
+} from '../utils/excel-export'
+import {
   applyRoturaLineDeduction,
   getStockDisponibleCajasEnSector
 } from '../utils/stock'
@@ -171,6 +177,78 @@ export async function roturasRoutes(app: FastifyInstance): Promise<void> {
       total_cajas,
       productos
     }
+  })
+
+  app.get('/api/roturas/export-dia', {
+    preHandler: requirePermiso('roturas.ver')
+  }, async (request, reply) => {
+    const { fecha } = request.query as { fecha?: string }
+    if (!fecha?.trim()) {
+      return reply.status(400).send({ error: 'Fecha requerida' })
+    }
+
+    const db = getDb()
+    const lineas = db.prepare(`
+      SELECT
+        p.codigo_interno,
+        p.nombre,
+        COALESCE(p.descripcion, '') AS descripcion,
+        rl.cantidad_cajas AS cantidad,
+        COALESCE(r.observacion, '') AS observacion
+      FROM rotura_lineas rl
+      JOIN roturas r ON r.id = rl.rotura_id
+      JOIN productos p ON p.id = rl.producto_id
+      WHERE r.fecha = ?
+      ORDER BY r.id ASC, rl.orden ASC, rl.id ASC
+    `).all(fecha) as Array<{
+      codigo_interno: string
+      nombre: string
+      descripcion: string
+      cantidad: number
+      observacion: string
+    }>
+
+    const rows = lineas.map((l) => ({
+      codigo_interno: l.codigo_interno,
+      nombre: l.nombre,
+      descripcion: l.descripcion,
+      cantidad: Number(l.cantidad) || 0,
+      observacion: l.observacion
+    }))
+    const total = rows.reduce((s, r) => s + r.cantidad, 0)
+    const registros = (
+      db.prepare('SELECT COUNT(*) AS c FROM roturas WHERE fecha = ?').get(fecha) as { c: number }
+    ).c
+
+    const buffer = await buildMultiSheetExcel([
+      resumenSheet('Resumen', [
+        ['Fecha', fecha],
+        ['Registros', registros],
+        ['Total', total]
+      ]),
+      {
+        name: 'Productos',
+        columns: [
+          { header: 'Código interno', key: 'codigo_interno', width: 18 },
+          { header: 'Nombre', key: 'nombre', width: 36 },
+          { header: 'Descripción', key: 'descripcion', width: 40 },
+          { header: 'Cantidad', key: 'cantidad', width: 14 },
+          { header: 'Observación', key: 'observacion', width: 40 }
+        ],
+        rows: [
+          ...rows,
+          {
+            codigo_interno: '',
+            nombre: 'TOTAL',
+            descripcion: '',
+            cantidad: total,
+            observacion: ''
+          }
+        ]
+      }
+    ])
+
+    return sendExcelFile(reply, buffer, `roturas-${fecha}-${todayFileStamp()}.xlsx`)
   })
 
   app.get('/api/roturas/producto/:id/stock-sector/:sectorId', {

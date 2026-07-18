@@ -660,4 +660,28 @@ export function runMigrations(db: Database.Database): void {
       db.exec(`ALTER TABLE inventario_sectores ADD COLUMN importado_at TEXT`)
     }
   }
+
+  if (!tableExists(db, 'app_settings')) {
+    db.exec(`
+      CREATE TABLE app_settings (
+        clave TEXT PRIMARY KEY,
+        valor TEXT NOT NULL,
+        updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+      )
+    `)
+  }
+
+  if (tableExists(db, 'retornos') && !columnExists(db, 'retornos', 'ingreso_directo')) {
+    db.exec(`
+      ALTER TABLE retornos
+      ADD COLUMN ingreso_directo INTEGER NOT NULL DEFAULT 0
+    `)
+  }
+
+  if (tableExists(db, 'movimientos_internos') && !columnExists(db, 'movimientos_internos', 'ingreso_directo')) {
+    db.exec(`
+      ALTER TABLE movimientos_internos
+      ADD COLUMN ingreso_directo INTEGER NOT NULL DEFAULT 0
+    `)
+  }
 }

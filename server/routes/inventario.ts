@@ -3,6 +3,12 @@ import { getDb } from '../db'
 import { requirePermiso, requirePermisoAny } from '../plugins/auth'
 import { getInventarioActivo, inventarioActivoErrorPayload } from '../utils/inventario-block'
 import {
+  buildMultiSheetExcel,
+  resumenSheet,
+  sendExcelFile,
+  todayFileStamp
+} from '../utils/excel-export'
+import {
   aplicarCierreInventario,
   asegurarPrecargaReconteo,
   assertContadorEnSector,
@@ -71,6 +77,77 @@ function getSectoresSesion(db: ReturnType<typeof getDb>, sesionId: number) {
     WHERE isec.sesion_id = ?
     ORDER BY s.nombre
   `).all(sesionId) as Array<Record<string, unknown>>
+}
+
+function resultadoInventarioExport(sistema: number, contado: number): string {
+  const dif = contado - sistema
+  if (Math.abs(dif) < 1e-9) return 'Sin cambio'
+  if (dif < 0) return 'Faltante'
+  return 'Sobrante'
+}
+
+type InventarioExportItem = {
+  producto_id: number
+  codigo_interno: string
+  nombre: string
+  total_sistema: number
+  total_contado: number
+}
+
+/** Agrega por producto (sin sectores ni desglose). */
+function agregarProductosInventarioExport(
+  db: ReturnType<typeof getDb>,
+  items: InventarioExportItem[]
+): Array<{
+  codigo_interno: string
+  nombre: string
+  descripcion: string
+  sistema: number
+  contado: number
+  diferencia: number
+  resultado: string
+}> {
+  const map = new Map<
+    number,
+    { codigo_interno: string; nombre: string; sistema: number; contado: number }
+  >()
+
+  for (const item of items) {
+    const prev = map.get(item.producto_id)
+    if (prev) {
+      prev.sistema += item.total_sistema
+      prev.contado += item.total_contado
+    } else {
+      map.set(item.producto_id, {
+        codigo_interno: item.codigo_interno,
+        nombre: item.nombre,
+        sistema: item.total_sistema,
+        contado: item.total_contado
+      })
+    }
+  }
+
+  const descStmt = db.prepare(`
+    SELECT COALESCE(descripcion, '') AS descripcion FROM productos WHERE id = ?
+  `)
+
+  return [...map.entries()]
+    .map(([productoId, row]) => {
+      const desc = descStmt.get(productoId) as { descripcion: string } | undefined
+      const diferencia = row.contado - row.sistema
+      return {
+        codigo_interno: row.codigo_interno,
+        nombre: row.nombre,
+        descripcion: desc?.descripcion ?? '',
+        sistema: row.sistema,
+        contado: row.contado,
+        diferencia,
+        resultado: resultadoInventarioExport(row.sistema, row.contado)
+      }
+    })
+    .sort((a, b) =>
+      a.codigo_interno.localeCompare(b.codigo_interno, 'es', { sensitivity: 'base' })
+    )
 }
 
 export async function inventarioRoutes(app: FastifyInstance): Promise<void> {
@@ -168,6 +245,108 @@ export async function inventarioRoutes(app: FastifyInstance): Promise<void> {
             }
           : null
       }
+    }
+  )
+
+  app.get<{ Params: { id: string } }>(
+    '/api/inventario/sesiones/:id/export',
+    { preHandler: requirePermiso('inventario.ver') },
+    async (req, reply) => {
+      const db = getDb()
+      const sesionId = Number(req.params.id)
+      const sesion = getSesionOrThrow(db, sesionId)
+
+      let rawItems: InventarioExportItem[] = []
+
+      const reporte = db.prepare(`
+        SELECT detalle FROM inventario_reportes WHERE sesion_id = ?
+      `).get(sesionId) as { detalle: string } | undefined
+
+      if (reporte?.detalle) {
+        const detalle = JSON.parse(reporte.detalle) as Array<Record<string, unknown>>
+        rawItems = detalle.map((item) => ({
+          producto_id: Number(item.producto_id),
+          codigo_interno: String(item.codigo_interno ?? ''),
+          nombre: String(item.nombre ?? ''),
+          total_sistema: Number(item.total_sistema ?? 0),
+          total_contado: Number(
+            item.total_aplicado != null ? item.total_aplicado : item.total_contado ?? 0
+          )
+        }))
+      } else {
+        try {
+          const comparacion = compararVsSistema(db, sesionId)
+          rawItems = comparacion.items.map((item) => ({
+            producto_id: Number(item.producto_id),
+            codigo_interno: String(item.codigo_interno ?? ''),
+            nombre: String(item.nombre ?? ''),
+            total_sistema: Number(item.total_sistema ?? 0),
+            total_contado: Number(item.total_contado ?? 0)
+          }))
+        } catch (e) {
+          return reply.status(400).send({
+            error:
+              (e as Error).message ||
+              'El export requiere el inventario cerrado o todos los sectores OK'
+          })
+        }
+      }
+
+      const rows = agregarProductosInventarioExport(db, rawItems)
+      const totalSistema = rows.reduce((s, r) => s + r.sistema, 0)
+      const totalContado = rows.reduce((s, r) => s + r.contado, 0)
+      const totalDif = totalContado - totalSistema
+      const conDif = rows.filter((r) => r.resultado !== 'Sin cambio').length
+
+      const buffer = await buildMultiSheetExcel([
+        resumenSheet('Resumen', [
+          ['Nombre', String(sesion.nombre)],
+          ['Estado', String(sesion.estado)],
+          ['Creada', String(sesion.created_at)],
+          ['Inicio', sesion.fecha_inicio as string | null],
+          ['Cierre', sesion.fecha_cierre as string | null],
+          ['Observación', sesion.observacion as string | null],
+          ['Productos', rows.length],
+          ['Con diferencias', conDif],
+          ['Total sistema', totalSistema],
+          ['Total contado', totalContado],
+          ['Diferencia', totalDif]
+        ]),
+        {
+          name: 'Productos',
+          columns: [
+            { header: 'Código interno', key: 'codigo_interno', width: 18 },
+            { header: 'Nombre', key: 'nombre', width: 36 },
+            { header: 'Descripción', key: 'descripcion', width: 40 },
+            { header: 'Sistema', key: 'sistema', width: 12 },
+            { header: 'Contado', key: 'contado', width: 12 },
+            { header: 'Diferencia', key: 'diferencia', width: 12 },
+            { header: 'Resultado', key: 'resultado', width: 14 }
+          ],
+          rows: [
+            ...rows,
+            {
+              codigo_interno: '',
+              nombre: 'TOTAL',
+              descripcion: '',
+              sistema: totalSistema,
+              contado: totalContado,
+              diferencia: totalDif,
+              resultado: ''
+            }
+          ]
+        }
+      ])
+
+      const safeName = String(sesion.nombre)
+        .replace(/[^\w.\-() áéíóúÁÉÍÓÚñÑ]/g, '_')
+        .trim()
+        .slice(0, 40)
+      return sendExcelFile(
+        reply,
+        buffer,
+        `inventario-${safeName || sesionId}-${todayFileStamp()}.xlsx`
+      )
     }
   )
 

@@ -3,12 +3,15 @@ import { useNavigate, useParams } from 'react-router-dom'
 import {
   ArrowLeft,
   BarChart3,
+  Calendar,
   Camera,
   Check,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
   ClipboardList,
+  Clock,
+  Download,
   Eye,
   Loader2,
   MapPin,
@@ -18,14 +21,22 @@ import {
   Pencil,
   Search,
   Trash2,
+  User,
+  Users,
   Warehouse,
+  Wifi,
+  WifiOff,
   X
 } from 'lucide-react'
 import { BarcodeScannerModal } from '@/components/BarcodeScannerModal'
 import { ProductImage } from '@/components/ProductImage'
+import {
+  RegistroDetalleMetaChip,
+  RegistroDetalleObsChip
+} from '@/components/RegistroDetallePanel'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
-import { Card, CardBody } from '@/components/ui/Card'
+import { Badge, Card, CardBody } from '@/components/ui/Card'
 import {
   formatCantidad,
   formatEtiqueta,
@@ -37,6 +48,7 @@ import {
   type TipoBulto,
   type TotalesInventarioDesglose
 } from '@/lib/desglose'
+import { downloadApiFile } from '@/lib/downloadFile'
 import { api, cn, formatDbDateTimeLocal } from '@/lib/utils'
 import type {
   InventarioConteoLinea,
@@ -77,6 +89,15 @@ function estadoSesionLabel(estado: string): string {
     CANCELADA: 'Cancelada'
   }
   return map[estado] ?? estado
+}
+
+function estadoSesionBadgeVariant(
+  estado: string
+): 'default' | 'success' | 'warning' | 'muted' {
+  if (estado === 'EN_PROGRESO') return 'default'
+  if (estado === 'CERRADA') return 'success'
+  if (estado === 'CANCELADA') return 'warning'
+  return 'muted'
 }
 
 function sesionFechasResumen(ses: {
@@ -557,9 +578,13 @@ function ReporteDetalleItem({
 }
 
 function InventarioReporteCierre({
-  reporte
+  reporte,
+  onExport,
+  exporting
 }: {
   reporte: NonNullable<InventarioSesionDetalle['reporte']>
+  onExport?: () => void
+  exporting?: boolean
 }) {
   const { resumen, detalle, ajustes_aplicados, created_at } = reporte
   const [filtro, setFiltro] = useState<'todos' | 'ajustes' | 'ok'>('todos')
@@ -592,12 +617,30 @@ function InventarioReporteCierre({
               Generado el {formatDbDateTimeLocal(created_at)}
             </p>
           </div>
-          {todoOk && (
-            <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-3 py-1 text-sm font-medium text-emerald-700 ring-1 ring-emerald-100">
-              <Check className="h-4 w-4" />
-              Inventario OK — sin ajustes
-            </span>
-          )}
+          <div className="flex flex-wrap items-center gap-2">
+            {onExport && (
+              <Button
+                variant="secondary"
+                size="sm"
+                className="rounded-lg"
+                disabled={exporting}
+                onClick={onExport}
+              >
+                {exporting ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Download className="h-4 w-4" />
+                )}
+                Exportar
+              </Button>
+            )}
+            {todoOk && (
+              <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-3 py-1 text-sm font-medium text-emerald-700 ring-1 ring-emerald-100">
+                <Check className="h-4 w-4" />
+                Inventario OK — sin ajustes
+              </span>
+            )}
+          </div>
         </div>
 
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
@@ -1785,6 +1828,7 @@ export function InventarioPage() {
   const [sesionDetalle, setSesionDetalle] = useState<InventarioSesionDetalle | null>(null)
   const [comparacionSistema, setComparacionSistema] = useState<ComparacionSistemaData | null>(null)
   const [cerrando, setCerrando] = useState(false)
+  const [exportingSesion, setExportingSesion] = useState(false)
 
   const [misSectores, setMisSectores] = useState<InventarioMisSector[]>([])
 
@@ -1987,6 +2031,21 @@ export function InventarioPage() {
     }
   }
 
+  async function exportarSesion(id: number, nombre: string) {
+    setExportingSesion(true)
+    setError('')
+    try {
+      await downloadApiFile(
+        `/api/inventario/sesiones/${id}/export`,
+        `inventario-${nombre || id}.xlsx`
+      )
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Error al exportar')
+    } finally {
+      setExportingSesion(false)
+    }
+  }
+
   if (view === 'create' && canCreate) {
     return (
       <CrearSesionForm
@@ -2018,6 +2077,9 @@ export function InventarioPage() {
     const listoParaCierre =
       s.estado === 'EN_PROGRESO' && todosSectoresOk && comparacionSistema != null && canClose
     const anchoCierre = listoParaCierre || sesionDetalle.reporte
+    const sectoresOk = sesionDetalle.sectores.filter((x) => x.estado === 'CERRADO_OK').length
+    const sectoresTotal = sesionDetalle.sectores.length
+    const progresoPct = sectoresTotal > 0 ? Math.round((sectoresOk / sectoresTotal) * 100) : 0
 
     return (
       <div
@@ -2026,21 +2088,40 @@ export function InventarioPage() {
           anchoCierre ? 'max-w-[88rem]' : 'max-w-5xl'
         )}
       >
-        <div className="flex flex-wrap items-center gap-3">
-          <Button variant="ghost" size="sm" onClick={() => { setView('list'); setSesionDetalle(null) }}>
-            <ArrowLeft className="h-4 w-4" />
-            Volver
-          </Button>
-          <div className="min-w-0">
-            <div className="flex flex-wrap items-center gap-2">
-              <h1 className="text-xl font-semibold text-slate-800">{s.nombre}</h1>
-              <span className="rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-medium text-slate-600">
-                {estadoSesionLabel(s.estado)}
-              </span>
-            </div>
-            <p className="mt-0.5 text-sm text-slate-500">
-              {sesionFechasResumen(s)} · {s.creado_por_nombre}
-            </p>
+        <div className="space-y-3">
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+            <Button
+              variant="ghost"
+              size="sm"
+              className="-ml-2 h-8 shrink-0 rounded-lg px-2"
+              onClick={() => {
+                setView('list')
+                setSesionDetalle(null)
+              }}
+            >
+              <ChevronLeft className="h-4 w-4" />
+              Volver
+            </Button>
+            <span className="hidden h-4 w-px bg-surface-border sm:block" aria-hidden />
+            <h1 className="min-w-0 text-base font-semibold text-slate-900 sm:text-lg">{s.nombre}</h1>
+            <Badge variant={estadoSesionBadgeVariant(s.estado)}>{estadoSesionLabel(s.estado)}</Badge>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-1.5 text-xs">
+            <RegistroDetalleMetaChip icon={<Calendar className="h-3.5 w-3.5 shrink-0 text-slate-400" />}>
+              {sesionFechasResumen(s)}
+            </RegistroDetalleMetaChip>
+            <RegistroDetalleMetaChip icon={<User className="h-3.5 w-3.5 shrink-0 text-slate-400" />}>
+              {s.creado_por_nombre}
+            </RegistroDetalleMetaChip>
+            {s.estado === 'EN_PROGRESO' && (
+              <RegistroDetalleMetaChip icon={<Clock className="h-3.5 w-3.5 shrink-0 text-slate-400" />}>
+                Actualización cada 20 s
+              </RegistroDetalleMetaChip>
+            )}
+            {s.observacion?.trim() && (
+              <RegistroDetalleObsChip>{s.observacion.trim()}</RegistroDetalleObsChip>
+            )}
           </div>
         </div>
 
@@ -2048,58 +2129,110 @@ export function InventarioPage() {
           <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>
         )}
 
-        <Card>
-          <CardBody className="space-y-4">
-            <div className="flex flex-wrap gap-2">
+        <Card className="overflow-hidden shadow-panel">
+          <div className="flex flex-wrap items-start justify-between gap-3 border-b border-slate-200 bg-slate-100 px-4 py-3.5 sm:px-5">
+            <div className="min-w-0">
+              <div className="flex items-center gap-2">
+                <Warehouse className="h-4 w-4 text-slate-500" />
+                <h2 className="text-sm font-semibold text-slate-900">Sectores</h2>
+              </div>
+              <p className="mt-1 text-xs text-slate-500">
+                {sectoresOk} de {sectoresTotal} OK · {progresoPct}%
+              </p>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              {(sesionDetalle.reporte || listoParaCierre) && (
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  className="rounded-lg"
+                  disabled={exportingSesion}
+                  onClick={() => void exportarSesion(s.id, s.nombre)}
+                  title="Exportar listado general de productos"
+                >
+                  {exportingSesion ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Download className="h-4 w-4" />
+                  )}
+                  Exportar
+                </Button>
+              )}
               {s.estado === 'ABIERTA' && canCreate && (
-                <Button onClick={() => void iniciarSesion(s.id)}>
+                <Button size="sm" className="rounded-lg" onClick={() => void iniciarSesion(s.id)}>
                   <Play className="h-4 w-4" />
                   Iniciar inventario
                 </Button>
               )}
-              {s.estado === 'EN_PROGRESO' && canClose && !listoParaCierre && (
-                <p className="text-sm text-slate-500">
-                  El cierre se habilita cuando todos los sectores estén en estado OK entre contadores.
-                </p>
-              )}
               {['ABIERTA', 'EN_PROGRESO'].includes(s.estado) && canCreate && (
-                <Button variant="outline" onClick={() => void cancelarSesion(s.id)}>Cancelar sesión</Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="rounded-lg"
+                  onClick={() => void cancelarSesion(s.id)}
+                >
+                  Cancelar sesión
+                </Button>
               )}
             </div>
+          </div>
 
-            <p className="text-sm text-slate-500">
-              Progreso: {sesionDetalle.sectores.filter((x) => x.estado === 'CERRADO_OK').length} /{' '}
-              {sesionDetalle.sectores.length} sectores OK · actualización automática cada 20 s
-            </p>
-
-            <div className="space-y-2">
-              {sesionDetalle.sectores.map((sec) => (
-                <div
-                  key={sec.id}
-                  className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-surface-border px-3 py-2"
-                >
-                  <div>
-                    <p className="font-medium text-slate-800">{sec.sector_nombre}</p>
-                    <p className="text-xs text-slate-500">
-                      {sec.contador_1_nombre} + {sec.contador_2_nombre} · Ronda {sec.ronda_actual}
-                      {sec.modo_conectividad === 'OFFLINE' ? ' · Offline' : ''}
-                    </p>
-                  </div>
-                  <div className="flex flex-wrap items-center gap-1.5">
-                    {sec.modo_conectividad === 'OFFLINE' && (
-                      <span className="rounded-full bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-900 ring-1 ring-amber-100">
-                        Offline
-                        {sec.importado_at ? ' · importado' : sec.paquete_descargado_at ? ' · paquete' : ''}
-                      </span>
-                    )}
-                    <span className={cn('rounded-full px-2 py-0.5 text-xs font-medium', ESTADO_SECTOR_COLOR[sec.estado])}>
-                      {ESTADO_SECTOR_LABEL[sec.estado]}
-                    </span>
-                  </div>
-                </div>
-              ))}
+          <div className="border-b border-surface-border px-4 py-3 sm:px-5">
+            <div className="h-2 overflow-hidden rounded-full bg-slate-100">
+              <div
+                className={cn(
+                  'h-full rounded-full transition-all duration-500',
+                  progresoPct >= 100 ? 'bg-emerald-500' : 'bg-brand-600'
+                )}
+                style={{ width: `${progresoPct}%` }}
+              />
             </div>
-          </CardBody>
+            {s.estado === 'EN_PROGRESO' && canClose && !listoParaCierre && (
+              <p className="mt-2 text-xs text-slate-500">
+                El cierre se habilita cuando todos los sectores estén OK entre contadores.
+              </p>
+            )}
+          </div>
+
+          <div className="divide-y divide-surface-border">
+            {sesionDetalle.sectores.map((sec) => (
+              <div
+                key={sec.id}
+                className="flex flex-wrap items-center justify-between gap-3 px-4 py-3.5 sm:px-5"
+              >
+                <div className="min-w-0">
+                  <p className="font-medium text-slate-900">{sec.sector_nombre}</p>
+                  <p className="mt-0.5 text-xs text-slate-500">
+                    {sec.contador_1_nombre} + {sec.contador_2_nombre}
+                    <span className="text-slate-300"> · </span>
+                    Ronda {sec.ronda_actual}
+                    {sec.modo_conectividad === 'OFFLINE' ? (
+                      <>
+                        <span className="text-slate-300"> · </span>
+                        Offline
+                      </>
+                    ) : null}
+                  </p>
+                </div>
+                <div className="flex shrink-0 flex-wrap items-center gap-1.5">
+                  {sec.modo_conectividad === 'OFFLINE' && (
+                    <span className="rounded-full bg-amber-50 px-2.5 py-0.5 text-xs font-medium text-amber-900 ring-1 ring-amber-100">
+                      Offline
+                      {sec.importado_at ? ' · importado' : sec.paquete_descargado_at ? ' · paquete' : ''}
+                    </span>
+                  )}
+                  <span
+                    className={cn(
+                      'rounded-full px-2.5 py-0.5 text-xs font-medium',
+                      ESTADO_SECTOR_COLOR[sec.estado]
+                    )}
+                  >
+                    {ESTADO_SECTOR_LABEL[sec.estado]}
+                  </span>
+                </div>
+              </div>
+            ))}
+          </div>
         </Card>
 
         {listoParaCierre && comparacionSistema && (
@@ -2110,7 +2243,13 @@ export function InventarioPage() {
           />
         )}
 
-        {sesionDetalle.reporte && <InventarioReporteCierre reporte={sesionDetalle.reporte} />}
+        {sesionDetalle.reporte && (
+          <InventarioReporteCierre
+            reporte={sesionDetalle.reporte}
+            exporting={exportingSesion}
+            onExport={() => void exportarSesion(s.id, s.nombre)}
+          />
+        )}
       </div>
     )
   }
@@ -2187,47 +2326,120 @@ export function InventarioPage() {
       )}
 
       {canManageInventario && (
-      <Card>
-        <CardBody>
-          <h2 className="mb-3 flex items-center gap-2 font-semibold text-slate-800">
-            <BarChart3 className="h-5 w-5" />
-            Sesiones
-          </h2>
-          {loading ? (
-            <div className="flex justify-center py-8">
-              <Loader2 className="h-6 w-6 animate-spin text-slate-400" />
+      <Card className="overflow-hidden shadow-panel">
+        <div className="flex items-center justify-between gap-3 border-b border-slate-200 bg-slate-100 px-4 py-3.5 sm:px-5">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2">
+              <BarChart3 className="h-4 w-4 text-slate-500" />
+              <h2 className="text-sm font-semibold text-slate-900">Sesiones</h2>
             </div>
-          ) : sesiones.length === 0 ? (
-            <p className="py-6 text-center text-sm text-slate-500">No hay sesiones de inventario</p>
-          ) : (
-            <>
-              {sesiones.length > 6 && (
-                <p className="mb-2 text-xs text-slate-500">
-                  {sesiones.length} sesiones — desplazá para ver el historial completo
-                </p>
-              )}
-              <div className="scrollbar-thin max-h-[25rem] space-y-2 overflow-y-auto overscroll-contain pr-1">
-                {sesiones.map((ses) => (
-                  <button
-                    key={ses.id}
-                    type="button"
-                    onClick={() => void loadSesion(ses.id)}
-                    className="flex w-full shrink-0 items-center justify-between rounded-lg border border-surface-border px-3 py-3 text-left hover:bg-slate-50"
-                  >
-                    <div className="min-w-0">
-                      <p className="font-medium text-slate-800">{ses.nombre}</p>
-                      <p className="text-xs text-slate-500">{sesionFechasResumen(ses)}</p>
-                      <p className="text-xs text-slate-500">
-                        {ses.creado_por_nombre} · {ses.sectores_ok}/{ses.sectores_total} sectores OK
-                      </p>
-                    </div>
-                    <span className="text-xs text-slate-500">{estadoSesionLabel(ses.estado)}</span>
-                  </button>
-                ))}
-              </div>
-            </>
-          )}
-        </CardBody>
+            {!loading && sesiones.length > 0 && (
+              <p className="mt-0.5 text-xs text-slate-500">
+                {sesiones.length} registro{sesiones.length === 1 ? '' : 's'}
+                {sesiones.length > 6 ? ' · desplazá para ver el historial' : ''}
+              </p>
+            )}
+          </div>
+        </div>
+        {loading ? (
+          <div className="flex items-center justify-center gap-2 py-14 text-sm text-slate-500">
+            <Loader2 className="h-5 w-5 animate-spin text-brand-600" />
+            Cargando sesiones...
+          </div>
+        ) : sesiones.length === 0 ? (
+          <div className="flex flex-col items-center px-6 py-14 text-center">
+            <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-slate-100 text-slate-400">
+              <ClipboardList className="h-7 w-7" />
+            </div>
+            <p className="mt-4 text-sm font-medium text-slate-700">No hay sesiones de inventario</p>
+            <p className="mt-1 max-w-sm text-xs text-slate-500">
+              Creá un inventario para iniciar el conteo físico con doble verificación
+            </p>
+            {canCreate && !activo && (
+              <Button className="mt-4 rounded-xl" size="sm" onClick={() => setView('create')}>
+                <Plus className="h-4 w-4" />
+                Nuevo inventario
+              </Button>
+            )}
+          </div>
+        ) : (
+          <div className="scrollbar-thin max-h-[28rem] overflow-y-auto overscroll-contain">
+            <ul className="divide-y divide-surface-border">
+              {sesiones.map((ses) => {
+                const progresoPct =
+                  ses.sectores_total > 0
+                    ? Math.round((ses.sectores_ok / ses.sectores_total) * 100)
+                    : 0
+                const activa = ses.estado === 'EN_PROGRESO' || ses.estado === 'ABIERTA'
+                return (
+                  <li key={ses.id}>
+                    <button
+                      type="button"
+                      onClick={() => void loadSesion(ses.id)}
+                      className={cn(
+                        'flex w-full items-center gap-3 px-4 py-4 text-left transition-colors hover:bg-slate-50 sm:gap-4 sm:px-5',
+                        activa && 'bg-slate-50'
+                      )}
+                    >
+                      <div
+                        className={cn(
+                          'flex h-10 w-10 shrink-0 items-center justify-center rounded-xl',
+                          ses.estado === 'CERRADA' && 'bg-emerald-100 text-emerald-700',
+                          ses.estado === 'EN_PROGRESO' && 'bg-slate-800 text-white',
+                          ses.estado === 'ABIERTA' && 'bg-slate-200 text-slate-600',
+                          ses.estado === 'CANCELADA' && 'bg-amber-100 text-amber-800',
+                          !['CERRADA', 'EN_PROGRESO', 'ABIERTA', 'CANCELADA'].includes(ses.estado) &&
+                            'bg-slate-200 text-slate-600'
+                        )}
+                      >
+                        <Warehouse className="h-5 w-5" />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <p className="truncate text-sm font-semibold text-slate-900 sm:text-base">
+                            {ses.nombre}
+                          </p>
+                          <Badge variant={estadoSesionBadgeVariant(ses.estado)}>
+                            {estadoSesionLabel(ses.estado)}
+                          </Badge>
+                        </div>
+                        <p className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-slate-500">
+                          <span className="inline-flex items-center gap-1">
+                            <Calendar className="h-3 w-3 shrink-0 text-slate-400" />
+                            {sesionFechasResumen(ses)}
+                          </span>
+                          <span className="text-slate-300">·</span>
+                          <span className="inline-flex items-center gap-1">
+                            <User className="h-3 w-3 shrink-0 text-slate-400" />
+                            {ses.creado_por_nombre}
+                          </span>
+                        </p>
+                        <div className="mt-2.5 max-w-xs">
+                          <div className="mb-1 flex items-center justify-between gap-2 text-[11px] text-slate-500">
+                            <span>
+                              {ses.sectores_ok}/{ses.sectores_total} sectores OK
+                            </span>
+                            <span className="tabular-nums">{progresoPct}%</span>
+                          </div>
+                          <div className="h-1.5 overflow-hidden rounded-full bg-slate-100">
+                            <div
+                              className={cn(
+                                'h-full rounded-full transition-all',
+                                progresoPct >= 100 ? 'bg-emerald-500' : 'bg-brand-600'
+                              )}
+                              style={{ width: `${progresoPct}%` }}
+                            />
+                          </div>
+                        </div>
+                      </div>
+                      <ChevronRight className="h-4 w-4 shrink-0 text-slate-300" />
+                    </button>
+                  </li>
+                )
+              })}
+            </ul>
+          </div>
+        )}
       </Card>
       )}
 
@@ -2327,135 +2539,260 @@ function CrearSesionForm({
 
   return (
     <div className="mx-auto max-w-3xl space-y-4 p-4 md:p-6">
-      <Button variant="ghost" size="sm" onClick={onBack}>
-        <ArrowLeft className="h-4 w-4" />
-        Volver
-      </Button>
-      <h1 className="text-xl font-semibold text-slate-800">Nuevo inventario</h1>
+      <div className="space-y-1">
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+          <Button
+            variant="ghost"
+            size="sm"
+            className="-ml-2 h-8 shrink-0 rounded-lg px-2"
+            onClick={onBack}
+            type="button"
+          >
+            <ChevronLeft className="h-4 w-4" />
+            Volver
+          </Button>
+          <span className="hidden h-4 w-px bg-surface-border sm:block" aria-hidden />
+          <h1 className="text-base font-semibold text-slate-900 sm:text-lg">Nuevo inventario</h1>
+        </div>
+        <p className="pl-0 text-sm text-slate-500 sm:pl-[4.5rem]">
+          Definí el nombre, los sectores y los dos contadores de cada uno
+        </p>
+      </div>
 
       {error && (
-        <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>
+        <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          {error}
+        </div>
       )}
 
       <form onSubmit={(e) => void submit(e)} className="space-y-4">
-        <Input label="Nombre" value={nombre} onChange={(e) => setNombre(e.target.value)} placeholder="Inventario Julio 2026" />
-
-        <Card>
-          <CardBody className="space-y-3">
-            <p className="text-sm font-medium text-slate-700">Sectores y contadores</p>
-            {sectores.map((sec) => (
-              <div key={sec.id} className="rounded-lg border border-surface-border p-3">
-                <label className="flex items-center gap-2">
-                  <input
-                    type="checkbox"
-                    checked={selectedSectorIds.has(sec.id)}
-                    onChange={() => toggleSector(sec.id)}
-                  />
-                  <span className="font-medium">{sec.nombre}</span>
-                </label>
-                {selectedSectorIds.has(sec.id) && (
-                  <div className="mt-2 space-y-2">
-                    <div className="grid gap-2 sm:grid-cols-2">
-                    <select
-                      className="rounded border border-surface-border px-2 py-1.5 text-sm"
-                      value={asignaciones[sec.id]?.c1 ?? ''}
-                      onChange={(e) =>
-                        setAsignaciones((prev) => ({
-                          ...prev,
-                          [sec.id]: {
-                            c1: Number(e.target.value),
-                            c2: prev[sec.id]?.c2 ?? 0,
-                            modo: prev[sec.id]?.modo ?? 'ONLINE'
-                          }
-                        }))
-                      }
-                    >
-                      <option value="">Contador 1...</option>
-                      {usuarios.map((u) => (
-                        <option key={u.id} value={u.id}>{u.nombre}</option>
-                      ))}
-                    </select>
-                    <select
-                      className="rounded border border-surface-border px-2 py-1.5 text-sm"
-                      value={asignaciones[sec.id]?.c2 ?? ''}
-                      onChange={(e) =>
-                        setAsignaciones((prev) => ({
-                          ...prev,
-                          [sec.id]: {
-                            c1: prev[sec.id]?.c1 ?? 0,
-                            c2: Number(e.target.value),
-                            modo: prev[sec.id]?.modo ?? 'ONLINE'
-                          }
-                        }))
-                      }
-                    >
-                      <option value="">Contador 2...</option>
-                      {usuarios.map((u) => (
-                        <option key={u.id} value={u.id}>{u.nombre}</option>
-                      ))}
-                    </select>
-                    </div>
-                    <div className="flex flex-wrap gap-2">
-                      <button
-                        type="button"
-                        className={cn(
-                          'rounded-lg border px-3 py-1.5 text-xs font-medium',
-                          (asignaciones[sec.id]?.modo ?? 'ONLINE') === 'ONLINE'
-                            ? 'border-brand-500 bg-brand-50 text-brand-800'
-                            : 'border-surface-border text-slate-600'
-                        )}
-                        onClick={() =>
-                          setAsignaciones((prev) => ({
-                            ...prev,
-                            [sec.id]: {
-                              c1: prev[sec.id]?.c1 ?? 0,
-                              c2: prev[sec.id]?.c2 ?? 0,
-                              modo: 'ONLINE'
-                            }
-                          }))
-                        }
-                      >
-                        Con red
-                      </button>
-                      <button
-                        type="button"
-                        className={cn(
-                          'rounded-lg border px-3 py-1.5 text-xs font-medium',
-                          asignaciones[sec.id]?.modo === 'OFFLINE'
-                            ? 'border-amber-500 bg-amber-50 text-amber-900'
-                            : 'border-surface-border text-slate-600'
-                        )}
-                        onClick={() =>
-                          setAsignaciones((prev) => ({
-                            ...prev,
-                            [sec.id]: {
-                              c1: prev[sec.id]?.c1 ?? 0,
-                              c2: prev[sec.id]?.c2 ?? 0,
-                              modo: 'OFFLINE'
-                            }
-                          }))
-                        }
-                      >
-                        Offline (APK)
-                      </button>
-                    </div>
-                    {asignaciones[sec.id]?.modo === 'OFFLINE' && (
-                      <p className="text-xs text-amber-800">
-                        Bajan paquete en oficina → cuentan sin WiFi al PC → sincronizan entre
-                        celulares → importan al PC.
-                      </p>
-                    )}
-                  </div>
-                )}
-              </div>
-            ))}
-          </CardBody>
+        <Card className="overflow-hidden shadow-panel">
+          <div className="border-b border-slate-200 bg-slate-100 px-4 py-3 sm:px-5">
+            <p className="text-sm font-semibold text-slate-900">Datos de la sesión</p>
+            <p className="mt-0.5 text-xs text-slate-600">Nombre visible en el listado de inventarios</p>
+          </div>
+          <div className="px-4 py-4 sm:px-5">
+            <Input
+              label="Nombre"
+              value={nombre}
+              onChange={(e) => setNombre(e.target.value)}
+              placeholder="Inventario Julio 2026"
+            />
+          </div>
         </Card>
 
-        <Button type="submit" disabled={saving}>
-          {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
-          Crear sesión
-        </Button>
+        <Card className="overflow-hidden shadow-panel">
+          <div className="flex flex-wrap items-start justify-between gap-2 border-b border-slate-200 bg-slate-100 px-4 py-3.5 sm:px-5">
+            <div>
+              <div className="flex items-center gap-2">
+                <Warehouse className="h-4 w-4 text-slate-500" />
+                <p className="text-sm font-semibold text-slate-900">Sectores y contadores</p>
+              </div>
+              <p className="mt-0.5 text-xs text-slate-600">
+                Cada sector necesita dos contadores distintos
+              </p>
+            </div>
+            <span className="rounded-full bg-white px-2.5 py-0.5 text-xs font-medium text-slate-700 ring-1 ring-slate-200">
+              {selectedSectorIds.size} seleccionado{selectedSectorIds.size === 1 ? '' : 's'}
+            </span>
+          </div>
+
+          {sectores.length === 0 ? (
+            <div className="px-4 py-10 text-center text-sm text-slate-500 sm:px-5">
+              No hay sectores activos para asignar
+            </div>
+          ) : (
+            <ul className="divide-y divide-surface-border">
+              {sectores.map((sec) => {
+                const selected = selectedSectorIds.has(sec.id)
+                const asig = asignaciones[sec.id]
+                const modo = asig?.modo ?? 'ONLINE'
+                return (
+                  <li
+                    key={sec.id}
+                    className={cn(
+                      'px-4 py-3.5 transition-colors sm:px-5',
+                      selected && 'bg-slate-50'
+                    )}
+                  >
+                    <button
+                      type="button"
+                      onClick={() => toggleSector(sec.id)}
+                      className="flex w-full items-center gap-3 text-left"
+                    >
+                      <span
+                        className={cn(
+                          'flex h-5 w-5 shrink-0 items-center justify-center rounded-md border transition-colors',
+                          selected
+                            ? 'border-slate-800 bg-slate-800 text-white'
+                            : 'border-slate-300 bg-white text-transparent'
+                        )}
+                        aria-hidden
+                      >
+                        <Check className="h-3.5 w-3.5" />
+                      </span>
+                      <div className="min-w-0 flex-1">
+                        <p className="font-medium text-slate-900">{sec.nombre}</p>
+                        {sec.codigo && (
+                          <p className="text-xs text-slate-500">{sec.codigo}</p>
+                        )}
+                      </div>
+                      {selected && (
+                        <span className="inline-flex items-center gap-1 rounded-full bg-white px-2 py-0.5 text-[11px] font-medium text-slate-600 ring-1 ring-surface-border">
+                          {modo === 'OFFLINE' ? (
+                            <>
+                              <WifiOff className="h-3 w-3 text-amber-600" />
+                              Offline
+                            </>
+                          ) : (
+                            <>
+                              <Wifi className="h-3 w-3 text-brand-600" />
+                              Con red
+                            </>
+                          )}
+                        </span>
+                      )}
+                    </button>
+
+                    {selected && (
+                      <div className="mt-3 space-y-3 border-t border-surface-border/80 pt-3 pl-8">
+                        <div className="grid gap-3 sm:grid-cols-2">
+                          <label className="block space-y-1.5">
+                            <span className="flex items-center gap-1.5 text-xs font-medium text-slate-600">
+                              <Users className="h-3.5 w-3.5 text-slate-400" />
+                              Contador 1
+                            </span>
+                            <select
+                              className="w-full rounded-lg border border-surface-border bg-white px-3 py-2 text-sm text-slate-800 outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20"
+                              value={asig?.c1 ?? ''}
+                              onChange={(e) =>
+                                setAsignaciones((prev) => ({
+                                  ...prev,
+                                  [sec.id]: {
+                                    c1: Number(e.target.value),
+                                    c2: prev[sec.id]?.c2 ?? 0,
+                                    modo: prev[sec.id]?.modo ?? 'ONLINE'
+                                  }
+                                }))
+                              }
+                            >
+                              <option value="">Seleccionar…</option>
+                              {usuarios.map((u) => (
+                                <option key={u.id} value={u.id}>
+                                  {u.nombre}
+                                </option>
+                              ))}
+                            </select>
+                          </label>
+                          <label className="block space-y-1.5">
+                            <span className="flex items-center gap-1.5 text-xs font-medium text-slate-600">
+                              <Users className="h-3.5 w-3.5 text-slate-400" />
+                              Contador 2
+                            </span>
+                            <select
+                              className="w-full rounded-lg border border-surface-border bg-white px-3 py-2 text-sm text-slate-800 outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20"
+                              value={asig?.c2 ?? ''}
+                              onChange={(e) =>
+                                setAsignaciones((prev) => ({
+                                  ...prev,
+                                  [sec.id]: {
+                                    c1: prev[sec.id]?.c1 ?? 0,
+                                    c2: Number(e.target.value),
+                                    modo: prev[sec.id]?.modo ?? 'ONLINE'
+                                  }
+                                }))
+                              }
+                            >
+                              <option value="">Seleccionar…</option>
+                              {usuarios.map((u) => (
+                                <option key={u.id} value={u.id}>
+                                  {u.nombre}
+                                </option>
+                              ))}
+                            </select>
+                          </label>
+                        </div>
+
+                        <div>
+                          <p className="mb-1.5 text-xs font-medium text-slate-600">Conectividad</p>
+                          <div className="flex flex-wrap gap-2">
+                            <button
+                              type="button"
+                              className={cn(
+                                'inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors',
+                                modo === 'ONLINE'
+                                  ? 'border-brand-500 bg-brand-50 text-brand-800'
+                                  : 'border-surface-border bg-white text-slate-600 hover:bg-slate-50'
+                              )}
+                              onClick={() =>
+                                setAsignaciones((prev) => ({
+                                  ...prev,
+                                  [sec.id]: {
+                                    c1: prev[sec.id]?.c1 ?? 0,
+                                    c2: prev[sec.id]?.c2 ?? 0,
+                                    modo: 'ONLINE'
+                                  }
+                                }))
+                              }
+                            >
+                              <Wifi className="h-3.5 w-3.5" />
+                              Con red
+                            </button>
+                            <button
+                              type="button"
+                              className={cn(
+                                'inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors',
+                                modo === 'OFFLINE'
+                                  ? 'border-amber-500 bg-amber-50 text-amber-900'
+                                  : 'border-surface-border bg-white text-slate-600 hover:bg-slate-50'
+                              )}
+                              onClick={() =>
+                                setAsignaciones((prev) => ({
+                                  ...prev,
+                                  [sec.id]: {
+                                    c1: prev[sec.id]?.c1 ?? 0,
+                                    c2: prev[sec.id]?.c2 ?? 0,
+                                    modo: 'OFFLINE'
+                                  }
+                                }))
+                              }
+                            >
+                              <WifiOff className="h-3.5 w-3.5" />
+                              Offline (APK)
+                            </button>
+                          </div>
+                          {modo === 'OFFLINE' && (
+                            <p className="mt-2 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-900 ring-1 ring-amber-100">
+                              Bajan paquete en oficina → cuentan sin WiFi al PC → sincronizan entre
+                              celulares → importan al PC.
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </li>
+                )
+              })}
+            </ul>
+          )}
+        </Card>
+
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-surface-border bg-white px-4 py-3.5 shadow-sm sm:px-5">
+          <p className="text-xs text-slate-500">
+            {selectedSectorIds.size === 0
+              ? 'Seleccioná al menos un sector para continuar'
+              : `${selectedSectorIds.size} sector${selectedSectorIds.size === 1 ? '' : 'es'} listo${selectedSectorIds.size === 1 ? '' : 's'} para crear`}
+          </p>
+          <div className="flex flex-wrap gap-2">
+            <Button type="button" variant="outline" className="rounded-lg" onClick={onBack}>
+              Cancelar
+            </Button>
+            <Button type="submit" className="rounded-lg" disabled={saving}>
+              {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
+              Crear sesión
+            </Button>
+          </div>
+        </div>
       </form>
     </div>
   )

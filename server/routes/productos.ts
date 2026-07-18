@@ -8,6 +8,12 @@ import {
   getProductImagePath,
   saveProductImage
 } from '../utils/files'
+import {
+  buildExcelBuffer,
+  loadWorkbookFromBase64,
+  readSheetAsObjects,
+  sendExcelFile
+} from '../utils/excel-export'
 
 interface ProductoBody {
   codigo_interno?: string
@@ -84,6 +90,145 @@ export async function productosRoutes(app: FastifyInstance): Promise<void> {
     return {
       codigo_interno: generateCodigoInterno(db),
       codigo_barras: generateCodigoBarras()
+    }
+  })
+
+  app.get('/api/productos/plantilla', {
+    preHandler: requirePermiso('productos.crear')
+  }, async (_request, reply) => {
+    const buffer = await buildExcelBuffer(
+      'Productos',
+      [
+        { header: 'Código interno', key: 'codigo_interno', width: 18 },
+        { header: 'Nombre', key: 'nombre', width: 36 },
+        { header: 'Descripción', key: 'descripcion', width: 40 }
+      ],
+      [
+        {
+          codigo_interno: 'EJ-001',
+          nombre: 'Producto de ejemplo',
+          descripcion: 'Opcional — podés dejarla vacía'
+        }
+      ]
+    )
+    return sendExcelFile(reply, buffer, 'plantilla-productos.xlsx')
+  })
+
+  app.post('/api/productos/import', {
+    preHandler: requirePermiso('productos.crear')
+  }, async (request, reply) => {
+    const body = request.body as { file_base64?: string }
+    if (!body.file_base64?.trim()) {
+      return reply.status(400).send({ error: 'Subí un archivo Excel (.xlsx)' })
+    }
+
+    let workbook
+    try {
+      workbook = await loadWorkbookFromBase64(body.file_base64)
+    } catch {
+      return reply.status(400).send({ error: 'No se pudo leer el Excel. Usá la plantilla .xlsx' })
+    }
+
+    const { rows, errors: parseErrors } = readSheetAsObjects(workbook, {
+      codigo_interno: ['codigo_interno', 'codigo', 'cod_interno', 'codigointerno'],
+      nombre: ['nombre', 'producto', 'name'],
+      descripcion: ['descripcion', 'description', 'desc', 'detalle']
+    })
+
+    if (parseErrors.length) {
+      return reply.status(400).send({ error: parseErrors.join('. ') })
+    }
+    if (rows.length === 0) {
+      return reply.status(400).send({ error: 'El Excel no tiene filas de productos para importar' })
+    }
+
+    const db = getDb()
+    const existsStmt = db.prepare(`
+      SELECT id FROM productos WHERE codigo_interno = ? COLLATE NOCASE
+    `)
+    const insertStmt = db.prepare(`
+      INSERT INTO productos (
+        codigo_interno, codigo_barras, nombre, descripcion, unidad,
+        unidades_por_pallet_default, unidades_por_caja_default, activo
+      ) VALUES (?, NULL, ?, ?, 'botella', 112, 6, 1)
+    `)
+
+    const detalle: Array<{ fila: number; codigo_interno: string; estado: string; motivo?: string }> =
+      []
+    let creados = 0
+    let omitidos = 0
+
+    const seen = new Set<string>()
+
+    const run = db.transaction(() => {
+      for (const row of rows) {
+        const fila = Number(row.__fila) || 0
+        const codigo = (row.codigo_interno ?? '').trim()
+        const nombre = (row.nombre ?? '').trim()
+        const descripcion = (row.descripcion ?? '').trim() || null
+        const codigoKey = codigo.toLowerCase()
+
+        if (!codigo || !nombre) {
+          omitidos += 1
+          detalle.push({
+            fila,
+            codigo_interno: codigo || '—',
+            estado: 'omitido',
+            motivo: !codigo ? 'Falta código interno' : 'Falta nombre'
+          })
+          continue
+        }
+
+        if (seen.has(codigoKey)) {
+          omitidos += 1
+          detalle.push({
+            fila,
+            codigo_interno: codigo,
+            estado: 'omitido',
+            motivo: 'Código duplicado en el mismo Excel'
+          })
+          continue
+        }
+        seen.add(codigoKey)
+
+        if (existsStmt.get(codigo)) {
+          omitidos += 1
+          detalle.push({
+            fila,
+            codigo_interno: codigo,
+            estado: 'omitido',
+            motivo: 'Ya existe en el catálogo'
+          })
+          continue
+        }
+
+        try {
+          insertStmt.run(codigo, nombre, descripcion)
+          creados += 1
+          detalle.push({ fila, codigo_interno: codigo, estado: 'creado' })
+        } catch (err) {
+          omitidos += 1
+          const msg =
+            err instanceof Error && err.message.includes('UNIQUE')
+              ? 'Código interno o de barras ya existe'
+              : 'Error al guardar'
+          detalle.push({ fila, codigo_interno: codigo, estado: 'omitido', motivo: msg })
+        }
+      }
+    })
+
+    try {
+      run()
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Error al importar'
+      return reply.status(400).send({ error: msg })
+    }
+
+    return {
+      total_filas: rows.length,
+      creados,
+      omitidos,
+      detalle
     }
   })
 

@@ -2,6 +2,15 @@ import type { FastifyInstance } from 'fastify'
 import { getDb } from '../db'
 import { requirePermiso } from '../plugins/auth'
 import { blockIfInventarioActivo } from '../utils/inventario-block'
+import { getRetornosDobleVerificacion } from '../utils/app-settings'
+import {
+  buildMultiSheetExcel,
+  PRODUCTO_LISTADO_COLUMNS,
+  resumenSheet,
+  sendExcelFile,
+  todayFileStamp,
+  withTotalRow
+} from '../utils/excel-export'
 import {
   applyRetornoLineToStock,
   formatEtiquetaLinea,
@@ -123,7 +132,7 @@ function getRetornoHeader(db: ReturnType<typeof getDb>, id: number) {
     SELECT
       r.id, r.fecha, r.numero_planilla, r.observacion, r.sector_id, r.estado,
       r.camionero_id, r.vehiculo_id, r.cargado_por_id, r.verificado_por_id,
-      r.observacion_verificacion, r.created_at, r.verificado_at,
+      r.observacion_verificacion, r.ingreso_directo, r.created_at, r.verificado_at,
       sd.nombre AS sector_nombre,
       c.nombre AS camionero_nombre,
       c.numero_interno AS camionero_numero,
@@ -152,6 +161,7 @@ function getRetornoHeader(db: ReturnType<typeof getDb>, id: number) {
     cargado_por_id: number
     verificado_por_id: number | null
     observacion_verificacion: string | null
+    ingreso_directo: number
     created_at: string
     verificado_at: string | null
     sector_nombre: string | null
@@ -193,7 +203,8 @@ export async function retornosRoutes(app: FastifyInstance): Promise<void> {
 
     let sql = `
       SELECT
-        r.id, r.fecha, r.numero_planilla, r.observacion, r.estado, r.created_at, r.verificado_at,
+        r.id, r.fecha, r.numero_planilla, r.observacion, r.estado, r.ingreso_directo,
+        r.created_at, r.verificado_at,
         (
           SELECT CASE
             WHEN COUNT(DISTINCT rl.sector_id) > 1 THEN 'Varios sectores'
@@ -258,11 +269,76 @@ export async function retornosRoutes(app: FastifyInstance): Promise<void> {
     const total_cajas = lineas.reduce((sum, l) => sum + l.total_unidades, 0)
 
     return {
-      retorno: header,
+      retorno: {
+        ...header,
+        ingreso_directo: !!header.ingreso_directo
+      },
       lineas,
       total_cajas,
       lineas_verificadas: lineas.filter((l) => l.linea_verificada).length
     }
+  })
+
+  app.get('/api/retornos/:id/export', {
+    preHandler: requirePermiso('retornos.ver')
+  }, async (request, reply) => {
+    const id = Number((request.params as { id: string }).id)
+    const db = getDb()
+    const header = getRetornoHeader(db, id)
+    if (!header) return reply.status(404).send({ error: 'Retorno no encontrado' })
+
+    const productos = db.prepare(`
+      SELECT
+        p.codigo_interno,
+        p.nombre,
+        COALESCE(p.descripcion, '') AS descripcion,
+        SUM(COALESCE(rl.cantidad_verificada, rl.total_unidades)) AS cantidad
+      FROM retorno_lineas rl
+      JOIN productos p ON p.id = rl.producto_id
+      WHERE rl.retorno_id = ?
+      GROUP BY p.id, p.codigo_interno, p.nombre, p.descripcion
+      ORDER BY p.codigo_interno COLLATE NOCASE ASC, p.nombre COLLATE NOCASE ASC
+    `).all(id) as Array<{
+      codigo_interno: string
+      nombre: string
+      descripcion: string
+      cantidad: number
+    }>
+
+    const rows = productos.map((p) => ({
+      codigo_interno: p.codigo_interno,
+      nombre: p.nombre,
+      descripcion: p.descripcion,
+      cantidad: Number(p.cantidad) || 0
+    }))
+    const total = rows.reduce((s, r) => s + r.cantidad, 0)
+
+    const buffer = await buildMultiSheetExcel([
+      resumenSheet('Resumen', [
+        ['Fecha', header.fecha],
+        ['Nº planilla', header.numero_planilla],
+        ['Estado', header.estado],
+        [
+          'Camionero',
+          header.camionero_nombre
+            ? `${header.camionero_numero ?? ''} — ${header.camionero_nombre}`.trim()
+            : null
+        ],
+        ['Observación', header.observacion],
+        ['Total', total]
+      ]),
+      {
+        name: 'Productos',
+        columns: [...PRODUCTO_LISTADO_COLUMNS],
+        rows: withTotalRow(rows)
+      }
+    ])
+
+    return sendExcelFile(
+      reply,
+      buffer,
+      `retorno-${header.numero_planilla || header.id}-${todayFileStamp()}.xlsx`
+    )
   })
 
   app.post('/api/retornos', {
@@ -279,6 +355,7 @@ export async function retornosRoutes(app: FastifyInstance): Promise<void> {
     }
 
     const db = getDb()
+    const dobleVerificacion = getRetornosDobleVerificacion(db)
 
     if (body.camionero_id) {
       const camionero = db.prepare(`
@@ -335,14 +412,20 @@ export async function retornosRoutes(app: FastifyInstance): Promise<void> {
     }
 
     const sectorDefault = body.sector_id ?? null
+    const obsDirecto =
+      'Ingreso directo (control en hoja / sin doble verificación digital)'
 
     try {
       const retornoId = db.transaction(() => {
         const result = db.prepare(`
           INSERT INTO retornos (
             fecha, numero_planilla, observacion, camionero_id, vehiculo_id,
-            sector_id, estado, cargado_por_id
-          ) VALUES (?, ?, ?, ?, ?, ?, 'PENDIENTE', ?)
+            sector_id, estado, cargado_por_id, verificado_por_id,
+            observacion_verificacion, ingreso_directo, verificado_at
+          ) VALUES (
+            ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+            CASE WHEN ? = 1 THEN datetime('now') ELSE NULL END
+          )
         `).run(
           body.fecha!.trim(),
           body.numero_planilla?.trim() || null,
@@ -350,18 +433,45 @@ export async function retornosRoutes(app: FastifyInstance): Promise<void> {
           body.camionero_id ?? null,
           body.camionero_id && body.vehiculo_id ? body.vehiculo_id : null,
           sectorDefault,
-          user.id
+          dobleVerificacion ? 'PENDIENTE' : 'VERIFICADO',
+          user.id,
+          dobleVerificacion ? null : user.id,
+          dobleVerificacion ? null : obsDirecto,
+          dobleVerificacion ? 0 : 1,
+          dobleVerificacion ? 0 : 1
         )
 
         const retornoId = Number(result.lastInsertRowid)
 
         body.lineas!.forEach((linea, index) => {
           const { botellasPorCaja } = getProductoDefaults(db, linea.producto_id)
+          const orden = index + 1
+
+          if (dobleVerificacion) {
+            db.prepare(`
+              INSERT INTO retorno_lineas (
+                retorno_id, producto_id, sector_id, tipo_bulto, cantidad_bultos, unidades_por_bulto,
+                cantidad_suelta, total_unidades, estado_condicion, orden
+              ) VALUES (?, ?, ?, 'CAJA', ?, ?, NULL, ?, ?, ?)
+            `).run(
+              retornoId,
+              linea.producto_id,
+              linea.sector_id,
+              linea.cantidad_cajas,
+              botellasPorCaja,
+              linea.cantidad_cajas,
+              linea.estado_condicion,
+              orden
+            )
+            return
+          }
+
           db.prepare(`
             INSERT INTO retorno_lineas (
               retorno_id, producto_id, sector_id, tipo_bulto, cantidad_bultos, unidades_por_bulto,
-              cantidad_suelta, total_unidades, estado_condicion, orden
-            ) VALUES (?, ?, ?, 'CAJA', ?, ?, NULL, ?, ?, ?)
+              cantidad_suelta, total_unidades, estado_condicion, linea_verificada,
+              cantidad_verificada, estado_verificado, orden
+            ) VALUES (?, ?, ?, 'CAJA', ?, ?, NULL, ?, ?, 1, ?, ?, ?)
           `).run(
             retornoId,
             linea.producto_id,
@@ -370,14 +480,29 @@ export async function retornosRoutes(app: FastifyInstance): Promise<void> {
             botellasPorCaja,
             linea.cantidad_cajas,
             linea.estado_condicion,
-            index + 1
+            linea.cantidad_cajas,
+            linea.estado_condicion,
+            orden
           )
+
+          if (linea.estado_condicion === 'BUEN_ESTADO' && linea.cantidad_cajas > 0) {
+            applyRetornoLineToStock(db, {
+              producto_id: linea.producto_id,
+              sector_id: linea.sector_id,
+              linea: buildCajaLinea(linea.cantidad_cajas, botellasPorCaja),
+              retorno_id: retornoId,
+              usuario_id: user.id,
+              camionero_id: body.camionero_id ?? null,
+              observacion: body.observacion?.trim() || obsDirecto,
+              orden
+            })
+          }
         })
 
         return retornoId
       })()
 
-      return { id: retornoId }
+      return { id: retornoId, ingreso_directo: !dobleVerificacion }
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Error al registrar retorno'
       return reply.status(400).send({ error: msg })

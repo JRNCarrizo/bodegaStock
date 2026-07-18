@@ -1,5 +1,5 @@
 param(
-  [string]$Version = "0.3.0"
+  [string]$Version = "0.3.5"
 )
 
 $ErrorActionPreference = "Stop"
@@ -50,17 +50,18 @@ $exeName = Split-Path $exe -Leaf
 $notes = @"
 ## ControlStock v$Version
 
-Nueva generación con inventario completo y mejoras de stock.
+Inventario offline entre celulares (hotspot P2P), APK Android y pulido del flujo de conteo sin red al PC.
 
 ### Nuevo
-- **Inventario:** conteo por sector, comparación cajas/suelto por separado, reconteo y cierre con ajuste de stock
-- **Planillas modo botellas:** salidas por botella sin sumar cajas en movimientos del día
-- **Roles y secciones:** Administrador y Usuario con permisos por sección
+- **Inventario offline:** sectores OFFLINE, paquete en celular, conteo local y sync P2P por hotspot (puerto 3850)
+- **Comparación A + reconteo** en celular; import al PC y Comparación B vs sistema
+- **APK Capacitor Android** para terminal de bodega
+- **Escanear QR del compañero** al conectar sync P2P
 
 ### Mejorado
-- **Stock caja vs suelto:** botellerio/pucherio no mezcla unidades con cajas en reportes
-- **Usuario contador:** puede contar inventario sin permiso de ver stock completo
-- **Detalle de retornos:** estado por línea (Buen estado / Incompleta / Mal estado)
+- Sync P2P más robusto (reintentos, espera del host, recuperar comparación)
+- Banner de inventario compacto en móvil; edición de líneas en reconteo offline
+- Import al PC más seguro (verifica en servidor antes de borrar datos locales)
 
 ### Actualización
 - Desde **v0.2.7 o superior:** Configuración → Buscar actualizaciones

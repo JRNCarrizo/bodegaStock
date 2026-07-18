@@ -9,7 +9,7 @@ on:
       version:
         description: 'Versión sin v (ej. 0.1.0)'
         required: true
-        default: '0.3.0'
+        default: '0.3.5'
 
 permissions:
   contents: write
@@ -68,17 +68,19 @@ jobs:
           body: |
             ## ControlStock ${{ steps.tag.outputs.name }}
 
-            Correcciones de armado de stock, reubicación en el mismo sector y reorganización por ubicación.
+            Inventario offline entre celulares (hotspot P2P), APK Android y pulido del flujo de conteo sin red al PC.
 
             ### Nuevo
-            - **Movimientos:** reubicación en el mismo sector (sin ubicación ↔ ubicación), con origen y destino por ubicación
-            - **Reorganizar por ubicación:** en Consulta → Por sector, eligiendo una ubicación (sin mezclar posiciones)
+            - **Inventario offline:** sectores en modo OFFLINE, paquete en celular, conteo local y sync P2P por hotspot (puerto 3850)
+            - **Comparación A + reconteo** en celular; import al PC y Comparación B vs sistema
+            - **APK Capacitor Android** para terminal de bodega
+            - **Escanear QR del compañero** al conectar sync P2P (IP manual sigue disponible)
 
-            ### Corregido
-            - **Retornos:** ya no desarman pallets inventariados al devolver cajas; suman a la pila más chica respetando el tamaño de pallet del producto
-            - **Roturas / deducciones:** resto de pallet queda coherente (sin cajas fantasma)
-            - **Movimientos:** al completar se conserva el desglose pallet/cajas en destino
-            - **Consulta producto:** reorganizar con varias ubicaciones bloqueado (evitar volcar todo a “sin ubicación”)
+            ### Mejorado
+            - Sync P2P más robusto (reintentos, espera del host, recuperar comparación)
+            - Banner de inventario compacto en móvil; edición de líneas en reconteo offline
+            - Import al PC más seguro (verifica en servidor antes de borrar datos locales)
+            - Limpieza de paquetes locales si la sesión ya no está activa en el PC
 
             ### Actualización
             - Desde **v0.2.7 o superior:** Configuración → Buscar actualizaciones

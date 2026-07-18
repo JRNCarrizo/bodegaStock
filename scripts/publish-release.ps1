@@ -1,5 +1,5 @@
 param(
-  [string]$Version = "0.3.5"
+  [string]$Version = "0.3.6"
 )
 
 $ErrorActionPreference = "Stop"
@@ -50,18 +50,18 @@ $exeName = Split-Path $exe -Leaf
 $notes = @"
 ## ControlStock v$Version
 
-Inventario offline entre celulares (hotspot P2P), APK Android y pulido del flujo de conteo sin red al PC.
+Exportaciones Excel, verificación opcional y mejoras de inventario / productos.
 
 ### Nuevo
-- **Inventario offline:** sectores OFFLINE, paquete en celular, conteo local y sync P2P por hotspot (puerto 3850)
-- **Comparación A + reconteo** en celular; import al PC y Comparación B vs sistema
-- **APK Capacitor Android** para terminal de bodega
-- **Escanear QR del compañero** al conectar sync P2P
+- **Export Excel** de ingresos, planillas, retornos, roturas del día, inventario y stock (consulta)
+- **Plantilla e importación** de productos por Excel
+- **Verificación opcional** (doble o ingreso directo) en retornos y movimientos internos
+- Pie de copyright en Inicio y Configuración
 
 ### Mejorado
-- Sync P2P más robusto (reintentos, espera del host, recuperar comparación)
-- Banner de inventario compacto en móvil; edición de líneas en reconteo offline
-- Import al PC más seguro (verifica en servidor antes de borrar datos locales)
+- Listados de inventario (sesiones y alta) más claros
+- Export de inventario agregado por producto (sin desglose ni sectores)
+- Ajustes de UI en consulta e inicio
 
 ### Actualización
 - Desde **v0.2.7 o superior:** Configuración → Buscar actualizaciones

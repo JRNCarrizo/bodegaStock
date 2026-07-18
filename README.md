@@ -19,7 +19,7 @@ Toda la especificación del proyecto está en la carpeta [`docs/`](docs/):
 
 ## Estado del proyecto
 
-**v0.3.5** — Inventario offline (sync P2P entre celulares), APK Android, inventario en PC, productos, sectores, consulta, ingresos, planillas, retornos, roturas, reportes y usuarios. Actualizaciones desde Configuración.
+**v0.3.6** — Exportaciones Excel, verificación opcional en retornos/movimientos, importación de productos y pulido de inventario / inicio. Actualizaciones desde Configuración.
 
 ## Desarrollo local
 

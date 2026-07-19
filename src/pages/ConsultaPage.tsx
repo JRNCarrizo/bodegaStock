@@ -26,6 +26,7 @@ import type {
   ReorganizarDesglosePayload,
   SectorStockConsulta
 } from '@/types'
+import { ScrollableProductName } from '@/components/ScrollableProductName'
 import { Card, CardBody } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { useAuth } from '@/context/AuthContext'
@@ -164,7 +165,7 @@ function StockDetallePanel({
   )
 }
 
-type ConsultaModo = 'producto' | 'sector'
+type ConsultaModo = 'producto' | 'sector' | 'todos'
 
 export function ConsultaPage() {
   const { hasPermiso } = useAuth()
@@ -194,6 +195,29 @@ export function ConsultaPage() {
   const { registerEscHandler, registerMainContentFocus } = useSidebarNav()
 
   const expandedDetalle = expandedId != null ? detalleCache[expandedId] : undefined
+
+  const cargarTodos = useCallback(async () => {
+    setLoading(true)
+    setError('')
+    try {
+      const data = await api<ConsultaResumen[]>('/api/consulta/todos')
+      setResultados(data)
+      setExpandedId(null)
+      setConfirmSectorId(null)
+      setHighlightIndex(-1)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Error al cargar productos')
+      setResultados([])
+      setExpandedId(null)
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (modo !== 'todos') return
+    void cargarTodos()
+  }, [modo, cargarTodos])
 
   async function exportarStockProductos() {
     setExporting(true)
@@ -298,9 +322,10 @@ export function ConsultaPage() {
   }, [])
 
   useEffect(() => {
+    if (modo !== 'producto') return
     const timer = setTimeout(() => buscar(search), 350)
     return () => clearTimeout(timer)
-  }, [search, buscar])
+  }, [search, buscar, modo])
 
   useEffect(() => {
     setHighlightIndex(-1)
@@ -460,7 +485,8 @@ export function ConsultaPage() {
         {(
           [
             { id: 'producto' as const, label: 'Por producto' },
-            { id: 'sector' as const, label: 'Por sector' }
+            { id: 'sector' as const, label: 'Por sector' },
+            { id: 'todos' as const, label: 'Ver todos' }
           ] as const
         ).map((tab) => (
           <button
@@ -468,7 +494,18 @@ export function ConsultaPage() {
             type="button"
             onClick={() => {
               setModo(tab.id)
+              setExpandedId(null)
+              setConfirmSectorId(null)
+              setHighlightIndex(-1)
               if (tab.id === 'producto') setSectorDetailOpen(false)
+              if (tab.id === 'todos') {
+                setSearch('')
+                setSectorDetailOpen(false)
+              }
+              if (tab.id === 'sector') {
+                setResultados([])
+                setSearch('')
+              }
             }}
             className={cn(
               'rounded-full border px-4 py-2 text-sm font-medium transition-colors',
@@ -499,6 +536,150 @@ export function ConsultaPage() {
     </div>
   )
 
+  const titulo =
+    modo === 'producto'
+      ? 'Buscar productos'
+      : modo === 'sector'
+        ? 'Consultar por sector'
+        : 'Todos los productos'
+
+  const subtitulo =
+    modo === 'producto'
+      ? 'Código interno, código de barras o nombre. Desplegá cada resultado para ver el stock por sector y ubicación.'
+      : modo === 'sector'
+        ? 'Elegí un sector para ver todos los productos con stock, filtrando por ubicación interna si aplica.'
+        : 'Listado de productos con stock. El desglose por sector queda cerrado; desplegá cada producto para verlo.'
+
+  function renderProductoListItem(p: ConsultaResumen, index: number) {
+    const isExpanded = expandedId === p.id
+    const isHighlighted = index === highlightIndex
+    const detalle = detalleCache[p.id]
+    const loadingDetalle = loadingDetalleId === p.id
+
+    return (
+      <li key={p.id} ref={isExpanded ? expandedItemRef : undefined}>
+        <div
+          className={cn(
+            'flex items-center gap-3 px-4 py-3.5 transition-colors sm:gap-4 sm:px-6',
+            isExpanded
+              ? 'bg-brand-50/70'
+              : isHighlighted
+                ? 'bg-brand-50 ring-1 ring-inset ring-brand-200'
+                : 'hover:bg-slate-50/80'
+          )}
+        >
+          <button
+            type="button"
+            onClick={() => {
+              setHighlightIndex(index)
+              void toggleExpand(p)
+            }}
+            className={cn(
+              'shrink-0 rounded-lg p-1.5 transition-colors',
+              isExpanded
+                ? 'bg-brand-100 text-brand-700'
+                : 'text-slate-400 hover:bg-slate-200 hover:text-slate-700'
+            )}
+            aria-expanded={isExpanded}
+            aria-label={isExpanded ? 'Ocultar stock' : 'Ver stock'}
+          >
+            {isExpanded ? (
+              <ChevronDown className="h-4 w-4" />
+            ) : (
+              <ChevronRight className="h-4 w-4" />
+            )}
+          </button>
+
+          <ProductImage
+            productoId={p.id}
+            hasImage={!!p.imagen_path}
+            alt={p.nombre}
+            className="h-12 w-12 shrink-0 rounded-xl ring-1 ring-surface-border"
+            clickable={!!p.imagen_path}
+            onPreview={(src) =>
+              setImagePreview({
+                src,
+                alt: p.nombre,
+                title: `${p.codigo_interno} — ${p.nombre}`
+              })
+            }
+          />
+
+          <button
+            type="button"
+            onClick={() => {
+              setHighlightIndex(index)
+              void toggleExpand(p)
+            }}
+            className="min-w-0 flex-1 text-left"
+          >
+            <span className="inline-flex rounded-md bg-slate-100 px-2 py-0.5 font-mono text-xs font-semibold text-slate-700">
+              {p.codigo_interno}
+            </span>
+            <ScrollableProductName className="mt-1.5 text-sm font-semibold text-slate-900">
+              {p.nombre}
+            </ScrollableProductName>
+            {p.descripcion && (
+              <ScrollableProductName className="mt-0.5 text-xs text-slate-500">
+                {p.descripcion}
+              </ScrollableProductName>
+            )}
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              setHighlightIndex(index)
+              void toggleExpand(p)
+            }}
+            className="shrink-0 text-right"
+          >
+            <span className="inline-flex min-w-[3rem] items-center justify-center rounded-lg bg-brand-50 px-2.5 py-1.5 text-sm font-bold tabular-nums text-brand-700 ring-1 ring-brand-100">
+              {formatCantidad(p.stock_total)}
+            </span>
+            {p.sectores_con_stock > 0 && (
+              <p className="mt-1 text-[11px] font-medium text-slate-500">
+                {p.sectores_con_stock} sector{p.sectores_con_stock === 1 ? '' : 'es'}
+              </p>
+            )}
+          </button>
+        </div>
+
+        {isExpanded && (
+          <div className="border-t border-brand-100/80 bg-gradient-to-b from-surface-muted/50 to-white px-4 py-5 sm:px-6">
+            <div className="ml-1 sm:ml-2">
+              <div className="mb-4 flex items-center gap-2">
+                <div className="h-px flex-1 bg-brand-200/60" />
+                <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">
+                  Stock por sector
+                </p>
+                <div className="h-px flex-1 bg-brand-200/60" />
+              </div>
+              {loadingDetalle ? (
+                <div className="flex items-center gap-2 py-4 text-sm text-slate-500">
+                  <Loader2 className="h-4 w-4 animate-spin text-brand-600" />
+                  Cargando detalle...
+                </div>
+              ) : detalle ? (
+                <StockDetallePanel
+                  detalle={detalle}
+                  canReorganizar={canReorganizar}
+                  confirmSectorId={confirmSectorId}
+                  reorganizingSectorId={reorganizingSectorId}
+                  onRequestReorganizar={(sector) => setConfirmSectorId(sector.stock_sector_id)}
+                  onConfirmReorganizar={confirmReorganizar}
+                  onCancelReorganizar={() => setConfirmSectorId(null)}
+                />
+              ) : (
+                <p className="py-4 text-sm text-slate-500">No se pudo cargar el detalle</p>
+              )}
+            </div>
+          </div>
+        )}
+      </li>
+    )
+  }
+
   return (
     <div className="mx-auto max-w-4xl space-y-6">
       <section className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
@@ -507,13 +688,9 @@ export function ConsultaPage() {
             Consulta de stock
           </p>
           <h1 className="mt-1 text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">
-            {modo === 'producto' ? 'Buscar productos' : 'Consultar por sector'}
+            {titulo}
           </h1>
-          <p className="mt-2 max-w-xl text-sm leading-relaxed text-slate-500">
-            {modo === 'producto'
-              ? 'Código interno, código de barras o nombre. Desplegá cada resultado para ver el stock por sector y ubicación.'
-              : 'Elegí un sector para ver todos los productos con stock, filtrando por ubicación interna si aplica.'}
-          </p>
+          <p className="mt-2 max-w-xl text-sm leading-relaxed text-slate-500">{subtitulo}</p>
         </div>
         {modo === 'producto' && (
           <div className="flex flex-wrap gap-1.5">
@@ -539,6 +716,44 @@ export function ConsultaPage() {
 
       {modo === 'sector' ? (
         <ConsultaPorSectorPanel onSectorSelectedChange={setSectorDetailOpen} />
+      ) : modo === 'todos' ? (
+        <Card className="overflow-hidden shadow-panel">
+          <div className="flex items-center justify-between gap-3 border-b border-surface-border bg-slate-50/80 px-5 py-3.5 sm:px-6">
+            <div>
+              <h2 className="text-sm font-semibold text-slate-900">Listado completo</h2>
+              <p className="text-xs text-slate-500">
+                {loading
+                  ? 'Cargando productos...'
+                  : `${resultados.length} producto${resultados.length === 1 ? '' : 's'} con stock`}
+              </p>
+            </div>
+            {loading && <Loader2 className="h-5 w-5 shrink-0 animate-spin text-brand-600" />}
+            {!loading && resultados.length > 0 && (
+              <span className="rounded-full bg-brand-50 px-2.5 py-1 text-xs font-semibold text-brand-700 ring-1 ring-brand-100">
+                {resultados.length}
+              </span>
+            )}
+          </div>
+          <CardBody className="p-0">
+            {loading ? (
+              <div className="flex items-center justify-center gap-2 py-16 text-sm text-slate-500">
+                <Loader2 className="h-5 w-5 animate-spin text-brand-600" />
+                Cargando listado...
+              </div>
+            ) : resultados.length === 0 ? (
+              <div className="flex flex-col items-center px-6 py-14 text-center">
+                <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-slate-100 text-slate-400">
+                  <Package className="h-7 w-7" />
+                </div>
+                <p className="mt-4 text-sm font-medium text-slate-700">No hay productos con stock</p>
+              </div>
+            ) : (
+              <ul ref={resultadosListRef} className="divide-y divide-surface-border">
+                {resultados.map((p, index) => renderProductoListItem(p, index))}
+              </ul>
+            )}
+          </CardBody>
+        </Card>
       ) : (
         <>
       <Card className="overflow-hidden shadow-panel">
@@ -615,140 +830,7 @@ export function ConsultaPage() {
               </div>
             ) : (
               <ul ref={resultadosListRef} className="divide-y divide-surface-border">
-                {resultados.map((p, index) => {
-                  const isExpanded = expandedId === p.id
-                  const isHighlighted = index === highlightIndex
-                  const detalle = detalleCache[p.id]
-                  const loadingDetalle = loadingDetalleId === p.id
-
-                  return (
-                    <li key={p.id} ref={isExpanded ? expandedItemRef : undefined}>
-                      <div
-                        className={cn(
-                          'flex items-center gap-3 px-4 py-3.5 transition-colors sm:gap-4 sm:px-6',
-                          isExpanded
-                            ? 'bg-brand-50/70'
-                            : isHighlighted
-                              ? 'bg-brand-50 ring-1 ring-inset ring-brand-200'
-                              : 'hover:bg-slate-50/80'
-                        )}
-                      >
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setHighlightIndex(index)
-                            void toggleExpand(p)
-                          }}
-                          className={cn(
-                            'shrink-0 rounded-lg p-1.5 transition-colors',
-                            isExpanded
-                              ? 'bg-brand-100 text-brand-700'
-                              : 'text-slate-400 hover:bg-slate-200 hover:text-slate-700'
-                          )}
-                          aria-expanded={isExpanded}
-                          aria-label={isExpanded ? 'Ocultar stock' : 'Ver stock'}
-                        >
-                          {isExpanded ? (
-                            <ChevronDown className="h-4 w-4" />
-                          ) : (
-                            <ChevronRight className="h-4 w-4" />
-                          )}
-                        </button>
-
-                        <ProductImage
-                          productoId={p.id}
-                          hasImage={!!p.imagen_path}
-                          alt={p.nombre}
-                          className="h-12 w-12 shrink-0 rounded-xl ring-1 ring-surface-border"
-                          clickable={!!p.imagen_path}
-                          onPreview={(src) =>
-                            setImagePreview({
-                              src,
-                              alt: p.nombre,
-                              title: `${p.codigo_interno} — ${p.nombre}`
-                            })
-                          }
-                        />
-
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setHighlightIndex(index)
-                            void toggleExpand(p)
-                          }}
-                          className="min-w-0 flex-1 text-left"
-                        >
-                          <span className="inline-flex rounded-md bg-slate-100 px-2 py-0.5 font-mono text-xs font-semibold text-slate-700">
-                            {p.codigo_interno}
-                          </span>
-                          <p className={`mt-1.5 text-sm ${isExpanded ? '' : 'truncate'}`}>
-                            <span className="font-semibold text-slate-900">{p.nombre}</span>
-                            {p.descripcion && (
-                              <>
-                                <span className="text-slate-300"> · </span>
-                                <span className="text-xs text-slate-500">{p.descripcion}</span>
-                              </>
-                            )}
-                          </p>
-                        </button>
-
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setHighlightIndex(index)
-                            void toggleExpand(p)
-                          }}
-                          className="shrink-0 text-right"
-                        >
-                          <span className="inline-flex min-w-[3rem] items-center justify-center rounded-lg bg-brand-50 px-2.5 py-1.5 text-sm font-bold tabular-nums text-brand-700 ring-1 ring-brand-100">
-                            {formatCantidad(p.stock_total)}
-                          </span>
-                          {p.sectores_con_stock > 0 && (
-                            <p className="mt-1 text-[11px] font-medium text-slate-500">
-                              {p.sectores_con_stock} sector{p.sectores_con_stock === 1 ? '' : 'es'}
-                            </p>
-                          )}
-                        </button>
-                      </div>
-
-                      {isExpanded && (
-                        <div className="border-t border-brand-100/80 bg-gradient-to-b from-surface-muted/50 to-white px-4 py-5 sm:px-6">
-                          <div className="ml-1 sm:ml-2">
-                            <div className="mb-4 flex items-center gap-2">
-                              <div className="h-px flex-1 bg-brand-200/60" />
-                              <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">
-                                Stock por sector
-                              </p>
-                              <div className="h-px flex-1 bg-brand-200/60" />
-                            </div>
-                            {loadingDetalle ? (
-                              <div className="flex items-center gap-2 py-4 text-sm text-slate-500">
-                                <Loader2 className="h-4 w-4 animate-spin text-brand-600" />
-                                Cargando detalle...
-                              </div>
-                            ) : detalle ? (
-                              <StockDetallePanel
-                                detalle={detalle}
-                                canReorganizar={canReorganizar}
-                                confirmSectorId={confirmSectorId}
-                                reorganizingSectorId={reorganizingSectorId}
-                                onRequestReorganizar={(sector) =>
-                                  setConfirmSectorId(sector.stock_sector_id)
-                                }
-                                onConfirmReorganizar={confirmReorganizar}
-                                onCancelReorganizar={() => setConfirmSectorId(null)}
-                              />
-                            ) : (
-                              <p className="py-4 text-sm text-slate-500">
-                                No se pudo cargar el detalle
-                              </p>
-                            )}
-                          </div>
-                        </div>
-                      )}
-                    </li>
-                  )
-                })}
+                {resultados.map((p, index) => renderProductoListItem(p, index))}
               </ul>
             )}
           </CardBody>

@@ -1,7 +1,7 @@
 # ControlStock (BodegaStock) — Ficha técnica para cotización
 
 > **Documento pensado para terceros e IAs.**  
-> Describí el sistema tal como está construido (julio 2026, versión ~0.3.4).  
+> Describí el sistema tal como está construido (julio 2026, **v0.3.7**).  
 > Podés pegar este archivo completo en ChatGPT / Claude / Gemini y pedir una cotización independiente de desarrollo o de licencia.
 
 **Nombre comercial:** ControlStock  
@@ -71,7 +71,7 @@ No es un prototipo de una sola pantalla: es un sistema multi-módulo con reglas 
 | Misma UI React | PC, navegador móvil y APK comparten el frontend |
 | Stock por sector | Un producto puede tener stock en varios sectores |
 | Ledger / trazabilidad | Los cambios de stock generan movimientos auditables |
-| Doble verificación | Inventario con 2 contadores; retornos con verificación |
+| Doble verificación | Inventario con 2 contadores; retornos y movimientos internos con verificación **configurable** (activar/desactivar desde Configuración) |
 
 ---
 
@@ -86,7 +86,9 @@ No es un prototipo de una sola pantalla: es un sistema multi-módulo con reglas 
 | Backend API | **Node.js** + **Fastify 5** |
 | Base de datos | **SQLite** vía **better-sqlite3** (transacciones, migraciones propias) |
 | Auth | **JWT** (`jsonwebtoken`) + **bcryptjs** |
+| Excel | **exceljs** (exportaciones `.xlsx` e importación de plantilla de productos) |
 | Estáticos / CORS | `@fastify/static`, `@fastify/cors` |
+| Iconos de app | Generados desde `build/icon.svg` con `npm run icons` (ICO/PNG para instalador y APK) |
 
 ### Frontend (compartido PC + móvil)
 
@@ -135,21 +137,43 @@ No es un prototipo de una sola pantalla: es un sistema multi-módulo con reglas 
 
 ### Administración y catálogo
 
-- **Productos:** alta/edición, código interno, código de barras (manual / escaneo / generación), activo/inactivo, impresión de códigos.
+- **Productos:** alta/edición, código interno, código de barras (manual / escaneo / generación), activo/inactivo, impresión de códigos; **plantilla Excel** + **importación masiva** de productos.
 - **Sectores:** estructura de bodega / zonas de stock.
 - **Usuarios y permisos:** roles y permisos granulares por módulo.
 - **Camioneros:** padrón para planillas / salidas.
-- **Configuración:** URL/IP del servidor, QR de conexión, actualizaciones.
+- **Configuración:** URL/IP del servidor, QR de conexión, actualizaciones; toggles de **doble verificación** (`retornos_doble_verificacion`, `movimientos_doble_verificacion`).
+- **Pie de página:** copyright de producto en la UI (ControlStock / JRNCarrizo).
+
+### Consulta de stock
+
+- Vistas: **Por producto**, **Por sector**, **Ver todos** (solo productos con stock > 0).
+- Búsqueda por código/nombre; stock por sector; desglose pallet/caja/suelto.
+- **Export Excel** del stock agregado por producto.
 
 ### Operación de stock
 
-- **Consulta:** búsqueda por código/nombre; stock por sector; desglose pallet/caja/suelto.
 - **Ingresos:** remitos de entrada con líneas de desglose (pallet × unidades + sueltos).
 - **Planillas:** salidas asociadas a camionero.
-- **Retornos:** carga + verificación (doble control).
+- **Retornos:** carga + verificación opcional (doble control configurable; ingreso directo si está desactivado).
 - **Roturas / pérdidas.**
-- **Movimientos internos** entre sectores.
+- **Movimientos internos** entre sectores (enviar/recibir; verificación opcional).
 - **Reportes** por día / rangos.
+
+#### Exportaciones Excel
+
+Listados `.xlsx` generados por la API (agregaciones de consulta; no son tablas nuevas):
+
+| Ruta | Uso |
+|------|-----|
+| `consulta/export/stock-productos` | Stock total por producto |
+| `ingresos/:id/export` | Detalle de un ingreso |
+| `planillas/:id/export` | Detalle de una planilla |
+| `retornos/:id/export` | Detalle de un retorno |
+| `roturas/export-dia` | Roturas del día |
+| `inventario/sesiones/:id/export` | Resumen de sesión de inventario |
+
+**Formato típico de filas de productos:** código, nombre, descripción, cantidad.  
+En roturas se agrega observación; en inventario el listado va **agregado por producto** (sin sector ni desglose de líneas).
 
 ### Inventario físico (diferenciador fuerte)
 
@@ -159,6 +183,8 @@ No es un prototipo de una sola pantalla: es un sistema multi-módulo con reglas 
 - Conteo por líneas independientes.
 - Finalización, comparación entre contadores, reconteo, cierre.
 - Comparación contado vs stock del sistema (cierre supervisado).
+- **Export Excel** de la sesión.
+- Pulido de UI y UX de conteo: desglose cerrado por defecto, formulario en overlay, scroll controlado y footer de acciones.
 
 #### Inventario OFFLINE (implementado de punta a punta)
 Diseñado para depósitos **sin WiFi al PC**:
@@ -193,8 +219,12 @@ Entidades principales (SQLite):
 - Camioneros
 - Sesiones de inventario, sectores de inventario, líneas de conteo por contador y ronda
 - Flags offline: `modo_conectividad`, `paquete_descargado_at`, `importado_at`
+- **`app_settings`:** claves de configuración (doble verificación de retornos y movimientos)
+- En retornos y movimientos internos: flag **`ingreso_directo`** cuando la verificación doble está desactivada
 
 Regla de negocio clave: el stock no es “un número mágico”; se trabaja con **desglose operativo** (pallet × unidades + sueltos) de forma consistente en ingresos, consulta e inventario.
+
+Detalle: ver [MODELO-DE-DATOS.md](MODELO-DE-DATOS.md).
 
 ---
 
@@ -215,17 +245,18 @@ Usá estas señales para estimar (no son horas facturadas del autor; son hechos 
 | Señal | Evidencia |
 |-------|-----------|
 | Multi-plataforma | Electron Windows + Web responsive + APK Android Capacitor |
-| Backend propio embebido | Fastify + SQLite + migraciones + auth + ~13 grupos de rutas API |
+| Backend propio embebido | Fastify + SQLite + migraciones + auth + ~14 grupos de rutas API |
 | Frontend amplio | ~16 pantallas/páginas principales + componentes de dominio |
-| Dominio de negocio no trivial | Stock por sector, ledger, desglose pallet/caja/suelto, dobles controles |
+| Dominio de negocio no trivial | Stock por sector, ledger, desglose pallet/caja/suelto, dobles controles configurables |
 | Inventario dual | Dos contadores, rondas, comparación, reconteo |
 | Inventario offline real | Paquete local, P2P HTTP hotspot, comparación A, import con confirmación, reconteo offline |
+| Excel | Exportaciones operativas + plantilla/import de productos |
 | Empaquetado | Instalador NSIS + pipeline de APK Android |
 | Documentación de producto | Varios documentos en `docs/` (especificación, inventario, móvil, datos, permisos) |
 
 ### Módulos API (lado servidor)
 
-`auth`, `usuarios`, `productos`, `sectores`, `consulta`, `ingresos`, `planillas`, `retornos`, `roturas`, `movimientos-internos`, `camioneros`, `reportes`, `inventario` (incluye offline).
+`auth`, `usuarios`, `productos`, `sectores`, `consulta`, `ingresos`, `planillas`, `retornos`, `roturas`, `movimientos-internos`, `camioneros`, `reportes`, `inventario` (incluye offline), `configuracion`.
 
 ### Pantallas frontend principales
 
@@ -282,10 +313,12 @@ No inventes módulos que no estén en la ficha. Basate solo en lo documentado.
 
 ## 12. Estado del producto (honestidad comercial)
 
-**Estado:** sistema operativo en uso de desarrollo/pruebas de campo, con flujo principal de inventario offline **implementado de punta a punta** (descarga → conteo → sync P2P → comparación → reconteo → import confirmado al PC).
+**Estado:** sistema operativo en uso de desarrollo/pruebas de campo (**v0.3.7**), con flujo principal de inventario offline **implementado de punta a punta** (descarga → conteo → sync P2P → comparación → reconteo → import confirmado al PC).
 
-**Pendientes normales de producto maduro:** pulido UX, pruebas de campo intensivas, eventual iOS, mejoras visuales, posibles módulos futuros según cliente.
+**Entregado en esta versión:** exportaciones Excel operativas, importación de productos por plantilla, doble verificación opcional en retornos y movimientos internos, y pulido de UX de inventario / consulta.
+
+**Pendientes normales de producto maduro:** pruebas de campo intensivas, eventual iOS, mejoras visuales adicionales, posibles módulos futuros según cliente.
 
 ---
 
-*Documento generado para evaluación y cotización independiente — ControlStock / BodegaStock v0.3.x — julio 2026.*
+*Documento generado para evaluación y cotización independiente — ControlStock / BodegaStock **v0.3.7** — julio 2026.*

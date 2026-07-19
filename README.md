@@ -19,7 +19,7 @@ Toda la especificación del proyecto está en la carpeta [`docs/`](docs/):
 
 ## Estado del proyecto
 
-**v0.3.6** — Exportaciones Excel, verificación opcional en retornos/movimientos, importación de productos y pulido de inventario / inicio. Actualizaciones desde Configuración.
+**v0.3.7** — Consulta «Ver todos», cabecera de inventario unificada y documentación al día. Actualizaciones desde Configuración.
 
 ## Desarrollo local
 
@@ -35,8 +35,9 @@ Usuario inicial: `admin` / `admin123`
 La web en `:3847` sigue siendo el canal online. La APK reutiliza la misma UI React.
 
 ```bash
+npm run icons          # genera iconos desktop + mipmaps Android desde build/icon.svg
 npm run build:mobile   # genera dist/
-npm run cap:sync       # copia a android/
+npm run cap:sync       # icons + build:mobile + copia a android/
 npm run cap:android    # abre Android Studio
 ```
 
@@ -72,7 +73,8 @@ Los instaladores quedan en [Releases](https://github.com/JRNCarrizo/bodegaStock/
 
 ## Stack
 
-- **Escritorio:** Electron + interfaz web (React/Vue)
-- **Servidor embebido:** Node.js (API REST + WebSockets)
-- **Base de datos:** SQLite (inicio) / PostgreSQL (escala)
+- **Escritorio:** Electron + interfaz web (React + TypeScript)
+- **Servidor embebido:** Node.js / Fastify (API REST + WebSockets)
+- **Base de datos:** SQLite (producción actual; PostgreSQL opcional a futuro)
 - **Móvil:** APK Android con **Capacitor** (misma UI React; iOS más adelante)
+- **Exportaciones:** Excel (`exceljs`) por módulo; PDF pendiente

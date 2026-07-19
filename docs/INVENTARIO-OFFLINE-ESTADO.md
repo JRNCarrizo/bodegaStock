@@ -156,4 +156,8 @@ Login típico: `admin` / `admin123`. API PC: puerto **3847**.
 | Sesión sin red al PC | Cache de usuario+clave en el celular; login offline + no expulsar si falla `/me` |
 | Prueba emulador+físico | Parcial (misma Wi‑Fi); hotspot completo = 2 físicos |
 
-*Última actualización: julio 2026 — flujo principal implementado; fase prueba y pulido.*
+### Nota UX conteo (v0.3.6)
+
+La UX de conteo (desglose cerrado por defecto, overlay al cargar cantidad, auto-scroll, footer de total con tono, nombres con scroll horizontal) aplica también a la UI offline. **No** cambia sync P2P, import, paquete ni las reglas de la §1 / §6.
+
+*Última actualización: julio 2026 — v0.3.7; flujo principal implementado; fase prueba y pulido.*

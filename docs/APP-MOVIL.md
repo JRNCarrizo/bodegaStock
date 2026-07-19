@@ -2,7 +2,7 @@
 
 > Documento de referencia para la fase móvil. La **APK** es **otra aplicación**, distinta del instalador de PC, pero usa **la misma API y la misma base de datos** del PC servidor.
 >
-> **Decisión acordada (julio 2026):** el acceso por **navegador/celular (web)** y la futura **APK** **conviven**. La web no se reemplaza al salir la APK: son dos puertas al mismo servidor.
+> **Decisión acordada (julio 2026):** el acceso por **navegador/celular (web)** y la **APK** (Capacitor) **conviven**. La web no se reemplaza: son dos puertas al mismo servidor.
 
 ---
 
@@ -13,7 +13,7 @@ La operación en bodega desde el celular no depende de un solo canal. Hay **dos 
 | Canal | Qué es | Rol |
 |--------|--------|-----|
 | **Web (navegador)** | Misma UI servida por el PC en el puerto **3847** (URL/QR de Configuración) | Disponible **ya**; pruebas, inventario, operación sin instalar APK |
-| **APK Android** | App instalable, otra build / otro instalador | Día a día más cómodo (ícono fijo, cámara, sin barra del navegador) |
+| **APK Android** | App instalable (Capacitor) | Día a día más cómodo (ícono fijo, cámara, inventario offline, sin barra del navegador) |
 | **PC (Electron)** | Instalador ControlStock | Servidor + administración + supervisión |
 
 Varios usuarios en el depósito usarían celular (web y/o APK) para:
@@ -54,8 +54,8 @@ Los tres caminos (PC, web, APK) consumen la **misma API**, mismos usuarios y per
 ### No son excluyentes
 
 - La **web** permanece siempre disponible mientras el PC servidor esté en modo servidor.
-- La **APK** se suma después como canal adicional; **no** obliga a sacar la web.
-- En una misma sesión de inventario puede haber contadores por **navegador** y, más adelante, otros por **APK**, siempre que hablen con el mismo servidor.
+- La **APK** (Capacitor, Android) es canal adicional; **no** obliga a sacar la web.
+- En una misma sesión de inventario puede haber contadores por **navegador** y por **APK**, siempre que hablen con el mismo servidor.
 
 ### Por qué mantener la web
 
@@ -66,7 +66,7 @@ Los tres caminos (PC, web, APK) consumen la **misma API**, mismos usuarios y per
 | Contingencia | Si un teléfono no tiene la APK, sigue operando por navegador |
 | Base para Capacitor | Si el stack móvil reutiliza React, la web responsive es el punto de partida |
 
-### Por qué igualmente conviene la APK (después)
+### Por qué igualmente conviene la APK
 
 Con **muchos usuarios** y **varios módulos**, la APK reduce fricción operativa:
 
@@ -108,7 +108,7 @@ La APK **online** habla con la API del PC. Para **inventario en modo offline** (
 1. El **PC servidor** debe estar encendido con ControlStock en modo servidor.
 2. Celular y PC en la **misma red WiFi** de la empresa.
 3. **Web:** abrir la URL de Configuración (ej. `http://192.168.1.50:3847`) en el navegador del celular.
-4. **APK (cuando exista):** configurar **IP del servidor** + puerto **`3847`**, o escanear el **QR** del PC.
+4. **APK:** configurar **IP del servidor** + puerto **`3847`**, o escanear el **QR** del PC.
 5. **Login** con usuario/contraseña (mismos usuarios que en escritorio).
 6. Permisos del usuario determinan qué pantallas ve en el celular.
 
@@ -126,10 +126,10 @@ Pensado para **usar con las manos en el depósito**, escaneando códigos con la 
 
 | Módulo | Para qué en el celular | Notas |
 |--------|------------------------|-------|
-| **Consulta** | Buscar producto y ver stock con desglose por sector/ubicación | Solo lectura. Escaneo con cámara. Puerta de entrada habitual en bodega. |
-| **Retornos** | Cargar devoluciones **y** verificar las de otro usuario | Doble verificación: quien carga ≠ quien verifica. |
+| **Consulta** | Buscar producto y ver stock con desglose por sector/ubicación | Tres modos: por producto, por sector, ver todos. Export Excel (`consulta.ver`). Escaneo con cámara. |
+| **Retornos** | Cargar devoluciones **y** verificar las de otro usuario | Respeta config del servidor: doble verificación solo si `retornos_doble_verificacion` está on. |
 | **Roturas** | Registrar baja de stock con motivo | Descuento por reglas de sectores (prioridad + menor stock). |
-| **Movimientos internos** | Traslado entre sectores | Mismo modelo de líneas que en PC. |
+| **Movimientos internos** | Traslado entre sectores | Mismo modelo de líneas que en PC. Si `movimientos_doble_verificacion` está on, aplica verificación dual según config. |
 | **Inventario** | Conteo físico por sector, **dos personas en paralelo** | Ver [INVENTARIO.md](INVENTARIO.md). Supervisor opera desde PC. |
 
 ### También previsto en móvil (fase posterior)
@@ -148,7 +148,7 @@ Pensado para **usar con las manos en el depósito**, escaneando códigos con la 
 | Sectores / ubicaciones | Configuración |
 | Camioneros (ABM) | Configuración; en móvil solo **selector** al cargar planilla |
 | Usuarios y permisos | Administración |
-| Reportes completos / exportación | Escritorio |
+| Reportes completos / ABM admin | Escritorio (exports Excel de módulos operativos sí están en celular si hay `*.ver`) |
 | Crear/cerrar sesión de inventario | Supervisor en PC |
 
 *Ingresos en APK:* misma API que PC; evaluar en fase posterior si la operación lo requiere.
@@ -163,7 +163,7 @@ La APK **no** replica el menú completo de PC. Muestra solo lo que el usuario pu
 |--------|-------------------------|
 | **Operario de bodega** | Consulta, roturas, movimientos (según permiso) |
 | **Planillero** | Consulta, planillas |
-| **Verificador de retornos** | Consulta, retornos (verificar) |
+| **Verificador de retornos** | Consulta, retornos (verificar) — solo relevante si doble verificación está on |
 | **Cargador de retornos** | Consulta, retornos (cargar) |
 | **Contador de inventario** | Consulta (opcional), inventario → sectores asignados |
 | **Supervisor** | Principalmente PC; en celular solo consulta o vista de estado si hace falta |
@@ -180,9 +180,11 @@ Reglas transversales en APK:
 ## 7. Experiencia por módulo
 
 ### Consulta
+- Tres modos (igual que escritorio): **por producto**, **por sector**, **ver todos**.
 - Buscador + escaneo de código de barras.
 - Ver stock total y desglose por sector (y ubicación si aplica).
 - Ampliar imagen del producto.
+- **Exportar Excel** de stock por productos (`GET /api/consulta/export/stock-productos`, permiso `consulta.ver`).
 
 ### Ingresos (solo PC por ahora)
 
@@ -195,9 +197,9 @@ No incluido en la APK v1. Operación acordada:
 Si en el futuro hiciera falta cargar ingresos en el pasillo, la API ya existe; sería sumar pantalla móvil en una fase posterior.
 
 ### Retornos
-- **Cargar:** producto, cantidades, camionero, observación → estado pendiente de verificación.
-- **Verificar:** otro usuario revisa y confirma → suma stock.
-- Regla: el verificador **no** puede ser quien cargó.
+- **Cargar:** producto, cantidades, camionero, observación → estado pendiente de verificación (si la doble verificación está activa).
+- **Verificar:** otro usuario revisa y confirma → suma stock (solo si `retornos_doble_verificacion` está on).
+- Regla RN-U2 (`cargado_por` ≠ `verificado_por`): aplica **solo** con doble verificación activada en el servidor.
 
 ### Roturas
 - Producto, sector, desglose a descontar, motivo.
@@ -206,6 +208,7 @@ Si en el futuro hiciera falta cargar ingresos en el pasillo, la API ya existe; s
 ### Movimientos internos
 - Origen, destino, producto, desglose, observación.
 - Misma lógica de sectores y ubicaciones que en PC.
+- Respeta `movimientos_doble_verificacion` del servidor si está activada.
 
 ### Planillas
 - Camionero, vehículo, líneas de salida con desglose.
@@ -256,7 +259,7 @@ Eventos de inventario que justificarían WebSocket (fase posterior):
 
 Durante el conteo **no** se emiten las líneas del otro contador (independencia). Ver sección 13 de [INVENTARIO.md](INVENTARIO.md).
 
-**Prioridad sugerida:** primero APK con REST; WebSocket después si el polling molesta en operación.
+**Prioridad sugerida:** APK ya opera con REST; WebSocket después si el polling molesta en operación.
 
 ---
 
@@ -270,7 +273,8 @@ Durante el conteo **no** se emiten las líneas del otro contador (independencia)
 | Tiempo real | WebSocket opcional (fase posterior); v1 con polling |
 | Auth | JWT (igual que PC) |
 | Escaneo | Cámara del dispositivo (código de barras / QR conexión) |
-| Offline | No en v1 — requiere LAN al servidor |
+| Offline | **Inventario offline implementado** (paquete + conteo local + sync P2P/hotspot + import). Consulta/cola genérica offline: pendiente. Online requiere LAN al servidor. |
+| Iconos | Fuente: `build/icon.svg` → `npm run icons` genera desktop (`icon.png`/`icon.ico`) y mipmaps Android. `npm run cap:sync` = icons + `build:mobile` + `cap sync`. |
 | Imágenes productos | Servidas por API (`GET /api/productos/:id/imagen`) |
 | Distribución | APK firmada; instalación manual o enlace de descarga (release GitHub u otro) |
 | Actualizaciones APK | Pendiente (Play Store interna, descarga directa, etc.) |
@@ -294,25 +298,25 @@ Durante el conteo **no** se emiten las líneas del otro contador (independencia)
 
 Orden sugerido para ir sumando valor en bodega. **Sujeto a priorización** con el equipo.
 
-| Fase | Contenido | Objetivo |
-|------|-----------|----------|
-| **0** | Infra LAN: servidor en red, health check, QR de conexión (PC) | Que los celulares lleguen al API |
-| **1** | APK base: login, permisos, configurar IP, menú móvil vacío | App instalable y conectada |
-| **2** | **Consulta** | Primera pantalla útil; escaneo en pasillo |
-| **3** | **Roturas** | Bajas de stock en el momento en bodega |
-| **4** | **Retornos** | Flujo dual cargar / verificar |
-| **5** | **Movimientos internos + planillas** | Completar operación diaria en celular |
-| **6** | **Inventario** (conteo desde APK) | Módulo más exigente; polling o WebSocket |
-| **7** | WebSocket, pulido de escaneo, reportes móviles limitados | Mejora de UX y coordinación |
-| *—* | *Ingresos en APK* | *Fuera de v1; cargar en PC con remito. Evaluar después.* |
+| Fase | Contenido | Objetivo / estado |
+|------|-----------|-------------------|
+| **0** | Infra LAN: servidor en red, health check, QR de conexión (PC) | Hecho |
+| **1** | APK base: login, permisos, IP, menú | Hecho (Capacitor) |
+| **2** | **Consulta** (3 modos + export Excel) | Hecho |
+| **3** | **Roturas** | Hecho / en uso |
+| **4** | **Retornos** (según config doble verificación) | Hecho / en uso |
+| **5** | **Movimientos internos + planillas** | Movimientos en uso; planillas móvil a confirmar |
+| **6** | **Inventario** online + **offline** (paquete, P2P, import) | Flujo principal hecho; probar en 2 físicos |
+| **7** | WebSocket, pulido de escaneo, reportes móviles limitados | Pendiente / opcional |
+| *—* | *Ingresos en APK* | *Fuera de v1; cargar en PC con remito* |
 
 ### Alternativa histórica: “solo web antes de APK”
 
-Eso ya está **superado por la decisión de convivencia**:
+Eso ya está **superado**:
 
 1. UI web en `:3847` (desde v0.3.3) — login y operación en LAN.
-2. Probar con operarios reales (inventario incluido).
-3. Cuando se haga la APK (p. ej. Capacitor u otro stack), la **web sigue** como canal paralelo.
+2. APK Capacitor en el monorepo (`android/`) — convive con la web.
+3. Inventario offline en APK (paquete / P2P / import) — ver [INVENTARIO-OFFLINE-ESTADO.md](INVENTARIO-OFFLINE-ESTADO.md).
 
 ---
 

@@ -2084,27 +2084,31 @@ export function InventarioPage() {
 
     return (
       <div
-        className={cn(
-          'mx-auto space-y-4 p-4 md:p-6',
-          anchoCierre ? 'max-w-[88rem]' : 'max-w-5xl'
-        )}
+        className={cn('mx-auto space-y-6', anchoCierre ? 'max-w-[88rem]' : 'max-w-5xl')}
       >
-        <div className="space-y-3">
-          <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-            <Button
-              variant="ghost"
-              size="sm"
-              className="-ml-2 h-8 shrink-0 rounded-lg px-2"
-              onClick={() => {
-                setView('list')
-                setSesionDetalle(null)
-              }}
-            >
-              <ChevronLeft className="h-4 w-4" />
-              Volver
-            </Button>
-            <span className="hidden h-4 w-px bg-surface-border sm:block" aria-hidden />
-            <h1 className="min-w-0 text-base font-semibold text-slate-900 sm:text-lg">{s.nombre}</h1>
+        <Button
+          variant="ghost"
+          size="sm"
+          className="-ml-2 h-9 self-start rounded-xl px-3"
+          onClick={() => {
+            setView('list')
+            setSesionDetalle(null)
+          }}
+        >
+          <ChevronLeft className="h-4 w-4" />
+          Volver al listado
+        </Button>
+
+        <section className="space-y-3">
+          <div className="flex flex-wrap items-end justify-between gap-3">
+            <div className="min-w-0">
+              <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">
+                Inventario
+              </p>
+              <h1 className="mt-1 text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">
+                {s.nombre}
+              </h1>
+            </div>
             <Badge variant={estadoSesionBadgeVariant(s.estado)}>{estadoSesionLabel(s.estado)}</Badge>
           </div>
 
@@ -2124,7 +2128,7 @@ export function InventarioPage() {
               <RegistroDetalleObsChip>{s.observacion.trim()}</RegistroDetalleObsChip>
             )}
           </div>
-        </div>
+        </section>
 
         {error && (
           <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>
@@ -2256,19 +2260,26 @@ export function InventarioPage() {
   }
 
   return (
-    <div className="mx-auto max-w-5xl space-y-4 p-4 md:p-6">
-      <div className="flex flex-wrap items-center justify-between gap-3">
+    <div className="mx-auto max-w-5xl space-y-6">
+      <section className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <h1 className="text-xl font-semibold text-slate-800">Inventario</h1>
-          <p className="text-sm text-slate-500">Conteo físico con doble verificación</p>
+          <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">
+            Inventario
+          </p>
+          <h1 className="mt-1 text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">
+            Inventario
+          </h1>
+          <p className="mt-2 max-w-xl text-sm leading-relaxed text-slate-500">
+            Conteo físico con doble verificación
+          </p>
         </div>
         {canCreate && !activo && (
-          <Button onClick={() => setView('create')}>
+          <Button className="rounded-xl px-4" onClick={() => setView('create')}>
             <Plus className="h-4 w-4" />
             Nuevo inventario
           </Button>
         )}
-      </div>
+      </section>
 
       {error && (
         <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>
@@ -2539,26 +2550,25 @@ function CrearSesionForm({
   }
 
   return (
-    <div className="mx-auto max-w-3xl space-y-4 p-4 md:p-6">
-      <div className="space-y-1">
-        <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-          <Button
-            variant="ghost"
-            size="sm"
-            className="-ml-2 h-8 shrink-0 rounded-lg px-2"
-            onClick={onBack}
-            type="button"
-          >
-            <ChevronLeft className="h-4 w-4" />
-            Volver
-          </Button>
-          <span className="hidden h-4 w-px bg-surface-border sm:block" aria-hidden />
-          <h1 className="text-base font-semibold text-slate-900 sm:text-lg">Nuevo inventario</h1>
-        </div>
-        <p className="pl-0 text-sm text-slate-500 sm:pl-[4.5rem]">
+    <div className="mx-auto max-w-3xl space-y-6">
+      <Button
+        variant="ghost"
+        size="sm"
+        className="-ml-2 h-9 self-start rounded-xl px-3"
+        onClick={onBack}
+        type="button"
+      >
+        <ChevronLeft className="h-4 w-4" />
+        Volver al listado
+      </Button>
+
+      <section>
+        <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">Alta</p>
+        <h1 className="mt-1 text-2xl font-bold tracking-tight text-slate-900">Nuevo inventario</h1>
+        <p className="mt-1 text-sm text-slate-500">
           Definí el nombre, los sectores y los dos contadores de cada uno
         </p>
-      </div>
+      </section>
 
       {error && (
         <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">

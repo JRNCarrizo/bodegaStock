@@ -8,7 +8,7 @@ Ver también: [DESGLOSE-DE-CANTIDADES.md](DESGLOSE-DE-CANTIDADES.md) · [MODELO-
 
 ## 1. Propósito
 
-Realizar un **conteo físico** del stock en la bodega, sector por sector, con **dos personas contando en paralelo** desde el celular (**navegador web** y, cuando exista, **APK** — ambos canales conviven; ver [APP-MOVIL.md](APP-MOVIL.md)). Cada contador registra **líneas independientes** por ubicación/pila (pallet × unidades, pucherios sueltos).
+Realizar un **conteo físico** del stock en la bodega, sector por sector, con **dos personas contando en paralelo** desde el celular (**navegador web** o **APK** — ambos canales conviven; ver [APP-MOVIL.md](APP-MOVIL.md)). Cada contador registra **líneas independientes** por ubicación/pila (pallet × unidades, pucherios sueltos).
 
 El inventario cumple **dos funciones**:
 
@@ -602,7 +602,14 @@ Lista de movimientos `AJUSTE_INVENTARIO` generados.
 
 Desglose de cómo quedó cada producto en cada sector después del cierre.
 
-Exportación PDF/Excel: fase posterior; los datos deben persistirse desde v1.
+### Exportación Excel (implementado)
+
+`GET /api/inventario/sesiones/:id/export` — permiso `inventario.ver`.
+
+- Hojas: **Resumen** (metadatos de sesión + totales) y **Productos**.
+- Columnas Productos: Código interno, Nombre, Descripción, Sistema, Contado, Diferencia, Resultado + fila **TOTAL**.
+- Agregado por producto (sin sectorizar ni desglose de líneas).
+- Requiere sesión **cerrada** o todos los sectores en OK / con reporte persistido.
 
 ---
 
@@ -624,11 +631,18 @@ Durante el conteo **no** se emiten las líneas del otro contador (independencia)
 
 ## 14. Pantallas del supervisor (PC)
 
+### Listado de sesiones
+
+- Listado pulido de sesiones (estado, fechas, acciones).
+- Alta de sesión desde el listado.
+- En detalle: header con datos de la sesión y botón **Exportar** Excel (ver §12).
+
 ### Crear sesión
 
 - Nombre/fecha.
 - Selección de sectores (todos o parcial).
 - Asignación de 2 contadores por sector.
+- Modo ONLINE / OFFLINE por sector.
 - Botón "Iniciar inventario" (snapshot + bloqueo).
 
 ### Panel de sesión activa
@@ -645,6 +659,17 @@ Durante el conteo **no** se emiten las líneas del otro contador (independencia)
 - Confirmar ajustes.
 - Generar y guardar reporte.
 - Cerrar sesión → desbloqueo.
+- Exportar Excel de la sesión cuando corresponda (§12).
+
+### UX de conteo (online y offline) — v0.3.6
+
+Aplica a la UI de conteo con red y a la offline (misma UX; el flujo P2P/import no cambia):
+
+- Desglose de líneas **cerrado por defecto** (se despliega al editar).
+- Overlay al cargar/editar cantidad.
+- Auto-scroll al foco de la línea en edición.
+- Footer con total del producto y tono según estado.
+- Nombres de producto con scroll horizontal si no caben.
 
 ---
 

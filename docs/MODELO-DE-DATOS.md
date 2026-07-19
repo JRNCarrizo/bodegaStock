@@ -1,6 +1,7 @@
 # BodegaStock — Modelo de datos
 
-> Borrador conceptual. Se refinará al implementar el esquema SQL.
+> Esquema implementado en SQLite (ControlStock / BodegaStock **v0.3.7**).  
+> Describe las entidades persistidas en el servidor; las exportaciones Excel son agregaciones de consulta y **no** agregan tablas.
 
 ---
 
@@ -273,11 +274,12 @@ Cada módulo operativo tiene una cabecera con ítems.
 | camionero_id | FK → camioneros | |
 | planilla_id | FK → planillas | Opcional |
 | sector_destino_id | FK → sectores | |
-| estado | enum | `PENDIENTE`, `VERIFICADO`, `RECHAZADO` |
+| estado | enum | `PENDIENTE`, `VERIFICADO` |
 | cargado_por_id | FK → usuarios | |
 | verificado_por_id | FK → usuarios | Nullable hasta verificar |
 | observacion_carga | string | |
 | observacion_verificacion | string | |
+| ingreso_directo | INTEGER | DEFAULT 0. `1` si entró sin doble verificación (según `app_settings`) |
 | created_at | datetime | |
 | verificado_at | datetime | |
 
@@ -317,14 +319,18 @@ Cada módulo operativo tiene una cabecera con ítems.
 
 ### `movimientos_internos`
 
-| Campo | Tipo |
-|-------|------|
-| id | PK |
-| sector_origen_id | FK |
-| sector_destino_id | FK |
-| observacion | string |
-| usuario_id | FK |
-| created_at | datetime |
+| Campo | Tipo | Notas |
+|-------|------|-------|
+| id | PK | |
+| tipo | enum | `ENVIAR`, `RECIBIR` |
+| sector_origen_id | FK | |
+| sector_destino_id | FK | |
+| observacion | string | |
+| estado | enum | `PENDIENTE`, `COMPLETADO`, `CANCELADO` |
+| creado_por_id | FK → usuarios | Quién inició el movimiento |
+| recibido_por_id | FK → usuarios | Nullable hasta completar |
+| ingreso_directo | INTEGER | DEFAULT 0. `1` si se completó sin doble verificación |
+| created_at | datetime | |
 
 ### `movimiento_interno_items`
 
@@ -478,6 +484,20 @@ Job nocturno o cálculo bajo demanda al generar reportes.
 
 ---
 
+## Configuración
+
+### `app_settings`
+
+Configuración clave/valor de la aplicación (doble verificación y futuras opciones).
+
+| Campo | Tipo | Notas |
+|-------|------|-------|
+| clave | TEXT PK | ej. `retornos_doble_verificacion`, `movimientos_doble_verificacion` |
+| valor | TEXT | Para esas claves: `'1'` (activo) o `'0'` (inactivo) |
+| updated_at | TEXT | Timestamp de última modificación |
+
+---
+
 ## Notas de implementación
 
 1. **Transacciones:** confirmar documento + actualizar `stock_sector` + `stock_lineas` + insertar `movimientos` en una sola transacción DB.
@@ -487,3 +507,4 @@ Job nocturno o cálculo bajo demanda al generar reportes.
 5. **Imágenes:** guardar en filesystem; en DB solo la ruta. Servir vía API.
 6. **Soft delete:** preferir `activo = false` sobre borrar registros con historial.
 7. **Inventario:** al cerrar sesión, reemplazar `stock_lineas` por desglose contado + `AJUSTE_INVENTARIO` en una transacción; guardar snapshot inicial y reporte final.
+8. **Excel:** las exportaciones (consulta, ingresos, planillas, retornos, roturas, inventario) son consultas agregadas sobre tablas existentes; no hay entidades dedicadas a reportes Excel.

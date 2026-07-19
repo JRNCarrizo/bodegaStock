@@ -30,6 +30,8 @@ En **consulta, stock, ingresos, inventario, reportes y movimientos**, siempre mo
 
 Las líneas **no se suman ni fusionan en la interfaz**. Cada registro es independiente para facilitar ubicar errores.
 
+**Exportaciones Excel:** la UI conserva el desglose por línea; los Excel agregan por producto (totales), **sin** desglose de líneas. El export de inventario además va **sin** sectorizar (ver [INVENTARIO.md](INVENTARIO.md) §12).
+
 ---
 
 ## 3. Estructura de una línea de desglose

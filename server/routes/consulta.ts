@@ -177,6 +177,31 @@ export async function consultaRoutes(app: FastifyInstance): Promise<void> {
     return sendExcelFile(reply, buffer, `stock-productos-${todayFileStamp()}.xlsx`)
   })
 
+  app.get('/api/consulta/todos', {
+    preHandler: requirePermiso('consulta.ver')
+  }, async () => {
+    const db = getDb()
+    return db.prepare(`
+      SELECT
+        p.id, p.codigo_interno, p.codigo_barras, p.nombre, p.descripcion,
+        p.imagen_path, p.activo,
+        COALESCE((
+          SELECT SUM(ss.cantidad_total) FROM stock_sector ss WHERE ss.producto_id = p.id
+        ), 0) AS stock_total,
+        COALESCE((
+          SELECT COUNT(DISTINCT ss.sector_id)
+          FROM stock_sector ss
+          WHERE ss.producto_id = p.id AND ${STOCK_SECTOR_VISIBLE_SQL}
+        ), 0) AS sectores_con_stock
+      FROM productos p
+      WHERE p.activo = 1
+        AND COALESCE((
+          SELECT SUM(ss.cantidad_total) FROM stock_sector ss WHERE ss.producto_id = p.id
+        ), 0) > 0
+      ORDER BY p.codigo_interno COLLATE NOCASE ASC, p.nombre COLLATE NOCASE ASC
+    `).all()
+  })
+
   app.get('/api/consulta', {
     preHandler: requirePermiso('consulta.ver')
   }, async (request, reply) => {

@@ -9,7 +9,7 @@ on:
       version:
         description: 'Versión sin v (ej. 0.1.0)'
         required: true
-        default: '0.3.6'
+        default: '0.3.7'
 
 permissions:
   contents: write
@@ -68,18 +68,15 @@ jobs:
           body: |
             ## ControlStock ${{ steps.tag.outputs.name }}
 
-            Exportaciones Excel, verificación opcional y mejoras de inventario / productos.
+            Consulta «Ver todos», cabecera de inventario unificada y documentación al día.
 
             ### Nuevo
-            - **Export Excel** de ingresos, planillas, retornos, roturas del día, inventario y stock (consulta)
-            - **Plantilla e importación** de productos por Excel
-            - **Verificación opcional** (doble o ingreso directo) en retornos y movimientos internos
-            - Pie de copyright en Inicio y Configuración
+            - **Consulta → Ver todos:** listado de productos con stock > 0 y desglose por sector
+            - Endpoint `GET /api/consulta/todos`
 
             ### Mejorado
-            - Listados de inventario (sesiones y alta) más claros
-            - Export de inventario agregado por producto (sin desglose ni sectores)
-            - Ajustes de UI en consulta e inicio
+            - Cabecera de Inventario (listado, alta y detalle) alineada al resto de secciones
+            - Documentación actualizada (especificación, ficha técnica, modelo, móvil, permisos)
 
             ### Actualización
             - Desde **v0.2.7 o superior:** Configuración → Buscar actualizaciones

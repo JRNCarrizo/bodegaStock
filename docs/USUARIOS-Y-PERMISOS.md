@@ -76,12 +76,18 @@ Al crear un usuario se asigna un rol. Los permisos del rol se pueden ajustar ind
 | Regla | Descripción |
 |-------|-------------|
 | **RN-U1** | Usuario inactivo no puede iniciar sesión |
-| **RN-U2** | Retornos: `cargado_por` ≠ `verificado_por` (mismo usuario no puede verificar lo que cargó) |
+| **RN-U2** | Retornos: `cargado_por` ≠ `verificado_por` — solo aplica si `retornos_doble_verificacion` está **activado** en configuración |
 | **RN-U3** | Inventario: contador 1 ≠ contador 2 en el mismo sector |
-| **RN-U4** | Solo usuarios con `retornos.verificar` pueden verificar retornos |
+| **RN-U4** | Solo usuarios con `retornos.verificar` pueden verificar retornos (cuando la doble verificación está on) |
 | **RN-U5** | Solo usuarios con `inventario.crear_sesion` pueden crear sesiones de inventario |
 | **RN-U6** | Solo usuarios con `inventario.cerrar` pueden cerrar sesiones |
 | **RN-U7** | Cambios de permisos aplican en el próximo login (o invalidar token/sesión activa) |
+
+### Exportaciones Excel y otros permisos de operación
+
+- Los **exports Excel** de cada módulo usan el permiso `*.ver` de ese módulo (`consulta.ver`, `inventario.ver`, `planillas.ver`, `retornos.ver`, `roturas.ver`, etc.). **No** exigen necesariamente `reportes.exportar`.
+- Plantilla e importación masiva de productos: `productos.crear` (`GET /api/productos/plantilla`, import Excel).
+- Toggles de configuración (`retornos_doble_verificacion`, `movimientos_doble_verificacion`): **GET** abierto a autenticados; **PUT** solo **administrador**.
 
 ---
 
@@ -111,10 +117,10 @@ Al crear un usuario se asigna un rol. Los permisos del rol se pueden ajustar ind
 - Token JWT o sesión con expiración
 - Recordar sesión (opcional)
 
-### Móvil (APK)
-- Misma API de login
+### Móvil (APK — Capacitor, implementada)
+- Misma API de login (app Android en `android/`)
 - Token almacenado de forma segura en el dispositivo
-- Re-login si token expira o servidor reinicia
+- Re-login si token expira o servidor reinicia; login offline para inventario sin red al PC
 
 ### Endpoints previstos
 ```

@@ -34,4 +34,14 @@
   .scrollbar-thin::-webkit-scrollbar-thumb:hover {
     background-color: rgb(148 163 184 / 0.85);
   }
+
+  /** Scroll horizontal oculto (nombres de producto largos). */
+  .scrollbar-none-x {
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+
+  .scrollbar-none-x::-webkit-scrollbar {
+    display: none;
+  }
 }

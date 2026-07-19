@@ -34,6 +34,7 @@ import {
   RegistroDetalleMetaChip,
   RegistroDetalleObsChip
 } from '@/components/RegistroDetallePanel'
+import { ScrollableProductName } from '@/components/ScrollableProductName'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { Badge, Card, CardBody } from '@/components/ui/Card'
@@ -2851,6 +2852,7 @@ function ConteoSectorView({
 
   const productSearchRef = useRef<HTMLInputElement>(null)
   const productResultsListRef = useRef<HTMLUListElement>(null)
+  const pendingScrollProductoIdRef = useRef<number | null>(null)
   const tipoRef = useRef<HTMLSelectElement>(null)
   const cantidadBultosRef = useRef<HTMLInputElement>(null)
   const unidadesRef = useRef<HTMLInputElement>(null)
@@ -3093,11 +3095,6 @@ function ConteoSectorView({
     return map
   }, [referenciaReconteo])
 
-  useEffect(() => {
-    if (!enReconteo || !referenciaReconteo) return
-    setExpandedProductos(new Set(referenciaReconteo.diferencias.map((d) => d.producto_id)))
-  }, [enReconteo, referenciaReconteo?.ronda])
-
   const lineasPorProducto = useMemo(() => {
     const map = new Map<number, InventarioConteoLinea[]>()
     for (const l of misLineas) {
@@ -3224,13 +3221,25 @@ function ConteoSectorView({
           body: JSON.stringify(body)
         })
       }
-      setExpandedProductos((prev) => new Set(prev).add(productoId))
+      pendingScrollProductoIdRef.current = productoId
       setEditingLineaId(null)
       setSelectedProduct(null)
       setProductSearch('')
       setProductResults([])
       resetLineaForm()
       await loadSector({ silent: true })
+      requestAnimationFrame(() => {
+        const id = pendingScrollProductoIdRef.current
+        pendingScrollProductoIdRef.current = null
+        if (id) {
+          const el = listScrollRef.current?.querySelector(
+            `[data-producto-id="${id}"]`
+          ) as HTMLElement | null
+          el?.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
+        } else {
+          scrollListToBottom()
+        }
+      })
       setTimeout(() => productSearchRef.current?.focus(), 50)
       return true
     } catch (e) {
@@ -3343,7 +3352,11 @@ function ConteoSectorView({
         const ref = grupo.referencia
 
         return (
-          <div key={grupo.producto_id} className="border-b border-surface-border last:border-0">
+          <div
+            key={grupo.producto_id}
+            data-producto-id={grupo.producto_id}
+            className="border-b border-surface-border last:border-0"
+          >
             <div
               className={cn(
                 'flex items-center gap-3 px-4 py-3 transition-colors sm:px-5',
@@ -3376,7 +3389,9 @@ function ConteoSectorView({
                 <span className="inline-flex rounded-md bg-slate-100 px-2 py-0.5 font-mono text-xs font-semibold text-slate-700">
                   {grupo.codigo}
                 </span>
-                <p className="mt-1 truncate text-sm font-semibold text-slate-900">{grupo.nombre}</p>
+                <ScrollableProductName className="mt-1 text-sm font-semibold text-slate-900">
+                  {grupo.nombre}
+                </ScrollableProductName>
                 {!isExpanded && grupo.lineas.length > 1 && (
                   <p className="mt-0.5 text-xs text-slate-500">{grupo.lineas.length} líneas</p>
                 )}
@@ -3657,10 +3672,12 @@ function ConteoSectorView({
                           onMouseEnter={() => setProductHighlightIndex(index)}
                           onClick={() => selectProduct(p)}
                         >
-                          <span className="rounded bg-slate-100 px-1.5 py-0.5 font-mono text-xs font-semibold">
+                          <span className="shrink-0 rounded bg-slate-100 px-1.5 py-0.5 font-mono text-xs font-semibold">
                             {p.codigo_interno}
                           </span>
-                          <span className="truncate text-slate-600">{p.nombre}</span>
+                          <ScrollableProductName className="flex-1 text-slate-600">
+                            {p.nombre}
+                          </ScrollableProductName>
                         </button>
                       </li>
                     ))}
@@ -3674,10 +3691,16 @@ function ConteoSectorView({
             )}
 
             {selectedProduct && (
-              <div
-                ref={productLineFormRef}
-                className="overflow-hidden rounded-xl border border-brand-200 bg-gradient-to-br from-brand-50/80 to-white p-4 shadow-card"
-              >
+              <>
+                <div
+                  className="fixed inset-0 z-40 bg-slate-900/45"
+                  aria-hidden
+                  onClick={cancelarLineaForm}
+                />
+                <div
+                  ref={productLineFormRef}
+                  className="relative z-50 overflow-hidden rounded-xl border-2 border-brand-400 bg-white p-4 shadow-xl ring-4 ring-brand-500/20"
+                >
                 <div className="mb-4 flex items-center gap-3">
                   <ProductImage
                     productoId={selectedProduct.id}
@@ -3689,16 +3712,16 @@ function ConteoSectorView({
                     <p className="text-[11px] font-semibold uppercase tracking-wide text-brand-600">
                       {editingLineaId ? 'Editar línea' : 'Nueva línea'}
                     </p>
-                    <span className="inline-flex rounded-md bg-white px-2 py-0.5 font-mono text-xs font-semibold text-slate-700 ring-1 ring-surface-border">
+                    <span className="inline-flex rounded-md bg-slate-50 px-2 py-0.5 font-mono text-xs font-semibold text-slate-700 ring-1 ring-surface-border">
                       {selectedProduct.codigo_interno}
                     </span>
-                    <p className="mt-1 truncate text-sm font-semibold text-slate-900">
+                    <ScrollableProductName className="mt-1 text-sm font-semibold text-slate-900">
                       {selectedProduct.nombre}
-                    </p>
+                    </ScrollableProductName>
                   </div>
                   <button
                     type="button"
-                    className="rounded-lg p-1.5 text-slate-400 hover:bg-white hover:text-slate-600"
+                    className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
                     onClick={cancelarLineaForm}
                   >
                     <X className="h-4 w-4" />
@@ -3828,6 +3851,7 @@ function ConteoSectorView({
                   <span className="font-medium text-slate-600">Suelto:</span> solo unidades sueltas, sin bulto.
                 </p>
               </div>
+              </>
             )}
           </div>
         )}
@@ -3840,10 +3864,10 @@ function ConteoSectorView({
         {lineasListContent}
       </div>
 
-      <div className="shrink-0 border-t border-surface-border bg-white px-4 py-4 shadow-[0_-4px_12px_rgba(0,0,0,0.04)] sm:px-5">
+      <div className="shrink-0 border-t border-slate-200 bg-gradient-to-t from-slate-200/90 via-slate-100 to-slate-50 px-4 py-4 shadow-[0_-6px_16px_rgba(15,23,42,0.08)] sm:px-5">
         <div className="flex items-center justify-between gap-4">
           <div>
-            <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
               Total contado
             </p>
             <p className="text-lg font-bold tabular-nums text-brand-700 sm:text-2xl">{resumenGeneral}</p>

@@ -22,6 +22,7 @@ import { Share } from '@capacitor/share'
 import { Capacitor } from '@capacitor/core'
 import QRCode from 'qrcode'
 import { BarcodeScannerModal } from '@/components/BarcodeScannerModal'
+import { ScrollableProductName } from '@/components/ScrollableProductName'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { cn } from '@/lib/utils'
@@ -109,6 +110,9 @@ export function InventarioOfflinePage() {
   const sectorInvId = Number(rawId)
   const navigate = useNavigate()
   const productSearchRef = useRef<HTMLInputElement>(null)
+  const listScrollRef = useRef<HTMLDivElement>(null)
+  const productLineFormRef = useRef<HTMLDivElement>(null)
+  const pendingScrollProductoIdRef = useRef<number | null>(null)
 
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
@@ -308,6 +312,9 @@ export function InventarioOfflinePage() {
       setTipoBulto('PALLET')
       setUnidadesPorBulto(defaultUnidadesPorBulto('PALLET', p))
     }
+    requestAnimationFrame(() => {
+      productLineFormRef.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
+    })
   }
 
   function handleTipoBultoChange(tipo: TipoBultoOffline) {
@@ -412,9 +419,18 @@ export function InventarioOfflinePage() {
       const linea = editingLocalId
         ? await updateLineaOffline(sectorInvId, editingLocalId, input)
         : await addLineaOffline(sectorInvId, input)
-      setExpandedProductos((prev) => new Set(prev).add(linea.producto_id))
+      pendingScrollProductoIdRef.current = linea.producto_id
       cancelarLineaForm()
       await reload()
+      requestAnimationFrame(() => {
+        const id = pendingScrollProductoIdRef.current
+        pendingScrollProductoIdRef.current = null
+        if (!id) return
+        const el = listScrollRef.current?.querySelector(
+          `[data-producto-id="${id}"]`
+        ) as HTMLElement | null
+        el?.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
+      })
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error al guardar línea')
     } finally {
@@ -742,7 +758,11 @@ export function InventarioOfflinePage() {
         const isExpanded = expandedProductos.has(grupo.producto_id)
         const ref = grupo.referencia
         return (
-          <div key={grupo.producto_id} className="border-b border-surface-border last:border-0">
+          <div
+            key={grupo.producto_id}
+            data-producto-id={grupo.producto_id}
+            className="border-b border-surface-border last:border-0"
+          >
             <div
               className={cn(
                 'flex items-center gap-3 px-4 py-3 transition-colors sm:px-5',
@@ -769,7 +789,9 @@ export function InventarioOfflinePage() {
                 <span className="inline-flex rounded-md bg-slate-100 px-2 py-0.5 font-mono text-xs font-semibold text-slate-700">
                   {grupo.codigo}
                 </span>
-                <p className="mt-1 truncate text-sm font-semibold text-slate-900">{grupo.nombre}</p>
+                <ScrollableProductName className="mt-1 text-sm font-semibold text-slate-900">
+                  {grupo.nombre}
+                </ScrollableProductName>
                 {!isExpanded && grupo.lineas.length > 1 && (
                   <p className="mt-0.5 text-xs text-slate-500">{grupo.lineas.length} líneas</p>
                 )}
@@ -1184,10 +1206,12 @@ export function InventarioOfflinePage() {
                           className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-sm hover:bg-slate-50"
                           onClick={() => selectProduct(p)}
                         >
-                          <span className="rounded bg-slate-100 px-1.5 py-0.5 font-mono text-xs font-semibold">
+                          <span className="shrink-0 rounded bg-slate-100 px-1.5 py-0.5 font-mono text-xs font-semibold">
                             {p.codigo_interno}
                           </span>
-                          <span className="truncate text-slate-600">{p.nombre}</span>
+                          <ScrollableProductName className="flex-1 text-slate-600">
+                            {p.nombre}
+                          </ScrollableProductName>
                         </button>
                       </li>
                     ))}
@@ -1211,20 +1235,31 @@ export function InventarioOfflinePage() {
             </div>
 
             {selected && (
-              <div className="overflow-hidden rounded-xl border border-brand-200 bg-gradient-to-br from-brand-50/80 to-white p-4 shadow-card">
+              <>
+                <div
+                  className="fixed inset-0 z-40 bg-slate-900/45"
+                  aria-hidden
+                  onClick={cancelarLineaForm}
+                />
+                <div
+                  ref={productLineFormRef}
+                  className="relative z-50 overflow-hidden rounded-xl border-2 border-brand-400 bg-white p-4 shadow-xl ring-4 ring-brand-500/20"
+                >
                 <div className="mb-4 flex items-center gap-3">
                   <div className="min-w-0 flex-1">
                     <p className="text-[11px] font-semibold uppercase tracking-wide text-brand-600">
                       {editingLocalId ? 'Editar línea' : 'Nueva línea'}
                     </p>
-                    <span className="inline-flex rounded-md bg-white px-2 py-0.5 font-mono text-xs font-semibold text-slate-700 ring-1 ring-surface-border">
+                    <span className="inline-flex rounded-md bg-slate-50 px-2 py-0.5 font-mono text-xs font-semibold text-slate-700 ring-1 ring-surface-border">
                       {selected.codigo_interno}
                     </span>
-                    <p className="mt-1 truncate text-sm font-semibold text-slate-900">{selected.nombre}</p>
+                    <ScrollableProductName className="mt-1 text-sm font-semibold text-slate-900">
+                      {selected.nombre}
+                    </ScrollableProductName>
                   </div>
                   <button
                     type="button"
-                    className="rounded-lg p-1.5 text-slate-400 hover:bg-white hover:text-slate-600"
+                    className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
                     onClick={cancelarLineaForm}
                   >
                     <X className="h-4 w-4" />
@@ -1312,18 +1347,21 @@ export function InventarioOfflinePage() {
                     </Button>
                   </div>
                 </form>
-              </div>
+                </div>
+              </>
             )}
           </div>
         )}
       </div>
 
-      <div className="relative z-0 min-h-0 flex-1 overflow-y-auto bg-white">{lineasListContent}</div>
+      <div ref={listScrollRef} className="relative z-0 min-h-0 flex-1 overflow-y-auto bg-white">
+        {lineasListContent}
+      </div>
 
-      <div className="shrink-0 border-t border-surface-border bg-white px-4 py-4 shadow-[0_-4px_12px_rgba(0,0,0,0.04)] sm:px-5">
+      <div className="shrink-0 border-t border-slate-200 bg-gradient-to-t from-slate-200/90 via-slate-100 to-slate-50 px-4 py-4 shadow-[0_-6px_16px_rgba(15,23,42,0.08)] sm:px-5">
         <div className="flex items-center justify-between gap-4">
           <div>
-            <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
               Total contado
             </p>
             <p className="text-lg font-bold tabular-nums text-brand-700 sm:text-2xl">{resumenGeneral}</p>

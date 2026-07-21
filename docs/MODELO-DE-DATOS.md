@@ -1,6 +1,6 @@
 # BodegaStock — Modelo de datos
 
-> Esquema implementado en SQLite (ControlStock / BodegaStock **v0.3.10**).  
+> Esquema implementado en SQLite (ControlStock / BodegaStock **v0.3.11**).
 > Describe las entidades persistidas en el servidor; las exportaciones Excel son agregaciones de consulta y **no** agregan tablas.
 
 ---

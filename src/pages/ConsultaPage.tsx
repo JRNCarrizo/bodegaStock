@@ -14,6 +14,7 @@ import {
 import { BarcodeScannerModal } from '@/components/BarcodeScannerModal'
 import { ConsultaPorSectorPanel } from '@/components/ConsultaPorSectorPanel'
 import { ImagePreviewModal } from '@/components/ImagePreviewModal'
+import { PaginationControls } from '@/components/PaginationControls'
 import { ProductImage } from '@/components/ProductImage'
 import { ReorganizarStockForm } from '@/components/ReorganizarStockForm'
 import { formatCantidad } from '@/lib/desglose'
@@ -167,6 +168,8 @@ function StockDetallePanel({
 
 type ConsultaModo = 'producto' | 'sector' | 'todos'
 
+const CONSULTA_PAGE_SIZE = 50
+
 export function ConsultaPage() {
   const { hasPermiso } = useAuth()
   const canReorganizar = hasPermiso('ajustes.crear')
@@ -174,6 +177,8 @@ export function ConsultaPage() {
   const [sectorDetailOpen, setSectorDetailOpen] = useState(false)
   const [search, setSearch] = useState('')
   const [resultados, setResultados] = useState<ConsultaResumen[]>([])
+  const [todosPage, setTodosPage] = useState(1)
+  const [todosTotal, setTodosTotal] = useState(0)
   const [expandedId, setExpandedId] = useState<number | null>(null)
   const [detalleCache, setDetalleCache] = useState<Record<number, ConsultaDetalle>>({})
   const [loadingDetalleId, setLoadingDetalleId] = useState<number | null>(null)
@@ -196,12 +201,33 @@ export function ConsultaPage() {
 
   const expandedDetalle = expandedId != null ? detalleCache[expandedId] : undefined
 
-  const cargarTodos = useCallback(async () => {
+  const cargarTodos = useCallback(async (requestedPage = 1) => {
     setLoading(true)
     setError('')
     try {
-      const data = await api<ConsultaResumen[]>('/api/consulta/todos')
-      setResultados(data)
+      const data = await api<
+        | ConsultaResumen[]
+        | {
+            items: ConsultaResumen[]
+            total: number
+            page: number
+            page_size: number
+          }
+      >(
+        `/api/consulta/todos?page=${requestedPage}&limit=${CONSULTA_PAGE_SIZE}`
+      )
+      if (Array.isArray(data)) {
+        const totalPages = Math.max(1, Math.ceil(data.length / CONSULTA_PAGE_SIZE))
+        const currentPage = Math.min(requestedPage, totalPages)
+        const offset = (currentPage - 1) * CONSULTA_PAGE_SIZE
+        setResultados(data.slice(offset, offset + CONSULTA_PAGE_SIZE))
+        setTodosTotal(data.length)
+        setTodosPage(currentPage)
+      } else {
+        setResultados(data.items)
+        setTodosTotal(data.total)
+        setTodosPage(data.page)
+      }
       setExpandedId(null)
       setConfirmSectorId(null)
       setHighlightIndex(-1)
@@ -216,8 +242,8 @@ export function ConsultaPage() {
 
   useEffect(() => {
     if (modo !== 'todos') return
-    void cargarTodos()
-  }, [modo, cargarTodos])
+    void cargarTodos(todosPage)
+  }, [modo, todosPage, cargarTodos])
 
   async function exportarStockProductos() {
     setExporting(true)
@@ -501,6 +527,7 @@ export function ConsultaPage() {
               if (tab.id === 'todos') {
                 setSearch('')
                 setSectorDetailOpen(false)
+                setTodosPage(1)
               }
               if (tab.id === 'sector') {
                 setResultados([])
@@ -613,7 +640,7 @@ export function ConsultaPage() {
             }}
             className="min-w-0 flex-1 text-left"
           >
-            <span className="inline-flex rounded-md bg-slate-100 px-2 py-0.5 font-mono text-xs font-semibold text-slate-700">
+            <span className="font-mono text-sm font-bold tracking-wide text-brand-700">
               {p.codigo_interno}
             </span>
             <ScrollableProductName className="mt-1.5 text-sm font-semibold text-slate-900">
@@ -724,13 +751,13 @@ export function ConsultaPage() {
               <p className="text-xs text-slate-500">
                 {loading
                   ? 'Cargando productos...'
-                  : `${resultados.length} producto${resultados.length === 1 ? '' : 's'} con stock`}
+                  : `${todosTotal} producto${todosTotal === 1 ? '' : 's'} con stock`}
               </p>
             </div>
             {loading && <Loader2 className="h-5 w-5 shrink-0 animate-spin text-brand-600" />}
             {!loading && resultados.length > 0 && (
               <span className="rounded-full bg-brand-50 px-2.5 py-1 text-xs font-semibold text-brand-700 ring-1 ring-brand-100">
-                {resultados.length}
+                {todosTotal}
               </span>
             )}
           </div>
@@ -748,9 +775,22 @@ export function ConsultaPage() {
                 <p className="mt-4 text-sm font-medium text-slate-700">No hay productos con stock</p>
               </div>
             ) : (
-              <ul ref={resultadosListRef} className="divide-y divide-surface-border">
-                {resultados.map((p, index) => renderProductoListItem(p, index))}
-              </ul>
+              <>
+                <ul ref={resultadosListRef} className="divide-y divide-surface-border">
+                  {resultados.map((p, index) => renderProductoListItem(p, index))}
+                </ul>
+                <PaginationControls
+                  page={todosPage}
+                  pageSize={CONSULTA_PAGE_SIZE}
+                  total={todosTotal}
+                  disabled={loading}
+                  onPageChange={(nextPage) => {
+                    setExpandedId(null)
+                    setConfirmSectorId(null)
+                    setTodosPage(nextPage)
+                  }}
+                />
+              </>
             )}
           </CardBody>
         </Card>

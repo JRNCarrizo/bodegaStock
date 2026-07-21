@@ -8,6 +8,7 @@ import {
   ChevronRight,
   Download,
   Loader2,
+  MapPin,
   Package,
   Pencil,
   Plus,
@@ -121,6 +122,7 @@ export function InventarioOfflinePage() {
   const sectorInvId = Number(rawId)
   const navigate = useNavigate()
   const productSearchRef = useRef<HTMLInputElement>(null)
+  const ubicacionSelectRef = useRef<HTMLSelectElement>(null)
   const listScrollRef = useRef<HTMLDivElement>(null)
   const productLineFormRef = useRef<HTMLDivElement>(null)
   const pendingScrollProductoIdRef = useRef<number | null>(null)
@@ -162,6 +164,7 @@ export function InventarioOfflinePage() {
   const [cantidadBultos, setCantidadBultos] = useState('')
   const [unidadesPorBulto, setUnidadesPorBulto] = useState('')
   const [cantidadSuelta, setCantidadSuelta] = useState('')
+  const [ubicacionId, setUbicacionId] = useState('')
   const keyboardInset = useVisualViewportBottomInset()
 
   const reload = useCallback(async () => {
@@ -359,6 +362,13 @@ export function InventarioOfflinePage() {
   const puedeEditar = Boolean(paquete && estado && !estado.mi_finalizo)
   const enReconteo = (estado?.ronda_actual ?? 1) > 1
   const miRol = paquete?.inventario_sector.mi_rol
+  const usaUbicaciones = Boolean(
+    paquete?.inventario_sector.usa_ubicaciones && paquete.ubicaciones.length > 0
+  )
+  const ubicacionSeleccionada = useMemo(
+    () => paquete?.ubicaciones.find((u) => u.id === Number(ubicacionId)) ?? null,
+    [paquete, ubicacionId]
+  )
 
   function toggleProductoExpand(productoId: number) {
     setExpandedProductos((prev) => {
@@ -420,6 +430,11 @@ export function InventarioOfflinePage() {
     setSelected(prod)
     setProductSearch(prod.codigo_interno)
     setTipoBulto(l.tipo_bulto)
+    setUbicacionId(
+      l.ubicacion_id != null
+        ? String(l.ubicacion_id)
+        : String(paquete.ubicaciones.find((u) => u.nombre === l.ubicacion)?.id ?? '')
+    )
     if (l.tipo_bulto === 'SUELTO') {
       setCantidadBultos('')
       setUnidadesPorBulto('')
@@ -497,6 +512,11 @@ export function InventarioOfflinePage() {
   async function handleAddLinea(e?: React.FormEvent) {
     e?.preventDefault()
     if (!selected || !estado) return
+    if (usaUbicaciones && !ubicacionSeleccionada) {
+      setError('Seleccioná la ubicación dentro del sector')
+      ubicacionSelectRef.current?.focus()
+      return
+    }
     setBusy(true)
     setError('')
     try {
@@ -508,7 +528,9 @@ export function InventarioOfflinePage() {
         cantidad_suelta:
           tipoBulto === 'SUELTO'
             ? Number(cantidadSuelta) || 0
-            : Number(cantidadSuelta) || null
+            : Number(cantidadSuelta) || null,
+        ubicacion: ubicacionSeleccionada?.nombre ?? null,
+        ubicacion_id: ubicacionSeleccionada?.id ?? null
       }
       const linea = editingLocalId
         ? await updateLineaOffline(sectorInvId, editingLocalId, input)
@@ -1062,6 +1084,9 @@ export function InventarioOfflinePage() {
                       >
                         <div className="min-w-0 text-slate-800">
                           <span className="text-xs text-slate-400">{idx + 1}.</span> {l.etiqueta}
+                          {l.ubicacion && (
+                            <span className="ml-1.5 text-xs text-slate-500">({l.ubicacion})</span>
+                          )}
                         </div>
                         <div className="flex shrink-0 items-center gap-1">
                           <span className="rounded-md bg-slate-50 px-2 py-1 text-sm font-semibold tabular-nums text-slate-900 ring-1 ring-surface-border">
@@ -1437,6 +1462,38 @@ export function InventarioOfflinePage() {
 
         {puedeEditar && (
           <div className="space-y-3 overflow-visible p-4 sm:p-5">
+            {usaUbicaciones && (
+              <div>
+                <label className="mb-1 flex items-center gap-1.5 text-xs font-medium text-slate-600">
+                  <MapPin className="h-3.5 w-3.5 text-violet-500" />
+                  Ubicación dentro del sector
+                </label>
+                <select
+                  ref={ubicacionSelectRef}
+                  value={ubicacionId}
+                  onChange={(e) => {
+                    setUbicacionId(e.target.value)
+                    setError('')
+                    setTimeout(() => productSearchRef.current?.focus(), 50)
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault()
+                      productSearchRef.current?.focus()
+                    }
+                  }}
+                  className="w-full rounded-xl border border-surface-border bg-white px-3 py-2.5 text-sm shadow-sm focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20"
+                >
+                  <option value="">Seleccionar ubicación…</option>
+                  {paquete?.ubicaciones.map((ubicacion) => (
+                    <option key={ubicacion.id} value={ubicacion.id}>
+                      {ubicacion.nombre}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+
             <div className="flex items-start gap-2">
               <div className="relative z-30 min-w-0 flex-1">
                 <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-brand-400" />

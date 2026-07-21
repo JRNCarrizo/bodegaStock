@@ -9,7 +9,7 @@ on:
       version:
         description: 'Versión sin v (ej. 0.1.0)'
         required: true
-        default: '0.3.10'
+        default: '0.3.11'
 
 permissions:
   contents: write
@@ -68,14 +68,18 @@ jobs:
           body: |
             ## ControlStock ${{ steps.tag.outputs.name }}
 
-            Importación de productos más flexible y búsquedas operativas consistentes.
+            Mejoras de navegación, rendimiento y clasificación del conteo de inventario.
 
-            ### Nuevo
-            - Importación del formato logístico con **Código de producto** y **Descripción**
-            - Detección automática de encabezados aunque existan títulos previos en el Excel
+            ### Mejorado
+            - Paginación de los listados de **Productos** y **Consulta**
+            - Código interno de producto más visible y estado activo/inactivo junto a Editar
+            - Navegación por teclado en el listado de inventarios
+            - Nuevos sectores de inventario configurados como **Offline** por defecto
+            - Selector obligatorio de ubicación durante el conteo cuando el sector utiliza ubicaciones
 
             ### Corregido
-            - Los productos inactivos ya no aparecen en Consulta ni en el buscador del Inventario
+            - Se evita el parpadeo de sectores al actualizar el Inventario en la APK
+            - Compatibilidad entre frontend y servidor durante actualizaciones parciales
 
             ### Actualización
             - Desde **v0.2.7 o superior:** Configuración → Buscar actualizaciones

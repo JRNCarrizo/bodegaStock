@@ -179,15 +179,19 @@ export async function consultaRoutes(app: FastifyInstance): Promise<void> {
 
   app.get('/api/consulta/todos', {
     preHandler: requirePermiso('consulta.ver')
-  }, async () => {
+  }, async (request) => {
     const db = getDb()
-    return db.prepare(`
+    const { page, limit } = request.query as { page?: string; limit?: string }
+    const stockTotalSql = `
+      COALESCE((
+        SELECT SUM(ss.cantidad_total) FROM stock_sector ss WHERE ss.producto_id = p.id
+      ), 0)
+    `
+    const selectSql = `
       SELECT
         p.id, p.codigo_interno, p.codigo_barras, p.nombre, p.descripcion,
         p.imagen_path, p.activo,
-        COALESCE((
-          SELECT SUM(ss.cantidad_total) FROM stock_sector ss WHERE ss.producto_id = p.id
-        ), 0) AS stock_total,
+        ${stockTotalSql} AS stock_total,
         COALESCE((
           SELECT COUNT(DISTINCT ss.sector_id)
           FROM stock_sector ss
@@ -195,11 +199,34 @@ export async function consultaRoutes(app: FastifyInstance): Promise<void> {
         ), 0) AS sectores_con_stock
       FROM productos p
       WHERE p.activo = 1
-        AND COALESCE((
-          SELECT SUM(ss.cantidad_total) FROM stock_sector ss WHERE ss.producto_id = p.id
-        ), 0) > 0
+        AND ${stockTotalSql} > 0
       ORDER BY p.codigo_interno COLLATE NOCASE ASC, p.nombre COLLATE NOCASE ASC
-    `).all()
+    `
+
+    if (page == null) {
+      return db.prepare(selectSql).all()
+    }
+
+    const requestedPage = Math.max(1, Number.parseInt(page, 10) || 1)
+    const pageSize = Math.min(100, Math.max(1, Number.parseInt(limit ?? '50', 10) || 50))
+    const totalRow = db.prepare(`
+      SELECT COUNT(*) AS total
+      FROM productos p
+      WHERE p.activo = 1 AND ${stockTotalSql} > 0
+    `).get() as { total: number }
+    const total = Number(totalRow.total)
+    const totalPages = Math.max(1, Math.ceil(total / pageSize))
+    const currentPage = Math.min(requestedPage, totalPages)
+    const offset = (currentPage - 1) * pageSize
+    const items = db.prepare(`${selectSql} LIMIT ? OFFSET ?`).all(pageSize, offset)
+
+    return {
+      items,
+      total,
+      page: currentPage,
+      page_size: pageSize,
+      total_pages: totalPages
+    }
   })
 
   app.get('/api/consulta', {

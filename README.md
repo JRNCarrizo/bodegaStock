@@ -19,7 +19,7 @@ Toda la especificación del proyecto está en la carpeta [`docs/`](docs/):
 
 ## Estado del proyecto
 
-**v0.3.10** — Importación flexible de productos Excel y exclusión de productos inactivos en búsquedas operativas. Actualizaciones desde Configuración.
+**v0.3.11** — Listados paginados, navegación por teclado en Inventario, modo offline predeterminado y clasificación obligatoria por ubicación cuando corresponde. Actualizaciones desde Configuración.
 
 ## Desarrollo local
 

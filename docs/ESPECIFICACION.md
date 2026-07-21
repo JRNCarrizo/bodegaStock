@@ -1,6 +1,6 @@
 # BodegaStock — Especificación del proyecto
 
-> Documento vivo, alineado a la versión implementada **v0.3.10** (Electron + Fastify + SQLite + React + Capacitor Android).
+> Documento vivo, alineado a la versión implementada **v0.3.11** (Electron + Fastify + SQLite + React + Capacitor Android).
 
 ---
 
@@ -102,6 +102,8 @@ Alta y gestión del catálogo de productos.
 
 **Buscador dinámico:** en toda la app se puede buscar por código interno, código de barras o nombre con autocompletado.
 
+**Listado administrativo:** paginado en bloques de 50 productos; código interno destacado y estado activo/inactivo junto a la acción de edición.
+
 **Importación Excel:**
 - Plantilla: `GET /api/productos/plantilla`
 - Importar: `POST /api/productos/import` (permiso `productos.crear`)
@@ -119,6 +121,7 @@ Búsqueda y visualización de información de stock.
 - **Por producto** — buscador dinámico y detalle con desglose
 - **Por sector** — listado de productos/stock de un sector
 - **Ver todos** — catálogo con stock; solo productos con **stock > 0**
+- **Ver todos** utiliza paginación de 50 productos para mantener fluidez con catálogos grandes.
 
 **Funcionalidades:**
 - Buscar por **código interno**, código de barras, nombre o sector (buscador dinámico)
@@ -350,8 +353,8 @@ Conteo físico realizado por **dos personas** desde celulares (**navegador web**
 **Resumen:**
 1. Sesión con sectores (todos o parcial) y dos contadores por sector.
 2. Al iniciar: snapshot del stock + bloqueo global de movimientos.
-3. **Modo elegible por sector:** **con red** (celulares → PC) u **offline** (bajar catálogo en oficina → contar en depósito → sync P2P entre celulares al final → import al PC). El import principal es por red y sector por sector; existe archivo final validado como Plan B. Documentado en [INVENTARIO.md](INVENTARIO.md) y [INVENTARIO-OFFLINE-ESTADO.md](INVENTARIO-OFFLINE-ESTADO.md).
-4. Buscador dinámico o escaneo; líneas independientes (no se fusionan).
+3. **Modo elegible por sector:** **offline por defecto** (bajar catálogo en oficina → contar en depósito → sync P2P entre celulares al final → import al PC) o **con red** (celulares → PC). El import principal es por red y sector por sector; existe archivo final validado como Plan B. Documentado en [INVENTARIO.md](INVENTARIO.md) y [INVENTARIO-OFFLINE-ESTADO.md](INVENTARIO-OFFLINE-ESTADO.md).
+4. Buscador dinámico o escaneo; líneas independientes (no se fusionan). Si el sector tiene ubicaciones configuradas, el contador debe seleccionar una antes de guardar cada línea, tanto online como offline.
 5. Comparación A: contador vs contador al finalizar cada sector (en PC si online; entre celulares si offline); reconteo con referencia del desglose anterior.
 6. Comparación B: total contado vs sistema al cerrar (siempre en PC); detecta cantidad y reorganización entre sectores.
 7. Supervisor confirma → `stock_lineas` se alinea con lo contado + reporte antes/después.
@@ -360,6 +363,7 @@ Conteo físico realizado por **dos personas** desde celulares (**navegador web**
 
 **UX y robustez:**
 - Listado móvil con actualización automática/al recuperar foco y botón manual.
+- Navegación por teclado en PC: foco inicial en “Nuevo inventario”, flechas entre registros y apertura con Enter.
 - Panel de cantidades adaptado al teclado; tipografía y áreas táctiles ampliadas.
 - “Seguir editando” antes del sync y alta directa de líneas en cero durante reconteo.
 - Hotspot con actualización automática/manual de IP y QR.
@@ -422,7 +426,7 @@ Administración de cuentas y permisos. Ver documento: [USUARIOS-Y-PERMISOS.md](U
 
 ## 6. Fases de desarrollo
 
-Estado respecto a **v0.3.10**:
+Estado respecto a **v0.3.11**:
 
 ### Fase 1 — Base
 - [x] Proyecto Electron + servidor embebido (Fastify)

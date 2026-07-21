@@ -43,7 +43,7 @@ En la operación diaria es muy común mover mercadería entre sectores **sin reg
 
 Contadores pueden usar **web y/o APK** en la misma sesión. Ver [APP-MOVIL.md](APP-MOVIL.md).
 
-**Modo de conectividad del conteo:** se puede elegir **con red al PC** u **offline entre celulares** (alternativa cuando no hay WiFi en el depósito). Ver §3.1.
+**Modo de conectividad del conteo:** se puede elegir **con red al PC** u **offline entre celulares**; al crear un sector de inventario se propone **offline por defecto**. Ver §3.1.
 
 Supervisor siempre opera desde **PC (Electron)**.
 
@@ -678,6 +678,7 @@ Aplica a la UI de conteo con red y a la offline:
 - Footer con total del producto y tono según estado.
 - Nombres de producto con scroll horizontal si no caben.
 - Resultados del buscador con filas más altas, separación y mayor área táctil.
+- Si el sector tiene ubicaciones, el selector aparece sobre el buscador y es obligatorio elegir una antes de guardar cada línea, tanto online como offline.
 - **Seguir editando** después de finalizar, solo antes de la sincronización/comparación.
 - En reconteo, un producto sin líneas ofrece **Agregar línea** directamente (sin volver a buscarlo); los que ya tienen líneas ofrecen **Agregar otra línea**.
 - La lista de inventario del celular se refresca al volver a la app, al recuperar red, automáticamente (cada 5 s mientras espera) y mediante botón **Actualizar**.

@@ -50,26 +50,25 @@ export async function productosRoutes(app: FastifyInstance): Promise<void> {
   app.get('/api/productos', {
     preHandler: requirePermisoAny('productos.ver', 'inventario.contar')
   }, async (request) => {
-    const { q, activo } = request.query as { q?: string; activo?: string }
+    const { q, activo, page, limit } = request.query as {
+      q?: string
+      activo?: string
+      page?: string
+      limit?: string
+    }
     const db = getDb()
 
-    let sql = `
-      SELECT id, codigo_interno, codigo_barras, nombre, descripcion, imagen_path,
-             unidad, unidades_por_pallet_default, unidades_por_caja_default,
-             activo, created_at, updated_at
-      FROM productos
-      WHERE 1=1
-    `
+    let whereSql = ' WHERE 1=1'
     const params: unknown[] = []
 
     if (activo === '1') {
-      sql += ' AND activo = 1'
+      whereSql += ' AND activo = 1'
     } else if (activo === '0') {
-      sql += ' AND activo = 0'
+      whereSql += ' AND activo = 0'
     }
 
     if (q?.trim()) {
-      sql += ` AND (
+      whereSql += ` AND (
         codigo_interno LIKE ? OR
         codigo_barras LIKE ? OR
         nombre LIKE ?
@@ -78,9 +77,37 @@ export async function productosRoutes(app: FastifyInstance): Promise<void> {
       params.push(term, term, term)
     }
 
-    sql += ' ORDER BY nombre COLLATE NOCASE ASC'
+    const selectSql = `
+      SELECT id, codigo_interno, codigo_barras, nombre, descripcion, imagen_path,
+             unidad, unidades_por_pallet_default, unidades_por_caja_default,
+             activo, created_at, updated_at
+      FROM productos
+      ${whereSql}
+      ORDER BY nombre COLLATE NOCASE ASC
+    `
 
-    return db.prepare(sql).all(...params)
+    if (page == null) {
+      return db.prepare(selectSql).all(...params)
+    }
+
+    const requestedPage = Math.max(1, Number.parseInt(page, 10) || 1)
+    const pageSize = Math.min(100, Math.max(1, Number.parseInt(limit ?? '50', 10) || 50))
+    const totalRow = db.prepare(`SELECT COUNT(*) AS total FROM productos ${whereSql}`).get(
+      ...params
+    ) as { total: number }
+    const total = Number(totalRow.total)
+    const totalPages = Math.max(1, Math.ceil(total / pageSize))
+    const currentPage = Math.min(requestedPage, totalPages)
+    const offset = (currentPage - 1) * pageSize
+    const items = db.prepare(`${selectSql} LIMIT ? OFFSET ?`).all(...params, pageSize, offset)
+
+    return {
+      items,
+      total,
+      page: currentPage,
+      page_size: pageSize,
+      total_pages: totalPages
+    }
   })
 
   app.get('/api/productos/generar-codigos', {

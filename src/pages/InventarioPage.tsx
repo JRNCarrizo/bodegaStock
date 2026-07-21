@@ -64,9 +64,11 @@ import type {
   SectorUbicacion
 } from '@/types'
 import { useAuth } from '@/context/AuthContext'
+import { useSidebarNav } from '@/context/SidebarNavContext'
 import { listLocalMisSectores, reconcileOfflineConServidor } from '@/lib/inventarioOffline'
 import { useInventarioActivo } from '@/context/InventarioActivoContext'
 import { INVENTARIO_POLL_MS, usePolling } from '@/hooks/usePolling'
+import { focusAndScrollIntoView } from '@/lib/scroll'
 import {
   scrollFocusedFieldIntoSheet,
   useVisualViewportBottomInset
@@ -1815,6 +1817,7 @@ function InventarioVistaPreviaCierre({
 
 export function InventarioPage() {
   const { hasPermiso, user, offlineSession } = useAuth()
+  const { registerMainContentFocus } = useSidebarNav()
   const navigate = useNavigate()
   const { sectorInvId } = useParams<{ sectorInvId?: string }>()
 
@@ -1840,8 +1843,52 @@ export function InventarioPage() {
   const [importingFileSectorId, setImportingFileSectorId] = useState<number | null>(null)
   const manualImportInputRef = useRef<HTMLInputElement>(null)
   const manualImportSectorIdRef = useRef<number | null>(null)
+  const newInventoryButtonRef = useRef<HTMLButtonElement>(null)
+  const sessionButtonRefs = useRef<Array<HTMLButtonElement | null>>([])
 
   const [misSectores, setMisSectores] = useState<InventarioMisSector[]>([])
+  const misSectoresRequestIdRef = useRef(0)
+
+  const focusInventoryPrimaryAction = useCallback(() => {
+    if (view !== 'list') return false
+    const target =
+      newInventoryButtonRef.current ??
+      sessionButtonRefs.current.find((button): button is HTMLButtonElement => button != null)
+    if (!target) return false
+    focusAndScrollIntoView(target)
+    return true
+  }, [view])
+
+  useEffect(() => {
+    return registerMainContentFocus(focusInventoryPrimaryAction)
+  }, [registerMainContentFocus, focusInventoryPrimaryAction])
+
+  function focusSessionButton(index: number) {
+    const target = sessionButtonRefs.current[index]
+    if (target) focusAndScrollIntoView(target)
+  }
+
+  function handleNewInventoryKeyDown(e: React.KeyboardEvent<HTMLButtonElement>) {
+    if (e.key !== 'ArrowDown' || sesiones.length === 0) return
+    e.preventDefault()
+    focusSessionButton(0)
+  }
+
+  function handleSessionKeyDown(e: React.KeyboardEvent<HTMLButtonElement>, index: number) {
+    if (e.key === 'ArrowDown') {
+      e.preventDefault()
+      focusSessionButton(Math.min(index + 1, sesiones.length - 1))
+      return
+    }
+    if (e.key === 'ArrowUp') {
+      e.preventDefault()
+      if (index === 0 && newInventoryButtonRef.current) {
+        focusAndScrollIntoView(newInventoryButtonRef.current)
+      } else {
+        focusSessionButton(Math.max(index - 1, 0))
+      }
+    }
+  }
 
   const mapLocalSectores = useCallback(async (): Promise<InventarioMisSector[]> => {
     const localRaw = await listLocalMisSectores(user?.id)
@@ -1855,10 +1902,10 @@ export function InventarioPage() {
 
   const loadMisSectores = useCallback(async () => {
     if (!canCount) return
+    const requestId = ++misSectoresRequestIdRef.current
 
     const local = await mapLocalSectores()
-    // Pintar ya lo local (modo depósito sin PC)
-    if (local.length > 0) setMisSectores(local)
+    if (requestId !== misSectoresRequestIdRef.current) return
 
     const skipRemote =
       offlineSession || (typeof navigator !== 'undefined' && navigator.onLine === false)
@@ -1867,15 +1914,22 @@ export function InventarioPage() {
       return
     }
 
+    // Con red, usar lo local solo durante la carga inicial. No reemplazar una
+    // respuesta remota visible porque produce parpadeos entre ambos estados.
+    setMisSectores((current) => (current.length === 0 && local.length > 0 ? local : current))
+
     try {
       const mis = await api<{ sectores: InventarioMisSector[] }>('/api/inventario/mis-sectores', {
         timeoutMs: 3000
       })
+      if (requestId !== misSectoresRequestIdRef.current) return
       // Sesión cancelada u otros sectores ya no activos en el PC → limpiar paquetes locales
       await reconcileOfflineConServidor(mis.sectores.map((s) => s.id))
+      if (requestId !== misSectoresRequestIdRef.current) return
       setMisSectores(mis.sectores)
     } catch {
-      setMisSectores(local)
+      if (requestId !== misSectoresRequestIdRef.current) return
+      setMisSectores((current) => (current.length > 0 ? current : local))
     }
   }, [canCount, mapLocalSectores, offlineSession])
 
@@ -1883,11 +1937,7 @@ export function InventarioPage() {
     if (!options?.silent) setLoading(true)
     setError('')
     try {
-      // Primero lo local: la lista no debe esperar al PC
-      if (canCount) {
-        const local = await mapLocalSectores()
-        setMisSectores(local)
-      }
+      await loadMisSectores()
 
       const skipRemote =
         offlineSession || (typeof navigator !== 'undefined' && navigator.onLine === false)
@@ -1915,7 +1965,6 @@ export function InventarioPage() {
       } catch {
         /* ok offline */
       }
-      await loadMisSectores()
     } catch (e) {
       if (!options?.silent) {
         setError(e instanceof Error ? e.message : 'Error al cargar inventario')
@@ -1928,7 +1977,6 @@ export function InventarioPage() {
     canManageInventario,
     refreshInventarioActivo,
     loadMisSectores,
-    mapLocalSectores,
     offlineSession
   ])
 
@@ -2419,7 +2467,12 @@ export function InventarioPage() {
             </Button>
           )}
           {canCreate && !activo && (
-            <Button className="rounded-xl px-4" onClick={() => setView('create')}>
+            <Button
+              ref={newInventoryButtonRef}
+              className="rounded-xl px-4"
+              onClick={() => setView('create')}
+              onKeyDown={handleNewInventoryKeyDown}
+            >
               <Plus className="h-4 w-4" />
               Nuevo inventario
             </Button>
@@ -2541,7 +2594,7 @@ export function InventarioPage() {
         ) : (
           <div className="scrollbar-thin max-h-[28rem] overflow-y-auto overscroll-contain">
             <ul className="divide-y divide-surface-border">
-              {sesiones.map((ses) => {
+              {sesiones.map((ses, index) => {
                 const progresoPct =
                   ses.sectores_total > 0
                     ? Math.round((ses.sectores_ok / ses.sectores_total) * 100)
@@ -2550,10 +2603,14 @@ export function InventarioPage() {
                 return (
                   <li key={ses.id}>
                     <button
+                      ref={(node) => {
+                        sessionButtonRefs.current[index] = node
+                      }}
                       type="button"
                       onClick={() => void loadSesion(ses.id)}
+                      onKeyDown={(e) => handleSessionKeyDown(e, index)}
                       className={cn(
-                        'flex w-full items-center gap-3 px-4 py-4 text-left transition-colors hover:bg-slate-50 sm:gap-4 sm:px-5',
+                        'flex w-full items-center gap-3 px-4 py-4 text-left transition-colors hover:bg-slate-50 focus-visible:bg-brand-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-brand-500 sm:gap-4 sm:px-5',
                         activa && 'bg-slate-50'
                       )}
                     >
@@ -2651,6 +2708,14 @@ function CrearSesionForm({
   >({})
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
+  const nombreInputRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      if (nombreInputRef.current) focusAndScrollIntoView(nombreInputRef.current)
+    }, 50)
+    return () => window.clearTimeout(timer)
+  }, [])
 
   useEffect(() => {
     void (async () => {
@@ -2676,6 +2741,7 @@ function CrearSesionForm({
     e.preventDefault()
     if (!nombre.trim()) {
       setError('Nombre requerido')
+      focusAndScrollIntoView(nombreInputRef.current)
       return
     }
     const sectoresBody = [...selectedSectorIds].map((sector_id) => {
@@ -2684,7 +2750,7 @@ function CrearSesionForm({
         sector_id,
         contador_1_id: a?.c1 ?? 0,
         contador_2_id: a?.c2 ?? 0,
-        modo_conectividad: (a?.modo ?? 'ONLINE') as 'ONLINE' | 'OFFLINE'
+        modo_conectividad: (a?.modo ?? 'OFFLINE') as 'ONLINE' | 'OFFLINE'
       }
     })
     if (sectoresBody.length === 0) {
@@ -2751,6 +2817,7 @@ function CrearSesionForm({
           </div>
           <div className="px-4 py-4 sm:px-5">
             <Input
+              ref={nombreInputRef}
               label="Nombre"
               value={nombre}
               onChange={(e) => setNombre(e.target.value)}
@@ -2784,7 +2851,7 @@ function CrearSesionForm({
               {sectores.map((sec) => {
                 const selected = selectedSectorIds.has(sec.id)
                 const asig = asignaciones[sec.id]
-                const modo = asig?.modo ?? 'ONLINE'
+                const modo = asig?.modo ?? 'OFFLINE'
                 return (
                   <li
                     key={sec.id}
@@ -2849,7 +2916,7 @@ function CrearSesionForm({
                                   [sec.id]: {
                                     c1: Number(e.target.value),
                                     c2: prev[sec.id]?.c2 ?? 0,
-                                    modo: prev[sec.id]?.modo ?? 'ONLINE'
+                                    modo: prev[sec.id]?.modo ?? 'OFFLINE'
                                   }
                                 }))
                               }
@@ -2876,7 +2943,7 @@ function CrearSesionForm({
                                   [sec.id]: {
                                     c1: prev[sec.id]?.c1 ?? 0,
                                     c2: Number(e.target.value),
-                                    modo: prev[sec.id]?.modo ?? 'ONLINE'
+                                    modo: prev[sec.id]?.modo ?? 'OFFLINE'
                                   }
                                 }))
                               }
@@ -3347,6 +3414,11 @@ function ConteoSectorView({
   async function agregarLinea(): Promise<boolean> {
     if (!selectedProduct) {
       setError('Seleccioná un producto primero')
+      return false
+    }
+    if (usaUbicaciones && !ubicacionSeleccionada) {
+      setError('Seleccioná la ubicación dentro del sector')
+      ubicacionSelectRef.current?.focus()
       return false
     }
 

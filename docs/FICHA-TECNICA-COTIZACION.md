@@ -1,7 +1,7 @@
 # ControlStock (BodegaStock) — Ficha técnica para cotización
 
 > **Documento pensado para terceros e IAs.**  
-> Describí el sistema tal como está construido (julio 2026, **v0.3.10**).  
+> Describí el sistema tal como está construido (julio 2026, **v0.3.11**).
 > Podés pegar este archivo completo en ChatGPT / Claude / Gemini y pedir una cotización independiente de desarrollo o de licencia.
 
 **Nombre comercial:** ControlStock  
@@ -137,7 +137,7 @@ No es un prototipo de una sola pantalla: es un sistema multi-módulo con reglas 
 
 ### Administración y catálogo
 
-- **Productos:** alta/edición, código interno, código de barras (manual / escaneo / generación), activo/inactivo, impresión de códigos; **plantilla Excel** + **importación masiva flexible** (también reconoce listados logísticos con títulos previos y columnas `Código de producto` / `Descripción`).
+- **Productos:** alta/edición, código interno destacado, código de barras (manual / escaneo / generación), activo/inactivo, impresión de códigos; listado paginado; **plantilla Excel** + **importación masiva flexible** (también reconoce listados logísticos con títulos previos y columnas `Código de producto` / `Descripción`).
 - **Sectores:** estructura de bodega / zonas de stock.
 - **Usuarios y permisos:** roles y permisos granulares por módulo.
 - **Camioneros:** padrón para planillas / salidas.
@@ -146,7 +146,7 @@ No es un prototipo de una sola pantalla: es un sistema multi-módulo con reglas 
 
 ### Consulta de stock
 
-- Vistas: **Por producto**, **Por sector**, **Ver todos** (solo productos con stock > 0).
+- Vistas: **Por producto**, **Por sector**, **Ver todos** (solo productos con stock > 0, listado paginado).
 - Búsqueda por código/nombre; stock por sector; desglose pallet/caja/suelto.
 - **Export Excel** del stock agregado por producto.
 
@@ -185,11 +185,12 @@ En roturas se agrega observación; en inventario el listado va **agregado por pr
 - Comparación contado vs stock del sistema (cierre supervisado).
 - **Export Excel** de la sesión.
 - Pulido de UI y UX de conteo: desglose cerrado por defecto, formulario adaptado al teclado móvil, tipografía/áreas táctiles ampliadas, scroll controlado y footer de acciones.
+- Clasificación obligatoria por ubicación cuando el sector utiliza ubicaciones.
 
 #### Inventario OFFLINE (implementado de punta a punta)
 Diseñado para depósitos **sin WiFi al PC**:
 
-1. PC crea sesión y marca sectores en modo `OFFLINE`.
+1. PC crea sesión; los sectores nuevos quedan en modo `OFFLINE` por defecto.
 2. En oficina, cada celular **descarga un paquete** (catálogo + asignación + datos de sesión).
 3. En depósito, cuentan **sin red al PC** (storage local: Filesystem + Preferences).
 4. Al finalizar, sincronizan **entre sí por hotspot** (HTTP local, QR con actualización automática de IP, reintentos).
@@ -316,7 +317,7 @@ No inventes módulos que no estén en la ficha. Basate solo en lo documentado.
 
 ## 12. Estado del producto (honestidad comercial)
 
-**Estado:** sistema operativo en uso de desarrollo/pruebas de campo (**v0.3.10**), con flujo principal de inventario offline **implementado de punta a punta** (descarga → conteo → sync P2P → comparación → reconteo → import confirmado al PC).
+**Estado:** sistema operativo en uso de desarrollo/pruebas de campo (**v0.3.11**), con flujo principal de inventario offline **implementado de punta a punta** (descarga → conteo → sync P2P → comparación → reconteo → import confirmado al PC).
 
 **Entregado en el estado actual:** exportaciones Excel operativas, importación de productos por plantilla, doble verificación opcional y mejoras de inventario: actualización automática del listado, formulario adaptado al teclado, reconteo más directo, edición previa al sync, QR/IP de hotspot autorrefrescable, estado de recepción en PC y archivo final Plan B.
 
@@ -324,4 +325,4 @@ No inventes módulos que no estén en la ficha. Basate solo en lo documentado.
 
 ---
 
-*Documento generado para evaluación y cotización independiente — ControlStock / BodegaStock **v0.3.10** — julio 2026.*
+*Documento generado para evaluación y cotización independiente — ControlStock / BodegaStock **v0.3.11** — julio 2026.*

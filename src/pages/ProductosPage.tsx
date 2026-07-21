@@ -26,6 +26,7 @@ import { useEscHandler } from '@/hooks/useEscHandler'
 import { useRegistroListKeyboard } from '@/hooks/useRegistroListKeyboard'
 import { focusAndScrollIntoView } from '@/lib/scroll'
 import { ImagePreviewModal } from '@/components/ImagePreviewModal'
+import { PaginationControls } from '@/components/PaginationControls'
 import { ProductImage } from '@/components/ProductImage'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
@@ -42,9 +43,13 @@ const emptyForm = (): ProductoForm => ({
   activo: true
 })
 
+const PRODUCTS_PAGE_SIZE = 50
+
 export function ProductosPage() {
   const { hasPermiso } = useAuth()
   const [productos, setProductos] = useState<Producto[]>([])
+  const [page, setPage] = useState(1)
+  const [total, setTotal] = useState(0)
   const [search, setSearch] = useState('')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -170,7 +175,7 @@ export function ProductosPage() {
         timeoutMs: 60000
       })
       setImportResult(result)
-      await load(search)
+      await load(search, page)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error al importar productos')
     } finally {
@@ -179,14 +184,35 @@ export function ProductosPage() {
     }
   }
 
-  const load = useCallback(async (q?: string) => {
+  const load = useCallback(async (q?: string, requestedPage = 1) => {
     setLoading(true)
     setError('')
     try {
       const params = new URLSearchParams()
       if (q?.trim()) params.set('q', q.trim())
-      const data = await api<Producto[]>(`/api/productos?${params}`)
-      setProductos(data)
+      params.set('page', String(requestedPage))
+      params.set('limit', String(PRODUCTS_PAGE_SIZE))
+      const data = await api<
+        | Producto[]
+        | {
+            items: Producto[]
+            total: number
+            page: number
+            page_size: number
+          }
+      >(`/api/productos?${params}`)
+      if (Array.isArray(data)) {
+        const totalPages = Math.max(1, Math.ceil(data.length / PRODUCTS_PAGE_SIZE))
+        const currentPage = Math.min(requestedPage, totalPages)
+        const offset = (currentPage - 1) * PRODUCTS_PAGE_SIZE
+        setProductos(data.slice(offset, offset + PRODUCTS_PAGE_SIZE))
+        setTotal(data.length)
+        setPage(currentPage)
+      } else {
+        setProductos(data.items)
+        setTotal(data.total)
+        setPage(data.page)
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error al cargar productos')
     } finally {
@@ -201,9 +227,9 @@ export function ProductosPage() {
   }, [view])
 
   useEffect(() => {
-    const timer = setTimeout(() => load(search), 300)
+    const timer = setTimeout(() => load(search, page), 300)
     return () => clearTimeout(timer)
-  }, [search, load])
+  }, [search, page, load])
 
   function resetFormFields() {
     setForm(emptyForm())
@@ -335,7 +361,7 @@ export function ProductosPage() {
         })
       }
       volverAlListado()
-      await load(search)
+      await load(search, page)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error al guardar')
     } finally {
@@ -758,7 +784,7 @@ export function ProductosPage() {
             <div>
               <h2 className="text-sm font-semibold text-slate-900">Listado del catálogo</h2>
               <p className="text-xs text-slate-500">
-                {loading ? 'Cargando productos...' : `${productos.length} producto(s)`}
+                {loading ? 'Cargando productos...' : `${total} producto(s)`}
               </p>
             </div>
             <div className="relative w-full sm:max-w-xs">
@@ -768,7 +794,10 @@ export function ProductosPage() {
                 type="search"
                 placeholder="Buscar por código, barras o nombre..."
                 value={search}
-                onChange={(e) => setSearch(e.target.value)}
+                onChange={(e) => {
+                  setSearch(e.target.value)
+                  setPage(1)
+                }}
                 onKeyDown={registroListKb.handleListSearchKeyDown}
                 className="w-full rounded-xl border border-surface-border bg-white py-2.5 pl-10 pr-4 text-sm shadow-sm focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20"
               />
@@ -807,15 +836,16 @@ export function ProductosPage() {
               )}
             </div>
           ) : (
-            <ul className="divide-y divide-surface-border">
-              {productos.map((p, index) => (
-                <li
-                  key={p.id}
-                  {...registroListKb.listItemProps(
-                    index,
-                    'flex flex-col gap-3 px-4 py-4 transition-colors hover:bg-slate-50/80 sm:flex-row sm:items-center sm:gap-4 sm:px-6'
-                  )}
-                >
+            <>
+              <ul className="divide-y divide-surface-border">
+                {productos.map((p, index) => (
+                  <li
+                    key={p.id}
+                    {...registroListKb.listItemProps(
+                      index,
+                      'flex flex-col gap-3 px-4 py-4 transition-colors hover:bg-slate-50/80 sm:flex-row sm:items-center sm:gap-4 sm:px-6'
+                    )}
+                  >
                   <div className="flex min-w-0 flex-1 items-center gap-3">
                     <ProductImage
                       productoId={p.id}
@@ -833,12 +863,9 @@ export function ProductosPage() {
                     />
                     <div className="min-w-0 flex-1">
                       <div className="flex flex-wrap items-center gap-2">
-                        <span className="inline-flex rounded-md bg-slate-100 px-2 py-0.5 font-mono text-xs font-semibold text-slate-700">
+                        <span className="font-mono text-sm font-bold tracking-wide text-brand-700">
                           {p.codigo_interno}
                         </span>
-                        <Badge variant={p.activo ? 'success' : 'muted'}>
-                          {p.activo ? 'Activo' : 'Inactivo'}
-                        </Badge>
                       </div>
                       <p className="mt-1.5 font-semibold text-slate-900">{p.nombre}</p>
                       {p.descripcion && (
@@ -854,6 +881,9 @@ export function ProductosPage() {
                   </div>
 
                   <div className="flex shrink-0 items-center gap-1 sm:justify-end">
+                    <Badge variant={p.activo ? 'success' : 'muted'}>
+                      {p.activo ? 'Activo' : 'Inactivo'}
+                    </Badge>
                     {p.codigo_barras && (
                       <Button
                         variant="ghost"
@@ -883,9 +913,17 @@ export function ProductosPage() {
                       </Button>
                     )}
                   </div>
-                </li>
-              ))}
-            </ul>
+                  </li>
+                ))}
+              </ul>
+              <PaginationControls
+                page={page}
+                pageSize={PRODUCTS_PAGE_SIZE}
+                total={total}
+                disabled={loading}
+                onPageChange={setPage}
+              />
+            </>
           )}
         </CardBody>
       </Card>

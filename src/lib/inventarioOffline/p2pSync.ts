@@ -45,6 +45,11 @@ async function respondJson(
 /**
  * Un celular activa hotspot y corre el servidor.
  * El compañero se conecta a esa red y llama a `syncConHost`.
+ *
+ * Importante: la IP del QR se toma al iniciar. Si el hotspot todavía no está
+ * activo, el plugin suele devolver la IP de la WiFi de oficina (no alcanzable
+ * para el compañero). Usá `refreshP2PHostInfo` para actualizar cuando el
+ * hotspot ya esté prendido.
  */
 export async function startP2PHost(
   sectorInvId: number,
@@ -148,12 +153,30 @@ export async function startP2PHost(
     }
   })
 
+  return toHostInfo(result)
+}
+
+/**
+ * Relee la IP LAN sin reiniciar el servidor (útil cuando el hotspot se activó
+ * después de haber generado el QR).
+ */
+export async function refreshP2PHostInfo(): Promise<P2PHostInfo | null> {
+  if (!Capacitor.isNativePlatform() || hostSectorId == null) return null
+  try {
+    // Si el server ya corre, start() solo vuelve a resolver localIp().
+    const result = await HttpServer.start({ port: P2P_PORT })
+    return toHostInfo(result)
+  } catch {
+    return null
+  }
+}
+
+function toHostInfo(result: { localIp?: string; port?: number; url?: string }): P2PHostInfo {
   // Si no hay IP LAN (hotspot aún no activo), igual escuchamos el puerto.
   // El cliente suele usar 192.168.43.1 (gateway típico del hotspot Android).
   const localIp = result.localIp || '192.168.43.1'
   const port = result.port || P2P_PORT
   const url = result.url || `http://${localIp}:${port}`
-
   return { url, localIp, port }
 }
 

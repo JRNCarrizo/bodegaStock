@@ -17,6 +17,7 @@ import {
 import type {
   OfflineEstadoLocal,
   OfflineLinea,
+  OfflinePcImportPackage,
   OfflinePaquete,
   OfflineSyncPayload
 } from './types'
@@ -183,6 +184,25 @@ export async function deleteLineaOffline(sectorInvId: number, localId: string): 
 export async function finalizarMiRonda(sectorInvId: number): Promise<OfflineEstadoLocal> {
   const estado = await ensureEstado(sectorInvId)
   estado.mi_finalizo = true
+  await saveEstado(estado)
+  return estado
+}
+
+/**
+ * Antes de sincronizar con el compañero: desmarcar mi finalización y volver a editar.
+ * No aplica si el compañero ya entregó su conteo.
+ */
+export async function reabrirMiConteoAntesDeSync(
+  sectorInvId: number
+): Promise<OfflineEstadoLocal> {
+  const estado = await ensureEstado(sectorInvId)
+  if (!estado.mi_finalizo) return estado
+  if (estado.companero_finalizo) {
+    throw new Error(
+      'El compañero ya sincronizó su conteo. No se puede reabrir; usá reconteo si hay diferencias.'
+    )
+  }
+  estado.mi_finalizo = false
   await saveEstado(estado)
   return estado
 }
@@ -367,6 +387,64 @@ export async function iniciarReconteoLocal(sectorInvId: number): Promise<Offline
   return estado
 }
 
+async function sha256Hex(value: string): Promise<string> {
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(value))
+  return Array.from(new Uint8Array(digest))
+    .map((byte) => byte.toString(16).padStart(2, '0'))
+    .join('')
+}
+
+/** Paquete final de contingencia para llevar manualmente a la PC. */
+export async function crearPaqueteImportacionPc(
+  sectorInvId: number
+): Promise<OfflinePcImportPackage> {
+  const paquete = await loadPaquete(sectorInvId)
+  const estado = await loadEstado(sectorInvId)
+  if (!paquete || !estado) throw new Error('No hay datos offline')
+  if (!estado.mi_finalizo || !estado.companero_finalizo) {
+    throw new Error('Ambos deben finalizar y sincronizar antes de generar el archivo para la PC')
+  }
+  if (isSyncCompaneroIncompleto(estado)) {
+    throw new Error('La sincronización con el compañero está incompleta')
+  }
+  const comparacion = getComparacionActual(paquete, estado)
+  if (!comparacion?.coincide) {
+    throw new Error('Todavía hay diferencias; completen el reconteo antes de generar el archivo')
+  }
+
+  const misSonC1 = paquete.inventario_sector.mi_rol === 1
+  const lineas1 = misSonC1 ? estado.mis_lineas : estado.lineas_companero
+  const lineas2 = misSonC1 ? estado.lineas_companero : estado.mis_lineas
+  const contenido = {
+    sesion_id: paquete.sesion.id,
+    inventario_sector_id: sectorInvId,
+    sector_id: paquete.inventario_sector.sector_id,
+    ronda_actual: estado.ronda_actual,
+    contador_1_id: paquete.inventario_sector.contador_1_id,
+    contador_2_id: paquete.inventario_sector.contador_2_id,
+    generado_at: new Date().toISOString(),
+    lineas: [...lineas1, ...lineas2].map((linea) => ({
+      producto_id: linea.producto_id,
+      contador_id: linea.contador_id,
+      ronda: linea.ronda,
+      tipo_bulto: linea.tipo_bulto,
+      cantidad_bultos: linea.cantidad_bultos,
+      unidades_por_bulto: linea.unidades_por_bulto,
+      cantidad_suelta: linea.cantidad_suelta,
+      ubicacion: linea.ubicacion,
+      ubicacion_id: linea.ubicacion_id,
+      orden: linea.orden
+    }))
+  }
+
+  return {
+    formato: 'controlstock-inventario-offline-pc',
+    version: 1,
+    contenido,
+    checksum_sha256: await sha256Hex(JSON.stringify(contenido))
+  }
+}
+
 export async function importarAlPc(sectorInvId: number) {
   const paquete = await loadPaquete(sectorInvId)
   const estado = await loadEstado(sectorInvId)
@@ -387,7 +465,15 @@ export async function importarAlPc(sectorInvId: number) {
   const lineas2 = misSonC1 ? estado.lineas_companero : estado.mis_lineas
   const todas = [...lineas1, ...lineas2]
 
-  // 1) Enviar al PC (no borramos nada local hasta confirmar)
+  // 1) Avisar a la PC para que su vista muestre "Recibiendo conteo…".
+  await api(`/api/inventario/sectores/${sectorInvId}/iniciar-importacion-offline`, {
+    method: 'POST',
+    timeoutMs: 15000
+  })
+  // Da tiempo a que el polling corto de la pantalla de supervisión vea el estado.
+  await new Promise((resolve) => setTimeout(resolve, 1200))
+
+  // 2) Enviar al PC (no borramos nada local hasta confirmar)
   const result = await api<{
     ok?: boolean
     sector?: { importado_at?: string | null }
@@ -413,7 +499,7 @@ export async function importarAlPc(sectorInvId: number) {
     })
   })
 
-  // 2) Releer el sector en el PC: solo si confirmó importado_at borramos el conteo activo
+  // 3) Releer el sector en el PC: solo si confirmó importado_at borramos el conteo activo
   const check = await api<{ sector: { importado_at?: string | null; estado?: string } }>(
     `/api/inventario/sectores/${sectorInvId}`,
     { timeoutMs: 15000 }
@@ -426,7 +512,7 @@ export async function importarAlPc(sectorInvId: number) {
     )
   }
 
-  // 3) Respaldo fuera de la carpeta del sector (por si hace falta recuperar)
+  // 4) Respaldo fuera de la carpeta del sector (por si hace falta recuperar)
   await saveImportBackup(sectorInvId, {
     paquete,
     estado,
@@ -434,7 +520,7 @@ export async function importarAlPc(sectorInvId: number) {
     lineas_enviadas: todas.length
   })
 
-  // 4) Recién ahora liberar el paquete de trabajo
+  // 5) Recién ahora liberar el paquete de trabajo
   await clearOfflineSectorLocal(sectorInvId)
   return { ...result, confirmado_at: confirmadoAt, lineas_enviadas: todas.length }
 }

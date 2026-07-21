@@ -101,3 +101,32 @@ export interface OfflineSyncPayload {
   lineas: OfflineLinea[]
   enviado_at: string
 }
+
+export interface OfflinePcImportContent {
+  sesion_id: number
+  inventario_sector_id: number
+  sector_id: number
+  ronda_actual: number
+  contador_1_id: number
+  contador_2_id: number
+  generado_at: string
+  lineas: Array<{
+    producto_id: number
+    contador_id: number
+    ronda: number
+    tipo_bulto: TipoBultoOffline
+    cantidad_bultos: number | null
+    unidades_por_bulto: number | null
+    cantidad_suelta: number | null
+    ubicacion: string | null
+    ubicacion_id: number | null
+    orden: number
+  }>
+}
+
+export interface OfflinePcImportPackage {
+  formato: 'controlstock-inventario-offline-pc'
+  version: 1
+  contenido: OfflinePcImportContent
+  checksum_sha256: string
+}

@@ -9,7 +9,7 @@ on:
       version:
         description: 'Versión sin v (ej. 0.1.0)'
         required: true
-        default: '0.3.7'
+        default: '0.3.8'
 
 permissions:
   contents: write
@@ -68,15 +68,20 @@ jobs:
           body: |
             ## ControlStock ${{ steps.tag.outputs.name }}
 
-            Consulta «Ver todos», cabecera de inventario unificada y documentación al día.
+            Mejoras de robustez y usabilidad del inventario online/offline.
 
             ### Nuevo
-            - **Consulta → Ver todos:** listado de productos con stock > 0 y desglose por sector
-            - Endpoint `GET /api/consulta/todos`
+            - **Seguir editando** antes de sincronizar con el compañero
+            - Alta directa de líneas en cero durante el reconteo
+            - Estado **Recibiendo conteo** visible en la PC
+            - Archivo final validado como Plan B para importar el sector en la PC
 
             ### Mejorado
-            - Cabecera de Inventario (listado, alta y detalle) alineada al resto de secciones
-            - Documentación actualizada (especificación, ficha técnica, modelo, móvil, permisos)
+            - Formulario de cantidades adaptado al teclado móvil
+            - Buscador con filas más grandes y mejor área táctil
+            - Actualización automática/manual de sectores asignados
+            - IP y QR del hotspot con refresco automático
+            - Bloqueo de reapertura para sectores ya importados
 
             ### Actualización
             - Desde **v0.2.7 o superior:** Configuración → Buscar actualizaciones

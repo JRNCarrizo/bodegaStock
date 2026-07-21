@@ -1,7 +1,7 @@
 # ControlStock (BodegaStock) — Ficha técnica para cotización
 
 > **Documento pensado para terceros e IAs.**  
-> Describí el sistema tal como está construido (julio 2026, **v0.3.7**).  
+> Describí el sistema tal como está construido (julio 2026, **v0.3.8**).  
 > Podés pegar este archivo completo en ChatGPT / Claude / Gemini y pedir una cotización independiente de desarrollo o de licencia.
 
 **Nombre comercial:** ControlStock  
@@ -184,7 +184,7 @@ En roturas se agrega observación; en inventario el listado va **agregado por pr
 - Finalización, comparación entre contadores, reconteo, cierre.
 - Comparación contado vs stock del sistema (cierre supervisado).
 - **Export Excel** de la sesión.
-- Pulido de UI y UX de conteo: desglose cerrado por defecto, formulario en overlay, scroll controlado y footer de acciones.
+- Pulido de UI y UX de conteo: desglose cerrado por defecto, formulario adaptado al teclado móvil, tipografía/áreas táctiles ampliadas, scroll controlado y footer de acciones.
 
 #### Inventario OFFLINE (implementado de punta a punta)
 Diseñado para depósitos **sin WiFi al PC**:
@@ -192,16 +192,19 @@ Diseñado para depósitos **sin WiFi al PC**:
 1. PC crea sesión y marca sectores en modo `OFFLINE`.
 2. En oficina, cada celular **descarga un paquete** (catálogo + asignación + datos de sesión).
 3. En depósito, cuentan **sin red al PC** (storage local: Filesystem + Preferences).
-4. Al finalizar, sincronizan **entre sí por hotspot** (HTTP local, QR de conexión, reintentos).
+4. Al finalizar, sincronizan **entre sí por hotspot** (HTTP local, QR con actualización automática de IP, reintentos).
 5. **Comparación A** en el celular (contador 1 vs 2).
-6. Si hay diferencias → **reconteo local** (solo productos en diferencia) + nueva sync.
-7. Si coinciden → **importación al PC** con confirmación (`importado_at`) y respaldo local previo a borrar el paquete de trabajo.
-8. En PC → **Comparación B** vs sistema y cierre de sesión.
+6. Si hay diferencias → **reconteo local** (solo productos en diferencia, alta directa de líneas en cero) + nueva sync.
+7. Antes de sincronizar se puede **seguir editando**; después de la comparación, toda corrección usa reconteo.
+8. Si coinciden → **importación al PC** con confirmación (`importado_at`) y respaldo local previo a borrar el paquete de trabajo.
+9. Durante la transferencia, la PC muestra **Recibiendo conteo…** en vivo.
+10. Plan B: generar archivo final con checksum en el celular e importarlo manualmente en la fila del sector de la PC.
+11. En PC → **Comparación B** vs sistema y cierre de sesión.
 
 Extras de robustez offline:
 - Login offline con credenciales cacheadas.
 - Limpieza de paquetes de sesiones canceladas al reconectar con el PC.
-- Respaldo JSON como contingencia (secundario al P2P).
+- Respaldo JSON como contingencia entre celulares y paquete final validado hacia la PC (ambos secundarios al flujo por red).
 - Escáner de barras/QR en conteo y en login (IP del PC).
 
 ---
@@ -249,7 +252,7 @@ Usá estas señales para estimar (no son horas facturadas del autor; son hechos 
 | Frontend amplio | ~16 pantallas/páginas principales + componentes de dominio |
 | Dominio de negocio no trivial | Stock por sector, ledger, desglose pallet/caja/suelto, dobles controles configurables |
 | Inventario dual | Dos contadores, rondas, comparación, reconteo |
-| Inventario offline real | Paquete local, P2P HTTP hotspot, comparación A, import con confirmación, reconteo offline |
+| Inventario offline real | Paquete local, P2P HTTP hotspot, comparación A, reconteo, import con confirmación/estado en PC y archivo final Plan B |
 | Excel | Exportaciones operativas + plantilla/import de productos |
 | Empaquetado | Instalador NSIS + pipeline de APK Android |
 | Documentación de producto | Varios documentos en `docs/` (especificación, inventario, móvil, datos, permisos) |
@@ -313,12 +316,12 @@ No inventes módulos que no estén en la ficha. Basate solo en lo documentado.
 
 ## 12. Estado del producto (honestidad comercial)
 
-**Estado:** sistema operativo en uso de desarrollo/pruebas de campo (**v0.3.7**), con flujo principal de inventario offline **implementado de punta a punta** (descarga → conteo → sync P2P → comparación → reconteo → import confirmado al PC).
+**Estado:** sistema operativo en uso de desarrollo/pruebas de campo (**v0.3.8**), con flujo principal de inventario offline **implementado de punta a punta** (descarga → conteo → sync P2P → comparación → reconteo → import confirmado al PC).
 
-**Entregado en esta versión:** exportaciones Excel operativas, importación de productos por plantilla, doble verificación opcional en retornos y movimientos internos, y pulido de UX de inventario / consulta.
+**Entregado en el estado actual:** exportaciones Excel operativas, importación de productos por plantilla, doble verificación opcional y mejoras de inventario: actualización automática del listado, formulario adaptado al teclado, reconteo más directo, edición previa al sync, QR/IP de hotspot autorrefrescable, estado de recepción en PC y archivo final Plan B.
 
 **Pendientes normales de producto maduro:** pruebas de campo intensivas, eventual iOS, mejoras visuales adicionales, posibles módulos futuros según cliente.
 
 ---
 
-*Documento generado para evaluación y cotización independiente — ControlStock / BodegaStock **v0.3.7** — julio 2026.*
+*Documento generado para evaluación y cotización independiente — ControlStock / BodegaStock **v0.3.8** — julio 2026.*

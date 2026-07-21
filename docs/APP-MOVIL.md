@@ -221,6 +221,12 @@ Si en el futuro hiciera falta cargar ingresos en el pasillo, la API ya existe; s
 - Carga líneas con desglose por ubicación; **no se fusionan** (mismo producto dos veces = dos filas).
 - Al cerrar sector por ambos: **Comparación A** (en PC si online; entre celulares si offline).
 - Si hay diferencia: **reconteo** con desglose anterior como referencia.
+- Antes de sincronizar, **Seguir editando** permite corregir el conteo propio; una vez sincronizado, las correcciones pasan por reconteo.
+- En reconteo, los productos sin líneas ofrecen **Agregar línea** directamente.
+- El panel de cantidades se adapta al teclado móvil y el buscador usa filas amplias para reducir errores táctiles.
+- La IP/QR del host se actualiza automáticamente al activarse el hotspot (con refresco manual disponible).
+- Import principal por red, sector por sector; **archivo final para PC** como Plan B, generado solo si ambos conteos coinciden.
+- La PC muestra **Recibiendo conteo…** durante la transferencia y bloquea reabrir/descargar sectores ya importados.
 - Cierre global y Comparación B vs sistema: **solo supervisor en PC**.
 - Mientras `EN_PROGRESO`: **bloqueo global** de movimientos.
 - Ver [INVENTARIO.md](INVENTARIO.md) en detalle.
@@ -245,7 +251,7 @@ Referencia: [USUARIOS-Y-PERMISOS.md](USUARIOS-Y-PERMISOS.md).
 | Roturas / movimientos | No | REST al guardar |
 | Ingresos | — | Solo PC (no APK v1) |
 | Retornos | Útil (aviso de pendientes de verificar) | Polling o refresh al entrar |
-| Inventario | **Útil** (compañero finalizó, comparación lista) | Polling cada 5–10 s en sesión activa |
+| Inventario | **Útil** (compañero finalizó, comparación lista) | Polling; lista en espera cada 5 s y detalle supervisor cada 1 s durante sesión activa |
 | Planillas | No | REST al guardar |
 
 Eventos de inventario que justificarían WebSocket (fase posterior):
@@ -273,7 +279,7 @@ Durante el conteo **no** se emiten las líneas del otro contador (independencia)
 | Tiempo real | WebSocket opcional (fase posterior); v1 con polling |
 | Auth | JWT (igual que PC) |
 | Escaneo | Cámara del dispositivo (código de barras / QR conexión) |
-| Offline | **Inventario offline implementado** (paquete + conteo local + sync P2P/hotspot + import). Consulta/cola genérica offline: pendiente. Online requiere LAN al servidor. |
+| Offline | **Inventario offline implementado** (paquete + conteo local + sync P2P/hotspot + import por red + archivo final Plan B). Consulta/cola genérica offline: pendiente. Online requiere LAN al servidor. |
 | Iconos | Fuente: `build/icon.svg` → `npm run icons` genera desktop (`icon.png`/`icon.ico`) y mipmaps Android. `npm run cap:sync` = icons + `build:mobile` + `cap sync`. |
 | Imágenes productos | Servidas por API (`GET /api/productos/:id/imagen`) |
 | Distribución | APK firmada; instalación manual o enlace de descarga (release GitHub u otro) |

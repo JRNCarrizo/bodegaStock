@@ -214,6 +214,52 @@ export function assertSectorFinalizable(
   }
 }
 
+/** Volver a editar el propio conteo solo si el compañero aún no finalizó. */
+export function reabrirConteoPropio(
+  db: Database.Database,
+  inventarioSectorId: number,
+  userId: number
+): { ok: true; estado: string } {
+  const { rol, sector } = assertContadorEnSector(db, inventarioSectorId, userId)
+
+  if (String(sector.modo_conectividad ?? 'ONLINE') === 'OFFLINE') {
+    throw new Error(
+      'Este sector es offline: el conteo se reabre desde la APK antes de sincronizar.'
+    )
+  }
+
+  const estado = String(sector.estado)
+  if (estado === 'CERRADO_OK' || estado === 'CON_DIFERENCIAS') {
+    throw new Error(
+      'El sector ya se comparó entre contadores. Si hay que corregir, usá el reconteo.'
+    )
+  }
+
+  const miFinalizo = rol === 1 ? Number(sector.contador_1_finalizo) : Number(sector.contador_2_finalizo)
+  const otroFinalizo = rol === 1 ? Number(sector.contador_2_finalizo) : Number(sector.contador_1_finalizo)
+
+  if (!miFinalizo) {
+    throw new Error('Todavía no finalizaste; ya podés editar el conteo')
+  }
+  if (otroFinalizo) {
+    throw new Error(
+      'Tu compañero ya finalizó. No se puede reabrir el conteo; esperá la comparación o el reconteo.'
+    )
+  }
+
+  const col = rol === 1 ? 'contador_1_finalizo' : 'contador_2_finalizo'
+  db.prepare(
+    `
+    UPDATE inventario_sectores
+    SET ${col} = 0,
+        estado = 'EN_CONTEO'
+    WHERE id = ?
+  `
+  ).run(inventarioSectorId)
+
+  return { ok: true, estado: 'EN_CONTEO' }
+}
+
 function lineasDelContador(
   db: Database.Database,
   inventarioSectorId: number,

@@ -698,6 +698,10 @@ export interface InventarioSectorResumen {
   modo_conectividad?: ModoConectividadInventario
   paquete_descargado_at?: string | null
   importado_at?: string | null
+  importacion_offline?: {
+    activa: boolean
+    iniciada_at: string | null
+  }
 }
 
 export interface InventarioSesionDetalle {

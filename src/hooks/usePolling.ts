@@ -18,6 +18,8 @@ export function usePolling(
       void callbackRef.current()
     }
 
+    // Disparar al habilitar (si no, hay que esperar todo el intervalo).
+    tick()
     const id = setInterval(tick, intervalMs)
     return () => clearInterval(id)
   }, [enabled, intervalMs])

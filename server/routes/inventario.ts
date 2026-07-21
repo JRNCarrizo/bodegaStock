@@ -22,6 +22,7 @@ import {
   getInventarioSector,
   iniciarReconteoSector,
   mapConteoLinea,
+  reabrirConteoPropio,
   validarYCalcularLinea,
   type ConteoLineaInput,
   type CierreDecisionInput
@@ -29,7 +30,12 @@ import {
 import {
   assertNoConteoOnlineEnOffline,
   buildPaqueteOffline,
+  getImportacionOfflineActiva,
   importarConteoOffline,
+  limpiarImportacionOfflineActiva,
+  marcarImportacionOfflineActiva,
+  validarPaqueteImportacionPc,
+  type ImportarOfflineArchivoBody,
   type ImportarOfflineBody,
   type ModoConectividadInventario
 } from '../utils/inventario-offline'
@@ -234,7 +240,8 @@ export async function inventarioRoutes(app: FastifyInstance): Promise<void> {
           contador_2_finalizo: Boolean(s.contador_2_finalizo),
           modo_conectividad: String(s.modo_conectividad ?? 'ONLINE') === 'OFFLINE' ? 'OFFLINE' : 'ONLINE',
           paquete_descargado_at: (s.paquete_descargado_at as string | null) ?? null,
-          importado_at: (s.importado_at as string | null) ?? null
+          importado_at: (s.importado_at as string | null) ?? null,
+          importacion_offline: getImportacionOfflineActiva(Number(s.id))
         })),
         reporte: reporte
           ? {
@@ -848,6 +855,19 @@ export async function inventarioRoutes(app: FastifyInstance): Promise<void> {
   )
 
   app.post<{ Params: { id: string } }>(
+    '/api/inventario/sectores/:id/reabrir-conteo',
+    { preHandler: requirePermiso('inventario.contar') },
+    async (req, reply) => {
+      const db = getDb()
+      try {
+        return reabrirConteoPropio(db, Number(req.params.id), req.user!.id)
+      } catch (e) {
+        return reply.status(400).send({ error: (e as Error).message })
+      }
+    }
+  )
+
+  app.post<{ Params: { id: string } }>(
     '/api/inventario/sectores/:id/reconteo',
     { preHandler: requirePermiso('inventario.contar') },
     async (req, reply) => {
@@ -897,6 +917,52 @@ export async function inventarioRoutes(app: FastifyInstance): Promise<void> {
           inventarioSectorId,
           req.body ?? { ronda_actual: 1, lineas: [] }
         )
+      } catch (e) {
+        return reply.status(400).send({ error: (e as Error).message })
+      } finally {
+        limpiarImportacionOfflineActiva(inventarioSectorId)
+      }
+    }
+  )
+
+  app.post<{ Params: { id: string } }>(
+    '/api/inventario/sectores/:id/iniciar-importacion-offline',
+    { preHandler: requirePermisoAny('inventario.contar', 'inventario.supervisar') },
+    async (req, reply) => {
+      const db = getDb()
+      const inventarioSectorId = Number(req.params.id)
+      try {
+        const sector = getInventarioSector(db, inventarioSectorId)
+        if (String(sector.modo_conectividad ?? 'ONLINE') !== 'OFFLINE') {
+          throw new Error('Este sector no está en modo offline')
+        }
+        try {
+          assertContadorEnSector(db, inventarioSectorId, req.user!.id)
+        } catch {
+          if (!req.user!.permisos.includes('inventario.supervisar')) {
+            throw new Error('No estás asignado como contador en este sector')
+          }
+        }
+        if (sector.importado_at || String(sector.estado) === 'CERRADO_OK') {
+          throw new Error('Este sector ya fue importado al PC')
+        }
+        marcarImportacionOfflineActiva(inventarioSectorId, req.user!.id)
+        return { ok: true }
+      } catch (e) {
+        return reply.status(400).send({ error: (e as Error).message })
+      }
+    }
+  )
+
+  app.post<{ Params: { id: string }; Body: ImportarOfflineArchivoBody }>(
+    '/api/inventario/sectores/:id/importar-offline-archivo',
+    { preHandler: requirePermiso('inventario.supervisar') },
+    async (req, reply) => {
+      const db = getDb()
+      const inventarioSectorId = Number(req.params.id)
+      try {
+        const body = validarPaqueteImportacionPc(db, inventarioSectorId, req.body)
+        return importarConteoOffline(db, inventarioSectorId, body)
       } catch (e) {
         return reply.status(400).send({ error: (e as Error).message })
       }

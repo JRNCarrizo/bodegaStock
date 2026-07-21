@@ -19,6 +19,7 @@ import {
   Play,
   Plus,
   Pencil,
+  RefreshCw,
   Search,
   Trash2,
   User,
@@ -64,7 +65,11 @@ import type {
 import { useAuth } from '@/context/AuthContext'
 import { listLocalMisSectores, reconcileOfflineConServidor } from '@/lib/inventarioOffline'
 import { useInventarioActivo } from '@/context/InventarioActivoContext'
-import { usePolling } from '@/hooks/usePolling'
+import { INVENTARIO_POLL_MS, usePolling } from '@/hooks/usePolling'
+import {
+  scrollFocusedFieldIntoSheet,
+  useVisualViewportBottomInset
+} from '@/hooks/useVisualViewportBottomInset'
 
 const ESTADO_SECTOR_COLOR: Record<string, string> = {
   PENDIENTE: 'bg-slate-100 text-slate-600',
@@ -1822,6 +1827,7 @@ export function InventarioPage() {
 
   const [sesiones, setSesiones] = useState<InventarioSesionListItem[]>([])
   const [loading, setLoading] = useState(true)
+  const [refreshing, setRefreshing] = useState(false)
   const [error, setError] = useState('')
 
   const [view, setView] = useState<'list' | 'create' | 'sesion' | 'contar'>('list')
@@ -1830,6 +1836,9 @@ export function InventarioPage() {
   const [comparacionSistema, setComparacionSistema] = useState<ComparacionSistemaData | null>(null)
   const [cerrando, setCerrando] = useState(false)
   const [exportingSesion, setExportingSesion] = useState(false)
+  const [importingFileSectorId, setImportingFileSectorId] = useState<number | null>(null)
+  const manualImportInputRef = useRef<HTMLInputElement>(null)
+  const manualImportSectorIdRef = useRef<number | null>(null)
 
   const [misSectores, setMisSectores] = useState<InventarioMisSector[]>([])
 
@@ -1869,8 +1878,8 @@ export function InventarioPage() {
     }
   }, [canCount, mapLocalSectores, offlineSession])
 
-  const loadBase = useCallback(async () => {
-    setLoading(true)
+  const loadBase = useCallback(async (options?: { silent?: boolean }) => {
+    if (!options?.silent) setLoading(true)
     setError('')
     try {
       // Primero lo local: la lista no debe esperar al PC
@@ -1883,7 +1892,7 @@ export function InventarioPage() {
         offlineSession || (typeof navigator !== 'undefined' && navigator.onLine === false)
 
       if (skipRemote) {
-        setSesiones([])
+        if (!canCount) setSesiones([])
         return
       }
 
@@ -1907,9 +1916,11 @@ export function InventarioPage() {
       }
       await loadMisSectores()
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Error al cargar inventario')
+      if (!options?.silent) {
+        setError(e instanceof Error ? e.message : 'Error al cargar inventario')
+      }
     } finally {
-      setLoading(false)
+      if (!options?.silent) setLoading(false)
     }
   }, [
     canCount,
@@ -1923,6 +1934,27 @@ export function InventarioPage() {
   useEffect(() => {
     void loadBase()
   }, [loadBase])
+
+  // Al volver a la app / pestaña, refrescar el listado sin salir de la pantalla.
+  useEffect(() => {
+    if (view !== 'list' || offlineSession) return
+
+    const refreshIfVisible = () => {
+      if (document.visibilityState === 'visible') {
+        void loadBase({ silent: true })
+      }
+    }
+    const onOnline = () => void loadBase({ silent: true })
+
+    document.addEventListener('visibilitychange', refreshIfVisible)
+    window.addEventListener('focus', refreshIfVisible)
+    window.addEventListener('online', onOnline)
+    return () => {
+      document.removeEventListener('visibilitychange', refreshIfVisible)
+      window.removeEventListener('focus', refreshIfVisible)
+      window.removeEventListener('online', onOnline)
+    }
+  }, [view, offlineSession, loadBase])
 
   useEffect(() => {
     if (sectorInvId) {
@@ -1968,12 +2000,22 @@ export function InventarioPage() {
       if (selectedSesionId == null) return
       return loadSesion(selectedSesionId, { silent: true })
     },
-    view === 'sesion' && sesionDetalle?.sesion.estado === 'EN_PROGRESO'
+    view === 'sesion' && sesionDetalle?.sesion.estado === 'EN_PROGRESO',
+    1_000
   )
 
+  // Listado: refrescar aunque todavía no haya inventario activo (caso típico
+  // del celular esperando a que el PC cree/inicie la sesión).
+  const listWaiting =
+    view === 'list' &&
+    !offlineSession &&
+    ((canCount && misSectores.length === 0) ||
+      (canManageInventario && sesiones.length === 0 && !activo))
+
   usePolling(
-    () => loadMisSectores(),
-    view === 'list' && canCount && activo != null && !offlineSession
+    () => loadBase({ silent: true }),
+    view === 'list' && !offlineSession && (canCount || canManageInventario),
+    listWaiting ? 5_000 : INVENTARIO_POLL_MS
   )
 
   async function iniciarSesion(id: number) {
@@ -2047,6 +2089,42 @@ export function InventarioPage() {
     }
   }
 
+  function elegirArchivoImportacion(sectorId: number) {
+    manualImportSectorIdRef.current = sectorId
+    manualImportInputRef.current?.click()
+  }
+
+  async function importarArchivoOffline(file: File | null) {
+    const sectorId = manualImportSectorIdRef.current
+    if (!file || sectorId == null) return
+    setImportingFileSectorId(sectorId)
+    setError('')
+    try {
+      const text = await file.text()
+      const parsed = JSON.parse(text) as unknown
+      await api(`/api/inventario/sectores/${sectorId}/importar-offline-archivo`, {
+        method: 'POST',
+        timeoutMs: 60_000,
+        body: JSON.stringify(parsed)
+      })
+      if (selectedSesionId != null) {
+        await loadSesion(selectedSesionId, { silent: true })
+      }
+    } catch (e) {
+      setError(
+        e instanceof SyntaxError
+          ? 'El archivo seleccionado no contiene un JSON válido'
+          : e instanceof Error
+            ? e.message
+            : 'No se pudo importar el archivo'
+      )
+    } finally {
+      setImportingFileSectorId(null)
+      manualImportSectorIdRef.current = null
+      if (manualImportInputRef.current) manualImportInputRef.current.value = ''
+    }
+  }
+
   if (view === 'create' && canCreate) {
     return (
       <CrearSesionForm
@@ -2086,6 +2164,14 @@ export function InventarioPage() {
       <div
         className={cn('mx-auto space-y-6', anchoCierre ? 'max-w-[88rem]' : 'max-w-5xl')}
       >
+        <input
+          ref={manualImportInputRef}
+          type="file"
+          accept="application/json,.json"
+          className="hidden"
+          onChange={(event) => void importarArchivoOffline(event.target.files?.[0] ?? null)}
+        />
+
         <Button
           variant="ghost"
           size="sm"
@@ -2121,7 +2207,7 @@ export function InventarioPage() {
             </RegistroDetalleMetaChip>
             {s.estado === 'EN_PROGRESO' && (
               <RegistroDetalleMetaChip icon={<Clock className="h-3.5 w-3.5 shrink-0 text-slate-400" />}>
-                Actualización cada 20 s
+                Actualización en vivo
               </RegistroDetalleMetaChip>
             )}
             {s.observacion?.trim() && (
@@ -2203,7 +2289,10 @@ export function InventarioPage() {
             {sesionDetalle.sectores.map((sec) => (
               <div
                 key={sec.id}
-                className="flex flex-wrap items-center justify-between gap-3 px-4 py-3.5 sm:px-5"
+                className={cn(
+                  'flex flex-wrap items-center justify-between gap-3 px-4 py-3.5 transition-colors sm:px-5',
+                  sec.importacion_offline?.activa && 'bg-sky-50/80'
+                )}
               >
                 <div className="min-w-0">
                   <p className="font-medium text-slate-900">{sec.sector_nombre}</p>
@@ -2218,8 +2307,41 @@ export function InventarioPage() {
                       </>
                     ) : null}
                   </p>
+                  {sec.importacion_offline?.activa && (
+                    <p className="mt-1 flex items-center gap-1.5 text-xs font-medium text-sky-800">
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      Recibiendo conteo desde el celular…
+                    </p>
+                  )}
                 </div>
                 <div className="flex shrink-0 flex-wrap items-center gap-1.5">
+                  {canSupervise &&
+                    sec.modo_conectividad === 'OFFLINE' &&
+                    !sec.importado_at &&
+                    !sec.importacion_offline?.activa && (
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        size="sm"
+                        className="h-7 rounded-lg px-2.5 text-xs"
+                        disabled={importingFileSectorId != null}
+                        onClick={() => elegirArchivoImportacion(sec.id)}
+                        title="Plan B: importar el archivo generado por el celular"
+                      >
+                        {importingFileSectorId === sec.id ? (
+                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        ) : (
+                          <Upload className="h-3.5 w-3.5" />
+                        )}
+                        Importar archivo
+                      </Button>
+                    )}
+                  {sec.importacion_offline?.activa && (
+                    <span className="inline-flex items-center gap-1.5 rounded-full bg-sky-100 px-2.5 py-0.5 text-xs font-semibold text-sky-800 ring-1 ring-sky-200">
+                      <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-sky-600" />
+                      Recibiendo
+                    </span>
+                  )}
                   {sec.modo_conectividad === 'OFFLINE' && (
                     <span className="rounded-full bg-amber-50 px-2.5 py-0.5 text-xs font-medium text-amber-900 ring-1 ring-amber-100">
                       Offline
@@ -2273,12 +2395,35 @@ export function InventarioPage() {
             Conteo físico con doble verificación
           </p>
         </div>
-        {canCreate && !activo && (
-          <Button className="rounded-xl px-4" onClick={() => setView('create')}>
-            <Plus className="h-4 w-4" />
-            Nuevo inventario
-          </Button>
-        )}
+        <div className="flex flex-wrap items-center gap-2">
+          {!offlineSession && (canCount || canManageInventario) && (
+            <Button
+              variant="secondary"
+              className="rounded-xl px-3"
+              disabled={loading || refreshing}
+              onClick={() => {
+                void (async () => {
+                  setRefreshing(true)
+                  try {
+                    await loadBase({ silent: true })
+                  } finally {
+                    setRefreshing(false)
+                  }
+                })()
+              }}
+              title="Actualizar listado"
+            >
+              <RefreshCw className={cn('h-4 w-4', refreshing && 'animate-spin')} />
+              Actualizar
+            </Button>
+          )}
+          {canCreate && !activo && (
+            <Button className="rounded-xl px-4" onClick={() => setView('create')}>
+              <Plus className="h-4 w-4" />
+              Nuevo inventario
+            </Button>
+          )}
+        </div>
       </section>
 
       {error && (
@@ -2299,18 +2444,29 @@ export function InventarioPage() {
               Mis sectores
             </h2>
             <div className="space-y-2">
-              {misSectores.map((sec) => (
+              {misSectores.map((sec) => {
+                const offlineListo =
+                  sec.modo_conectividad === 'OFFLINE' &&
+                  (sec.estado === 'CERRADO_OK' || Boolean(sec.importado_at))
+                return (
                 <button
                   key={sec.id}
                   type="button"
-                  onClick={() =>
+                  disabled={offlineListo}
+                  onClick={() => {
+                    if (offlineListo) return
                     navigate(
                       sec.modo_conectividad === 'OFFLINE'
                         ? `/inventario/offline/${sec.id}`
                         : `/inventario/contar/${sec.id}`
                     )
-                  }
-                  className="flex w-full items-center justify-between rounded-lg border border-surface-border px-3 py-3 text-left hover:bg-slate-50"
+                  }}
+                  className={cn(
+                    'flex w-full items-center justify-between rounded-lg border border-surface-border px-3 py-3 text-left',
+                    offlineListo
+                      ? 'cursor-default bg-emerald-50/40'
+                      : 'hover:bg-slate-50'
+                  )}
                 >
                   <div>
                     <p className="font-medium text-slate-800">{sec.sector_nombre}</p>
@@ -2318,12 +2474,18 @@ export function InventarioPage() {
                       Con {sec.soy_contador_1 ? sec.contador_2_nombre : sec.contador_1_nombre} · Ronda{' '}
                       {sec.ronda_actual}
                       {sec.modo_conectividad === 'OFFLINE' ? ' · Offline' : ''}
+                      {offlineListo ? ' · Ya enviado al PC' : ''}
                     </p>
                   </div>
                   <div className="flex flex-col items-end gap-1">
-                    {sec.modo_conectividad === 'OFFLINE' && (
+                    {sec.modo_conectividad === 'OFFLINE' && !offlineListo && (
                       <span className="rounded-full bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-900 ring-1 ring-amber-100">
                         Offline
+                      </span>
+                    )}
+                    {offlineListo && (
+                      <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-800 ring-1 ring-emerald-100">
+                        En PC
                       </span>
                     )}
                     <span className={cn('rounded-full px-2 py-0.5 text-xs font-medium', ESTADO_SECTOR_COLOR[sec.estado])}>
@@ -2331,7 +2493,8 @@ export function InventarioPage() {
                     </span>
                   </div>
                 </button>
-              ))}
+                )
+              })}
             </div>
           </CardBody>
         </Card>
@@ -2460,6 +2623,9 @@ export function InventarioPage() {
           <CardBody>
             <p className="py-4 text-center text-sm text-slate-500">
               No tenés sectores asignados para contar en este momento.
+            </p>
+            <p className="pb-2 text-center text-xs text-slate-400">
+              Si en el PC acaban de crear el inventario, tocá Actualizar o esperá unos segundos.
             </p>
           </CardBody>
         </Card>
@@ -2871,6 +3037,7 @@ function ConteoSectorView({
   const listScrollRef = useRef<HTMLDivElement>(null)
   const cargaPanelRef = useRef<HTMLDivElement>(null)
   const productLineFormRef = useRef<HTMLDivElement>(null)
+  const keyboardInset = useVisualViewportBottomInset()
 
   function focusField(ref: React.RefObject<HTMLElement | null>) {
     requestAnimationFrame(() => {
@@ -3297,6 +3464,32 @@ function ConteoSectorView({
     resetLineaForm()
   }
 
+  async function empezarAgregarLineaProducto(grupo: {
+    producto_id: number
+    codigo: string
+    nombre: string
+  }) {
+    setEditingLineaId(null)
+    setExpandedProductos((prev) => new Set(prev).add(grupo.producto_id))
+    setError('')
+    try {
+      const list = await api<Producto[]>(
+        `/api/productos?q=${encodeURIComponent(grupo.codigo || grupo.nombre)}`
+      )
+      const p =
+        list.find((x) => x.id === grupo.producto_id) ??
+        list.find((x) => x.codigo_interno === grupo.codigo) ??
+        null
+      if (!p) {
+        setError('No se pudo abrir el producto. Buscalo arriba e intentá de nuevo.')
+        return
+      }
+      selectProduct(p)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'No se pudo abrir el producto')
+    }
+  }
+
   async function agregarLineaYContinuar() {
     await agregarLinea()
   }
@@ -3327,6 +3520,24 @@ function ConteoSectorView({
       await loadSector({ silent: true })
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Error al finalizar')
+    }
+  }
+
+  async function reabrirConteo() {
+    if (
+      !confirm(
+        '¿Volver a editar el conteo? Se desmarca tu finalización. Solo mientras el compañero aún no terminó.'
+      )
+    ) {
+      return
+    }
+    setError('')
+    try {
+      await api(`/api/inventario/sectores/${inventarioSectorId}/reabrir-conteo`, { method: 'POST' })
+      await loadSector({ silent: true })
+      setTimeout(() => productSearchRef.current?.focus(), 80)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'No se pudo reabrir el conteo')
     }
   }
 
@@ -3425,9 +3636,23 @@ function ConteoSectorView({
                   </p>
                 )}
                 {grupo.lineas.length === 0 ? (
-                  <p className="rounded-lg border border-dashed border-surface-border bg-white px-3 py-4 text-center text-sm text-slate-500">
-                    Sin líneas — buscá el producto arriba para cargar
-                  </p>
+                  <div className="rounded-lg border border-dashed border-amber-200 bg-amber-50/40 px-3 py-4 text-center">
+                    <p className="text-sm text-slate-600">
+                      Sin líneas en esta ronda
+                      {enReconteo ? ' (contaste cero o no lo cargaste)' : ''}
+                    </p>
+                    {puedeEditar && (
+                      <Button
+                        type="button"
+                        size="sm"
+                        className="mt-2 rounded-xl"
+                        onClick={() => void empezarAgregarLineaProducto(grupo)}
+                      >
+                        <Plus className="h-4 w-4" />
+                        Agregar línea
+                      </Button>
+                    )}
+                  </div>
                 ) : (
                   <ul className="space-y-2">
                     {grupo.lineas.map((l, idx) => (
@@ -3470,6 +3695,20 @@ function ConteoSectorView({
                         </div>
                       </li>
                     ))}
+                    {puedeEditar && (
+                      <li>
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          size="sm"
+                          className="w-full rounded-xl"
+                          onClick={() => void empezarAgregarLineaProducto(grupo)}
+                        >
+                          <Plus className="h-4 w-4" />
+                          Agregar otra línea
+                        </Button>
+                      </li>
+                    )}
                   </ul>
                 )}
               </div>
@@ -3526,9 +3765,20 @@ function ConteoSectorView({
         )}
 
         {esperandoCompanero && (
-          <div className="border-b border-amber-100 bg-amber-50 px-4 py-2 text-sm text-amber-800 sm:px-5">
-            Ya finalizaste este sector. Esperando a que tu compañero termine su conteo. La pantalla se
-            actualiza sola cada 20 segundos.
+          <div className="border-b border-amber-100 bg-amber-50 px-4 py-3 text-sm text-amber-900 sm:px-5">
+            <p>
+              Ya finalizaste este sector. Esperando a que tu compañero termine su conteo. La pantalla se
+              actualiza sola cada 20 segundos.
+            </p>
+            <Button
+              size="sm"
+              variant="secondary"
+              className="mt-2 rounded-xl"
+              onClick={() => void reabrirConteo()}
+            >
+              <Pencil className="h-3.5 w-3.5" />
+              Seguir editando
+            </Button>
           </div>
         )}
 
@@ -3667,14 +3917,14 @@ function ConteoSectorView({
                   <ul
                     ref={productResultsListRef}
                     role="listbox"
-                    className="absolute z-50 mt-1 max-h-52 w-full overflow-auto rounded-xl border border-surface-border bg-white py-1 shadow-panel"
+                    className="absolute z-50 mt-1 max-h-64 w-full divide-y divide-slate-100 overflow-auto rounded-xl border border-surface-border bg-white py-1 shadow-panel"
                   >
                     {productResults.map((p, index) => (
                       <li key={p.id} role="option" aria-selected={index === productHighlightIndex}>
                         <button
                           type="button"
                           className={cn(
-                            'flex w-full items-center gap-2 px-3 py-2.5 text-left text-sm',
+                            'flex min-h-14 w-full items-center gap-3 px-3.5 py-3 text-left',
                             index === productHighlightIndex
                               ? 'bg-brand-50 text-brand-900'
                               : 'hover:bg-slate-50'
@@ -3682,10 +3932,10 @@ function ConteoSectorView({
                           onMouseEnter={() => setProductHighlightIndex(index)}
                           onClick={() => selectProduct(p)}
                         >
-                          <span className="shrink-0 rounded bg-slate-100 px-1.5 py-0.5 font-mono text-xs font-semibold">
+                          <span className="shrink-0 rounded-md bg-slate-100 px-2 py-1 font-mono text-sm font-semibold text-slate-700">
                             {p.codigo_interno}
                           </span>
-                          <ScrollableProductName className="flex-1 text-slate-600">
+                          <ScrollableProductName className="flex-1 text-base font-medium leading-snug text-slate-700">
                             {p.nombre}
                           </ScrollableProductName>
                         </button>
@@ -3709,42 +3959,44 @@ function ConteoSectorView({
                 />
                 <div
                   ref={productLineFormRef}
-                  className="relative z-50 overflow-hidden rounded-xl border-2 border-brand-400 bg-white p-4 shadow-xl ring-4 ring-brand-500/20"
+                  className="fixed inset-x-0 z-50 mx-auto max-h-[min(72dvh,34rem)] w-full max-w-3xl overflow-y-auto overscroll-contain rounded-t-2xl border-2 border-b-0 border-brand-400 bg-white p-4 shadow-[0_-12px_40px_rgba(15,23,42,0.25)] ring-4 ring-brand-500/15 sm:rounded-2xl sm:border sm:p-5"
+                  style={{ bottom: keyboardInset }}
                 >
-                <div className="mb-4 flex items-center gap-3">
+                <div className="mb-3 flex items-center gap-3 sm:mb-4">
                   <ProductImage
                     productoId={selectedProduct.id}
                     hasImage={!!selectedProduct.imagen_path}
                     alt={selectedProduct.nombre}
-                    className="h-11 w-11 rounded-xl ring-1 ring-surface-border"
+                    className="h-12 w-12 rounded-xl ring-1 ring-surface-border sm:h-11 sm:w-11"
                   />
                   <div className="min-w-0 flex-1">
-                    <p className="text-[11px] font-semibold uppercase tracking-wide text-brand-600">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-brand-600">
                       {editingLineaId ? 'Editar línea' : 'Nueva línea'}
                     </p>
-                    <span className="inline-flex rounded-md bg-slate-50 px-2 py-0.5 font-mono text-xs font-semibold text-slate-700 ring-1 ring-surface-border">
+                    <span className="inline-flex rounded-md bg-slate-50 px-2 py-0.5 font-mono text-sm font-semibold text-slate-700 ring-1 ring-surface-border">
                       {selectedProduct.codigo_interno}
                     </span>
-                    <ScrollableProductName className="mt-1 text-sm font-semibold text-slate-900">
+                    <ScrollableProductName className="mt-1 text-base font-semibold text-slate-900">
                       {selectedProduct.nombre}
                     </ScrollableProductName>
                   </div>
                   <button
                     type="button"
-                    className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
+                    className="rounded-lg p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
                     onClick={cancelarLineaForm}
                   >
-                    <X className="h-4 w-4" />
+                    <X className="h-5 w-5" />
                   </button>
                 </div>
 
-                <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-6">
+                <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-6">
                   <div>
-                    <label className="mb-0.5 block text-xs font-medium text-slate-600">Tipo</label>
+                    <label className="mb-1 block text-sm font-medium text-slate-700">Tipo</label>
                     <select
                       ref={tipoRef}
                       value={tipoBulto}
                       onChange={(e) => handleTipoBultoChange(e.target.value as TipoBulto)}
+                      onFocus={() => scrollFocusedFieldIntoSheet(tipoRef.current)}
                       onKeyDown={(e) => {
                         if (e.key === 'Enter') {
                           e.preventDefault()
@@ -3755,7 +4007,7 @@ function ConteoSectorView({
                           }
                         }
                       }}
-                      className="w-full rounded-lg border border-surface-border px-2 py-1.5 text-sm"
+                      className="w-full rounded-xl border border-surface-border px-3 py-2.5 text-base"
                     >
                       <option value="PALLET">Pallet</option>
                       <option value="CAJA">Caja</option>
@@ -3764,26 +4016,32 @@ function ConteoSectorView({
                   </div>
 
                   {tipoBulto === 'SUELTO' ? (
-                    <Input
-                      ref={cantidadSueltaRef}
-                      label="Cantidad suelta"
-                      type="number"
-                      min="1"
-                      value={cantidadSuelta}
-                      onChange={(e) => setCantidadSuelta(e.target.value)}
-                      onKeyDown={handleLineaEnter}
-                      placeholder="12"
-                      className="col-span-2 [&_label]:text-xs"
-                    />
+                    <div className="col-span-2">
+                      <Input
+                        ref={cantidadSueltaRef}
+                        label="Cantidad suelta"
+                        type="number"
+                        inputMode="numeric"
+                        min="1"
+                        value={cantidadSuelta}
+                        onChange={(e) => setCantidadSuelta(e.target.value)}
+                        onFocus={() => scrollFocusedFieldIntoSheet(cantidadSueltaRef.current)}
+                        onKeyDown={handleLineaEnter}
+                        placeholder="12"
+                        className="rounded-xl px-3 py-2.5 text-base"
+                      />
+                    </div>
                   ) : (
                     <>
                       <Input
                         ref={cantidadBultosRef}
                         label={tipoBulto === 'PALLET' ? 'Cant. pallets' : 'Cant. cajas'}
                         type="number"
+                        inputMode="numeric"
                         min="1"
                         value={cantidadBultos}
                         onChange={(e) => setCantidadBultos(e.target.value)}
+                        onFocus={() => scrollFocusedFieldIntoSheet(cantidadBultosRef.current)}
                         onKeyDown={(e) => {
                           if (e.key === 'Enter') {
                             e.preventDefault()
@@ -3791,7 +4049,7 @@ function ConteoSectorView({
                           }
                         }}
                         placeholder={tipoBulto === 'PALLET' ? '2' : '1'}
-                        className="[&_label]:text-xs"
+                        className="rounded-xl px-3 py-2.5 text-base"
                       />
                       <Input
                         ref={unidadesRef}
@@ -3801,9 +4059,11 @@ function ConteoSectorView({
                             : '× botellas por caja'
                         }
                         type="number"
+                        inputMode="numeric"
                         min="1"
                         value={unidadesPorBulto}
                         onChange={(e) => setUnidadesPorBulto(e.target.value)}
+                        onFocus={() => scrollFocusedFieldIntoSheet(unidadesRef.current)}
                         onKeyDown={(e) => {
                           if (e.key === 'Enter') {
                             e.preventDefault()
@@ -3811,7 +4071,7 @@ function ConteoSectorView({
                           }
                         }}
                         placeholder={tipoBulto === 'PALLET' ? '112' : '6'}
-                        className="[&_label]:text-xs"
+                        className="rounded-xl px-3 py-2.5 text-base"
                       />
                       <Input
                         ref={cantidadSueltaRef}
@@ -3821,9 +4081,11 @@ function ConteoSectorView({
                             : 'Botellas sueltas (opc.)'
                         }
                         type="number"
+                        inputMode="numeric"
                         min="0"
                         value={cantidadSuelta}
                         onChange={(e) => setCantidadSuelta(e.target.value)}
+                        onFocus={() => scrollFocusedFieldIntoSheet(cantidadSueltaRef.current)}
                         onKeyDown={(e) => {
                           if (e.key === 'Enter') {
                             e.preventDefault()
@@ -3831,16 +4093,15 @@ function ConteoSectorView({
                           }
                         }}
                         placeholder="0"
-                        className="[&_label]:text-xs"
+                        className="rounded-xl px-3 py-2.5 text-base"
                       />
                     </>
                   )}
 
-                  <div className="flex items-end">
+                  <div className="col-span-2 flex items-end sm:col-span-1 lg:col-span-1">
                     <Button
                       type="button"
-                      size="sm"
-                      className="w-full rounded-xl"
+                      className="w-full rounded-xl py-2.5 text-base"
                       onClick={() => void agregarLineaYContinuar()}
                       disabled={saving}
                     >
@@ -3849,11 +4110,11 @@ function ConteoSectorView({
                       ) : (
                         <Plus className="h-4 w-4" />
                       )}
-                      {editingLineaId ? 'Guardar' : 'Enter ↵'}
+                      {editingLineaId ? 'Guardar' : 'Agregar'}
                     </Button>
                   </div>
                 </div>
-                <p className="mt-3 text-xs leading-relaxed text-slate-500">
+                <p className="mt-3 hidden text-sm leading-relaxed text-slate-500 sm:block">
                   <span className="font-medium text-slate-600">Pallet:</span> 3 × 112 = 3 pallets de 112
                   cajas; cajas sueltas al costado van en el campo aparte.{' '}
                   <span className="font-medium text-slate-600">Caja:</span> 30 × 6 = 30 cajas de 6
@@ -3891,6 +4152,16 @@ function ConteoSectorView({
             <Button className="shrink-0 rounded-xl" onClick={() => void finalizarSector()}>
               <Check className="h-4 w-4" />
               Finalicé este sector
+            </Button>
+          )}
+          {esperandoCompanero && (
+            <Button
+              variant="secondary"
+              className="shrink-0 rounded-xl"
+              onClick={() => void reabrirConteo()}
+            >
+              <Pencil className="h-4 w-4" />
+              Seguir editando
             </Button>
           )}
         </div>

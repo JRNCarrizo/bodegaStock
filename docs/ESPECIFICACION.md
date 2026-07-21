@@ -1,6 +1,6 @@
 # BodegaStock — Especificación del proyecto
 
-> Documento vivo, alineado a la versión implementada **v0.3.7** (Electron + Fastify + SQLite + React + Capacitor Android).
+> Documento vivo, alineado a la versión implementada **v0.3.8** (Electron + Fastify + SQLite + React + Capacitor Android).
 
 ---
 
@@ -350,7 +350,7 @@ Conteo físico realizado por **dos personas** desde celulares (**navegador web**
 **Resumen:**
 1. Sesión con sectores (todos o parcial) y dos contadores por sector.
 2. Al iniciar: snapshot del stock + bloqueo global de movimientos.
-3. **Modo elegible por sector:** **con red** (celulares → PC) u **offline** (bajar catálogo en oficina → contar en depósito → sync P2P entre celulares al final → import al PC). Documentado en [INVENTARIO.md](INVENTARIO.md) y [INVENTARIO-OFFLINE-ESTADO.md](INVENTARIO-OFFLINE-ESTADO.md).
+3. **Modo elegible por sector:** **con red** (celulares → PC) u **offline** (bajar catálogo en oficina → contar en depósito → sync P2P entre celulares al final → import al PC). El import principal es por red y sector por sector; existe archivo final validado como Plan B. Documentado en [INVENTARIO.md](INVENTARIO.md) y [INVENTARIO-OFFLINE-ESTADO.md](INVENTARIO-OFFLINE-ESTADO.md).
 4. Buscador dinámico o escaneo; líneas independientes (no se fusionan).
 5. Comparación A: contador vs contador al finalizar cada sector (en PC si online; entre celulares si offline); reconteo con referencia del desglose anterior.
 6. Comparación B: total contado vs sistema al cerrar (siempre en PC); detecta cantidad y reorganización entre sectores.
@@ -358,7 +358,13 @@ Conteo físico realizado por **dos personas** desde celulares (**navegador web**
 
 **Export Excel de sesión:** `GET /api/inventario/sesiones/:id/export` — agregado **por producto** (sin sector ni desglose por líneas).
 
-**UX:** pantallas de inventario online/offline pulidas (flujo, estados, sync e importación).
+**UX y robustez:**
+- Listado móvil con actualización automática/al recuperar foco y botón manual.
+- Panel de cantidades adaptado al teclado; tipografía y áreas táctiles ampliadas.
+- “Seguir editando” antes del sync y alta directa de líneas en cero durante reconteo.
+- Hotspot con actualización automática/manual de IP y QR.
+- La PC muestra “Recibiendo conteo…” durante el import; un sector importado no puede reabrirse.
+- Plan B: celular genera paquete JSON final con checksum; supervisor lo importa manualmente en la fila del sector.
 
 ---
 
@@ -416,7 +422,7 @@ Administración de cuentas y permisos. Ver documento: [USUARIOS-Y-PERMISOS.md](U
 
 ## 6. Fases de desarrollo
 
-Estado respecto a **v0.3.7**:
+Estado respecto a **v0.3.8**:
 
 ### Fase 1 — Base
 - [x] Proyecto Electron + servidor embebido (Fastify)
@@ -463,6 +469,7 @@ Ver [APP-MOVIL.md](APP-MOVIL.md).
 - [x] Comparación y reconteo
 - [x] Cierre y reporte de diferencias
 - [x] Modo offline P2P + import al PC
+- [x] Import offline con estado de recepción en PC + archivo final validado como Plan B
 
 ### Fase 7 — Pulido
 - [x] Export Excel por módulo (consulta, ingresos, planillas, retornos, roturas día, inventario sesión, plantilla/import productos)

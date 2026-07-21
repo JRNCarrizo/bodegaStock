@@ -181,7 +181,9 @@ Bajan paquete offline             (base local propia)                 Importar s
 | Crear sesión | `POST /api/inventario/sesiones` | Body `sectores[].modo_conectividad`: `ONLINE` \| `OFFLINE` |
 | Cambiar modo | `PATCH /api/inventario/sectores/:id/modo` | Solo si el sector está `PENDIENTE` |
 | Descargar paquete | `GET /api/inventario/sectores/:id/paquete-offline` | Contador asignado; catálogo + rol + snapshot |
+| Avisar inicio de import | `POST /api/inventario/sectores/:id/iniciar-importacion-offline` | La PC muestra “Recibiendo conteo…” mientras llega |
 | Importar conteo | `POST /api/inventario/sectores/:id/importar-offline` | Líneas de ambos + `ronda_actual` → Comparación A en el PC |
+| Importar archivo Plan B | `POST /api/inventario/sectores/:id/importar-offline-archivo` | Supervisor; valida formato, sesión, sector, contadores y checksum |
 
 Columnas en `inventario_sectores`: `modo_conectividad`, `paquete_descargado_at`, `importado_at`.
 
@@ -214,7 +216,7 @@ Modelo acordado: **ambos tienen base local**; **no** hace falta un servidor perm
 1. Contador 1 marca “Finalicé este sector”.
 2. Contador 2 marca “Finalicé este sector”.
 3. Se juntan / uno activa hotspot; el otro se conecta.
-4. **Sincronizan** el conteo de ese sector / ronda **por HTTP local** (puerto 3850; UI host/cliente en la APK). Plan B: archivo JSON.
+4. **Sincronizan** el conteo de ese sector / ronda **por HTTP local** (puerto 3850; UI host/cliente en la APK). La IP/QR se refresca automáticamente al activarse el hotspot y también puede actualizarse manualmente.
 5. La app detecta que hay **dos conteos completos** → dispara **Comparación A** (totales por producto).
 6. Resultado:
    - **OK** → sector cerrado offline, listo para importar.
@@ -222,14 +224,19 @@ Modelo acordado: **ambos tienen base local**; **no** hace falta un servidor perm
 
 Quién “sabe” que ambos finalizaron en el depósito: **las apps de los celulares** al sincronizar. El PC **no** se entera hasta el import.
 
-Plan B si falla el hotspot: exportar archivo de conteo (respaldo en la UI offline).
+Plan B si falla el hotspot: exportar/importar el archivo de conteo entre celulares (respaldo en la UI offline).
+
+Antes de sincronizar, quien ya marcó “Finalicé” puede usar **Seguir editando**. Esto desmarca su finalización y vuelve al conteo. Se bloquea una vez que el compañero ya sincronizó/finalizó; desde ese punto, las correcciones corresponden al reconteo.
 
 #### 4) Import en oficina
 
 1. Uno o ambos se conectan otra vez al PC.
-2. **Importan** el sector (líneas contador 1, líneas contador 2, resultado Comparación A, ronda, metadatos).
-3. El PC marca el sector como recibido / CERRADO_OK (según corresponda).
-4. Cuando todos los sectores de la sesión están OK → Comparación B vs snapshot → cierre como siempre.
+2. **Importan** el sector (líneas contador 1, líneas contador 2, resultado Comparación A, ronda, metadatos). El flujo principal es por red y se realiza sector por sector.
+3. Mientras se transfiere, la vista del PC se actualiza en vivo y muestra **Recibiendo conteo desde el celular**.
+4. El PC marca el sector como recibido / `CERRADO_OK`; el celular ya no permite volver a descargar ni reabrir el conteo importado.
+5. Cuando todos los sectores de la sesión están OK → Comparación B vs snapshot → cierre como siempre.
+
+**Plan B hacia la PC:** si falla la red, el celular puede generar **Guardar archivo para PC** una vez que ambos conteos finalizaron, se sincronizaron y coinciden. El supervisor selecciona **Importar archivo** en el sector de la PC. El servidor valida formato/versionado, checksum, sesión, sector, contadores y líneas, y utiliza la misma transacción atómica del import por red.
 
 ### Qué no es el modo offline
 
@@ -239,7 +246,7 @@ Plan B si falla el hotspot: exportar archivo de conteo (respaldo en la UI offlin
 
 ### Estado del sector en el PC mientras está offline
 
-Mientras el conteo ocurre en el depósito, el PC puede mostrar el sector como p. ej. **EN_CONTEO_OFFLINE** / **PENDIENTE_IMPORT** (nombre exacto a definir en implementación), sin levantar el bloqueo global de movimientos de la sesión.
+Mientras el conteo ocurre en el depósito, el sector conserva su estado y marca de modo **Offline**, sin levantar el bloqueo global de movimientos. Al comenzar la importación por red, la fila se resalta temporalmente con **Recibiendo conteo…**; al confirmar, queda importada y `CERRADO_OK`.
 
 ---
 
@@ -661,15 +668,20 @@ Durante el conteo **no** se emiten las líneas del otro contador (independencia)
 - Cerrar sesión → desbloqueo.
 - Exportar Excel de la sesión cuando corresponda (§12).
 
-### UX de conteo (online y offline) — v0.3.6
+### UX de conteo (online y offline)
 
-Aplica a la UI de conteo con red y a la offline (misma UX; el flujo P2P/import no cambia):
+Aplica a la UI de conteo con red y a la offline:
 
 - Desglose de líneas **cerrado por defecto** (se despliega al editar).
-- Overlay al cargar/editar cantidad.
+- Formulario de cantidad como panel inferior: se reposiciona sobre el teclado móvil (`visualViewport` + `adjustResize`), permite scroll interno y usa tipografía/campos táctiles más grandes.
 - Auto-scroll al foco de la línea en edición.
 - Footer con total del producto y tono según estado.
 - Nombres de producto con scroll horizontal si no caben.
+- Resultados del buscador con filas más altas, separación y mayor área táctil.
+- **Seguir editando** después de finalizar, solo antes de la sincronización/comparación.
+- En reconteo, un producto sin líneas ofrece **Agregar línea** directamente (sin volver a buscarlo); los que ya tienen líneas ofrecen **Agregar otra línea**.
+- La lista de inventario del celular se refresca al volver a la app, al recuperar red, automáticamente (cada 5 s mientras espera) y mediante botón **Actualizar**.
+- Un sector offline ya importado muestra **Ya enviado al PC** y no puede volver a descargar ni abrir el conteo.
 
 ---
 
@@ -722,7 +734,7 @@ Ver [MODELO-DE-DATOS.md](MODELO-DE-DATOS.md).
 - [x] **D2:** Comparación A solo cuando ambos finalizan el sector.
 - [x] **D3:** Reconteo solo productos con diferencia entre contadores.
 - [x] **D4:** Ajustes híbridos — sistema propone, supervisor confirma.
-- [x] **D5:** Un contador puede estar en varios sectores; no dos activos a la vez.
+- [x] **D5:** Un contador puede estar asignado a varios sectores; cada sector conserva estado y paquete independientes. No hay bloqueo rígido para impedir cambiar de sector.
 - [x] **D6:** Cada registro es una línea nueva; no fusionar en pantalla ni al contar el mismo producto dos veces.
 - [x] **D7:** Producto no catalogado — rechazar en v1.
 - [x] **D8:** No operar con inventario abierto — bloqueo global de movimientos.
@@ -735,6 +747,7 @@ Ver [MODELO-DE-DATOS.md](MODELO-DE-DATOS.md).
 - [x] **D15:** Reporte persistente antes/después obligatorio al cerrar.
 - [x] **D16:** **Modo dual de conectividad:** se elige **con red al PC** u **offline** (alternativa si no hay WiFi en depósito). Ver §3.1.
 - [x] **D17:** Offline: ambos bajan catálogo en oficina; cada uno cuenta en base local; **sync entre celulares solo cuando ambos finalizaron** el sector → Comparación A; import al PC para ensamble y Comparación B.
+- [x] **D18:** Import por red sector a sector como flujo principal; archivo final validado como Plan B hacia la PC.
 - [x] **Desglose:** pallet × unidades + sueltos en todo el flujo.
 
 ---

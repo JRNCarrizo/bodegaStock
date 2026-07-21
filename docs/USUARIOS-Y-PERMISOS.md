@@ -82,6 +82,7 @@ Al crear un usuario se asigna un rol. Los permisos del rol se pueden ajustar ind
 | **RN-U5** | Solo usuarios con `inventario.crear_sesion` pueden crear sesiones de inventario |
 | **RN-U6** | Solo usuarios con `inventario.cerrar` pueden cerrar sesiones |
 | **RN-U7** | Cambios de permisos aplican en el próximo login (o invalidar token/sesión activa) |
+| **RN-U8** | El contador puede importar su sector offline por red; la importación manual del archivo Plan B en la PC requiere `inventario.supervisar` |
 
 ### Exportaciones Excel y otros permisos de operación
 

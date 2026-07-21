@@ -1,4 +1,5 @@
 import type Database from 'better-sqlite3'
+import { createHash } from 'node:crypto'
 import {
   assertContadorEnSector,
   compararContadores,
@@ -15,6 +16,42 @@ import { getProductoDefaults } from './stock'
 export type ModoConectividadInventario = 'ONLINE' | 'OFFLINE'
 
 export const PAQUETE_OFFLINE_VERSION = 1
+
+const IMPORTACION_ACTIVA_TTL_MS = 90_000
+const importacionesActivas = new Map<
+  number,
+  { iniciadaAt: number; usuarioId: number }
+>()
+
+export function marcarImportacionOfflineActiva(
+  inventarioSectorId: number,
+  usuarioId: number
+): void {
+  importacionesActivas.set(inventarioSectorId, {
+    iniciadaAt: Date.now(),
+    usuarioId
+  })
+}
+
+export function limpiarImportacionOfflineActiva(inventarioSectorId: number): void {
+  importacionesActivas.delete(inventarioSectorId)
+}
+
+export function getImportacionOfflineActiva(inventarioSectorId: number): {
+  activa: boolean
+  iniciada_at: string | null
+} {
+  const item = importacionesActivas.get(inventarioSectorId)
+  if (!item) return { activa: false, iniciada_at: null }
+  if (Date.now() - item.iniciadaAt > IMPORTACION_ACTIVA_TTL_MS) {
+    importacionesActivas.delete(inventarioSectorId)
+    return { activa: false, iniciada_at: null }
+  }
+  return {
+    activa: true,
+    iniciada_at: new Date(item.iniciadaAt).toISOString()
+  }
+}
 
 export interface OfflineLineaInput {
   producto_id: number
@@ -36,6 +73,22 @@ export interface ImportarOfflineBody {
   lineas: OfflineLineaInput[]
 }
 
+export interface ImportarOfflineArchivoBody {
+  formato: 'controlstock-inventario-offline-pc'
+  version: 1
+  contenido: {
+    sesion_id: number
+    inventario_sector_id: number
+    sector_id: number
+    ronda_actual: number
+    contador_1_id: number
+    contador_2_id: number
+    generado_at: string
+    lineas: OfflineLineaInput[]
+  }
+  checksum_sha256: string
+}
+
 function modoDe(sector: Record<string, unknown>): ModoConectividadInventario {
   const raw = String(sector.modo_conectividad ?? 'ONLINE').toUpperCase()
   return raw === 'OFFLINE' ? 'OFFLINE' : 'ONLINE'
@@ -55,6 +108,53 @@ export function assertNoConteoOnlineEnOffline(sector: Record<string, unknown>): 
   }
 }
 
+export function validarPaqueteImportacionPc(
+  db: Database.Database,
+  inventarioSectorId: number,
+  paquete: ImportarOfflineArchivoBody
+): ImportarOfflineBody {
+  if (
+    paquete?.formato !== 'controlstock-inventario-offline-pc' ||
+    paquete?.version !== 1 ||
+    !paquete.contenido
+  ) {
+    throw new Error('El archivo no es un paquete de inventario válido para ControlStock PC')
+  }
+
+  const contenido = paquete.contenido
+  const checksum = createHash('sha256')
+    .update(JSON.stringify(contenido))
+    .digest('hex')
+  if (!paquete.checksum_sha256 || checksum !== paquete.checksum_sha256.toLowerCase()) {
+    throw new Error('El archivo está incompleto o fue modificado (checksum inválido)')
+  }
+
+  const sector = getInventarioSector(db, inventarioSectorId)
+  if (
+    contenido.inventario_sector_id !== inventarioSectorId ||
+    contenido.sesion_id !== Number(sector.sesion_id) ||
+    contenido.sector_id !== Number(sector.sector_id)
+  ) {
+    throw new Error('El archivo no corresponde a esta sesión y sector')
+  }
+  if (
+    contenido.contador_1_id !== Number(sector.contador_1_id) ||
+    contenido.contador_2_id !== Number(sector.contador_2_id)
+  ) {
+    throw new Error('Los contadores del archivo no coinciden con los asignados al sector')
+  }
+  if (!Array.isArray(contenido.lineas) || contenido.lineas.length === 0) {
+    throw new Error('El archivo no contiene líneas de conteo')
+  }
+
+  return {
+    ronda_actual: contenido.ronda_actual,
+    contador_1_finalizo: true,
+    contador_2_finalizo: true,
+    lineas: contenido.lineas
+  }
+}
+
 export function buildPaqueteOffline(
   db: Database.Database,
   inventarioSectorId: number,
@@ -68,6 +168,12 @@ export function buildPaqueteOffline(
   }
 
   assertModoOffline(sector)
+
+  if (sector.importado_at || String(sector.estado) === 'CERRADO_OK') {
+    throw new Error(
+      'Este sector ya fue importado al PC y está cerrado entre contadores. No hace falta volver a descargar el paquete.'
+    )
+  }
 
   const sectorMeta = db
     .prepare(`SELECT usa_ubicaciones FROM sectores WHERE id = ?`)

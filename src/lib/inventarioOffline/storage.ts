@@ -1,7 +1,12 @@
 import { Directory, Encoding, Filesystem } from '@capacitor/filesystem'
 import { Preferences } from '@capacitor/preferences'
 import { Capacitor } from '@capacitor/core'
-import type { OfflineEstadoLocal, OfflinePaquete, OfflineSyncPayload } from './types'
+import type {
+  OfflineEstadoLocal,
+  OfflinePaquete,
+  OfflinePcImportPackage,
+  OfflineSyncPayload
+} from './types'
 
 const KEY_PREFIX = 'inv_off_'
 
@@ -133,6 +138,35 @@ export async function writeSyncShareFile(payload: OfflineSyncPayload): Promise<{
 }> {
   const json = await exportSyncJson(payload)
   const fileName = `conteo-s${payload.inventario_sector_id}-c${payload.contador_id}-r${payload.ronda_actual}.json`
+
+  if (!Capacitor.isNativePlatform()) {
+    return { json, fileName, uri: null }
+  }
+
+  const path = `inventario-offline/share/${fileName}`
+  await Filesystem.writeFile({
+    path,
+    data: json,
+    directory: Directory.Cache,
+    encoding: Encoding.UTF8,
+    recursive: true
+  })
+  const { uri } = await Filesystem.getUri({
+    path,
+    directory: Directory.Cache
+  })
+  return { json, fileName, uri }
+}
+
+/** Escribe el paquete final que puede importarse manualmente en la PC. */
+export async function writePcImportShareFile(
+  payload: OfflinePcImportPackage
+): Promise<{ json: string; fileName: string; uri: string | null }> {
+  const json = JSON.stringify(payload, null, 2)
+  const fileName =
+    `controlstock-pc-s${payload.contenido.sesion_id}` +
+    `-sector${payload.contenido.inventario_sector_id}` +
+    `-r${payload.contenido.ronda_actual}.json`
 
   if (!Capacitor.isNativePlatform()) {
     return { json, fileName, uri: null }

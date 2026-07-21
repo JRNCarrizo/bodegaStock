@@ -9,7 +9,7 @@ on:
       version:
         description: 'Versión sin v (ej. 0.1.0)'
         required: true
-        default: '0.3.9'
+        default: '0.3.10'
 
 permissions:
   contents: write
@@ -68,11 +68,14 @@ jobs:
           body: |
             ## ControlStock ${{ steps.tag.outputs.name }}
 
-            Hotfix para la vista de detalle del inventario.
+            Importación de productos más flexible y búsquedas operativas consistentes.
+
+            ### Nuevo
+            - Importación del formato logístico con **Código de producto** y **Descripción**
+            - Detección automática de encabezados aunque existan títulos previos en el Excel
 
             ### Corregido
-            - La pantalla ya no queda en blanco al abrir una sesión con sectores offline pendientes
-            - Se restauró correctamente el icono del botón **Importar archivo**
+            - Los productos inactivos ya no aparecen en Consulta ni en el buscador del Inventario
 
             ### Actualización
             - Desde **v0.2.7 o superior:** Configuración → Buscar actualizaciones

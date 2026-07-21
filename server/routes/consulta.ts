@@ -227,9 +227,12 @@ export async function consultaRoutes(app: FastifyInstance): Promise<void> {
           WHERE ss.producto_id = p.id AND ${STOCK_SECTOR_VISIBLE_SQL}
         ), 0) AS sectores_con_stock
       FROM productos p
-      WHERE p.codigo_interno LIKE ?
-         OR p.codigo_barras LIKE ?
-         OR p.nombre LIKE ?
+      WHERE p.activo = 1
+        AND (
+          p.codigo_interno LIKE ?
+          OR p.codigo_barras LIKE ?
+          OR p.nombre LIKE ?
+        )
       ORDER BY p.nombre COLLATE NOCASE ASC
       LIMIT 25
     `).all(term, term, term)

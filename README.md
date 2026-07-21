@@ -19,7 +19,7 @@ Toda la especificación del proyecto está en la carpeta [`docs/`](docs/):
 
 ## Estado del proyecto
 
-**v0.3.9** — Hotfix de la vista de inventario offline, conservando las mejoras de edición, recepción en PC y archivo de contingencia. Actualizaciones desde Configuración.
+**v0.3.10** — Importación flexible de productos Excel y exclusión de productos inactivos en búsquedas operativas. Actualizaciones desde Configuración.
 
 ## Desarrollo local
 

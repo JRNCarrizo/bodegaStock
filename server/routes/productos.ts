@@ -126,12 +126,18 @@ export async function productosRoutes(app: FastifyInstance): Promise<void> {
     try {
       workbook = await loadWorkbookFromBase64(body.file_base64)
     } catch {
-      return reply.status(400).send({ error: 'No se pudo leer el Excel. Usá la plantilla .xlsx' })
+      return reply.status(400).send({ error: 'No se pudo leer el archivo Excel (.xlsx)' })
     }
 
     const { rows, errors: parseErrors } = readSheetAsObjects(workbook, {
-      codigo_interno: ['codigo_interno', 'codigo', 'cod_interno', 'codigointerno'],
-      nombre: ['nombre', 'producto', 'name'],
+      codigo_interno: [
+        'codigo_interno',
+        'codigo',
+        'cod_interno',
+        'codigointerno',
+        'codigo_de_producto'
+      ],
+      nombre: ['nombre', 'producto', 'name', 'descripcion'],
       descripcion: ['descripcion', 'description', 'desc', 'detalle']
     })
 

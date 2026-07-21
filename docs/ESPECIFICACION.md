@@ -1,6 +1,6 @@
 # BodegaStock — Especificación del proyecto
 
-> Documento vivo, alineado a la versión implementada **v0.3.9** (Electron + Fastify + SQLite + React + Capacitor Android).
+> Documento vivo, alineado a la versión implementada **v0.3.10** (Electron + Fastify + SQLite + React + Capacitor Android).
 
 ---
 
@@ -422,7 +422,7 @@ Administración de cuentas y permisos. Ver documento: [USUARIOS-Y-PERMISOS.md](U
 
 ## 6. Fases de desarrollo
 
-Estado respecto a **v0.3.9**:
+Estado respecto a **v0.3.10**:
 
 ### Fase 1 — Base
 - [x] Proyecto Electron + servidor embebido (Fastify)
@@ -490,7 +490,7 @@ Items a definir o ya definidos:
 - [ ] ¿Importación de planillas desde Excel en v1 o fase posterior?
 - [x] APK: **Capacitor** (React), no Flutter ni React Native
 - [x] Base de datos: **SQLite** en producción; PostgreSQL opcional a futuro
-- [x] Importación Excel de productos: plantilla + import (omite duplicados)
+- [x] Importación Excel de productos: plantilla propia o formato logístico con encabezados previos (`Código de producto` + `Descripción`); omite duplicados
 - [x] Detalle completo del flujo de inventario (ver [INVENTARIO.md](INVENTARIO.md)) — *definido e implementado (online + offline)*
 - [x] Ajustes de stock post-inventario: híbrido con confirmación del supervisor; reorganización entre sectores
 - [x] Estrategia de descuento: sectores marcados + fallback por menor stock ([DESGLOSE-DE-CANTIDADES.md](DESGLOSE-DE-CANTIDADES.md))

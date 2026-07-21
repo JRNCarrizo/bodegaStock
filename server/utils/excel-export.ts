@@ -154,19 +154,41 @@ export function readSheetAsObjects(
   const sheet = workbook.worksheets[0]
   if (!sheet) return { rows: [], errors: ['El Excel no tiene hojas'] }
 
-  const headerRow = sheet.getRow(1)
-  const colIndexByKey = new Map<string, number>()
   const errors: string[] = []
 
-  headerRow.eachCell({ includeEmpty: false }, (cell, colNumber) => {
-    const normalized = normalizeExcelHeader(excelCellText(cell.value))
-    if (!normalized) return
-    for (const [key, aliases] of Object.entries(columnAliases)) {
-      if (aliases.includes(normalized) && !colIndexByKey.has(key)) {
-        colIndexByKey.set(key, colNumber)
+  const mapHeaderRow = (rowNumber: number): Map<string, number> => {
+    const mapped = new Map<string, number>()
+    const claimedColumns = new Set<number>()
+    const row = sheet.getRow(rowNumber)
+
+    row.eachCell({ includeEmpty: false }, (cell, colNumber) => {
+      if (claimedColumns.has(colNumber)) return
+      const normalized = normalizeExcelHeader(excelCellText(cell.value))
+      if (!normalized) return
+
+      for (const [key, aliases] of Object.entries(columnAliases)) {
+        if (aliases.includes(normalized) && !mapped.has(key)) {
+          mapped.set(key, colNumber)
+          claimedColumns.add(colNumber)
+          break
+        }
       }
+    })
+
+    return mapped
+  }
+
+  let headerRowNumber = 0
+  let colIndexByKey = new Map<string, number>()
+  const scanLimit = Math.min(sheet.rowCount, 30)
+  for (let rowNumber = 1; rowNumber <= scanLimit; rowNumber++) {
+    const candidate = mapHeaderRow(rowNumber)
+    if (candidate.has('codigo_interno') && candidate.has('nombre')) {
+      headerRowNumber = rowNumber
+      colIndexByKey = candidate
+      break
     }
-  })
+  }
 
   if (!colIndexByKey.has('codigo_interno')) {
     errors.push('Falta la columna “Código interno”')
@@ -178,7 +200,7 @@ export function readSheetAsObjects(
 
   const rows: Record<string, string>[] = []
   sheet.eachRow({ includeEmpty: false }, (row, rowNumber) => {
-    if (rowNumber === 1) return
+    if (rowNumber <= headerRowNumber) return
     const obj: Record<string, string> = { __fila: String(rowNumber) }
     let anyValue = false
     for (const [key, col] of colIndexByKey.entries()) {

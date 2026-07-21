@@ -3222,7 +3222,9 @@ function ConteoSectorView({
     }
     setSearchingProducts(true)
     const t = setTimeout(() => {
-      void api<Producto[]>(`/api/productos?q=${encodeURIComponent(productSearch)}`)
+      void api<Producto[]>(
+        `/api/productos?q=${encodeURIComponent(productSearch)}&activo=1`
+      )
         .then((rows) => {
           setProductResults(rows)
           setSearchingProducts(false)
@@ -3433,7 +3435,7 @@ function ConteoSectorView({
     setError('')
     try {
       const rows = await api<Producto[]>(
-        `/api/productos?q=${encodeURIComponent(l.codigo_interno ?? '')}`
+        `/api/productos?q=${encodeURIComponent(l.codigo_interno ?? '')}&activo=1`
       )
       const p = rows.find((r) => r.id === l.producto_id) ?? rows[0]
       if (p) {
@@ -3475,7 +3477,7 @@ function ConteoSectorView({
     setError('')
     try {
       const list = await api<Producto[]>(
-        `/api/productos?q=${encodeURIComponent(grupo.codigo || grupo.nombre)}`
+        `/api/productos?q=${encodeURIComponent(grupo.codigo || grupo.nombre)}&activo=1`
       )
       const p =
         list.find((x) => x.id === grupo.producto_id) ??

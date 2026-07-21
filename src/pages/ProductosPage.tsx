@@ -673,7 +673,7 @@ export function ProductosPage() {
                 className="rounded-xl"
                 disabled={importing || downloadingPlantilla}
                 onClick={() => importInputRef.current?.click()}
-                title="Importar productos desde la plantilla Excel"
+                title="Importar la plantilla o un listado con Código de producto y Descripción"
               >
                 {importing ? (
                   <Loader2 className="h-4 w-4 animate-spin" />

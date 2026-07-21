@@ -19,7 +19,7 @@ Toda la especificación del proyecto está en la carpeta [`docs/`](docs/):
 
 ## Estado del proyecto
 
-**v0.3.8** — Inventario offline más robusto: edición previa al sync, mejor UX móvil, recepción visible en PC y archivo de contingencia. Actualizaciones desde Configuración.
+**v0.3.9** — Hotfix de la vista de inventario offline, conservando las mejoras de edición, recepción en PC y archivo de contingencia. Actualizaciones desde Configuración.
 
 ## Desarrollo local
 

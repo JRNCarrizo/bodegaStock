@@ -9,7 +9,7 @@ on:
       version:
         description: 'Versión sin v (ej. 0.1.0)'
         required: true
-        default: '0.3.8'
+        default: '0.3.9'
 
 permissions:
   contents: write
@@ -68,20 +68,11 @@ jobs:
           body: |
             ## ControlStock ${{ steps.tag.outputs.name }}
 
-            Mejoras de robustez y usabilidad del inventario online/offline.
+            Hotfix para la vista de detalle del inventario.
 
-            ### Nuevo
-            - **Seguir editando** antes de sincronizar con el compañero
-            - Alta directa de líneas en cero durante el reconteo
-            - Estado **Recibiendo conteo** visible en la PC
-            - Archivo final validado como Plan B para importar el sector en la PC
-
-            ### Mejorado
-            - Formulario de cantidades adaptado al teclado móvil
-            - Buscador con filas más grandes y mejor área táctil
-            - Actualización automática/manual de sectores asignados
-            - IP y QR del hotspot con refresco automático
-            - Bloqueo de reapertura para sectores ya importados
+            ### Corregido
+            - La pantalla ya no queda en blanco al abrir una sesión con sectores offline pendientes
+            - Se restauró correctamente el icono del botón **Importar archivo**
 
             ### Actualización
             - Desde **v0.2.7 o superior:** Configuración → Buscar actualizaciones

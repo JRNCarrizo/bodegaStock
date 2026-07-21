@@ -1,7 +1,7 @@
 # ControlStock (BodegaStock) — Ficha técnica para cotización
 
 > **Documento pensado para terceros e IAs.**  
-> Describí el sistema tal como está construido (julio 2026, **v0.3.8**).  
+> Describí el sistema tal como está construido (julio 2026, **v0.3.9**).  
 > Podés pegar este archivo completo en ChatGPT / Claude / Gemini y pedir una cotización independiente de desarrollo o de licencia.
 
 **Nombre comercial:** ControlStock  
@@ -316,7 +316,7 @@ No inventes módulos que no estén en la ficha. Basate solo en lo documentado.
 
 ## 12. Estado del producto (honestidad comercial)
 
-**Estado:** sistema operativo en uso de desarrollo/pruebas de campo (**v0.3.8**), con flujo principal de inventario offline **implementado de punta a punta** (descarga → conteo → sync P2P → comparación → reconteo → import confirmado al PC).
+**Estado:** sistema operativo en uso de desarrollo/pruebas de campo (**v0.3.9**), con flujo principal de inventario offline **implementado de punta a punta** (descarga → conteo → sync P2P → comparación → reconteo → import confirmado al PC).
 
 **Entregado en el estado actual:** exportaciones Excel operativas, importación de productos por plantilla, doble verificación opcional y mejoras de inventario: actualización automática del listado, formulario adaptado al teclado, reconteo más directo, edición previa al sync, QR/IP de hotspot autorrefrescable, estado de recepción en PC y archivo final Plan B.
 
@@ -324,4 +324,4 @@ No inventes módulos que no estén en la ficha. Basate solo en lo documentado.
 
 ---
 
-*Documento generado para evaluación y cotización independiente — ControlStock / BodegaStock **v0.3.8** — julio 2026.*
+*Documento generado para evaluación y cotización independiente — ControlStock / BodegaStock **v0.3.9** — julio 2026.*

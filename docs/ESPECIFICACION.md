@@ -1,6 +1,6 @@
 # BodegaStock — Especificación del proyecto
 
-> Documento vivo, alineado a la versión implementada **v0.3.8** (Electron + Fastify + SQLite + React + Capacitor Android).
+> Documento vivo, alineado a la versión implementada **v0.3.9** (Electron + Fastify + SQLite + React + Capacitor Android).
 
 ---
 
@@ -422,7 +422,7 @@ Administración de cuentas y permisos. Ver documento: [USUARIOS-Y-PERMISOS.md](U
 
 ## 6. Fases de desarrollo
 
-Estado respecto a **v0.3.8**:
+Estado respecto a **v0.3.9**:
 
 ### Fase 1 — Base
 - [x] Proyecto Electron + servidor embebido (Fastify)

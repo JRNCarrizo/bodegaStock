@@ -22,6 +22,7 @@ import {
   RefreshCw,
   Search,
   Trash2,
+  Upload,
   User,
   Users,
   Warehouse,

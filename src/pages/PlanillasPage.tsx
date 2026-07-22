@@ -102,6 +102,7 @@ export function PlanillasPage() {
   const vehiculoRef = useRef<HTMLSelectElement>(null)
   const observacionRef = useRef<HTMLInputElement>(null)
   const productSearchRef = useRef<HTMLInputElement>(null)
+  const productResultsListRef = useRef<HTMLUListElement>(null)
   const tipoRef = useRef<HTMLSelectElement>(null)
   const cantidadRef = useRef<HTMLInputElement>(null)
   const listScrollRef = useRef<HTMLDivElement>(null)
@@ -153,6 +154,14 @@ export function PlanillasPage() {
   useEffect(() => {
     setProductHighlightIndex(-1)
   }, [productResults])
+
+  useLayoutEffect(() => {
+    if (productHighlightIndex < 0) return
+    const list = productResultsListRef.current
+    if (!list) return
+    const item = list.children[productHighlightIndex] as HTMLElement | undefined
+    item?.scrollIntoView({ block: 'nearest' })
+  }, [productHighlightIndex])
 
   const loadPlanillas = useCallback(async () => {
     setLoadingList(true)
@@ -949,6 +958,7 @@ export function PlanillasPage() {
                 />
                 {productResults.length > 0 && !selectedProduct && (
                   <ul
+                    ref={productResultsListRef}
                     role="listbox"
                     className="absolute z-50 mt-1 max-h-52 w-full overflow-auto rounded-xl border border-surface-border bg-white py-1 shadow-panel"
                   >

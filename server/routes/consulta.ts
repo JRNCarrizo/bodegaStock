@@ -138,23 +138,27 @@ function getStockDetalle(db: ReturnType<typeof getDb>, productoId: number) {
 export async function consultaRoutes(app: FastifyInstance): Promise<void> {
   app.get('/api/consulta/export/stock-productos', {
     preHandler: requirePermiso('consulta.ver')
-  }, async (_request, reply) => {
+  }, async (request, reply) => {
     const db = getDb()
+    const { incluir_cero } = request.query as { incluir_cero?: string }
+    const incluirCero = incluir_cero === '1' || incluir_cero === 'true'
+    const stockTotalSql = `
+      COALESCE((
+        SELECT SUM(ss.cantidad_total) FROM stock_sector ss WHERE ss.producto_id = p.id
+      ), 0)
+    `
     const rows = db.prepare(`
       SELECT
         p.codigo_interno,
         p.nombre,
-        COALESCE(p.descripcion, '') AS descripcion,
-        COALESCE((
-          SELECT SUM(ss.cantidad_total) FROM stock_sector ss WHERE ss.producto_id = p.id
-        ), 0) AS cantidad_total
+        ${stockTotalSql} AS cantidad_total
       FROM productos p
       WHERE p.activo = 1
+        ${incluirCero ? '' : `AND ${stockTotalSql} > 0`}
       ORDER BY p.codigo_interno COLLATE NOCASE ASC, p.nombre COLLATE NOCASE ASC
     `).all() as Array<{
       codigo_interno: string
       nombre: string
-      descripcion: string
       cantidad_total: number
     }>
 
@@ -163,13 +167,11 @@ export async function consultaRoutes(app: FastifyInstance): Promise<void> {
       [
         { header: 'Código interno', key: 'codigo_interno', width: 18 },
         { header: 'Nombre', key: 'nombre', width: 36 },
-        { header: 'Descripción', key: 'descripcion', width: 40 },
         { header: 'Cantidad total', key: 'cantidad_total', width: 16 }
       ],
       rows.map((r) => ({
         codigo_interno: r.codigo_interno,
         nombre: r.nombre,
-        descripcion: r.descripcion,
         cantidad_total: Number(r.cantidad_total) || 0
       }))
     )

@@ -19,7 +19,7 @@ Toda la especificación del proyecto está en la carpeta [`docs/`](docs/):
 
 ## Estado del proyecto
 
-**v0.3.11** — Listados paginados, navegación por teclado en Inventario, modo offline predeterminado y clasificación obligatoria por ubicación cuando corresponde. Actualizaciones desde Configuración.
+**v0.3.12** — Exportaciones de Consulta e Inventario más claras, stock final visible en pantalla y mejoras de UX en cierre y planillas. Actualizaciones desde Configuración.
 
 ## Desarrollo local
 

@@ -186,6 +186,7 @@ export function ConsultaPage() {
   const [reorganizingSectorId, setReorganizingSectorId] = useState<number | null>(null)
   const [loading, setLoading] = useState(false)
   const [exporting, setExporting] = useState(false)
+  const [exportIncluirCero, setExportIncluirCero] = useState(false)
   const [error, setError] = useState('')
   const [showScanner, setShowScanner] = useState(false)
   const [imagePreview, setImagePreview] = useState<{
@@ -249,8 +250,11 @@ export function ConsultaPage() {
     setExporting(true)
     setError('')
     try {
+      const params = new URLSearchParams()
+      if (exportIncluirCero) params.set('incluir_cero', '1')
+      const qs = params.toString()
       await downloadApiFile(
-        '/api/consulta/export/stock-productos',
+        `/api/consulta/export/stock-productos${qs ? `?${qs}` : ''}`,
         `stock-productos.xlsx`
       )
     } catch (err) {
@@ -545,21 +549,36 @@ export function ConsultaPage() {
           </button>
         ))}
       </div>
-      <Button
-        variant="secondary"
-        size="sm"
-        className="rounded-xl"
-        disabled={exporting}
-        onClick={() => void exportarStockProductos()}
-        title="Excel con código interno, nombre, descripción y cantidad total"
-      >
-        {exporting ? (
-          <Loader2 className="h-4 w-4 animate-spin" />
-        ) : (
-          <Download className="h-4 w-4" />
-        )}
-        {exporting ? 'Exportando…' : 'Exportar Excel'}
-      </Button>
+      <div className="flex flex-wrap items-center gap-3">
+        <label className="inline-flex cursor-pointer items-center gap-2 text-sm text-slate-600">
+          <input
+            type="checkbox"
+            checked={exportIncluirCero}
+            onChange={(e) => setExportIncluirCero(e.target.checked)}
+            className="h-4 w-4 rounded border-surface-border text-brand-600 focus:ring-brand-500/30"
+          />
+          Incluir productos en cero
+        </label>
+        <Button
+          variant="secondary"
+          size="sm"
+          className="rounded-xl"
+          disabled={exporting}
+          onClick={() => void exportarStockProductos()}
+          title={
+            exportIncluirCero
+              ? 'Excel con código interno, nombre y cantidad (incluye stock 0)'
+              : 'Excel con código interno, nombre y cantidad (solo con stock)'
+          }
+        >
+          {exporting ? (
+            <Loader2 className="h-4 w-4 animate-spin" />
+          ) : (
+            <Download className="h-4 w-4" />
+          )}
+          {exporting ? 'Exportando…' : 'Exportar Excel'}
+        </Button>
+      </div>
     </div>
   )
 

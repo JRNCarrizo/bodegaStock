@@ -100,7 +100,7 @@ type InventarioExportItem = {
   total_contado: number
 }
 
-/** Agrega por producto (sin sectores ni desglose). */
+/** Agrega por producto el reporte con diferencias (sin sectores ni desglose). */
 function agregarProductosInventarioExport(
   db: ReturnType<typeof getDb>,
   items: InventarioExportItem[]
@@ -151,6 +151,37 @@ function agregarProductosInventarioExport(
         resultado: resultadoInventarioExport(row.sistema, row.contado)
       }
     })
+    .sort((a, b) =>
+      a.codigo_interno.localeCompare(b.codigo_interno, 'es', { sensitivity: 'base' })
+    )
+}
+
+/** Stock final agregado por producto (sin sectores ni diferencias). */
+function stockFinalInventarioExport(
+  detalle: Array<Record<string, unknown>>
+): Array<{ codigo_interno: string; nombre: string; cantidad: number }> {
+  const map = new Map<number, { codigo_interno: string; nombre: string; cantidad: number }>()
+
+  for (const item of detalle) {
+    const productoId = Number(item.producto_id)
+    if (!Number.isFinite(productoId) || productoId <= 0) continue
+    const cantidad = Number(
+      item.total_aplicado != null ? item.total_aplicado : item.total_contado ?? 0
+    )
+    const prev = map.get(productoId)
+    if (prev) {
+      prev.cantidad += cantidad
+    } else {
+      map.set(productoId, {
+        codigo_interno: String(item.codigo_interno ?? ''),
+        nombre: String(item.nombre ?? ''),
+        cantidad
+      })
+    }
+  }
+
+  return [...map.values()]
+    .filter((row) => row.cantidad > 0)
     .sort((a, b) =>
       a.codigo_interno.localeCompare(b.codigo_interno, 'es', { sensitivity: 'base' })
     )
@@ -353,6 +384,69 @@ export async function inventarioRoutes(app: FastifyInstance): Promise<void> {
         reply,
         buffer,
         `inventario-${safeName || sesionId}-${todayFileStamp()}.xlsx`
+      )
+    }
+  )
+
+  app.get<{ Params: { id: string } }>(
+    '/api/inventario/sesiones/:id/export-stock',
+    { preHandler: requirePermiso('inventario.ver') },
+    async (req, reply) => {
+      const db = getDb()
+      const sesionId = Number(req.params.id)
+      const sesion = getSesionOrThrow(db, sesionId)
+
+      const reporte = db.prepare(`
+        SELECT detalle FROM inventario_reportes WHERE sesion_id = ?
+      `).get(sesionId) as { detalle: string } | undefined
+
+      if (!reporte?.detalle) {
+        return reply.status(400).send({
+          error: 'El export de stock final requiere el inventario cerrado'
+        })
+      }
+
+      const detalle = JSON.parse(reporte.detalle) as Array<Record<string, unknown>>
+      const rows = stockFinalInventarioExport(detalle)
+      const totalCantidad = rows.reduce((s, r) => s + r.cantidad, 0)
+
+      const buffer = await buildMultiSheetExcel([
+        resumenSheet('Resumen', [
+          ['Nombre', String(sesion.nombre)],
+          ['Estado', String(sesion.estado)],
+          ['Creada', String(sesion.created_at)],
+          ['Inicio', sesion.fecha_inicio as string | null],
+          ['Cierre', sesion.fecha_cierre as string | null],
+          ['Observación', sesion.observacion as string | null],
+          ['Productos con stock', rows.length],
+          ['Cantidad total', totalCantidad]
+        ]),
+        {
+          name: 'Stock final',
+          columns: [
+            { header: 'Código interno', key: 'codigo_interno', width: 18 },
+            { header: 'Nombre', key: 'nombre', width: 36 },
+            { header: 'Cantidad', key: 'cantidad', width: 14 }
+          ],
+          rows: [
+            ...rows,
+            {
+              codigo_interno: '',
+              nombre: 'TOTAL',
+              cantidad: totalCantidad
+            }
+          ]
+        }
+      ])
+
+      const safeName = String(sesion.nombre)
+        .replace(/[^\w.\-() áéíóúÁÉÍÓÚñÑ]/g, '_')
+        .trim()
+        .slice(0, 40)
+      return sendExcelFile(
+        reply,
+        buffer,
+        `inventario-stock-${safeName || sesionId}-${todayFileStamp()}.xlsx`
       )
     }
   )

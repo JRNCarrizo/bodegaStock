@@ -1,6 +1,6 @@
 # BodegaStock — Especificación del proyecto
 
-> Documento vivo, alineado a la versión implementada **v0.3.11** (Electron + Fastify + SQLite + React + Capacitor Android).
+> Documento vivo, alineado a la versión implementada **v0.3.12** (Electron + Fastify + SQLite + React + Capacitor Android).
 
 ---
 
@@ -129,7 +129,7 @@ Búsqueda y visualización de información de stock.
 - Ver **desglose por sector** (líneas: pallet × unidades, sueltos — sin fusionar)
 - Ver **desglose por ubicación/pila** dentro de cada sector
 - Ver historial reciente de movimientos del producto (opcional)
-- **Export Excel:** `GET /api/consulta/export/stock-productos`
+- **Export Excel:** `GET /api/consulta/export/stock-productos` (código, nombre y cantidad; `incluir_cero=1` para incluir stock 0)
 
 **Ejemplo de visualización:**
 ```
@@ -359,7 +359,7 @@ Conteo físico realizado por **dos personas** desde celulares (**navegador web**
 6. Comparación B: total contado vs sistema al cerrar (siempre en PC); detecta cantidad y reorganización entre sectores.
 7. Supervisor confirma → `stock_lineas` se alinea con lo contado + reporte antes/después.
 
-**Export Excel de sesión:** `GET /api/inventario/sesiones/:id/export` — agregado **por producto** (sin sector ni desglose por líneas).
+**Export Excel de sesión:** reporte con diferencias (`…/export`) y stock final limpio (`…/export-stock`) tras el cierre.
 
 **UX y robustez:**
 - Listado móvil con actualización automática/al recuperar foco y botón manual.
@@ -426,7 +426,7 @@ Administración de cuentas y permisos. Ver documento: [USUARIOS-Y-PERMISOS.md](U
 
 ## 6. Fases de desarrollo
 
-Estado respecto a **v0.3.11**:
+Estado respecto a **v0.3.12**:
 
 ### Fase 1 — Base
 - [x] Proyecto Electron + servidor embebido (Fastify)

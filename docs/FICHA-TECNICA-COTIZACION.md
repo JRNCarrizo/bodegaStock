@@ -1,7 +1,7 @@
 # ControlStock (BodegaStock) — Ficha técnica para cotización
 
 > **Documento pensado para terceros e IAs.**  
-> Describí el sistema tal como está construido (julio 2026, **v0.3.11**).
+> Describí el sistema tal como está construido (julio 2026, **v0.3.12**).
 > Podés pegar este archivo completo en ChatGPT / Claude / Gemini y pedir una cotización independiente de desarrollo o de licencia.
 
 **Nombre comercial:** ControlStock  
@@ -148,7 +148,7 @@ No es un prototipo de una sola pantalla: es un sistema multi-módulo con reglas 
 
 - Vistas: **Por producto**, **Por sector**, **Ver todos** (solo productos con stock > 0, listado paginado).
 - Búsqueda por código/nombre; stock por sector; desglose pallet/caja/suelto.
-- **Export Excel** del stock agregado por producto.
+- **Export Excel** del stock agregado por producto (código, nombre y cantidad; opción de incluir o no productos en cero).
 
 ### Operación de stock
 
@@ -170,10 +170,11 @@ Listados `.xlsx` generados por la API (agregaciones de consulta; no son tablas n
 | `planillas/:id/export` | Detalle de una planilla |
 | `retornos/:id/export` | Detalle de un retorno |
 | `roturas/export-dia` | Roturas del día |
-| `inventario/sesiones/:id/export` | Resumen de sesión de inventario |
+| `inventario/sesiones/:id/export` | Reporte de cierre con sistema / contado / diferencias |
+| `inventario/sesiones/:id/export-stock` | Stock final limpio de la sesión cerrada |
 
 **Formato típico de filas de productos:** código, nombre, descripción, cantidad.  
-En roturas se agrega observación; en inventario el listado va **agregado por producto** (sin sector ni desglose de líneas).
+En roturas se agrega observación; en inventario hay export del reporte con diferencias y otro del **stock final limpio**.
 
 ### Inventario físico (diferenciador fuerte)
 
@@ -317,7 +318,7 @@ No inventes módulos que no estén en la ficha. Basate solo en lo documentado.
 
 ## 12. Estado del producto (honestidad comercial)
 
-**Estado:** sistema operativo en uso de desarrollo/pruebas de campo (**v0.3.11**), con flujo principal de inventario offline **implementado de punta a punta** (descarga → conteo → sync P2P → comparación → reconteo → import confirmado al PC).
+**Estado:** sistema operativo en uso de desarrollo/pruebas de campo (**v0.3.12**), con flujo principal de inventario offline **implementado de punta a punta** (descarga → conteo → sync P2P → comparación → reconteo → import confirmado al PC).
 
 **Entregado en el estado actual:** exportaciones Excel operativas, importación de productos por plantilla, doble verificación opcional y mejoras de inventario: actualización automática del listado, formulario adaptado al teclado, reconteo más directo, edición previa al sync, QR/IP de hotspot autorrefrescable, estado de recepción en PC y archivo final Plan B.
 
@@ -325,4 +326,4 @@ No inventes módulos que no estén en la ficha. Basate solo en lo documentado.
 
 ---
 
-*Documento generado para evaluación y cotización independiente — ControlStock / BodegaStock **v0.3.11** — julio 2026.*
+*Documento generado para evaluación y cotización independiente — ControlStock / BodegaStock **v0.3.12** — julio 2026.*

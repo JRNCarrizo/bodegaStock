@@ -259,18 +259,47 @@ function sumarTotalesMisLineas(lineas: InventarioConteoLinea[]): TotalesInventar
   return { cajas, suelto }
 }
 
-const TABLA_CIERRE_CLASS = 'min-w-[72rem] text-sm'
+const TABLA_CIERRE_CLASS = 'w-full text-sm'
+const TABLA_CIERRE_TH = 'px-2.5 py-2'
+const TABLA_CIERRE_TD = 'px-2.5 py-2'
+
+/** Mismo agregado que el Excel de stock final (por producto, cantidad > 0). */
+function stockFinalDesdeDetalle(detalle: Array<Record<string, unknown>>) {
+  const map = new Map<number, { codigo_interno: string; nombre: string; cantidad: number }>()
+  for (const item of detalle) {
+    const productoId = Number(item.producto_id)
+    if (!Number.isFinite(productoId) || productoId <= 0) continue
+    const cantidad = Number(
+      item.total_aplicado != null ? item.total_aplicado : item.total_contado ?? 0
+    )
+    const prev = map.get(productoId)
+    if (prev) {
+      prev.cantidad += cantidad
+    } else {
+      map.set(productoId, {
+        codigo_interno: String(item.codigo_interno ?? ''),
+        nombre: String(item.nombre ?? ''),
+        cantidad
+      })
+    }
+  }
+  return [...map.values()]
+    .filter((row) => row.cantidad > 0)
+    .sort((a, b) =>
+      a.codigo_interno.localeCompare(b.codigo_interno, 'es', { sensitivity: 'base' })
+    )
+}
 
 function CeldaCodigoProducto({ codigo }: { codigo: string }) {
   return (
-    <span className="inline-flex shrink-0 rounded-md bg-slate-800 px-2.5 py-1 font-mono text-xs font-bold tracking-wide text-white shadow-sm">
+    <span className="inline-flex shrink-0 rounded-md bg-slate-800 px-2 py-0.5 font-mono text-xs font-bold tracking-wide text-white shadow-sm">
       {codigo}
     </span>
   )
 }
 
 function CeldaNombreProducto({ nombre }: { nombre: string }) {
-  return <p className="min-w-[14rem] whitespace-nowrap font-medium text-slate-900">{nombre}</p>
+  return <p className="max-w-[18rem] font-medium leading-snug text-slate-900">{nombre}</p>
 }
 
 function CeldaTotalesInventario({
@@ -461,10 +490,10 @@ function ReporteDetalleItem({
     return (
       <>
         <tr className="bg-white">
-          <td className="whitespace-nowrap px-4 py-2.5">
+          <td className={cn('whitespace-nowrap', TABLA_CIERRE_TD)}>
             <CeldaCodigoProducto codigo={String(item.codigo_interno ?? '—')} />
           </td>
-          <td className="px-4 py-2.5">
+          <td className={TABLA_CIERRE_TD}>
             <CeldaNombreProducto nombre={String(item.nombre)} />
             {desgloseColapsado ? (
               <DesgloseToggleButton
@@ -477,7 +506,7 @@ function ReporteDetalleItem({
               </p>
             )}
           </td>
-          <td className="px-4 py-2.5">
+          <td className={TABLA_CIERRE_TD}>
             <span
               className={cn(
                 'rounded-full px-2 py-0.5 text-xs font-medium',
@@ -487,7 +516,7 @@ function ReporteDetalleItem({
               {tipoInventarioLabel(tipo)}
             </span>
           </td>
-          <td className="px-4 py-2.5 text-right">
+          <td className={cn(TABLA_CIERRE_TD, 'text-right')}>
             <CeldaTotalesInventario
               totales={totalesItem(item, 'aplicado')}
               unidad={String(item.unidad ?? '')}
@@ -497,7 +526,7 @@ function ReporteDetalleItem({
         </tr>
         {desgloseColapsado && desgloseAbierto && (
           <tr className="bg-slate-50/60">
-            <td colSpan={colSpanDesglose} className="px-4 pb-3 pt-0">
+            <td colSpan={colSpanDesglose} className="px-2.5 pb-2.5 pt-0">
               <DesgloseComparacionParalelo
                 lineasSistema={lineasDesgloseFromItem(item, 'sistema')}
                 lineasContado={lineasDesgloseFromItem(item, 'contado')}
@@ -515,10 +544,10 @@ function ReporteDetalleItem({
   return (
     <>
       <tr className="bg-white align-top">
-        <td className="whitespace-nowrap px-4 py-3">
+        <td className={cn('whitespace-nowrap', TABLA_CIERRE_TD)}>
           <CeldaCodigoProducto codigo={String(item.codigo_interno ?? '—')} />
         </td>
-        <td className="px-4 py-3">
+        <td className={TABLA_CIERRE_TD}>
           <CeldaNombreProducto nombre={String(item.nombre)} />
           {desgloseColapsado ? (
             <DesgloseToggleButton
@@ -526,7 +555,7 @@ function ReporteDetalleItem({
               onToggle={() => setDesgloseAbierto((v) => !v)}
             />
           ) : (
-            <div className="mt-2 grid gap-1.5 text-xs sm:grid-cols-2">
+            <div className="mt-1.5 grid gap-1 text-xs sm:grid-cols-2">
               <p className="text-slate-500">
                 <span className="font-medium text-slate-400">Sistema:</span>{' '}
                 {String(item.desglose_sistema || '—')}
@@ -538,7 +567,7 @@ function ReporteDetalleItem({
             </div>
           )}
         </td>
-        <td className="px-4 py-3">
+        <td className={TABLA_CIERRE_TD}>
           <span
             className={cn(
               'rounded-full px-2 py-0.5 text-xs font-medium',
@@ -548,21 +577,21 @@ function ReporteDetalleItem({
             {tipoInventarioLabel(tipo)}
           </span>
         </td>
-        <td className="px-4 py-3 text-right">
+        <td className={cn(TABLA_CIERRE_TD, 'text-right')}>
           <CeldaTotalesInventario
             totales={totalesItem(item, 'sistema')}
             unidad={String(item.unidad ?? '')}
             variant="muted"
           />
         </td>
-        <td className="px-4 py-3 text-right">
+        <td className={cn(TABLA_CIERRE_TD, 'text-right')}>
           <CeldaTotalesInventario
             totales={totalesItem(item, 'contado')}
             unidad={String(item.unidad ?? '')}
             variant="emphasis"
           />
         </td>
-        <td className="px-4 py-3 text-right">
+        <td className={cn(TABLA_CIERRE_TD, 'text-right')}>
           <CeldaDiferenciaInventario
             difCajas={dif}
             difSuelto={Number(item.diferencia_suelto ?? 0)}
@@ -571,7 +600,7 @@ function ReporteDetalleItem({
       </tr>
       {desgloseColapsado && desgloseAbierto && (
         <tr className="bg-slate-50/60">
-          <td colSpan={colSpanDesglose} className="px-4 pb-3 pt-0">
+          <td colSpan={colSpanDesglose} className="px-2.5 pb-2.5 pt-0">
             <DesgloseComparacionParalelo
               lineasSistema={lineasDesgloseFromItem(item, 'sistema')}
               lineasContado={lineasDesgloseFromItem(item, 'contado')}
@@ -588,16 +617,28 @@ function ReporteDetalleItem({
 
 function InventarioReporteCierre({
   reporte,
-  onExport,
-  exporting
+  onExportReporte,
+  onExportStock,
+  exportingReporte,
+  exportingStock
 }: {
   reporte: NonNullable<InventarioSesionDetalle['reporte']>
-  onExport?: () => void
-  exporting?: boolean
+  onExportReporte?: () => void
+  onExportStock?: () => void
+  exportingReporte?: boolean
+  exportingStock?: boolean
 }) {
   const { resumen, detalle, ajustes_aplicados, created_at } = reporte
   const [filtro, setFiltro] = useState<'todos' | 'ajustes' | 'ok'>('todos')
+  const [showStockFinal, setShowStockFinal] = useState(false)
   const todoOk = (resumen.con_ajuste ?? 0) === 0
+  const exporting = Boolean(exportingReporte || exportingStock)
+
+  const stockFinal = useMemo(() => stockFinalDesdeDetalle(detalle), [detalle])
+  const totalStockFinal = useMemo(
+    () => stockFinal.reduce((s, r) => s + r.cantidad, 0),
+    [stockFinal]
+  )
 
   const itemsFiltrados = useMemo(() => {
     if (filtro === 'ajustes') return detalle.filter((i) => i.requiere_ajuste)
@@ -627,20 +668,48 @@ function InventarioReporteCierre({
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            {onExport && (
+            <Button
+              variant="secondary"
+              size="sm"
+              className="rounded-lg"
+              onClick={() => setShowStockFinal(true)}
+              title="Ver el stock final limpio en pantalla"
+            >
+              <Eye className="h-4 w-4" />
+              Ver stock final
+            </Button>
+            {onExportReporte && (
               <Button
                 variant="secondary"
                 size="sm"
                 className="rounded-lg"
                 disabled={exporting}
-                onClick={onExport}
+                onClick={onExportReporte}
+                title="Excel del reporte con sistema, contado y diferencias"
               >
-                {exporting ? (
+                {exportingReporte ? (
                   <Loader2 className="h-4 w-4 animate-spin" />
                 ) : (
                   <Download className="h-4 w-4" />
                 )}
-                Exportar
+                Exportar reporte
+              </Button>
+            )}
+            {onExportStock && (
+              <Button
+                variant="secondary"
+                size="sm"
+                className="rounded-lg"
+                disabled={exporting}
+                onClick={onExportStock}
+                title="Excel del stock final (código, nombre y cantidad)"
+              >
+                {exportingStock ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Download className="h-4 w-4" />
+                )}
+                Exportar stock final
               </Button>
             )}
             {todoOk && (
@@ -736,17 +805,19 @@ function InventarioReporteCierre({
                     <table className={TABLA_CIERRE_CLASS}>
                       <thead className="bg-white text-left text-xs font-semibold uppercase tracking-wide text-slate-400">
                         <tr>
-                          <th className="whitespace-nowrap px-4 py-2">Código</th>
-                          <th className="min-w-[14rem] px-4 py-2">Producto</th>
-                          <th className="px-4 py-2">Resultado</th>
+                          <th className={cn('whitespace-nowrap', TABLA_CIERRE_TH)}>Código</th>
+                          <th className={TABLA_CIERRE_TH}>Producto</th>
+                          <th className={TABLA_CIERRE_TH}>Resultado</th>
                           {filtro !== 'ok' && (
                             <>
-                              <th className="px-4 py-2 text-right">Sistema</th>
-                              <th className="px-4 py-2 text-right">Contado</th>
-                              <th className="px-4 py-2 text-right">Dif.</th>
+                              <th className={cn(TABLA_CIERRE_TH, 'text-right')}>Sistema</th>
+                              <th className={cn(TABLA_CIERRE_TH, 'text-right')}>Contado</th>
+                              <th className={cn(TABLA_CIERRE_TH, 'text-right')}>Dif.</th>
                             </>
                           )}
-                          {filtro === 'ok' && <th className="px-4 py-2 text-right">Total</th>}
+                          {filtro === 'ok' && (
+                            <th className={cn(TABLA_CIERRE_TH, 'text-right')}>Total</th>
+                          )}
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-surface-border">
@@ -775,11 +846,12 @@ function InventarioReporteCierre({
               <table className="min-w-full text-sm">
                 <thead className="bg-slate-50 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
                   <tr>
-                    <th className="px-4 py-2.5">Producto</th>
-                    <th className="px-4 py-2.5">Sector</th>
-                    <th className="px-4 py-2.5">Tipo</th>
-                    <th className="px-4 py-2.5 text-right">Antes</th>
-                    <th className="px-4 py-2.5 text-right">Después</th>
+                    <th className={cn('whitespace-nowrap', TABLA_CIERRE_TH)}>Código</th>
+                    <th className={TABLA_CIERRE_TH}>Producto</th>
+                    <th className={TABLA_CIERRE_TH}>Sector</th>
+                    <th className={TABLA_CIERRE_TH}>Tipo</th>
+                    <th className={cn(TABLA_CIERRE_TH, 'text-right')}>Antes</th>
+                    <th className={cn(TABLA_CIERRE_TH, 'text-right')}>Después</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-surface-border">
@@ -790,20 +862,20 @@ function InventarioReporteCierre({
                     )
                     return (
                       <tr key={idx} className="bg-white">
-                        <td className="px-4 py-2.5">
-                          <p className="font-medium text-slate-900">
-                            {String(det?.nombre ?? `Producto #${String(ajuste.producto_id)}`)}
-                          </p>
-                          {det?.codigo_interno && (
-                            <p className="font-mono text-xs text-slate-500">
-                              {String(det.codigo_interno)}
-                            </p>
-                          )}
+                        <td className={cn('whitespace-nowrap', TABLA_CIERRE_TD)}>
+                          <CeldaCodigoProducto
+                            codigo={String(det?.codigo_interno ?? `#${String(ajuste.producto_id)}`)}
+                          />
                         </td>
-                        <td className="px-4 py-2.5 text-slate-600">
+                        <td className={TABLA_CIERRE_TD}>
+                          <CeldaNombreProducto
+                            nombre={String(det?.nombre ?? `Producto #${String(ajuste.producto_id)}`)}
+                          />
+                        </td>
+                        <td className={cn(TABLA_CIERRE_TD, 'text-slate-600')}>
                           {String(det?.sector_nombre ?? `#${String(ajuste.sector_id)}`)}
                         </td>
-                        <td className="px-4 py-2.5">
+                        <td className={TABLA_CIERRE_TD}>
                           <span
                             className={cn(
                               'rounded-full px-2 py-0.5 text-xs font-medium',
@@ -814,10 +886,15 @@ function InventarioReporteCierre({
                             {tipoInventarioLabel(String(ajuste.tipo))}
                           </span>
                         </td>
-                        <td className="px-4 py-2.5 text-right tabular-nums text-slate-600">
+                        <td className={cn(TABLA_CIERRE_TD, 'text-right tabular-nums text-slate-600')}>
                           {formatCantidad(Number(ajuste.antes ?? 0))}
                         </td>
-                        <td className="px-4 py-2.5 text-right tabular-nums font-semibold text-slate-900">
+                        <td
+                          className={cn(
+                            TABLA_CIERRE_TD,
+                            'text-right tabular-nums font-semibold text-slate-900'
+                          )}
+                        >
                           {formatCantidad(Number(ajuste.despues ?? 0))}
                         </td>
                       </tr>
@@ -835,6 +912,115 @@ function InventarioReporteCierre({
           </p>
         )}
       </CardBody>
+
+      {showStockFinal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div
+            className="absolute inset-0 bg-slate-900/50"
+            onClick={() => setShowStockFinal(false)}
+            aria-hidden
+          />
+          <div
+            className="relative z-10 flex max-h-[min(90vh,720px)] w-full max-w-3xl flex-col overflow-hidden rounded-xl border border-surface-border bg-white shadow-xl"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="stock-final-title"
+          >
+            <div className="flex shrink-0 items-start justify-between gap-3 border-b border-surface-border px-5 py-4">
+              <div className="min-w-0">
+                <h3 id="stock-final-title" className="font-semibold text-slate-900">
+                  Stock final
+                </h3>
+                <p className="mt-0.5 text-sm text-slate-500">
+                  {stockFinal.length} producto{stockFinal.length === 1 ? '' : 's'} con stock · total{' '}
+                  <span className="font-semibold tabular-nums text-slate-700">
+                    {formatCantidad(totalStockFinal)}
+                  </span>
+                </p>
+              </div>
+              <div className="flex shrink-0 items-center gap-2">
+                {onExportStock && (
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    className="rounded-lg"
+                    disabled={exporting}
+                    onClick={onExportStock}
+                  >
+                    {exportingStock ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <Download className="h-4 w-4" />
+                    )}
+                    Excel
+                  </Button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setShowStockFinal(false)}
+                  className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
+                  aria-label="Cerrar"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
+            </div>
+
+            <div className="min-h-0 flex-1 overflow-auto">
+              {stockFinal.length === 0 ? (
+                <p className="px-5 py-8 text-center text-sm text-slate-500">
+                  No quedó stock registrado en este inventario.
+                </p>
+              ) : (
+                <table className={TABLA_CIERRE_CLASS}>
+                  <thead className="sticky top-0 bg-slate-50 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+                    <tr>
+                      <th className={cn('whitespace-nowrap', TABLA_CIERRE_TH)}>Código</th>
+                      <th className={TABLA_CIERRE_TH}>Producto</th>
+                      <th className={cn(TABLA_CIERRE_TH, 'text-right')}>Cantidad</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-surface-border">
+                    {stockFinal.map((row) => (
+                      <tr key={row.codigo_interno} className="bg-white">
+                        <td className={cn('whitespace-nowrap', TABLA_CIERRE_TD)}>
+                          <CeldaCodigoProducto codigo={row.codigo_interno || '—'} />
+                        </td>
+                        <td className={TABLA_CIERRE_TD}>
+                          <CeldaNombreProducto nombre={row.nombre} />
+                        </td>
+                        <td
+                          className={cn(
+                            TABLA_CIERRE_TD,
+                            'text-right tabular-nums font-semibold text-slate-900'
+                          )}
+                        >
+                          {formatCantidad(row.cantidad)}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                  <tfoot className="sticky bottom-0 border-t border-surface-border bg-slate-50">
+                    <tr>
+                      <td className={TABLA_CIERRE_TD} colSpan={2}>
+                        <span className="text-sm font-semibold text-slate-700">TOTAL</span>
+                      </td>
+                      <td
+                        className={cn(
+                          TABLA_CIERRE_TD,
+                          'text-right tabular-nums font-bold text-slate-900'
+                        )}
+                      >
+                        {formatCantidad(totalStockFinal)}
+                      </td>
+                    </tr>
+                  </tfoot>
+                </table>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </Card>
   )
 }
@@ -1394,17 +1580,17 @@ function VistaPreviaItemConDecision({
   return (
     <>
       <tr className="bg-white align-top">
-        <td className="whitespace-nowrap px-4 py-3">
+        <td className={cn('whitespace-nowrap', TABLA_CIERRE_TD)}>
           <CeldaCodigoProducto codigo={String(item.codigo_interno ?? '—')} />
         </td>
-        <td className="px-4 py-3">
+        <td className={TABLA_CIERRE_TD}>
           <CeldaNombreProducto nombre={String(item.nombre)} />
           <DesgloseToggleButton
             abierto={desgloseAbierto}
             onToggle={() => setDesgloseAbierto((v) => !v)}
           />
         </td>
-        <td className="px-4 py-3">
+        <td className={TABLA_CIERRE_TD}>
           <span
             className={cn(
               'rounded-full px-2 py-0.5 text-xs font-medium',
@@ -1414,32 +1600,32 @@ function VistaPreviaItemConDecision({
             {tipoInventarioLabel(tipo)}
           </span>
         </td>
-        <td className="px-4 py-3 text-right">
+        <td className={cn(TABLA_CIERRE_TD, 'text-right')}>
           <CeldaTotalesInventario
             totales={totalesSistema}
             unidad={String(item.unidad ?? '')}
             variant="muted"
           />
         </td>
-        <td className="px-4 py-3 text-right">
+        <td className={cn(TABLA_CIERRE_TD, 'text-right')}>
           <CeldaTotalesInventario
             totales={totalesItem(item, 'contado')}
             unidad={String(item.unidad ?? '')}
             variant="emphasis"
           />
         </td>
-        <td className="px-4 py-3 text-right">
+        <td className={cn(TABLA_CIERRE_TD, 'text-right')}>
           <CeldaDiferenciaInventario
             difCajas={dif}
             difSuelto={Number(item.diferencia_suelto ?? 0)}
           />
         </td>
         {requiereAjuste && (
-          <td className="min-w-[11rem] px-4 py-3">
+          <td className={cn(TABLA_CIERRE_TD, 'w-[11rem]')}>
             <select
               value={selectModo}
               onChange={(e) => cambiarModo(e.target.value as CierreDecisionModo)}
-              className="w-full min-w-[160px] rounded-lg border border-surface-border bg-white px-2 py-1.5 text-xs font-medium text-slate-700"
+              className="w-full rounded-lg border border-surface-border bg-white px-2 py-1.5 text-xs font-medium text-slate-700"
             >
               <option value="CONTADO">Aplicar contado</option>
               <option value="SISTEMA">Mantener sistema</option>
@@ -1476,7 +1662,7 @@ function VistaPreviaItemConDecision({
       </tr>
       {desgloseAbierto && (
         <tr className="bg-slate-50/60">
-          <td colSpan={colSpanDesglose} className="px-4 pb-3 pt-0">
+          <td colSpan={colSpanDesglose} className="px-2.5 pb-2.5 pt-0">
             <DesgloseComparacionParalelo
               lineasSistema={lineasDesgloseFromItem(item, 'sistema')}
               lineasContado={lineasDesgloseFromItem(item, 'contado')}
@@ -1730,20 +1916,22 @@ function InventarioVistaPreviaCierre({
                     <table className={TABLA_CIERRE_CLASS}>
                       <thead className="bg-white text-left text-xs font-semibold uppercase tracking-wide text-slate-400">
                         <tr>
-                          <th className="whitespace-nowrap px-4 py-2">Código</th>
-                          <th className="min-w-[14rem] px-4 py-2">Producto</th>
-                          <th className="px-4 py-2">Resultado</th>
+                          <th className={cn('whitespace-nowrap', TABLA_CIERRE_TH)}>Código</th>
+                          <th className={TABLA_CIERRE_TH}>Producto</th>
+                          <th className={TABLA_CIERRE_TH}>Resultado</th>
                           {filtro !== 'ok' && (
                             <>
-                              <th className="px-4 py-2 text-right">Sistema</th>
-                              <th className="px-4 py-2 text-right">Contado</th>
-                              <th className="px-4 py-2 text-right">Dif.</th>
+                              <th className={cn(TABLA_CIERRE_TH, 'text-right')}>Sistema</th>
+                              <th className={cn(TABLA_CIERRE_TH, 'text-right')}>Contado</th>
+                              <th className={cn(TABLA_CIERRE_TH, 'text-right')}>Dif.</th>
                               {mostrarDecisiones && (
-                                <th className="px-4 py-2">Al cerrar</th>
+                                <th className={TABLA_CIERRE_TH}>Al cerrar</th>
                               )}
                             </>
                           )}
-                          {filtro === 'ok' && <th className="px-4 py-2 text-right">Total</th>}
+                          {filtro === 'ok' && (
+                            <th className={cn(TABLA_CIERRE_TH, 'text-right')}>Total</th>
+                          )}
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-surface-border">
@@ -1840,6 +2028,7 @@ export function InventarioPage() {
   const [comparacionSistema, setComparacionSistema] = useState<ComparacionSistemaData | null>(null)
   const [cerrando, setCerrando] = useState(false)
   const [exportingSesion, setExportingSesion] = useState(false)
+  const [exportingStockFinal, setExportingStockFinal] = useState(false)
   const [importingFileSectorId, setImportingFileSectorId] = useState<number | null>(null)
   const manualImportInputRef = useRef<HTMLInputElement>(null)
   const manualImportSectorIdRef = useRef<number | null>(null)
@@ -2138,6 +2327,21 @@ export function InventarioPage() {
     }
   }
 
+  async function exportarStockFinal(id: number, nombre: string) {
+    setExportingStockFinal(true)
+    setError('')
+    try {
+      await downloadApiFile(
+        `/api/inventario/sesiones/${id}/export-stock`,
+        `inventario-stock-${nombre || id}.xlsx`
+      )
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Error al exportar stock final')
+    } finally {
+      setExportingStockFinal(false)
+    }
+  }
+
   function elegirArchivoImportacion(sectorId: number) {
     manualImportSectorIdRef.current = sectorId
     manualImportInputRef.current?.click()
@@ -2281,23 +2485,6 @@ export function InventarioPage() {
               </p>
             </div>
             <div className="flex flex-wrap items-center gap-2">
-              {(sesionDetalle.reporte || listoParaCierre) && (
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  className="rounded-lg"
-                  disabled={exportingSesion}
-                  onClick={() => void exportarSesion(s.id, s.nombre)}
-                  title="Exportar listado general de productos"
-                >
-                  {exportingSesion ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <Download className="h-4 w-4" />
-                  )}
-                  Exportar
-                </Button>
-              )}
               {s.estado === 'ABIERTA' && canCreate && (
                 <Button size="sm" className="rounded-lg" onClick={() => void iniciarSesion(s.id)}>
                   <Play className="h-4 w-4" />
@@ -2422,8 +2609,10 @@ export function InventarioPage() {
         {sesionDetalle.reporte && (
           <InventarioReporteCierre
             reporte={sesionDetalle.reporte}
-            exporting={exportingSesion}
-            onExport={() => void exportarSesion(s.id, s.nombre)}
+            exportingReporte={exportingSesion}
+            exportingStock={exportingStockFinal}
+            onExportReporte={() => void exportarSesion(s.id, s.nombre)}
+            onExportStock={() => void exportarStockFinal(s.id, s.nombre)}
           />
         )}
       </div>

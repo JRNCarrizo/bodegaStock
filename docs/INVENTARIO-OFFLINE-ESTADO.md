@@ -169,4 +169,4 @@ La UI offline comparte con la online: desglose cerrado, panel de cantidad adapta
 
 El host P2P relee automáticamente la IP cuando el hotspot queda activo y permite **Actualizar IP / QR**. En la vuelta a oficina, el celular avisa el inicio del envío y la PC muestra **Recibiendo conteo…** hasta que la transacción termina. La lista del celular se refresca automáticamente y ofrece botón **Actualizar**.
 
-*Última actualización: julio 2026 — v0.3.11; flujo principal implementado; fase prueba y pulido.*
+*Última actualización: julio 2026 — v0.3.12; flujo principal implementado; fase prueba y pulido.*

@@ -611,12 +611,19 @@ Desglose de cómo quedó cada producto en cada sector después del cierre.
 
 ### Exportación Excel (implementado)
 
-`GET /api/inventario/sesiones/:id/export` — permiso `inventario.ver`.
+Disponible en el **reporte de cierre** (un solo lugar, sin duplicar en Sectores):
 
-- Hojas: **Resumen** (metadatos de sesión + totales) y **Productos**.
-- Columnas Productos: Código interno, Nombre, Descripción, Sistema, Contado, Diferencia, Resultado + fila **TOTAL**.
-- Agregado por producto (sin sectorizar ni desglose de líneas).
-- Requiere sesión **cerrada** o todos los sectores en OK / con reporte persistido.
+1. **Exportar reporte** — `GET /api/inventario/sesiones/:id/export`
+   - Hojas: **Resumen** + **Productos**.
+   - Columnas: Código, Nombre, Descripción, Sistema, Contado, Diferencia, Resultado.
+   - Requiere sesión cerrada o todos los sectores OK.
+
+2. **Exportar stock final** — `GET /api/inventario/sesiones/:id/export-stock`
+   - Hojas: **Resumen** + **Stock final**.
+   - Columnas: Código interno, Nombre, Cantidad.
+   - Stock limpio de cómo quedó (solo cantidad > 0).
+   - Requiere sesión **cerrada**.
+   - En pantalla: botón **Ver stock final** muestra el mismo listado sin necesidad de exportar.
 
 ---
 
@@ -642,7 +649,7 @@ Durante el conteo **no** se emiten las líneas del otro contador (independencia)
 
 - Listado pulido de sesiones (estado, fechas, acciones).
 - Alta de sesión desde el listado.
-- En detalle: header con datos de la sesión y botón **Exportar** Excel (ver §12).
+- En detalle: header con datos de la sesión; al cerrar, en el reporte: **Exportar reporte** (diferencias) y **Exportar stock final**.
 
 ### Crear sesión
 

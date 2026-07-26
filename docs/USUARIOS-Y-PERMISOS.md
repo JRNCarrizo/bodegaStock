@@ -115,8 +115,8 @@ Al crear un usuario se asigna un rol. Los permisos del rol se pueden ajustar ind
 
 ### Escritorio (Electron)
 - Login local contra el servidor embebido
-- Token JWT o sesión con expiración
-- Recordar sesión (opcional)
+- Token JWT con expiración (no se restaura al reabrir la app: siempre login)
+- Login offline para inventario sin red al PC (credenciales locales en el celular)
 
 ### Móvil (APK — Capacitor, implementada)
 - Misma API de login (app Android en `android/`)

@@ -6,7 +6,8 @@ import { initApiFromBridge } from '@/lib/utils'
 import './index.css'
 
 async function bootstrap() {
-  await initApiFromBridge()
+  // Pintar la UI de inmediato; la URL del servidor se resuelve en paralelo.
+  void initApiFromBridge()
 
   ReactDOM.createRoot(document.getElementById('root')!).render(
     <React.StrictMode>

@@ -9,7 +9,7 @@ on:
       version:
         description: 'Versión sin v (ej. 0.1.0)'
         required: true
-        default: '0.3.12'
+        default: '0.3.13'
 
 permissions:
   contents: write
@@ -68,15 +68,14 @@ jobs:
           body: |
             ## ControlStock ${{ steps.tag.outputs.name }}
 
-            Exportaciones más claras, stock final visible y pulido de UX en cierre y planillas.
+            Login obligatorio al reabrir y arranque más rápido en la APK.
 
             ### Mejorado
-            - Export de Consulta sin Descripción y con opción de incluir o no productos en cero
-            - Inventario: export de reporte con diferencias + export/vista de **stock final** limpio
-            - Tablas de cierre más compactas y código interno más visible en ajustes
+            - Al cerrar y volver a abrir la app (PC o APK) siempre se pide login
+            - Arranque de la APK más ágil (sin esperar sesión ni fuentes remotas)
 
-            ### Corregido
-            - En Planillas, el buscador de productos mantiene visible el ítem al navegar con flechas
+            ### Nota
+            - En el celular se mantiene el desbloqueo offline con usuario/clave para inventario sin red
 
             ### Actualización
             - Desde **v0.2.7 o superior:** Configuración → Buscar actualizaciones

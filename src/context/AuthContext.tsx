@@ -49,7 +49,8 @@ function applyOfflineSession(
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<Usuario | null>(null)
-  const [loading, setLoading] = useState(true)
+  /** Siempre false: la app no restaura sesión al abrir. */
+  const loading = false
   const [offlineSession, setOfflineSession] = useState(false)
 
   const refreshUser = useCallback(async () => {
@@ -77,9 +78,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, [])
 
+  // Cada apertura de la app (PC o APK) arranca en login.
+  // Se conserva cs_offline_auth para poder desbloquear sin PC con usuario/clave.
   useEffect(() => {
-    refreshUser().finally(() => setLoading(false))
-  }, [refreshUser])
+    localStorage.removeItem('token')
+    setUser(null)
+    setOfflineSession(false)
+  }, [])
+
+  // Al cerrar la ventana/proceso, limpiar la sesión activa.
+  useEffect(() => {
+    function clearSessionOnExit() {
+      localStorage.removeItem('token')
+    }
+    window.addEventListener('pagehide', clearSessionOnExit)
+    window.addEventListener('beforeunload', clearSessionOnExit)
+    return () => {
+      window.removeEventListener('pagehide', clearSessionOnExit)
+      window.removeEventListener('beforeunload', clearSessionOnExit)
+    }
+  }, [])
 
   useEffect(() => {
     const token = localStorage.getItem('token')
@@ -99,7 +117,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       window.removeEventListener('focus', onFocus)
       document.removeEventListener('visibilitychange', onVisible)
     }
-  }, [refreshUser])
+  }, [refreshUser, user])
 
   async function login(username: string, password: string): Promise<LoginMode> {
     // Sin red reportada: ir directo a desbloqueo local (evita esperar al PC).

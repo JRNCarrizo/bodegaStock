@@ -619,12 +619,16 @@ function InventarioReporteCierre({
   reporte,
   onExportReporte,
   onExportStock,
+  onRepararCierre,
+  reparandoCierre,
   exportingReporte,
   exportingStock
 }: {
   reporte: NonNullable<InventarioSesionDetalle['reporte']>
   onExportReporte?: () => void
   onExportStock?: () => void
+  onRepararCierre?: () => void
+  reparandoCierre?: boolean
   exportingReporte?: boolean
   exportingStock?: boolean
 }) {
@@ -668,6 +672,23 @@ function InventarioReporteCierre({
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
+            {onRepararCierre && (
+              <Button
+                variant="secondary"
+                size="sm"
+                className="rounded-lg border-amber-200 bg-amber-50 text-amber-900 hover:bg-amber-100"
+                disabled={reparandoCierre || exporting}
+                onClick={onRepararCierre}
+                title="Vuelve a aplicar al stock los productos contados que faltaron en el cierre"
+              >
+                {reparandoCierre ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <RefreshCw className="h-4 w-4" />
+                )}
+                Reparar stock
+              </Button>
+            )}
             <Button
               variant="secondary"
               size="sm"
@@ -2027,6 +2048,7 @@ export function InventarioPage() {
   const [sesionDetalle, setSesionDetalle] = useState<InventarioSesionDetalle | null>(null)
   const [comparacionSistema, setComparacionSistema] = useState<ComparacionSistemaData | null>(null)
   const [cerrando, setCerrando] = useState(false)
+  const [reparandoCierre, setReparandoCierre] = useState(false)
   const [exportingSesion, setExportingSesion] = useState(false)
   const [exportingStockFinal, setExportingStockFinal] = useState(false)
   const [importingFileSectorId, setImportingFileSectorId] = useState<number | null>(null)
@@ -2297,6 +2319,39 @@ export function InventarioPage() {
       setError(e instanceof Error ? e.message : 'Error al cerrar')
     } finally {
       setCerrando(false)
+    }
+  }
+
+  async function repararCierreSesion(id: number) {
+    if (
+      !confirm(
+        '¿Reparar el stock desde el conteo guardado?\n\n' +
+          'Corrige productos que quedaron mal al cerrar (p. ej. tras reconteo). ' +
+          'Respeta las decisiones del cierre original (contado / sistema / manual).'
+      )
+    ) {
+      return
+    }
+    setReparandoCierre(true)
+    setError('')
+    try {
+      const res = await api<{
+        reparaciones: Array<{ codigo_interno?: string; nombre?: string }>
+        resumen: { reparados: number; omitidos: number }
+      }>(`/api/inventario/sesiones/${id}/reparar-cierre`, { method: 'POST' })
+      await loadSesion(id)
+      const n = res.resumen?.reparados ?? res.reparaciones?.length ?? 0
+      const omit = res.resumen?.omitidos ?? 0
+      alert(
+        n > 0
+          ? `Stock reparado: ${n} producto${n === 1 ? '' : 's'} actualizado${n === 1 ? '' : 's'}.` +
+              (omit > 0 ? `\n${omit} requieren revisión manual.` : '')
+          : 'No hizo falta reparar nada; el stock ya coincide con el conteo guardado.'
+      )
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Error al reparar el cierre')
+    } finally {
+      setReparandoCierre(false)
     }
   }
 
@@ -2611,6 +2666,12 @@ export function InventarioPage() {
             reporte={sesionDetalle.reporte}
             exportingReporte={exportingSesion}
             exportingStock={exportingStockFinal}
+            reparandoCierre={reparandoCierre}
+            onRepararCierre={
+              s.estado === 'CERRADA' && canClose
+                ? () => void repararCierreSesion(s.id)
+                : undefined
+            }
             onExportReporte={() => void exportarSesion(s.id, s.nombre)}
             onExportStock={() => void exportarStockFinal(s.id, s.nombre)}
           />

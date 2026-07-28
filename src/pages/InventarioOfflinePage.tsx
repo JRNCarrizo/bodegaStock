@@ -51,6 +51,8 @@ import {
   reabrirMiConteoAntesDeSync,
   recibirSyncCompanero,
   recuperarComparacionLocal,
+  resetOfflineLocal,
+  isErrorSyncCuentaEquivocada,
   updateLineaOffline
 } from '@/lib/inventarioOffline'
 import {
@@ -362,6 +364,13 @@ export function InventarioOfflinePage() {
   const puedeEditar = Boolean(paquete && estado && !estado.mi_finalizo)
   const enReconteo = (estado?.ronda_actual ?? 1) > 1
   const miRol = paquete?.inventario_sector.mi_rol
+  const miContadorLabel = useMemo(() => {
+    if (!paquete || !miRol) return null
+    const sectorInv = paquete.inventario_sector
+    const nombre = miRol === 1 ? sectorInv.contador_1_nombre : sectorInv.contador_2_nombre
+    return `Contador ${miRol}: ${nombre}`
+  }, [paquete, miRol])
+  const errorCuentaEquivocada = isErrorSyncCuentaEquivocada(error)
   const usaUbicaciones = Boolean(
     paquete?.inventario_sector.usa_ubicaciones && paquete.ubicaciones.length > 0
   )
@@ -565,6 +574,36 @@ export function InventarioOfflinePage() {
       setP2pMode('idle')
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Error al finalizar')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function handleBorrarEnEsteCelular() {
+    if (
+      !confirm(
+        '¿Borrar el conteo solo en ESTE celular?\n\n' +
+          'Se elimina el paquete y todo lo contado aquí. Tu compañero y el PC no se modifican.\n\n' +
+          'Después cerrá sesión, entrá con la cuenta correcta y descargá el paquete de nuevo.'
+      )
+    ) {
+      return
+    }
+    setBusy(true)
+    setError('')
+    setMsg('')
+    try {
+      await shutdownHostUi()
+      await resetOfflineLocal(sectorInvId)
+      setP2pMode('idle')
+      setHostSyncedOk(false)
+      setClientHostInput('192.168.43.1')
+      await reload()
+      setMsg(
+        'Listo en este celular. Cerrá sesión, entrá con la cuenta del contador que te corresponde y descargá el paquete.'
+      )
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'No se pudo borrar el conteo local')
     } finally {
       setBusy(false)
     }
@@ -921,6 +960,11 @@ export function InventarioOfflinePage() {
         {error && (
           <div className="border-b border-red-100 bg-red-50 px-4 py-2 text-sm text-red-700">{error}</div>
         )}
+        {msg && (
+          <div className="border-b border-emerald-100 bg-emerald-50 px-4 py-2 text-sm text-emerald-800">
+            {msg}
+          </div>
+        )}
         <div className="flex flex-1 flex-col items-center justify-center gap-4 p-6 text-center">
           {yaImportado ? (
             <>
@@ -944,8 +988,8 @@ export function InventarioOfflinePage() {
               <div className="max-w-sm space-y-2">
                 <p className="text-sm font-medium text-slate-800">Descargar paquete del sector</p>
                 <p className="text-xs text-slate-500">
-                  Con WiFi al PC (oficina): bajá catálogo y datos del sector. Después contás sin red,
-                  con la misma vista que el inventario online.
+                  Con WiFi al PC (oficina): bajá catálogo y datos del sector. Cada contador entra
+                  con su usuario; después contás sin red, con la misma vista que el inventario online.
                 </p>
               </div>
               <Button disabled={busy} onClick={() => void handleDescargar()}>
@@ -1162,6 +1206,11 @@ export function InventarioOfflinePage() {
                 <span className="rounded-full bg-white px-2.5 py-1 font-medium text-slate-700 ring-1 ring-surface-border">
                   Ronda {ronda}
                 </span>
+                {miContadorLabel && (
+                  <span className="rounded-full bg-violet-50 px-2.5 py-1 font-medium text-violet-900 ring-1 ring-violet-100">
+                    {miContadorLabel}
+                  </span>
+                )}
                 <span className="rounded-full bg-amber-50 px-2.5 py-1 font-medium text-amber-900 ring-1 ring-amber-100">
                   Offline
                 </span>
@@ -1172,12 +1221,40 @@ export function InventarioOfflinePage() {
                 )}
               </div>
             </div>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-8 shrink-0 rounded-lg px-2 text-red-700 hover:bg-red-50"
+              disabled={busy}
+              onClick={() => void handleBorrarEnEsteCelular()}
+              title="Solo borra datos en este celular; no afecta al compañero ni al PC"
+            >
+              <X className="h-3.5 w-3.5" />
+              Borrar en este celular
+            </Button>
           </div>
         </div>
 
         {error && (
           <div className="border-b border-red-100 bg-red-50 px-4 py-2 text-sm text-red-700 sm:px-5">
             {error}
+            {errorCuentaEquivocada && (
+              <div className="mt-2 space-y-2">
+                <p className="text-xs text-red-800">
+                  Parece que este celular descargó el paquete con la cuenta equivocada. Cada
+                  contador debe entrar con su propio usuario.
+                </p>
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  className="rounded-xl border-red-200 bg-white text-red-800 hover:bg-red-50"
+                  disabled={busy}
+                  onClick={() => void handleBorrarEnEsteCelular()}
+                >
+                  Borrar en este celular y volver a descargar
+                </Button>
+              </div>
+            )}
           </div>
         )}
         {msg && (
@@ -1321,6 +1398,18 @@ export function InventarioOfflinePage() {
                 >
                   {showFileFallback ? 'Ocultar respaldo' : 'Respaldo por archivo'}
                 </button>
+                <p className="mt-2 text-xs text-sky-800/90">
+                  ¿Entraste con la cuenta equivocada? Usá{' '}
+                  <button
+                    type="button"
+                    className="font-medium underline underline-offset-2"
+                    disabled={busy}
+                    onClick={() => void handleBorrarEnEsteCelular()}
+                  >
+                    Borrar en este celular
+                  </button>{' '}
+                  (no afecta al compañero), cerrá sesión y descargá de nuevo.
+                </p>
                 {showFileFallback && (
                   <div className="mt-2 flex flex-wrap gap-2">
                     <Button size="sm" variant="secondary" disabled={busy} onClick={() => void handleCompartir()}>

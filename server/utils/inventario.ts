@@ -754,6 +754,11 @@ function desgloseFromLineas(
   return lineas.map((l) => `${l.etiqueta} (${l.total_unidades})`).join(' + ')
 }
 
+/**
+ * Líneas acordadas del sector para cierre vs sistema.
+ * Tras reconteo, cada producto puede quedar en la ronda donde se contó por última vez
+ * (los que coincidieron en ronda 1 no se vuelven a cargar en ronda 2).
+ */
 function getLineasAcordadasSector(
   db: Database.Database,
   inventarioSectorId: number,
@@ -761,7 +766,25 @@ function getLineasAcordadasSector(
 ): Map<number, ConteoLineaRow[]> {
   const sector = getInventarioSector(db, inventarioSectorId)
   const contador1 = Number(sector.contador_1_id)
-  const lineas = lineasDelContador(db, inventarioSectorId, contador1, ronda)
+
+  const lineas = db
+    .prepare(
+      `
+    SELECT icl.*, p.codigo_interno, p.nombre, p.unidad
+    FROM inventario_conteo_lineas icl
+    JOIN productos p ON p.id = icl.producto_id
+    INNER JOIN (
+      SELECT producto_id, MAX(ronda) AS ronda_final
+      FROM inventario_conteo_lineas
+      WHERE inventario_sector_id = ? AND contador_id = ? AND ronda <= ?
+      GROUP BY producto_id
+    ) ult ON ult.producto_id = icl.producto_id AND ult.ronda_final = icl.ronda
+    WHERE icl.inventario_sector_id = ? AND icl.contador_id = ?
+    ORDER BY icl.producto_id, icl.orden, icl.id
+  `
+    )
+    .all(inventarioSectorId, contador1, ronda, inventarioSectorId, contador1) as ConteoLineaRow[]
+
   const map = new Map<number, ConteoLineaRow[]>()
   for (const l of lineas) {
     const arr = map.get(l.producto_id) ?? []
@@ -1266,6 +1289,290 @@ export function aplicarCierreInventario(
 
   tx()
   return { comparacion: { resumen: resumenFinal, items: detalleFinal }, ajustes }
+}
+
+function totalesIguales(a: TotalesInventarioDesglose, b: TotalesInventarioDesglose): boolean {
+  return Math.abs(a.cajas - b.cajas) < 0.0001 && Math.abs(a.suelto - b.suelto) < 0.0001
+}
+
+function stockActualProductoSector(
+  db: Database.Database,
+  productoId: number,
+  sectorId: number
+): TotalesInventarioDesglose {
+  const row = db
+    .prepare(`SELECT id FROM stock_sector WHERE producto_id = ? AND sector_id = ?`)
+    .get(productoId, sectorId) as { id: number } | undefined
+  if (!row) return { cajas: 0, suelto: 0 }
+
+  const lineas = db
+    .prepare(
+      `
+    SELECT
+      0 AS id, 0 AS inventario_sector_id, ? AS producto_id, 0 AS contador_id, 0 AS ronda,
+      tipo_bulto, cantidad_bultos, unidades_por_bulto, cantidad_suelta,
+      ubicacion, ubicacion_id, total_unidades, orden
+    FROM stock_lineas WHERE stock_sector_id = ? ORDER BY orden, id
+  `
+    )
+    .all(productoId, row.id) as ConteoLineaRow[]
+
+  return totalesDesdeLineasConteo(db, lineas, productoId)
+}
+
+/**
+ * Repara el stock de una sesión ya cerrada cuando el cierre omitió productos contados
+ * en rondas anteriores al reconteo (bug de getLineasAcordadasSector).
+ * Usa las decisiones del reporte original (CONTADO / SISTEMA / MANUAL).
+ */
+export function repararStockInventarioCerrado(
+  db: Database.Database,
+  sesionId: number,
+  usuarioId: number
+) {
+  const sesion = getSesionOrThrow(db, sesionId)
+  if (String(sesion.estado) !== 'CERRADA') {
+    throw new Error('Solo se puede reparar una sesión ya cerrada')
+  }
+
+  const reporteRow = db
+    .prepare(`SELECT id, detalle, ajustes_aplicados FROM inventario_reportes WHERE sesion_id = ?`)
+    .get(sesionId) as { id: number; detalle: string; ajustes_aplicados: string } | undefined
+  if (!reporteRow) {
+    throw new Error('No hay reporte de cierre para esta sesión')
+  }
+
+  const detalleAnterior = JSON.parse(reporteRow.detalle) as Array<Record<string, unknown>>
+  const ajustesAnteriores = JSON.parse(reporteRow.ajustes_aplicados) as Array<
+    Record<string, unknown>
+  >
+  const prevMap = new Map<string, Record<string, unknown>>()
+  for (const item of detalleAnterior) {
+    prevMap.set(cierreDecisionKey(Number(item.producto_id), Number(item.sector_id)), item)
+  }
+
+  const comparacion = compararVsSistema(db, sesionId)
+  const reparaciones: Array<Record<string, unknown>> = []
+  const omitidos: Array<Record<string, unknown>> = []
+  const detalleFinal: Array<Record<string, unknown>> = []
+  const ajustes = [...ajustesAnteriores]
+
+  const sectores = db
+    .prepare(`SELECT id, sector_id, ronda_actual FROM inventario_sectores WHERE sesion_id = ?`)
+    .all(sesionId) as Array<{ id: number; sector_id: number; ronda_actual: number }>
+
+  const tx = db.transaction(() => {
+    for (const sec of sectores) {
+      const contadoMap = getLineasAcordadasSector(db, sec.id, sec.ronda_actual)
+      const sistemaMap = getSnapshotPorSector(db, sesionId, sec.sector_id)
+      const productoIds = new Set([...contadoMap.keys(), ...sistemaMap.keys()])
+
+      for (const productoId of productoIds) {
+        const contadoLineas = contadoMap.get(productoId) ?? []
+        const sistemaData = sistemaMap.get(productoId)
+        const sistemaLineas = sistemaData?.lineas ?? []
+        const totalesSistema = totalesDesdeSnapshotLineas(
+          db,
+          productoId,
+          sistemaLineas as Array<Record<string, unknown>>,
+          sistemaData?.total ?? 0
+        )
+
+        const item = comparacion.items.find(
+          (i) => i.producto_id === productoId && i.sector_id === sec.sector_id
+        )
+        if (!item) continue
+
+        const key = cierreDecisionKey(productoId, sec.sector_id)
+        const prev = prevMap.get(key)
+        const modo: CierreDecisionModo =
+          (prev?.decision_modo as CierreDecisionModo | undefined) ?? 'CONTADO'
+
+        const detalleItem: Record<string, unknown> = { ...item, decision_modo: modo }
+
+        if (modo === 'SISTEMA') {
+          detalleItem.tipo = 'SIN_CAMBIO'
+          detalleItem.requiere_ajuste = false
+          detalleItem.total_aplicado = totalesSistema.cajas
+          detalleItem.total_suelto_aplicado = totalesSistema.suelto
+          detalleItem.resumen_aplicado = item.resumen_sistema
+          detalleItem.desglose_aplicado = item.desglose_sistema
+          detalleFinal.push(detalleItem)
+          continue
+        }
+
+        if (modo === 'MANUAL') {
+          detalleFinal.push(prev ? { ...prev, ...item, decision_modo: modo } : detalleItem)
+          if (
+            prev &&
+            typeof prev.total_aplicado === 'number' &&
+            !totalesIguales(
+              stockActualProductoSector(db, productoId, sec.sector_id),
+              {
+                cajas: Number(prev.total_aplicado),
+                suelto: Number(prev.total_suelto_aplicado ?? 0)
+              }
+            )
+          ) {
+            omitidos.push({
+              producto_id: productoId,
+              sector_id: sec.sector_id,
+              codigo_interno: item.codigo_interno,
+              nombre: item.nombre,
+              motivo: 'Corrección manual: revisar a mano si el stock no coincide'
+            })
+          }
+          continue
+        }
+
+        if (!item.requiere_ajuste) {
+          const stockActual = stockActualProductoSector(db, productoId, sec.sector_id)
+          const necesita =
+            !prev ||
+            !totalesIguales(stockActual, totalesSistema) ||
+            Number(prev.total_contado ?? 0) !== Number(item.total_contado ?? 0)
+
+          if (necesita && contadoLineas.length > 0 && !totalesIguales(stockActual, totalesDesdeLineasConteo(db, contadoLineas, productoId))) {
+            replaceStockFromConteo(
+              db,
+              productoId,
+              sec.sector_id,
+              contadoLineas,
+              usuarioId,
+              sesionId
+            )
+            reparaciones.push({
+              producto_id: productoId,
+              sector_id: sec.sector_id,
+              codigo_interno: item.codigo_interno,
+              nombre: item.nombre,
+              motivo: prev ? 'stock_desincronizado' : 'omitido_en_cierre',
+              antes: stockActual,
+              despues: totalesDesdeLineasConteo(db, contadoLineas, productoId)
+            })
+          }
+          detalleFinal.push(detalleItem)
+          continue
+        }
+
+        const totalesContado = totalesDesdeLineasConteo(db, contadoLineas, productoId)
+        const stockActual = stockActualProductoSector(db, productoId, sec.sector_id)
+        const contadoAnterior = Number(prev?.total_contado ?? NaN)
+        const contadoNuevo = Number(item.total_contado ?? 0)
+        const necesitaReparo =
+          !prev ||
+          (Number.isFinite(contadoAnterior) && contadoAnterior === 0 && contadoNuevo > 0) ||
+          !totalesIguales(stockActual, totalesContado)
+
+        if (necesitaReparo && contadoLineas.length > 0) {
+          replaceStockFromConteo(
+            db,
+            productoId,
+            sec.sector_id,
+            contadoLineas,
+            usuarioId,
+            sesionId
+          )
+          const { botellasPorCaja } = getProductoDefaults(db, productoId)
+          const prod = db.prepare('SELECT unidad FROM productos WHERE id = ?').get(productoId) as
+            | { unidad: string }
+            | undefined
+          const mappedAplicado = contadoLineas.map((l) => mapConteoLinea(l, botellasPorCaja))
+          const desgloseAplicado = desgloseFromLineas(mappedAplicado)
+          const resumenAplicado = formatTotalesInventarioResumen(totalesContado, prod?.unidad)
+          const tipoFinal = calcTipoComparacion(
+            totalesContado,
+            totalesSistema,
+            desgloseAplicado,
+            String(item.desglose_sistema ?? '—')
+          )
+
+          detalleItem.tipo = tipoFinal
+          detalleItem.requiere_ajuste = tipoFinal !== 'SIN_CAMBIO'
+          detalleItem.total_aplicado = totalesContado.cajas
+          detalleItem.total_suelto_aplicado = totalesContado.suelto
+          detalleItem.resumen_aplicado = resumenAplicado
+          detalleItem.desglose_aplicado = desgloseAplicado
+          detalleItem.diferencia_aplicada = totalesContado.cajas - totalesSistema.cajas
+          detalleItem.diferencia_suelto_aplicada = totalesContado.suelto - totalesSistema.suelto
+
+          reparaciones.push({
+            producto_id: productoId,
+            sector_id: sec.sector_id,
+            codigo_interno: item.codigo_interno,
+            nombre: item.nombre,
+            motivo: prev ? 'conteo_corregido' : 'omitido_en_cierre',
+            antes: stockActual,
+            despues: totalesContado,
+            tipo: tipoFinal
+          })
+
+          if (tipoFinal !== 'SIN_CAMBIO') {
+            ajustes.push({
+              producto_id: productoId,
+              sector_id: sec.sector_id,
+              antes: totalesSistema.cajas,
+              despues: totalesContado.cajas,
+              tipo: tipoFinal,
+              decision_modo: modo,
+              reparacion: true
+            })
+          }
+        } else if (prev) {
+          Object.assign(detalleItem, {
+            total_aplicado: prev.total_aplicado,
+            total_suelto_aplicado: prev.total_suelto_aplicado,
+            resumen_aplicado: prev.resumen_aplicado,
+            desglose_aplicado: prev.desglose_aplicado,
+            tipo: prev.tipo,
+            requiere_ajuste: prev.requiere_ajuste
+          })
+        }
+
+        detalleFinal.push(detalleItem)
+      }
+    }
+
+    const resumenFinal = {
+      productos_revisados: comparacion.resumen.productos_revisados,
+      sin_cambio: detalleFinal.filter((i) => i.tipo === 'SIN_CAMBIO').length,
+      ajustes_cantidad: detalleFinal.filter(
+        (i) => i.tipo === 'FALTANTE' || i.tipo === 'SOBRANTE'
+      ).length,
+      reorganizaciones: detalleFinal.filter((i) => i.tipo === 'REORGANIZACION').length,
+      con_ajuste: detalleFinal.filter((i) => i.requiere_ajuste).length,
+      mantener_sistema: detalleFinal.filter((i) => i.decision_modo === 'SISTEMA').length,
+      correccion_manual: detalleFinal.filter((i) => i.decision_modo === 'MANUAL').length,
+      reparados: reparaciones.length
+    }
+
+    db.prepare(
+      `
+      UPDATE inventario_reportes
+      SET resumen = ?, detalle = ?, ajustes_aplicados = ?
+      WHERE id = ?
+    `
+    ).run(
+      JSON.stringify(resumenFinal),
+      JSON.stringify(detalleFinal),
+      JSON.stringify(ajustes),
+      reporteRow.id
+    )
+  })
+
+  tx()
+
+  return {
+    ok: true,
+    reparaciones,
+    omitidos,
+    resumen: {
+      reparados: reparaciones.length,
+      omitidos: omitidos.length,
+      productos_revisados: comparacion.resumen.productos_revisados
+    },
+    comparacion: { resumen: comparacion.resumen, items: detalleFinal }
+  }
 }
 
 export function validarYCalcularLinea(

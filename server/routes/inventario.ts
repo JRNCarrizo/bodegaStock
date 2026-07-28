@@ -23,6 +23,7 @@ import {
   iniciarReconteoSector,
   mapConteoLinea,
   reabrirConteoPropio,
+  repararStockInventarioCerrado,
   validarYCalcularLinea,
   type ConteoLineaInput,
   type CierreDecisionInput
@@ -1131,6 +1132,20 @@ export async function inventarioRoutes(app: FastifyInstance): Promise<void> {
         const decisiones = req.body?.decisiones ?? []
         const result = aplicarCierreInventario(db, sesionId, req.user!.id, decisiones)
         return result
+      } catch (e) {
+        return reply.status(400).send({ error: (e as Error).message })
+      }
+    }
+  )
+
+  app.post<{ Params: { id: string } }>(
+    '/api/inventario/sesiones/:id/reparar-cierre',
+    { preHandler: requirePermiso('inventario.cerrar', 'ajustes.crear') },
+    async (req, reply) => {
+      const db = getDb()
+      const sesionId = Number(req.params.id)
+      try {
+        return repararStockInventarioCerrado(db, sesionId, req.user!.id)
       } catch (e) {
         return reply.status(400).send({ error: (e as Error).message })
       }

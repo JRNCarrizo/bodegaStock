@@ -19,7 +19,7 @@ Toda la especificación del proyecto está en la carpeta [`docs/`](docs/):
 
 ## Estado del proyecto
 
-**v0.3.13** — Login obligatorio al reabrir la app (PC y APK) y arranque móvil más rápido. Actualizaciones desde Configuración.
+**v0.3.14** — Corregir cierre de inventario tras reconteo, reparar stock en sesiones cerradas, y borrar conteo local en APK por celular.
 
 ## Desarrollo local
 

@@ -2367,6 +2367,25 @@ export function InventarioPage() {
     }
   }
 
+  async function eliminarSesionCancelada(id: number) {
+    if (
+      !confirm(
+        '¿Eliminar esta sesión cancelada?\n\nSe borra del historial junto con sus sectores y conteos. No se puede deshacer.'
+      )
+    ) {
+      return
+    }
+    setError('')
+    try {
+      await api(`/api/inventario/sesiones/${id}`, { method: 'DELETE' })
+      setSesionDetalle(null)
+      setView('list')
+      await loadBase()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Error al eliminar')
+    }
+  }
+
   async function exportarSesion(id: number, nombre: string) {
     setExportingSesion(true)
     setError('')
@@ -2554,6 +2573,17 @@ export function InventarioPage() {
                   onClick={() => void cancelarSesion(s.id)}
                 >
                   Cancelar sesión
+                </Button>
+              )}
+              {s.estado === 'CANCELADA' && canCreate && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="rounded-lg border-red-200 text-red-700 hover:bg-red-50"
+                  onClick={() => void eliminarSesionCancelada(s.id)}
+                >
+                  <Trash2 className="h-4 w-4" />
+                  Eliminar
                 </Button>
               )}
             </div>

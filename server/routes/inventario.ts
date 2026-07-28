@@ -562,6 +562,23 @@ export async function inventarioRoutes(app: FastifyInstance): Promise<void> {
     }
   )
 
+  app.delete<{ Params: { id: string } }>(
+    '/api/inventario/sesiones/:id',
+    { preHandler: requirePermiso('inventario.crear_sesion') },
+    async (req, reply) => {
+      const db = getDb()
+      const sesionId = Number(req.params.id)
+      const sesion = getSesionOrThrow(db, sesionId)
+      if (String(sesion.estado) !== 'CANCELADA') {
+        return reply.status(400).send({
+          error: 'Solo se pueden eliminar sesiones canceladas. Las cerradas quedan en el historial.'
+        })
+      }
+      db.prepare(`DELETE FROM inventario_sesiones WHERE id = ?`).run(sesionId)
+      return { ok: true }
+    }
+  )
+
   app.get(
     '/api/inventario/mis-sectores',
     { preHandler: requirePermiso('inventario.contar') },

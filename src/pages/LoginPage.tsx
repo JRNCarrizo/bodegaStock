@@ -4,6 +4,8 @@ import {
   Camera,
   Check,
   ClipboardList,
+  Eye,
+  EyeOff,
   Loader2,
   LogIn,
   Package,
@@ -72,6 +74,7 @@ export function LoginPage() {
   const native = isNativeApp()
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
+  const [showPassword, setShowPassword] = useState(false)
   const [serverHost, setServerHost] = useState('')
   const [serverPort, setServerPort] = useState('3847')
   const [serverReady, setServerReady] = useState(!native)
@@ -385,12 +388,23 @@ export function LoginPage() {
                 />
                 <Input
                   label="Contraseña"
-                  type="password"
+                  type={showPassword ? 'text' : 'password'}
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   autoComplete="current-password"
                   placeholder="••••••••"
                   required
+                  trailing={
+                    <button
+                      type="button"
+                      tabIndex={-1}
+                      className="rounded-md p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
+                      aria-label={showPassword ? 'Ocultar contraseña' : 'Mostrar contraseña'}
+                      onClick={() => setShowPassword((v) => !v)}
+                    >
+                      {showPassword ? <Eye className="h-4 w-4" /> : <EyeOff className="h-4 w-4" />}
+                    </button>
+                  }
                 />
 
                 {error && (

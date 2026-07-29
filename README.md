@@ -19,7 +19,7 @@ Toda la especificación del proyecto está en la carpeta [`docs/`](docs/):
 
 ## Estado del proyecto
 
-**v0.3.15** — Herramientas de prueba en Configuración, ocultar inventarios del listado, ver conteo cerrado y mejoras de UX inventario/APK.
+**v0.3.16** — Mostrar/ocultar contraseña en el login (PC y APK).
 
 ## Desarrollo local
 

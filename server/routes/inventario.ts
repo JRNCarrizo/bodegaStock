@@ -1,7 +1,9 @@
 import type { FastifyInstance } from 'fastify'
+import bcrypt from 'bcryptjs'
 import { getDb } from '../db'
 import { requirePermiso, requirePermisoAny } from '../plugins/auth'
 import { getInventarioActivo, inventarioActivoErrorPayload } from '../utils/inventario-block'
+import { isAdministradorRol } from '../utils/secciones'
 import {
   buildMultiSheetExcel,
   resumenSheet,
@@ -20,6 +22,7 @@ import {
   ejecutarComparacionSector,
   getSesionOrThrow,
   getInventarioSector,
+  getConteoFinalSector,
   iniciarReconteoSector,
   mapConteoLinea,
   reabrirConteoPropio,
@@ -65,8 +68,32 @@ function mapSesionListItem(row: Record<string, unknown>) {
     fecha_cierre: row.fecha_cierre as string | null,
     sectores_total: Number(row.sectores_total ?? 0),
     sectores_ok: Number(row.sectores_ok ?? 0),
+    archivada: Boolean(Number(row.archivada ?? 0)),
     created_at: String(row.created_at)
   }
+}
+
+function assertAdminPassword(
+  db: ReturnType<typeof getDb>,
+  userId: number,
+  password: unknown
+): { ok: true } | { ok: false; error: string; status: number } {
+  if (typeof password !== 'string' || !password.trim()) {
+    return { ok: false, status: 400, error: 'Ingresá tu contraseña para confirmar' }
+  }
+  const row = db
+    .prepare(`SELECT password_hash, rol_id FROM usuarios WHERE id = ? AND activo = 1`)
+    .get(userId) as { password_hash: string; rol_id: number } | undefined
+  if (!row) {
+    return { ok: false, status: 401, error: 'Usuario no encontrado' }
+  }
+  if (!isAdministradorRol(db, row.rol_id)) {
+    return { ok: false, status: 403, error: 'Solo un administrador puede archivar inventarios' }
+  }
+  if (!bcrypt.compareSync(password, row.password_hash)) {
+    return { ok: false, status: 401, error: 'Contraseña incorrecta' }
+  }
+  return { ok: true }
 }
 
 function getSectoresSesion(db: ReturnType<typeof getDb>, sesionId: number) {
@@ -218,9 +245,15 @@ export async function inventarioRoutes(app: FastifyInstance): Promise<void> {
     return { activo: getInventarioActivo(db) }
   })
 
-  app.get('/api/inventario/sesiones', { preHandler: requirePermiso('inventario.ver') }, async () => {
-    const db = getDb()
-    const rows = db.prepare(`
+  app.get<{ Querystring: { archivadas?: string } }>(
+    '/api/inventario/sesiones',
+    { preHandler: requirePermiso('inventario.ver') },
+    async (req) => {
+      const db = getDb()
+      const incluirArchivadas = String(req.query.archivadas ?? '').toLowerCase() === '1'
+      const rows = db
+        .prepare(
+          `
       SELECT
         s.*,
         u.nombre AS creado_por_nombre,
@@ -228,10 +261,14 @@ export async function inventarioRoutes(app: FastifyInstance): Promise<void> {
         (SELECT COUNT(*) FROM inventario_sectores WHERE sesion_id = s.id AND estado = 'CERRADO_OK') AS sectores_ok
       FROM inventario_sesiones s
       JOIN usuarios u ON u.id = s.creado_por_id
+      WHERE ${incluirArchivadas ? 'COALESCE(s.archivada, 0) = 1' : 'COALESCE(s.archivada, 0) = 0'}
       ORDER BY s.id DESC
-    `).all() as Array<Record<string, unknown>>
-    return rows.map(mapSesionListItem)
-  })
+    `
+        )
+        .all() as Array<Record<string, unknown>>
+      return rows.map(mapSesionListItem)
+    }
+  )
 
   app.get<{ Params: { id: string } }>(
     '/api/inventario/sesiones/:id',
@@ -255,6 +292,7 @@ export async function inventarioRoutes(app: FastifyInstance): Promise<void> {
           cerrado_por_id: sesion.cerrado_por_id ? Number(sesion.cerrado_por_id) : null,
           fecha_inicio: sesion.fecha_inicio as string | null,
           fecha_cierre: sesion.fecha_cierre as string | null,
+          archivada: Boolean(Number(sesion.archivada ?? 0)),
           created_at: String(sesion.created_at)
         },
         sectores: sectores.map((s) => ({
@@ -579,6 +617,70 @@ export async function inventarioRoutes(app: FastifyInstance): Promise<void> {
     }
   )
 
+  app.post<{ Params: { id: string }; Body: { password?: string } }>(
+    '/api/inventario/sesiones/:id/archivar',
+    { preHandler: requirePermiso('inventario.ver') },
+    async (req, reply) => {
+      const db = getDb()
+      const userId = req.user!.id
+      const auth = assertAdminPassword(db, userId, req.body?.password)
+      if (!auth.ok) {
+        return reply.status(auth.status).send({ error: auth.error })
+      }
+
+      const sesionId = Number(req.params.id)
+      const sesion = getSesionOrThrow(db, sesionId)
+      const estado = String(sesion.estado)
+      if (!['CERRADA', 'CANCELADA'].includes(estado)) {
+        return reply.status(400).send({
+          error: 'Solo se pueden ocultar inventarios cerrados o cancelados'
+        })
+      }
+      if (Number(sesion.archivada ?? 0) === 1) {
+        return reply.status(400).send({ error: 'Este inventario ya está oculto del listado' })
+      }
+
+      db.prepare(
+        `
+        UPDATE inventario_sesiones
+        SET archivada = 1, archivada_at = datetime('now'), archivada_por_id = ?
+        WHERE id = ?
+      `
+      ).run(userId, sesionId)
+
+      return { ok: true }
+    }
+  )
+
+  app.post<{ Params: { id: string }; Body: { password?: string } }>(
+    '/api/inventario/sesiones/:id/desarchivar',
+    { preHandler: requirePermiso('inventario.ver') },
+    async (req, reply) => {
+      const db = getDb()
+      const userId = req.user!.id
+      const auth = assertAdminPassword(db, userId, req.body?.password)
+      if (!auth.ok) {
+        return reply.status(auth.status).send({ error: auth.error })
+      }
+
+      const sesionId = Number(req.params.id)
+      const sesion = getSesionOrThrow(db, sesionId)
+      if (Number(sesion.archivada ?? 0) !== 1) {
+        return reply.status(400).send({ error: 'Este inventario no está archivado' })
+      }
+
+      db.prepare(
+        `
+        UPDATE inventario_sesiones
+        SET archivada = 0, archivada_at = NULL, archivada_por_id = NULL
+        WHERE id = ?
+      `
+      ).run(sesionId)
+
+      return { ok: true }
+    }
+  )
+
   app.get(
     '/api/inventario/mis-sectores',
     { preHandler: requirePermiso('inventario.contar') },
@@ -756,6 +858,19 @@ export async function inventarioRoutes(app: FastifyInstance): Promise<void> {
         lineas_contador_2: mostrarLineasCompanero || canSupervise ? mapLineas(c2) : undefined,
         comparacion,
         referencia_reconteo
+      }
+    }
+  )
+
+  app.get<{ Params: { id: string } }>(
+    '/api/inventario/sectores/:id/conteo-final',
+    { preHandler: requirePermisoAny('inventario.ver', 'inventario.supervisar', 'inventario.cerrar') },
+    async (req, reply) => {
+      const db = getDb()
+      try {
+        return getConteoFinalSector(db, Number(req.params.id))
+      } catch (e) {
+        return reply.status(400).send({ error: (e as Error).message })
       }
     }
   )

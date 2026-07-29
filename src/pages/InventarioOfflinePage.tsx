@@ -9,6 +9,7 @@ import {
   Download,
   Loader2,
   MapPin,
+  MoreVertical,
   Package,
   Pencil,
   Plus,
@@ -142,7 +143,8 @@ export function InventarioOfflinePage() {
   } | null>(null)
   const [syncText, setSyncText] = useState('')
   const [showSyncImport, setShowSyncImport] = useState(false)
-  const [showFileFallback, setShowFileFallback] = useState(false)
+  const [showSyncMasOpciones, setShowSyncMasOpciones] = useState(false)
+  const [showHeaderMenu, setShowHeaderMenu] = useState(false)
   const [p2pMode, setP2pMode] = useState<'idle' | 'host' | 'client'>('idle')
   const [hostInfo, setHostInfo] = useState<{ url: string; localIp: string; port: number } | null>(
     null
@@ -161,7 +163,6 @@ export function InventarioOfflinePage() {
   const [productSearch, setProductSearch] = useState('')
   const [selected, setSelected] = useState<OfflineProducto | null>(null)
   const [editingLocalId, setEditingLocalId] = useState<string | null>(null)
-  const [showScanner, setShowScanner] = useState(false)
   const [tipoBulto, setTipoBulto] = useState<TipoBultoOffline>('PALLET')
   const [cantidadBultos, setCantidadBultos] = useState('')
   const [unidadesPorBulto, setUnidadesPorBulto] = useState('')
@@ -368,7 +369,7 @@ export function InventarioOfflinePage() {
     if (!paquete || !miRol) return null
     const sectorInv = paquete.inventario_sector
     const nombre = miRol === 1 ? sectorInv.contador_1_nombre : sectorInv.contador_2_nombre
-    return `Contador ${miRol}: ${nombre}`
+    return `C${miRol} · ${nombre}`
   }, [paquete, miRol])
   const errorCuentaEquivocada = isErrorSyncCuentaEquivocada(error)
   const usaUbicaciones = Boolean(
@@ -467,28 +468,6 @@ export function InventarioOfflinePage() {
     setEditingLocalId(null)
     setExpandedProductos((prev) => new Set(prev).add(productoId))
     selectProduct(prod)
-  }
-
-  function handleScan(code: string) {
-    setShowScanner(false)
-    const normalized = code.trim().toLowerCase()
-    if (!paquete || !normalized) {
-      setProductSearch(code.trim())
-      return
-    }
-    const match = paquete.productos.find(
-      (p) =>
-        (p.codigo_barras ?? '').toLowerCase() === normalized ||
-        p.codigo_interno.toLowerCase() === normalized
-    )
-    if (match) {
-      selectProduct(match)
-      return
-    }
-    setSelected(null)
-    setProductSearch(code.trim())
-    setError(`No se encontró el código "${code.trim()}" en el paquete offline`)
-    setTimeout(() => productSearchRef.current?.focus(), 50)
   }
 
   function cancelarLineaForm() {
@@ -1189,49 +1168,70 @@ export function InventarioOfflinePage() {
   return (
     <div className="-m-4 flex h-[calc(100vh-5rem)] flex-col bg-surface-muted/30 lg:-m-6">
       <div className="relative z-20 shrink-0 overflow-visible border-b border-surface-border bg-white shadow-sm">
-        <div className="border-b border-brand-100 bg-gradient-to-r from-brand-50/80 via-white to-white px-4 py-3 sm:px-5">
-          <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-            <Button
-              variant="ghost"
-              size="sm"
-              className="-ml-2 h-8 rounded-lg px-2"
-              onClick={() => navigate('/inventario')}
-            >
-              <ChevronLeft className="h-3.5 w-3.5" />
-              Salir
-            </Button>
+        <div className="border-b border-brand-100 bg-gradient-to-r from-brand-50/80 via-white to-white px-4 py-2.5 sm:px-5">
+          <div className="flex items-start gap-2">
             <div className="min-w-0 flex-1">
               <h1 className="truncate text-sm font-semibold text-slate-900">{sector.sector_nombre}</h1>
-              <div className="mt-1 flex flex-wrap items-center gap-2 text-xs">
-                <span className="rounded-full bg-white px-2.5 py-1 font-medium text-slate-700 ring-1 ring-surface-border">
+              <div className="mt-1.5 flex items-center gap-1.5 overflow-x-auto pb-0.5 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                <span className="shrink-0 rounded-full bg-white px-2 py-0.5 text-[11px] font-medium text-slate-700 ring-1 ring-surface-border">
                   Ronda {ronda}
                 </span>
                 {miContadorLabel && (
-                  <span className="rounded-full bg-violet-50 px-2.5 py-1 font-medium text-violet-900 ring-1 ring-violet-100">
+                  <span className="shrink-0 rounded-full bg-violet-50 px-2 py-0.5 text-[11px] font-medium text-violet-900 ring-1 ring-violet-100">
                     {miContadorLabel}
                   </span>
                 )}
-                <span className="rounded-full bg-amber-50 px-2.5 py-1 font-medium text-amber-900 ring-1 ring-amber-100">
+                <span className="shrink-0 rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-900 ring-1 ring-amber-100">
                   Offline
                 </span>
                 {estado?.mi_finalizo && (
-                  <span className="rounded-full bg-emerald-50 px-2.5 py-1 font-medium text-emerald-800 ring-1 ring-emerald-100">
+                  <span className="shrink-0 rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-medium text-emerald-800 ring-1 ring-emerald-100">
                     Finalizado
                   </span>
                 )}
               </div>
             </div>
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-8 shrink-0 rounded-lg px-2 text-red-700 hover:bg-red-50"
-              disabled={busy}
-              onClick={() => void handleBorrarEnEsteCelular()}
-              title="Solo borra datos en este celular; no afecta al compañero ni al PC"
-            >
-              <X className="h-3.5 w-3.5" />
-              Borrar en este celular
-            </Button>
+            <div className="relative shrink-0">
+              <button
+                type="button"
+                className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600"
+                disabled={busy}
+                aria-label="Más opciones"
+                aria-expanded={showHeaderMenu}
+                onClick={() => setShowHeaderMenu((v) => !v)}
+              >
+                <MoreVertical className="h-4 w-4" />
+              </button>
+              {showHeaderMenu && (
+                <>
+                  <button
+                    type="button"
+                    className="fixed inset-0 z-30 cursor-default"
+                    aria-label="Cerrar menú"
+                    onClick={() => setShowHeaderMenu(false)}
+                  />
+                  <div className="absolute right-0 z-40 mt-1 w-56 overflow-hidden rounded-xl border border-surface-border bg-white py-1 shadow-lg">
+                    <button
+                      type="button"
+                      className="flex w-full items-start gap-2 px-3 py-2.5 text-left text-sm text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                      disabled={busy}
+                      onClick={() => {
+                        setShowHeaderMenu(false)
+                        void handleBorrarEnEsteCelular()
+                      }}
+                    >
+                      <Trash2 className="mt-0.5 h-3.5 w-3.5 shrink-0 text-slate-400" />
+                      <span>
+                        <span className="block font-medium">Reiniciar en este celular</span>
+                        <span className="mt-0.5 block text-[11px] leading-snug text-slate-500">
+                          Borra el paquete local. No afecta al compañero ni al PC.
+                        </span>
+                      </span>
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
           </div>
         </div>
 
@@ -1283,18 +1283,6 @@ export function InventarioOfflinePage() {
           !puedeRecuperarComparacion && (
           <div className="border-b border-sky-100 bg-sky-50 px-4 py-3 sm:px-5">
             <p className="text-sm font-medium text-sky-950">Sincronizar con el compañero</p>
-            {!estado.companero_finalizo && p2pMode === 'idle' && (
-              <Button
-                size="sm"
-                variant="secondary"
-                className="mt-2 rounded-xl"
-                disabled={busy}
-                onClick={() => void handleReabrirConteo()}
-              >
-                <Pencil className="h-3.5 w-3.5" />
-                Seguir editando
-              </Button>
-            )}
 
             {p2pMode === 'idle' && (
               <div className="mt-3 flex flex-col gap-2 sm:flex-row">
@@ -1393,65 +1381,84 @@ export function InventarioOfflinePage() {
               <div className="mt-3">
                 <button
                   type="button"
-                  className="text-xs text-sky-800 underline-offset-2 hover:underline"
-                  onClick={() => setShowFileFallback((v) => !v)}
+                  className="inline-flex items-center gap-1 rounded-lg px-1.5 py-1 text-xs font-medium text-sky-800/80 transition-colors hover:bg-sky-100/70 hover:text-sky-950"
+                  aria-expanded={showSyncMasOpciones}
+                  onClick={() => setShowSyncMasOpciones((v) => !v)}
                 >
-                  {showFileFallback ? 'Ocultar respaldo' : 'Respaldo por archivo'}
+                  <ChevronDown
+                    className={cn(
+                      'h-3.5 w-3.5 transition-transform',
+                      showSyncMasOpciones && 'rotate-180'
+                    )}
+                  />
+                  Más opciones
                 </button>
-                <p className="mt-2 text-xs text-sky-800/90">
-                  ¿Entraste con la cuenta equivocada? Usá{' '}
-                  <button
-                    type="button"
-                    className="font-medium underline underline-offset-2"
-                    disabled={busy}
-                    onClick={() => void handleBorrarEnEsteCelular()}
-                  >
-                    Borrar en este celular
-                  </button>{' '}
-                  (no afecta al compañero), cerrá sesión y descargá de nuevo.
-                </p>
-                {showFileFallback && (
-                  <div className="mt-2 flex flex-wrap gap-2">
-                    <Button size="sm" variant="secondary" disabled={busy} onClick={() => void handleCompartir()}>
-                      <Share2 className="h-3.5 w-3.5" />
-                      Enviar mi archivo
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="secondary"
-                      disabled={busy}
-                      onClick={() => fileInputRef.current?.click()}
-                    >
-                      <Upload className="h-3.5 w-3.5" />
-                      Abrir archivo
-                    </Button>
-                    <Button size="sm" variant="ghost" onClick={() => setShowSyncImport((v) => !v)}>
-                      Pegar JSON
-                    </Button>
-                    <input
-                      ref={fileInputRef}
-                      type="file"
-                      accept="application/json,.json"
-                      className="hidden"
-                      onChange={(e) => void handleFileSelected(e.target.files?.[0] ?? null)}
-                    />
-                    {showSyncImport && (
-                      <div className="w-full space-y-2">
-                        <textarea
-                          className="h-24 w-full rounded-lg border border-sky-200 bg-white p-2 font-mono text-xs"
-                          value={syncText}
-                          onChange={(e) => setSyncText(e.target.value)}
-                          placeholder="JSON del compañero"
-                        />
+                {showSyncMasOpciones && (
+                  <div className="mt-2 space-y-3 rounded-xl border border-sky-200/80 bg-white/90 p-3">
+                    <div>
+                      <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">
+                        Respaldo por archivo
+                      </p>
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        <Button size="sm" variant="secondary" disabled={busy} onClick={() => void handleCompartir()}>
+                          <Share2 className="h-3.5 w-3.5" />
+                          Enviar mi archivo
+                        </Button>
                         <Button
                           size="sm"
-                          disabled={busy || !syncText.trim()}
-                          onClick={() => void handleImportarCompanero()}
+                          variant="secondary"
+                          disabled={busy}
+                          onClick={() => fileInputRef.current?.click()}
                         >
-                          Importar
+                          <Upload className="h-3.5 w-3.5" />
+                          Abrir archivo
                         </Button>
+                        <Button size="sm" variant="ghost" onClick={() => setShowSyncImport((v) => !v)}>
+                          Pegar JSON
+                        </Button>
+                        <input
+                          ref={fileInputRef}
+                          type="file"
+                          accept="application/json,.json"
+                          className="hidden"
+                          onChange={(e) => void handleFileSelected(e.target.files?.[0] ?? null)}
+                        />
                       </div>
-                    )}
+                      {showSyncImport && (
+                        <div className="mt-2 space-y-2">
+                          <textarea
+                            className="h-24 w-full rounded-lg border border-sky-200 bg-white p-2 font-mono text-xs"
+                            value={syncText}
+                            onChange={(e) => setSyncText(e.target.value)}
+                            placeholder="JSON del compañero"
+                          />
+                          <Button
+                            size="sm"
+                            disabled={busy || !syncText.trim()}
+                            onClick={() => void handleImportarCompanero()}
+                          >
+                            Importar
+                          </Button>
+                        </div>
+                      )}
+                    </div>
+                    <div className="border-t border-slate-100 pt-3">
+                      <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">
+                        Problemas con la cuenta
+                      </p>
+                      <button
+                        type="button"
+                        className="mt-2 inline-flex items-center gap-1.5 text-xs font-medium text-slate-600 underline-offset-2 hover:text-slate-900 hover:underline disabled:opacity-50"
+                        disabled={busy}
+                        onClick={() => void handleBorrarEnEsteCelular()}
+                      >
+                        <Trash2 className="h-3.5 w-3.5 text-slate-400" />
+                        Reiniciar en este celular
+                      </button>
+                      <p className="mt-1 text-[11px] leading-snug text-slate-500">
+                        Borra el paquete local. No afecta al compañero ni al PC.
+                      </p>
+                    </div>
                   </div>
                 )}
               </div>
@@ -1528,7 +1535,12 @@ export function InventarioOfflinePage() {
                   const compResumen = miRol === 1 ? d.resumen_contador_2 : d.resumen_contador_1
                   return (
                     <div key={d.producto_id} className="space-y-2 rounded-lg border border-red-200 bg-white p-2">
-                      <p className="text-sm font-medium">{d.nombre}</p>
+                      <div className="min-w-0">
+                        <span className="inline-flex rounded-md bg-slate-100 px-2 py-0.5 font-mono text-xs font-semibold text-slate-700">
+                          {d.codigo_interno}
+                        </span>
+                        <p className="mt-1 text-sm font-medium text-slate-900">{d.nombre}</p>
+                      </div>
                       <p className="text-xs text-slate-600">
                         Vos: {miResumen} · Compañero: {compResumen}
                       </p>
@@ -1583,9 +1595,9 @@ export function InventarioOfflinePage() {
               </div>
             )}
 
-            <div className="flex items-start gap-2">
-              <div className="relative z-30 min-w-0 flex-1">
-                <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-brand-400" />
+            <div className="relative z-30 -mx-4 sm:-mx-5">
+              <div className="relative border-y border-surface-border bg-white shadow-sm">
+                <Search className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-brand-400" />
                 <input
                   ref={productSearchRef}
                   type="search"
@@ -1599,43 +1611,29 @@ export function InventarioOfflinePage() {
                       setSelected(null)
                     }
                   }}
-                  className="w-full rounded-xl border border-surface-border bg-white py-2.5 pl-10 pr-3 text-sm shadow-sm focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20"
+                  className="w-full border-0 bg-transparent py-3 pl-11 pr-4 text-sm outline-none focus:ring-0"
                 />
-                {productosFiltrados.length > 0 && (
-                  <ul className="absolute z-50 mt-1 max-h-64 w-full divide-y divide-slate-100 overflow-auto rounded-xl border border-surface-border bg-white py-1 shadow-panel">
-                    {productosFiltrados.map((p) => (
-                      <li key={p.id}>
-                        <button
-                          type="button"
-                          className="flex min-h-14 w-full items-center gap-3 px-3.5 py-3 text-left hover:bg-slate-50"
-                          onClick={() => selectProduct(p)}
-                        >
-                          <span className="shrink-0 rounded-md bg-slate-100 px-2 py-1 font-mono text-sm font-semibold text-slate-700">
-                            {p.codigo_interno}
-                          </span>
-                          <ScrollableProductName className="flex-1 text-base font-medium leading-snug text-slate-700">
-                            {p.nombre}
-                          </ScrollableProductName>
-                        </button>
-                      </li>
-                    ))}
-                  </ul>
-                )}
               </div>
-              <Button
-                type="button"
-                variant="secondary"
-                size="sm"
-                className="h-[42px] shrink-0 rounded-xl px-3"
-                onClick={() => {
-                  setError('')
-                  setShowScanner(true)
-                }}
-                aria-label="Escanear código"
-                title="Escanear código"
-              >
-                <Camera className="h-4 w-4" />
-              </Button>
+              {productosFiltrados.length > 0 && (
+                <ul className="absolute inset-x-0 z-50 max-h-[min(55vh,22rem)] divide-y divide-slate-100 overflow-auto border-b border-surface-border bg-white shadow-panel">
+                  {productosFiltrados.map((p) => (
+                    <li key={p.id}>
+                      <button
+                        type="button"
+                        className="flex min-h-14 w-full items-center gap-3 px-4 py-3 text-left hover:bg-slate-50 active:bg-slate-100"
+                        onClick={() => selectProduct(p)}
+                      >
+                        <span className="shrink-0 rounded-md bg-slate-100 px-2 py-1 font-mono text-sm font-semibold text-slate-700">
+                          {p.codigo_interno}
+                        </span>
+                        <ScrollableProductName className="min-w-0 flex-1 text-base font-medium leading-snug text-slate-800">
+                          {p.nombre}
+                        </ScrollableProductName>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
             </div>
 
             {selected && (
@@ -1806,12 +1804,6 @@ export function InventarioOfflinePage() {
         </div>
       </div>
 
-      <BarcodeScannerModal
-        open={showScanner}
-        onClose={() => setShowScanner(false)}
-        onScan={handleScan}
-        title="Escanear producto"
-      />
       <BarcodeScannerModal
         open={showP2PQrScanner}
         onClose={() => setShowP2PQrScanner(false)}

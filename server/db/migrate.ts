@@ -684,4 +684,10 @@ export function runMigrations(db: Database.Database): void {
       ADD COLUMN ingreso_directo INTEGER NOT NULL DEFAULT 0
     `)
   }
+
+  if (tableExists(db, 'inventario_sesiones') && !columnExists(db, 'inventario_sesiones', 'archivada')) {
+    db.exec(`ALTER TABLE inventario_sesiones ADD COLUMN archivada INTEGER NOT NULL DEFAULT 0`)
+    db.exec(`ALTER TABLE inventario_sesiones ADD COLUMN archivada_at TEXT`)
+    db.exec(`ALTER TABLE inventario_sesiones ADD COLUMN archivada_por_id INTEGER REFERENCES usuarios(id)`)
+  }
 }

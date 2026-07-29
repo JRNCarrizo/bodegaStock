@@ -1,7 +1,7 @@
 import bcrypt from 'bcryptjs'
 import Database from 'better-sqlite3'
 import { app } from 'electron'
-import { existsSync, mkdirSync } from 'fs'
+import { existsSync, mkdirSync, rmSync, unlinkSync } from 'fs'
 import { join } from 'path'
 import { SCHEMA_SQL } from './schema'
 import { runMigrations } from './migrate'
@@ -10,7 +10,7 @@ import { recalcStockTotalsEnCajas } from '../utils/stock'
 
 let db: Database.Database | null = null
 
-function getDbPath(): string {
+export function getDbPath(): string {
   const userData = app.getPath('userData')
   const dbDir = join(userData, 'data')
   if (!existsSync(dbDir)) mkdirSync(dbDir, { recursive: true })
@@ -36,6 +36,29 @@ export function initDatabase(): Database.Database {
 export function getDb(): Database.Database {
   if (!db) throw new Error('Database not initialized')
   return db
+}
+
+export function closeDatabase(): void {
+  if (!db) return
+  try {
+    db.close()
+  } catch {
+    // ignore close errors before wipe
+  }
+  db = null
+}
+
+/** Borra el archivo SQLite (y WAL) e imágenes de productos. Conserva network-config.json. */
+export function wipeDatabaseFiles(): void {
+  const dbPath = getDbPath()
+  for (const path of [dbPath, `${dbPath}-wal`, `${dbPath}-shm`]) {
+    if (existsSync(path)) unlinkSync(path)
+  }
+
+  const imagesDir = join(app.getPath('userData'), 'images', 'productos')
+  if (existsSync(imagesDir)) {
+    rmSync(imagesDir, { recursive: true, force: true })
+  }
 }
 
 function seedIfEmpty(database: Database.Database): void {

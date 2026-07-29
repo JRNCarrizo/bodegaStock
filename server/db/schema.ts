@@ -312,6 +312,9 @@ CREATE TABLE IF NOT EXISTS inventario_sesiones (
   fecha_inicio TEXT,
   fecha_cierre TEXT,
   observacion TEXT,
+  archivada INTEGER NOT NULL DEFAULT 0,
+  archivada_at TEXT,
+  archivada_por_id INTEGER REFERENCES usuarios(id),
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 

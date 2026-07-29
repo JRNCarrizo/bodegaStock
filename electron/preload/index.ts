@@ -6,6 +6,8 @@ contextBridge.exposeInMainWorld('bodegaStock', {
     ipcRenderer.invoke('network:test-connection', { host, port }),
   applyNetworkConfig: (config: unknown) => ipcRenderer.invoke('network:apply-config', config),
   getAppInfo: () => ipcRenderer.invoke('app:get-info'),
+  resetDatabase: (confirmacion: string) =>
+    ipcRenderer.invoke('app:reset-database', { confirmacion }),
   checkForUpdates: () => ipcRenderer.invoke('update:check'),
   downloadUpdate: () => ipcRenderer.invoke('update:download'),
   installUpdate: () => ipcRenderer.invoke('update:install'),

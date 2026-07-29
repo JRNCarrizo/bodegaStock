@@ -115,6 +115,31 @@ export function setupAutoUpdater(getWindow: () => BrowserWindow | null) {
       : false
   }))
 
+  ipcMain.handle('app:reset-database', async (_event, payload: { confirmacion?: string }) => {
+    if (String(payload?.confirmacion ?? '').trim().toUpperCase() !== 'BORRAR') {
+      return {
+        ok: false as const,
+        message: 'Para confirmar, enviá confirmacion: "BORRAR"'
+      }
+    }
+
+    try {
+      const { stopServer } = await import('../../server/index')
+      const { closeDatabase, wipeDatabaseFiles } = await import('../../server/db')
+      await stopServer()
+      closeDatabase()
+      wipeDatabaseFiles()
+      app.relaunch()
+      app.quit()
+      return { ok: true as const }
+    } catch (err) {
+      return {
+        ok: false as const,
+        message: err instanceof Error ? err.message : 'No se pudo borrar la base de datos'
+      }
+    }
+  })
+
   ipcMain.handle('update:check', async () => {
     if (!app.isPackaged) {
       return { ok: false as const, reason: 'dev' as const }

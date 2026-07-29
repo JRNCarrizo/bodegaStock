@@ -50,6 +50,9 @@ interface Window {
     testNetworkConnection?: (host: string, port: number) => Promise<NetworkTestResult>
     applyNetworkConfig?: (config: NetworkConfig) => Promise<{ ok: boolean; apiUrl?: string }>
     getAppInfo?: () => Promise<AppInfo>
+    resetDatabase?: (
+      confirmacion: string
+    ) => Promise<{ ok: true } | { ok: false; message?: string }>
     checkForUpdates?: () => Promise<UpdateCheckResult>
     downloadUpdate?: () => Promise<UpdateActionResult>
     installUpdate?: () => Promise<UpdateActionResult>

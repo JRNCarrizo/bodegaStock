@@ -794,6 +794,93 @@ function getLineasAcordadasSector(
   return map
 }
 
+/** Conteo acordado del sector (lectura): última ronda por producto, con desglose y ubicación. */
+export function getConteoFinalSector(db: Database.Database, inventarioSectorId: number) {
+  const sector = getInventarioSector(db, inventarioSectorId)
+  const estado = String(sector.estado)
+  if (estado !== 'CERRADO_OK') {
+    throw new Error('El sector aún no está cerrado entre contadores')
+  }
+
+  const ronda = Number(sector.ronda_actual)
+  const contadoMap = getLineasAcordadasSector(db, inventarioSectorId, ronda)
+  const sectorId = Number(sector.sector_id)
+  const sectorMeta = db
+    .prepare(`SELECT usa_ubicaciones FROM sectores WHERE id = ?`)
+    .get(sectorId) as { usa_ubicaciones: number } | undefined
+  const usa_ubicaciones = Boolean(sectorMeta?.usa_ubicaciones)
+
+  const productos: Array<{
+    producto_id: number
+    codigo_interno: string
+    nombre: string
+    unidad: string
+    resumen: string
+    total_cajas: number
+    total_suelto: number
+    lineas: ReturnType<typeof mapConteoLinea>[]
+  }> = []
+
+  const productoIds = [...contadoMap.keys()].sort((a, b) => {
+    const la = contadoMap.get(a)?.[0]
+    const lb = contadoMap.get(b)?.[0]
+    return String(la?.nombre ?? '').localeCompare(String(lb?.nombre ?? ''), 'es')
+  })
+
+  for (const productoId of productoIds) {
+    const rows = contadoMap.get(productoId) ?? []
+    if (rows.length === 0) continue
+    const { botellasPorCaja } = getProductoDefaults(db, productoId)
+    const mapped = rows.map((l) => mapConteoLinea(l, botellasPorCaja))
+    const totales = totalesDesdeLineasConteo(db, rows, productoId)
+    const unidad = String(rows[0].unidad ?? 'unidad')
+    productos.push({
+      producto_id: productoId,
+      codigo_interno: String(rows[0].codigo_interno ?? ''),
+      nombre: String(rows[0].nombre ?? ''),
+      unidad,
+      resumen: formatTotalesInventarioResumen(totales, unidad),
+      total_cajas: totales.cajas,
+      total_suelto: totales.suelto,
+      lineas: mapped
+    })
+  }
+
+  const totalesSector = productos.reduce(
+    (acc, p) => ({
+      cajas: acc.cajas + p.total_cajas,
+      suelto: acc.suelto + p.total_suelto
+    }),
+    { cajas: 0, suelto: 0 }
+  )
+
+  return {
+    sector: {
+      id: Number(sector.id),
+      sesion_id: Number(sector.sesion_id),
+      sector_id: sectorId,
+      sector_nombre: String(sector.sector_nombre),
+      sector_codigo: String(sector.sector_codigo ?? ''),
+      estado,
+      ronda_actual: ronda,
+      usa_ubicaciones,
+      modo_conectividad:
+        String(sector.modo_conectividad ?? 'ONLINE') === 'OFFLINE' ? 'OFFLINE' : 'ONLINE',
+      contador_1_nombre: String(sector.contador_1_nombre),
+      contador_2_nombre: String(sector.contador_2_nombre),
+      importado_at: (sector.importado_at as string | null) ?? null
+    },
+    resumen: {
+      productos: productos.length,
+      lineas: productos.reduce((s, p) => s + p.lineas.length, 0),
+      total_cajas: totalesSector.cajas,
+      total_suelto: totalesSector.suelto,
+      resumen_total: formatTotalesInventarioResumen(totalesSector)
+    },
+    productos
+  }
+}
+
 function getSnapshotPorSector(
   db: Database.Database,
   sesionId: number,

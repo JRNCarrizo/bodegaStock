@@ -677,6 +677,7 @@ export interface InventarioSesionListItem {
   fecha_cierre: string | null
   sectores_total: number
   sectores_ok: number
+  archivada?: boolean
   created_at: string
 }
 
@@ -713,6 +714,7 @@ export interface InventarioSesionDetalle {
     creado_por_nombre: string
     fecha_inicio: string | null
     fecha_cierre: string | null
+    archivada?: boolean
     created_at: string
   }
   sectores: InventarioSectorResumen[]

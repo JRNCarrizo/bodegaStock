@@ -12,6 +12,7 @@ import {
   Smartphone,
   Wifi
 } from 'lucide-react'
+import { useAuth } from '@/context/AuthContext'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { Card, CardBody } from '@/components/ui/Card'
@@ -130,6 +131,7 @@ function ModeOption({
 
 export function ConfiguracionPage() {
   const api = window.bodegaStock
+  const { user } = useAuth()
   const [appInfo, setAppInfo] = useState<AppInfo | null>(null)
   const [networkInfo, setNetworkInfo] = useState<NetworkRuntimeInfo | null>(null)
   const [mode, setMode] = useState<NetworkConfig['mode']>('server')
@@ -153,6 +155,14 @@ export function ConfiguracionPage() {
   const [savingMovimientosCfg, setSavingMovimientosCfg] = useState(false)
   const [opCfgError, setOpCfgError] = useState('')
   const [opCfgSaved, setOpCfgSaved] = useState<'retornos' | 'movimientos' | null>(null)
+  const [showResetStock, setShowResetStock] = useState(false)
+  const [resetConfirmacion, setResetConfirmacion] = useState('')
+  const [resettingStock, setResettingStock] = useState(false)
+  const [resetStockError, setResetStockError] = useState('')
+  const [resetStockOk, setResetStockOk] = useState('')
+  const [wipeConfirmacion, setWipeConfirmacion] = useState('')
+  const [wipingDb, setWipingDb] = useState(false)
+  const [wipeDbError, setWipeDbError] = useState('')
 
   const primaryConnectionUrl = useMemo(
     () => networkInfo?.connectionUrls[0] ?? '',
@@ -238,6 +248,59 @@ export function ConfiguracionPage() {
       )
     } finally {
       setSavingMovimientosCfg(false)
+    }
+  }
+
+  async function resetearStockACero() {
+    if (resetConfirmacion.trim().toUpperCase() !== 'CERO') {
+      setResetStockError('Escribí CERO para confirmar.')
+      return
+    }
+    setResettingStock(true)
+    setResetStockError('')
+    setResetStockOk('')
+    try {
+      const res = await httpApi<{
+        ok: boolean
+        antes: { lineas: number; sectores_con_stock: number; total_cajas: number }
+        lineas_borradas: number
+      }>('/api/configuracion/reset-stock', {
+        method: 'POST',
+        body: JSON.stringify({ confirmacion: 'CERO' })
+      })
+      setResetStockOk(
+        `Stock en cero. Se quitaron ${res.lineas_borradas} líneas (${res.antes.total_cajas} cajas en total). Productos y sectores se mantienen.`
+      )
+      setResetConfirmacion('')
+      setShowResetStock(false)
+    } catch (err) {
+      setResetStockError(err instanceof Error ? err.message : 'No se pudo poner el stock en cero')
+    } finally {
+      setResettingStock(false)
+    }
+  }
+
+  async function borrarBaseYReiniciar() {
+    if (wipeConfirmacion.trim().toUpperCase() !== 'BORRAR') {
+      setWipeDbError('Escribí BORRAR para confirmar.')
+      return
+    }
+    if (!api?.resetDatabase) {
+      setWipeDbError('Esta acción solo está disponible en la app de escritorio.')
+      return
+    }
+    setWipingDb(true)
+    setWipeDbError('')
+    try {
+      const res = await api.resetDatabase('BORRAR')
+      if (!res.ok) {
+        setWipeDbError(res.message ?? 'No se pudo borrar la base de datos')
+        setWipingDb(false)
+      }
+      // Si ok, la app se reinicia sola
+    } catch (err) {
+      setWipeDbError(err instanceof Error ? err.message : 'No se pudo borrar la base de datos')
+      setWipingDb(false)
     }
   }
 
@@ -882,6 +945,132 @@ export function ConfiguracionPage() {
           )}
         </CardBody>
       </Card>
+
+      {user?.es_admin && (
+        <div className="border-t border-slate-100 pt-6">
+          <button
+            type="button"
+            className="text-xs text-slate-400 underline-offset-2 hover:text-slate-600 hover:underline"
+            onClick={() => {
+              setShowResetStock((v) => !v)
+              setResetStockError('')
+              setResetConfirmacion('')
+              setWipeDbError('')
+              setWipeConfirmacion('')
+            }}
+          >
+            Herramientas de prueba
+          </button>
+
+          {showResetStock && (
+            <div className="mt-3 max-w-lg space-y-4">
+              <div className="space-y-3 rounded-xl border border-slate-200 bg-slate-50/60 px-4 py-4">
+                <div>
+                  <p className="text-sm font-medium text-slate-800">Poner stock en cero</p>
+                  <p className="mt-1 text-xs leading-relaxed text-slate-500">
+                    Borra todas las líneas de stock y deja los totales en 0. No elimina productos,
+                    sectores ni usuarios. Útil después de pruebas con stock ficticio. No se puede
+                    usar con un inventario en curso.
+                  </p>
+                </div>
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
+                  <div className="min-w-0 flex-1">
+                    <label className="mb-1 block text-xs text-slate-500">
+                      Escribí <span className="font-semibold text-slate-700">CERO</span> para
+                      confirmar
+                    </label>
+                    <Input
+                      value={resetConfirmacion}
+                      onChange={(e) => setResetConfirmacion(e.target.value)}
+                      placeholder="CERO"
+                      className="rounded-xl"
+                      autoComplete="off"
+                      disabled={resettingStock}
+                    />
+                  </div>
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    className="rounded-xl text-red-700 ring-1 ring-red-200 hover:bg-red-50"
+                    disabled={resettingStock || resetConfirmacion.trim().toUpperCase() !== 'CERO'}
+                    onClick={() => void resetearStockACero()}
+                  >
+                    {resettingStock ? (
+                      <>
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                        Procesando…
+                      </>
+                    ) : (
+                      'Poner stock en cero'
+                    )}
+                  </Button>
+                </div>
+                {resetStockError && (
+                  <div className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-800 ring-1 ring-red-100">
+                    {resetStockError}
+                  </div>
+                )}
+              </div>
+
+              <div className="space-y-3 rounded-xl border border-red-100 bg-red-50/40 px-4 py-4">
+                <div>
+                  <p className="text-sm font-medium text-slate-800">Eliminar base de datos</p>
+                  <p className="mt-1 text-xs leading-relaxed text-slate-500">
+                    Borra productos, sectores, stock, usuarios e historial. Se conservan modo/red.
+                    Al terminar la app se reinicia con usuario{' '}
+                    <span className="font-medium text-slate-700">admin / admin123</span>. Solo en
+                    este PC (modo servidor).
+                  </p>
+                </div>
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
+                  <div className="min-w-0 flex-1">
+                    <label className="mb-1 block text-xs text-slate-500">
+                      Escribí <span className="font-semibold text-slate-700">BORRAR</span> para
+                      confirmar
+                    </label>
+                    <Input
+                      value={wipeConfirmacion}
+                      onChange={(e) => setWipeConfirmacion(e.target.value)}
+                      placeholder="BORRAR"
+                      className="rounded-xl"
+                      autoComplete="off"
+                      disabled={wipingDb}
+                    />
+                  </div>
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    className="rounded-xl bg-red-600 text-white hover:bg-red-700"
+                    disabled={wipingDb || wipeConfirmacion.trim().toUpperCase() !== 'BORRAR'}
+                    onClick={() => void borrarBaseYReiniciar()}
+                  >
+                    {wipingDb ? (
+                      <>
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                        Reiniciando…
+                      </>
+                    ) : (
+                      'Borrar y reiniciar'
+                    )}
+                  </Button>
+                </div>
+                {wipeDbError && (
+                  <div className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-800 ring-1 ring-red-100">
+                    {wipeDbError}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {resetStockOk && (
+            <p className="mt-3 flex items-start gap-1.5 text-sm text-emerald-700">
+              <Check className="mt-0.5 h-4 w-4 shrink-0" />
+              {resetStockOk}
+            </p>
+          )}
+        </div>
+      )}
 
       <AppCopyrightFooter />
     </div>

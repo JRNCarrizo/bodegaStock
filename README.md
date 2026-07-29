@@ -19,7 +19,7 @@ Toda la especificación del proyecto está en la carpeta [`docs/`](docs/):
 
 ## Estado del proyecto
 
-**v0.3.14** — Corregir cierre de inventario tras reconteo, reparar stock en sesiones cerradas, y borrar conteo local en APK por celular.
+**v0.3.15** — Herramientas de prueba en Configuración, ocultar inventarios del listado, ver conteo cerrado y mejoras de UX inventario/APK.
 
 ## Desarrollo local
 

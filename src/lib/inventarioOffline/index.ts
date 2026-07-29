@@ -28,13 +28,14 @@ export async function descargarPaqueteOffline(sectorInvId: number): Promise<Offl
   const paquete = await api<OfflinePaquete>(
     `/api/inventario/sectores/${sectorInvId}/paquete-offline`
   )
-  // Descarga nueva = paquete y conteo local desde cero (cuenta correcta, sesión renovada, etc.).
-  await clearOfflineSectorLocal(sectorInvId)
   await savePaquete(paquete)
   // Sesión nueva (ej. mes siguiente): limpia paquetes viejos de otras sesiones.
   await purgeOfflineExceptSesion(paquete.sesion.id)
-  const estado = emptyEstado(sectorInvId, paquete.inventario_sector.ronda_actual)
-  await saveEstado(estado)
+  const estado = await ensureEstado(sectorInvId, paquete.inventario_sector.ronda_actual)
+  if (estado.ronda_actual !== paquete.inventario_sector.ronda_actual && estado.mis_lineas.length === 0) {
+    estado.ronda_actual = paquete.inventario_sector.ronda_actual
+    await saveEstado(estado)
+  }
   return paquete
 }
 
@@ -524,22 +525,8 @@ export async function importarAlPc(sectorInvId: number) {
   return { ...result, confirmado_at: confirmadoAt, lineas_enviadas: todas.length }
 }
 
-/**
- * Borra paquete, conteo y sync local del sector en ESTE dispositivo.
- * No modifica al compañero ni al servidor; vuelve a la pantalla de descarga.
- */
 export async function resetOfflineLocal(sectorInvId: number): Promise<void> {
   await clearOfflineSectorLocal(sectorInvId)
-}
-
-/** Sync fallido porque ambos celulares usaron la misma cuenta de contador. */
-export function isErrorSyncCuentaEquivocada(message: string): boolean {
-  const m = message.toLowerCase()
-  return (
-    m.includes('ese archivo es tuyo') ||
-    m.includes('no coincide con el compañero asignado') ||
-    m.includes('no estás asignado como contador')
-  )
 }
 
 /** Sectores con paquete local (para listar sin red al PC). */

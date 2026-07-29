@@ -9,7 +9,6 @@ import {
   Download,
   Loader2,
   MapPin,
-  MoreVertical,
   Package,
   Pencil,
   Plus,
@@ -52,8 +51,6 @@ import {
   reabrirMiConteoAntesDeSync,
   recibirSyncCompanero,
   recuperarComparacionLocal,
-  resetOfflineLocal,
-  isErrorSyncCuentaEquivocada,
   updateLineaOffline
 } from '@/lib/inventarioOffline'
 import {
@@ -144,7 +141,6 @@ export function InventarioOfflinePage() {
   const [syncText, setSyncText] = useState('')
   const [showSyncImport, setShowSyncImport] = useState(false)
   const [showSyncMasOpciones, setShowSyncMasOpciones] = useState(false)
-  const [showHeaderMenu, setShowHeaderMenu] = useState(false)
   const [p2pMode, setP2pMode] = useState<'idle' | 'host' | 'client'>('idle')
   const [hostInfo, setHostInfo] = useState<{ url: string; localIp: string; port: number } | null>(
     null
@@ -371,7 +367,6 @@ export function InventarioOfflinePage() {
     const nombre = miRol === 1 ? sectorInv.contador_1_nombre : sectorInv.contador_2_nombre
     return `C${miRol} · ${nombre}`
   }, [paquete, miRol])
-  const errorCuentaEquivocada = isErrorSyncCuentaEquivocada(error)
   const usaUbicaciones = Boolean(
     paquete?.inventario_sector.usa_ubicaciones && paquete.ubicaciones.length > 0
   )
@@ -553,36 +548,6 @@ export function InventarioOfflinePage() {
       setP2pMode('idle')
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Error al finalizar')
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  async function handleBorrarEnEsteCelular() {
-    if (
-      !confirm(
-        '¿Borrar el conteo solo en ESTE celular?\n\n' +
-          'Se elimina el paquete y todo lo contado aquí. Tu compañero y el PC no se modifican.\n\n' +
-          'Después cerrá sesión, entrá con la cuenta correcta y descargá el paquete de nuevo.'
-      )
-    ) {
-      return
-    }
-    setBusy(true)
-    setError('')
-    setMsg('')
-    try {
-      await shutdownHostUi()
-      await resetOfflineLocal(sectorInvId)
-      setP2pMode('idle')
-      setHostSyncedOk(false)
-      setClientHostInput('192.168.43.1')
-      await reload()
-      setMsg(
-        'Listo en este celular. Cerrá sesión, entrá con la cuenta del contador que te corresponde y descargá el paquete.'
-      )
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'No se pudo borrar el conteo local')
     } finally {
       setBusy(false)
     }
@@ -1168,69 +1133,37 @@ export function InventarioOfflinePage() {
   return (
     <div className="-m-4 flex h-[calc(100vh-5rem)] flex-col bg-surface-muted/30 lg:-m-6">
       <div className="relative z-20 shrink-0 overflow-visible border-b border-surface-border bg-white shadow-sm">
-        <div className="border-b border-brand-100 bg-gradient-to-r from-brand-50/80 via-white to-white px-4 py-2.5 sm:px-5">
-          <div className="flex items-start gap-2">
+        <div className="border-b border-brand-100 bg-gradient-to-r from-brand-50/80 via-white to-white px-4 py-3 sm:px-5">
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+            <Button
+              variant="ghost"
+              size="sm"
+              className="-ml-2 h-8 rounded-lg px-2"
+              onClick={() => navigate('/inventario')}
+            >
+              <ChevronLeft className="h-3.5 w-3.5" />
+              Salir
+            </Button>
             <div className="min-w-0 flex-1">
               <h1 className="truncate text-sm font-semibold text-slate-900">{sector.sector_nombre}</h1>
-              <div className="mt-1.5 flex items-center gap-1.5 overflow-x-auto pb-0.5 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-                <span className="shrink-0 rounded-full bg-white px-2 py-0.5 text-[11px] font-medium text-slate-700 ring-1 ring-surface-border">
+              <div className="mt-1 flex flex-wrap items-center gap-2 text-xs">
+                <span className="rounded-full bg-white px-2.5 py-1 font-medium text-slate-700 ring-1 ring-surface-border">
                   Ronda {ronda}
                 </span>
                 {miContadorLabel && (
-                  <span className="shrink-0 rounded-full bg-violet-50 px-2 py-0.5 text-[11px] font-medium text-violet-900 ring-1 ring-violet-100">
+                  <span className="rounded-full bg-violet-50 px-2.5 py-1 font-medium text-violet-900 ring-1 ring-violet-100">
                     {miContadorLabel}
                   </span>
                 )}
-                <span className="shrink-0 rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-900 ring-1 ring-amber-100">
+                <span className="rounded-full bg-amber-50 px-2.5 py-1 font-medium text-amber-900 ring-1 ring-amber-100">
                   Offline
                 </span>
                 {estado?.mi_finalizo && (
-                  <span className="shrink-0 rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-medium text-emerald-800 ring-1 ring-emerald-100">
+                  <span className="rounded-full bg-emerald-50 px-2.5 py-1 font-medium text-emerald-800 ring-1 ring-emerald-100">
                     Finalizado
                   </span>
                 )}
               </div>
-            </div>
-            <div className="relative shrink-0">
-              <button
-                type="button"
-                className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600"
-                disabled={busy}
-                aria-label="Más opciones"
-                aria-expanded={showHeaderMenu}
-                onClick={() => setShowHeaderMenu((v) => !v)}
-              >
-                <MoreVertical className="h-4 w-4" />
-              </button>
-              {showHeaderMenu && (
-                <>
-                  <button
-                    type="button"
-                    className="fixed inset-0 z-30 cursor-default"
-                    aria-label="Cerrar menú"
-                    onClick={() => setShowHeaderMenu(false)}
-                  />
-                  <div className="absolute right-0 z-40 mt-1 w-56 overflow-hidden rounded-xl border border-surface-border bg-white py-1 shadow-lg">
-                    <button
-                      type="button"
-                      className="flex w-full items-start gap-2 px-3 py-2.5 text-left text-sm text-slate-700 hover:bg-slate-50 disabled:opacity-50"
-                      disabled={busy}
-                      onClick={() => {
-                        setShowHeaderMenu(false)
-                        void handleBorrarEnEsteCelular()
-                      }}
-                    >
-                      <Trash2 className="mt-0.5 h-3.5 w-3.5 shrink-0 text-slate-400" />
-                      <span>
-                        <span className="block font-medium">Reiniciar en este celular</span>
-                        <span className="mt-0.5 block text-[11px] leading-snug text-slate-500">
-                          Borra el paquete local. No afecta al compañero ni al PC.
-                        </span>
-                      </span>
-                    </button>
-                  </div>
-                </>
-              )}
             </div>
           </div>
         </div>
@@ -1238,23 +1171,6 @@ export function InventarioOfflinePage() {
         {error && (
           <div className="border-b border-red-100 bg-red-50 px-4 py-2 text-sm text-red-700 sm:px-5">
             {error}
-            {errorCuentaEquivocada && (
-              <div className="mt-2 space-y-2">
-                <p className="text-xs text-red-800">
-                  Parece que este celular descargó el paquete con la cuenta equivocada. Cada
-                  contador debe entrar con su propio usuario.
-                </p>
-                <Button
-                  size="sm"
-                  variant="secondary"
-                  className="rounded-xl border-red-200 bg-white text-red-800 hover:bg-red-50"
-                  disabled={busy}
-                  onClick={() => void handleBorrarEnEsteCelular()}
-                >
-                  Borrar en este celular y volver a descargar
-                </Button>
-              </div>
-            )}
           </div>
         )}
         {msg && (
@@ -1442,23 +1358,6 @@ export function InventarioOfflinePage() {
                         </div>
                       )}
                     </div>
-                    <div className="border-t border-slate-100 pt-3">
-                      <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">
-                        Problemas con la cuenta
-                      </p>
-                      <button
-                        type="button"
-                        className="mt-2 inline-flex items-center gap-1.5 text-xs font-medium text-slate-600 underline-offset-2 hover:text-slate-900 hover:underline disabled:opacity-50"
-                        disabled={busy}
-                        onClick={() => void handleBorrarEnEsteCelular()}
-                      >
-                        <Trash2 className="h-3.5 w-3.5 text-slate-400" />
-                        Reiniciar en este celular
-                      </button>
-                      <p className="mt-1 text-[11px] leading-snug text-slate-500">
-                        Borra el paquete local. No afecta al compañero ni al PC.
-                      </p>
-                    </div>
                   </div>
                 )}
               </div>
@@ -1564,11 +1463,8 @@ export function InventarioOfflinePage() {
         {puedeEditar && (
           <div className="space-y-3 overflow-visible p-4 sm:p-5">
             {usaUbicaciones && (
-              <div>
-                <label className="mb-1 flex items-center gap-1.5 text-xs font-medium text-slate-600">
-                  <MapPin className="h-3.5 w-3.5 text-violet-500" />
-                  Ubicación dentro del sector
-                </label>
+              <div className="relative">
+                <MapPin className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-violet-500" />
                 <select
                   ref={ubicacionSelectRef}
                   value={ubicacionId}
@@ -1583,7 +1479,7 @@ export function InventarioOfflinePage() {
                       productSearchRef.current?.focus()
                     }
                   }}
-                  className="w-full rounded-xl border border-surface-border bg-white px-3 py-2.5 text-sm shadow-sm focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20"
+                  className="w-full rounded-xl border border-surface-border bg-white py-2.5 pl-9 pr-3 text-sm shadow-sm focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20"
                 >
                   <option value="">Seleccionar ubicación…</option>
                   {paquete?.ubicaciones.map((ubicacion) => (

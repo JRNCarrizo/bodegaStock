@@ -3,6 +3,7 @@ import {
   Boxes,
   Camera,
   Check,
+  ChevronDown,
   ClipboardList,
   Eye,
   EyeOff,
@@ -82,6 +83,7 @@ export function LoginPage() {
   const [serverOk, setServerOk] = useState(false)
   const [testingServer, setTestingServer] = useState(false)
   const [showServerQr, setShowServerQr] = useState(false)
+  const [serverPanelOpen, setServerPanelOpen] = useState(false)
   const [offlineUnlockReady, setOfflineUnlockReady] = useState(false)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
@@ -264,101 +266,138 @@ export function LoginPage() {
 
           {native && (
             <Card className="overflow-hidden shadow-panel">
-              <div className="border-b border-slate-100 bg-gradient-to-r from-slate-50 via-white to-white px-5 py-4">
-                <div className="flex items-start gap-3">
-                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-slate-800 text-white shadow-sm">
-                    <Server className="h-5 w-5" />
-                  </div>
-                  <div>
+              <button
+                type="button"
+                className="flex w-full items-start gap-3 border-b border-slate-100 bg-gradient-to-r from-slate-50 via-white to-white px-5 py-4 text-left transition-colors hover:bg-slate-50/80"
+                onClick={() => setServerPanelOpen((v) => !v)}
+                aria-expanded={serverPanelOpen}
+              >
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-slate-800 text-white shadow-sm">
+                  <Server className="h-5 w-5" />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2">
                     <h3 className="font-semibold text-slate-900">PC servidor</h3>
-                    <p className="mt-0.5 text-sm text-slate-500">
-                      IP de Configuración en el PC (puerto 3847). Misma WiFi.
-                    </p>
-                  </div>
-                </div>
-              </div>
-              <CardBody className="space-y-3 p-5">
-                <p className="text-xs text-slate-500">
-                  Escaneá el QR de Configuración en el PC, o escribí la IP. El puerto suele ser 3847.
-                </p>
-                <div className="flex gap-2">
-                  <div className="min-w-0 flex-1">
-                    <Input
-                      label="IP del PC"
-                      value={serverHost}
-                      onChange={(e) => {
-                        setServerHost(e.target.value.replace(/[^\d.]/g, ''))
-                        markServerDirty()
-                      }}
-                      placeholder="192.168.1.56"
-                      autoComplete="off"
-                      inputMode="decimal"
+                    <ChevronDown
+                      className={cn(
+                        'h-4 w-4 shrink-0 text-slate-400 transition-transform',
+                        serverPanelOpen && 'rotate-180'
+                      )}
                     />
                   </div>
-                  <div className="w-[88px] shrink-0">
-                    <Input
-                      label="Puerto"
-                      value={serverPort}
-                      onChange={(e) => {
-                        setServerPort(e.target.value.replace(/\D/g, ''))
-                        markServerDirty()
-                      }}
-                      placeholder="3847"
-                      autoComplete="off"
-                      inputMode="numeric"
-                    />
-                  </div>
-                </div>
-                <div className="flex flex-col gap-2 sm:flex-row">
-                  <Button
-                    type="button"
-                    variant="secondary"
-                    className="w-full sm:flex-1"
-                    disabled={testingServer}
-                    onClick={() => setShowServerQr(true)}
-                  >
-                    <Camera className="h-4 w-4" />
-                    Escanear QR del PC
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="secondary"
-                    className="w-full sm:flex-1"
-                    disabled={testingServer || !serverHost.trim()}
-                    onClick={() => void handleSaveServer()}
-                  >
-                    {testingServer ? (
+                  <p className="mt-1 flex flex-wrap items-center gap-1.5 text-sm">
+                    {serverHost.trim() ? (
                       <>
-                        <Loader2 className="h-4 w-4 animate-spin" />
-                        Probando…
+                        <span
+                          className={cn(
+                            'inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ring-1',
+                            serverReady
+                              ? 'bg-emerald-50 text-emerald-800 ring-emerald-100'
+                              : 'bg-amber-50 text-amber-900 ring-amber-100'
+                          )}
+                        >
+                          {serverReady ? 'IP guardada' : 'IP sin probar'}
+                        </span>
+                        <span className="truncate font-mono text-xs text-slate-600">
+                          {serverHost.trim()}
+                          {serverPort.trim() && serverPort.trim() !== '3847'
+                            ? `:${serverPort.trim()}`
+                            : ''}
+                        </span>
                       </>
                     ) : (
-                      <>
-                        <Check className="h-4 w-4" />
-                        Probar y guardar
-                      </>
+                      <span className="inline-flex items-center rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600 ring-1 ring-slate-200">
+                        Sin IP guardada
+                      </span>
                     )}
-                  </Button>
+                  </p>
                 </div>
-                {serverMsg && (
-                  <p
-                    className={cn(
-                      'rounded-xl px-3 py-2 text-sm ring-1',
-                      serverOk
-                        ? 'bg-emerald-50 text-emerald-800 ring-emerald-100'
-                        : 'bg-amber-50 text-amber-900 ring-amber-100'
-                    )}
-                  >
-                    {serverMsg}
+              </button>
+              {serverPanelOpen && (
+                <CardBody className="space-y-3 p-5">
+                  <p className="text-xs text-slate-500">
+                    Escaneá el QR de Configuración en el PC, o escribí la IP. El puerto suele ser
+                    3847.
                   </p>
-                )}
-                {offlineUnlockReady && (
-                  <p className="rounded-xl bg-sky-50 px-3 py-2 text-sm text-sky-900 ring-1 ring-sky-100">
-                    Este celular ya tiene sesión offline. Si no hay WiFi al PC, podés entrar con el
-                    mismo usuario y clave para seguir contando.
-                  </p>
-                )}
-              </CardBody>
+                  <div className="flex gap-2">
+                    <div className="min-w-0 flex-1">
+                      <Input
+                        label="IP del PC"
+                        value={serverHost}
+                        onChange={(e) => {
+                          setServerHost(e.target.value.replace(/[^\d.]/g, ''))
+                          markServerDirty()
+                        }}
+                        placeholder="192.168.1.56"
+                        autoComplete="off"
+                        inputMode="decimal"
+                      />
+                    </div>
+                    <div className="w-[88px] shrink-0">
+                      <Input
+                        label="Puerto"
+                        value={serverPort}
+                        onChange={(e) => {
+                          setServerPort(e.target.value.replace(/\D/g, ''))
+                          markServerDirty()
+                        }}
+                        placeholder="3847"
+                        autoComplete="off"
+                        inputMode="numeric"
+                      />
+                    </div>
+                  </div>
+                  <div className="flex flex-col gap-2 sm:flex-row">
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      className="w-full sm:flex-1"
+                      disabled={testingServer}
+                      onClick={() => setShowServerQr(true)}
+                    >
+                      <Camera className="h-4 w-4" />
+                      Escanear QR del PC
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      className="w-full sm:flex-1"
+                      disabled={testingServer || !serverHost.trim()}
+                      onClick={() => void handleSaveServer()}
+                    >
+                      {testingServer ? (
+                        <>
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                          Probando…
+                        </>
+                      ) : (
+                        <>
+                          <Check className="h-4 w-4" />
+                          Probar y guardar
+                        </>
+                      )}
+                    </Button>
+                  </div>
+                  {serverMsg && (
+                    <p
+                      className={cn(
+                        'rounded-xl px-3 py-2 text-sm ring-1',
+                        serverOk
+                          ? 'bg-emerald-50 text-emerald-800 ring-emerald-100'
+                          : 'bg-amber-50 text-amber-900 ring-amber-100'
+                      )}
+                    >
+                      {serverMsg}
+                    </p>
+                  )}
+                  {offlineUnlockReady && (
+                    <p className="rounded-xl bg-sky-50 px-3 py-2 text-sm text-sky-900 ring-1 ring-sky-100">
+                      Este celular ya tiene sesión offline. Si no hay WiFi al PC, podés entrar con
+                      el mismo usuario y clave para seguir contando.
+                    </p>
+                  )}
+                </CardBody>
+              )}
             </Card>
           )}
 

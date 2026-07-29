@@ -7,8 +7,10 @@ import {
   ChevronLeft,
   ChevronRight,
   Download,
+  Hash,
   Loader2,
   MapPin,
+  MoreVertical,
   Package,
   Pencil,
   Plus,
@@ -51,8 +53,13 @@ import {
   reabrirMiConteoAntesDeSync,
   recibirSyncCompanero,
   recuperarComparacionLocal,
+  resetOfflineLocal,
   updateLineaOffline
 } from '@/lib/inventarioOffline'
+import {
+  loadTecladoNumericoBusqueda,
+  saveTecladoNumericoBusqueda
+} from '@/lib/inventarioTeclado'
 import {
   writePcImportShareFile,
   writeSyncShareFile
@@ -141,6 +148,8 @@ export function InventarioOfflinePage() {
   const [syncText, setSyncText] = useState('')
   const [showSyncImport, setShowSyncImport] = useState(false)
   const [showSyncMasOpciones, setShowSyncMasOpciones] = useState(false)
+  const [showHeaderMenu, setShowHeaderMenu] = useState(false)
+  const [tecladoNumerico, setTecladoNumerico] = useState(() => loadTecladoNumericoBusqueda())
   const [p2pMode, setP2pMode] = useState<'idle' | 'host' | 'client'>('idle')
   const [hostInfo, setHostInfo] = useState<{ url: string; localIp: string; port: number } | null>(
     null
@@ -270,6 +279,48 @@ export function InventarioOfflinePage() {
     setHostSyncedOk(false)
     setP2pMode('idle')
     if (message) setMsg(message)
+  }
+
+  function toggleTecladoNumerico() {
+    const next = !tecladoNumerico
+    setTecladoNumerico(next)
+    saveTecladoNumericoBusqueda(next)
+    setShowHeaderMenu(false)
+    const el = productSearchRef.current
+    if (el && document.activeElement === el) {
+      el.blur()
+      setTimeout(() => el.focus(), 60)
+    }
+  }
+
+  async function handleBorrarEnEsteCelular() {
+    if (
+      !confirm(
+        '¿Borrar el conteo solo en ESTE celular?\n\n' +
+          'Se elimina el paquete y todo lo contado aquí. Tu compañero y el PC no se modifican.\n\n' +
+          'Después cerrá sesión, entrá con la cuenta correcta y descargá el paquete de nuevo.'
+      )
+    ) {
+      return
+    }
+    setBusy(true)
+    setError('')
+    setMsg('')
+    try {
+      await shutdownHostUi()
+      await resetOfflineLocal(sectorInvId)
+      setP2pMode('idle')
+      setHostSyncedOk(false)
+      setClientHostInput('192.168.43.1')
+      await reload()
+      setMsg(
+        'Listo en este celular. Cerrá sesión, entrá con la cuenta del contador que te corresponde y descargá el paquete.'
+      )
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'No se pudo borrar el conteo local')
+    } finally {
+      setBusy(false)
+    }
   }
 
   const productosFiltrados = useMemo(() => {
@@ -1165,6 +1216,64 @@ export function InventarioOfflinePage() {
                 )}
               </div>
             </div>
+            <div className="relative shrink-0">
+              <button
+                type="button"
+                className="rounded-lg p-2 text-slate-500 hover:bg-slate-100 hover:text-slate-800"
+                disabled={busy}
+                aria-label="Más opciones"
+                aria-expanded={showHeaderMenu}
+                onClick={() => setShowHeaderMenu((v) => !v)}
+              >
+                <MoreVertical className="h-4 w-4" />
+              </button>
+              {showHeaderMenu && (
+                <>
+                  <button
+                    type="button"
+                    className="fixed inset-0 z-30 cursor-default"
+                    aria-label="Cerrar menú"
+                    onClick={() => setShowHeaderMenu(false)}
+                  />
+                  <div className="absolute right-0 z-40 mt-1 w-64 overflow-hidden rounded-xl border border-surface-border bg-white py-1 shadow-lg">
+                    <button
+                      type="button"
+                      className="flex w-full items-start gap-2 px-3 py-2.5 text-left text-sm text-slate-700 hover:bg-slate-50"
+                      onClick={toggleTecladoNumerico}
+                    >
+                      <Hash className="mt-0.5 h-3.5 w-3.5 shrink-0 text-slate-400" />
+                      <span>
+                        <span className="block font-medium">
+                          {tecladoNumerico ? 'Teclado de letras' : 'Teclado numérico'}
+                        </span>
+                        <span className="mt-0.5 block text-[11px] leading-snug text-slate-500">
+                          {tecladoNumerico
+                            ? 'Volver al teclado completo para buscar por nombre'
+                            : 'Números y guion — útil para códigos y cosecha'}
+                        </span>
+                      </span>
+                    </button>
+                    <button
+                      type="button"
+                      className="flex w-full items-start gap-2 px-3 py-2.5 text-left text-sm text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                      disabled={busy}
+                      onClick={() => {
+                        setShowHeaderMenu(false)
+                        void handleBorrarEnEsteCelular()
+                      }}
+                    >
+                      <Trash2 className="mt-0.5 h-3.5 w-3.5 shrink-0 text-slate-400" />
+                      <span>
+                        <span className="block font-medium">Reiniciar en este celular</span>
+                        <span className="mt-0.5 block text-[11px] leading-snug text-slate-500">
+                          Borra el paquete local. No afecta al compañero ni al PC.
+                        </span>
+                      </span>
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
           </div>
         </div>
 
@@ -1496,10 +1605,19 @@ export function InventarioOfflinePage() {
                 <Search className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-brand-400" />
                 <input
                   ref={productSearchRef}
-                  type="search"
+                  type={tecladoNumerico ? 'text' : 'search'}
+                  inputMode={tecladoNumerico ? 'tel' : 'search'}
+                  enterKeyHint="search"
+                  autoCapitalize="off"
+                  autoCorrect="off"
+                  spellCheck={false}
                   role="combobox"
                   aria-expanded={productosFiltrados.length > 0}
-                  placeholder="Buscar producto — código o nombre"
+                  placeholder={
+                    tecladoNumerico
+                      ? 'Buscar por código (números y guion)'
+                      : 'Buscar producto — código o nombre'
+                  }
                   value={productSearch}
                   onChange={(e) => {
                     setProductSearch(e.target.value)

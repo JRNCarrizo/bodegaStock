@@ -27,6 +27,7 @@ import { Capacitor } from '@capacitor/core'
 import QRCode from 'qrcode'
 import { BarcodeScannerModal } from '@/components/BarcodeScannerModal'
 import { ScrollableProductName } from '@/components/ScrollableProductName'
+import { SwipeableConteoLinea } from '@/components/SwipeableConteoLinea'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { api, cn } from '@/lib/utils'
@@ -164,6 +165,7 @@ export function InventarioOfflinePage() {
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [expandedProductos, setExpandedProductos] = useState<Set<number>>(new Set())
   const [expandedDesgloseRef, setExpandedDesgloseRef] = useState<Set<number>>(new Set())
+  const [swipeOpenLineId, setSwipeOpenLineId] = useState<string | null>(null)
 
   const [productSearch, setProductSearch] = useState('')
   const [selected, setSelected] = useState<OfflineProducto | null>(null)
@@ -1117,46 +1119,27 @@ export function InventarioOfflinePage() {
                 ) : (
                   <ul className="space-y-2">
                     {grupo.lineas.map((l, idx) => (
-                      <li
+                      <SwipeableConteoLinea
                         key={l.local_id}
-                        className="flex items-center justify-between gap-3 rounded-lg border border-surface-border bg-white px-3 py-2.5 text-sm"
+                        disabled={!puedeEditar}
+                        open={swipeOpenLineId === l.local_id}
+                        onOpenChange={(open) => setSwipeOpenLineId(open ? l.local_id : null)}
+                        onEdit={() => empezarEditarLinea(l)}
+                        onDelete={() => {
+                          setSwipeOpenLineId(null)
+                          void deleteLineaOffline(sectorInvId, l.local_id).then(reload)
+                        }}
                       >
-                        <div className="min-w-0 text-slate-800">
+                        <div className="min-w-0 flex-1 text-slate-800">
                           <span className="text-xs text-slate-400">{idx + 1}.</span> {l.etiqueta}
                           {l.ubicacion && (
                             <span className="ml-1.5 text-xs text-slate-500">({l.ubicacion})</span>
                           )}
                         </div>
-                        <div className="flex shrink-0 items-center gap-1">
-                          <span className="rounded-md bg-slate-50 px-2 py-1 text-sm font-semibold tabular-nums text-slate-900 ring-1 ring-surface-border">
-                            {formatValorLineaConteo(l)}
-                          </span>
-                          {puedeEditar && (
-                            <>
-                              <Button
-                                type="button"
-                                variant="ghost"
-                                size="sm"
-                                className="rounded-lg"
-                                onClick={() => empezarEditarLinea(l)}
-                              >
-                                <Pencil className="h-4 w-4 text-brand-600" />
-                              </Button>
-                              <Button
-                                type="button"
-                                variant="ghost"
-                                size="sm"
-                                className="rounded-lg"
-                                onClick={() =>
-                                  void deleteLineaOffline(sectorInvId, l.local_id).then(reload)
-                                }
-                              >
-                                <Trash2 className="h-4 w-4 text-red-500" />
-                              </Button>
-                            </>
-                          )}
-                        </div>
-                      </li>
+                        <span className="shrink-0 rounded-md bg-slate-50 px-2 py-1 text-sm font-semibold tabular-nums text-slate-900 ring-1 ring-surface-border">
+                          {formatValorLineaConteo(l)}
+                        </span>
+                      </SwipeableConteoLinea>
                     ))}
                     {puedeEditar && (
                       <li>

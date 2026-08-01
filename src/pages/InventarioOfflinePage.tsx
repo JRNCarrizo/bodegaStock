@@ -6,6 +6,7 @@ import {
   ChevronDown,
   ChevronLeft,
   ChevronRight,
+  Copy,
   Download,
   Hash,
   Loader2,
@@ -20,9 +21,11 @@ import {
   Trash2,
   Upload,
   Wifi,
-  X
+  X,
+  Eye
 } from 'lucide-react'
 import { Share } from '@capacitor/share'
+import { App as CapApp } from '@capacitor/app'
 import { Capacitor } from '@capacitor/core'
 import QRCode from 'qrcode'
 import { BarcodeScannerModal } from '@/components/BarcodeScannerModal'
@@ -31,6 +34,8 @@ import { SwipeableConteoLinea } from '@/components/SwipeableConteoLinea'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { api, cn } from '@/lib/utils'
+import { scrollProductoIntoListVisible } from '@/lib/scroll'
+import { textoProductoMatches } from '@/lib/productoSearch'
 import {
   scrollFocusedFieldIntoSheet,
   useVisualViewportBottomInset
@@ -66,8 +71,12 @@ import {
   writeSyncShareFile
 } from '@/lib/inventarioOffline/storage'
 import {
+  HOTSPOT_IP_TIPICA,
   P2P_PORT,
+  loadLastHostIp,
   refreshP2PHostInfo,
+  resolveDeviceLanIp,
+  saveLastHostIp,
   startP2PHost,
   stopP2PHost,
   syncConHost
@@ -133,6 +142,11 @@ export function InventarioOfflinePage() {
   const ubicacionSelectRef = useRef<HTMLSelectElement>(null)
   const listScrollRef = useRef<HTMLDivElement>(null)
   const productLineFormRef = useRef<HTMLDivElement>(null)
+  const cantidadBultosRef = useRef<HTMLInputElement>(null)
+  const cantidadSueltaRef = useRef<HTMLInputElement>(null)
+  /** Input fantasma: abre el teclado en el mismo toque, antes de montar el modal. */
+  const keyboardBridgeRef = useRef<HTMLInputElement>(null)
+  const pendingFocusCantidadRef = useRef(false)
   const pendingScrollProductoIdRef = useRef<number | null>(null)
 
   const [loading, setLoading] = useState(true)
@@ -155,10 +169,13 @@ export function InventarioOfflinePage() {
   const [hostInfo, setHostInfo] = useState<{ url: string; localIp: string; port: number } | null>(
     null
   )
+  /** Última IP del host (queda en el menú ⋮ aunque se cierre el panel). */
+  const [ultimaIpHost, setUltimaIpHost] = useState<{ localIp: string; port: number } | null>(null)
   const [hostQrDataUrl, setHostQrDataUrl] = useState('')
   const [clientHostInput, setClientHostInput] = useState('192.168.43.1')
   const [showP2PQrScanner, setShowP2PQrScanner] = useState(false)
   const [hostSyncedOk, setHostSyncedOk] = useState(false)
+  const [hostReintentosOpen, setHostReintentosOpen] = useState(false)
   const hostAutoStopRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const hostIpPollRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const hostInfoRef = useRef<{ url: string; localIp: string; port: number } | null>(null)
@@ -166,6 +183,8 @@ export function InventarioOfflinePage() {
   const [expandedProductos, setExpandedProductos] = useState<Set<number>>(new Set())
   const [expandedDesgloseRef, setExpandedDesgloseRef] = useState<Set<number>>(new Set())
   const [swipeOpenLineId, setSwipeOpenLineId] = useState<string | null>(null)
+  const [showVistaPrevia, setShowVistaPrevia] = useState(false)
+  const [vistaPreviaSearch, setVistaPreviaSearch] = useState('')
 
   const [productSearch, setProductSearch] = useState('')
   const [selected, setSelected] = useState<OfflineProducto | null>(null)
@@ -226,6 +245,65 @@ export function InventarioOfflinePage() {
     }
   }, [])
 
+  useEffect(() => {
+    void (async () => {
+      const saved = await loadLastHostIp()
+      if (saved) setUltimaIpHost(saved)
+      else {
+        // Mostrar algo útil de inmediato; luego se actualiza al abrir el menú.
+        setUltimaIpHost({ localIp: HOTSPOT_IP_TIPICA, port: P2P_PORT })
+      }
+    })()
+  }, [])
+
+  useEffect(() => {
+    if (!msg) return
+    const t = window.setTimeout(() => setMsg(''), 4000)
+    return () => window.clearTimeout(t)
+  }, [msg])
+
+  /** Atrás del celular cierra la vista previa (vuelve al sync), no sale del sector. */
+  useEffect(() => {
+    if (!showVistaPrevia) return
+
+    const state = window.history.state as { bodegaVistaPrevia?: boolean } | null
+    if (!state?.bodegaVistaPrevia) {
+      window.history.pushState({ bodegaVistaPrevia: true }, '')
+    }
+
+    const onPopState = () => {
+      setShowVistaPrevia(false)
+      setVistaPreviaSearch('')
+    }
+    window.addEventListener('popstate', onPopState)
+
+    let removeCap: (() => void) | undefined
+    if (Capacitor.isNativePlatform()) {
+      void CapApp.addListener('backButton', () => {
+        window.history.back()
+      }).then((handle) => {
+        removeCap = () => {
+          void handle.remove()
+        }
+      })
+    }
+
+    return () => {
+      window.removeEventListener('popstate', onPopState)
+      removeCap?.()
+    }
+  }, [showVistaPrevia])
+
+  function closeVistaPrevia() {
+    const state = window.history.state as { bodegaVistaPrevia?: boolean } | null
+    if (state?.bodegaVistaPrevia) {
+      window.history.back()
+      return
+    }
+    setShowVistaPrevia(false)
+    setVistaPreviaSearch('')
+  }
+
   function clearHostAutoStop() {
     if (hostAutoStopRef.current) {
       clearTimeout(hostAutoStopRef.current)
@@ -243,12 +321,47 @@ export function InventarioOfflinePage() {
   async function applyHostInfo(info: { url: string; localIp: string; port: number }) {
     hostInfoRef.current = info
     setHostInfo(info)
+    setUltimaIpHost({ localIp: info.localIp, port: info.port })
+    void saveLastHostIp({ localIp: info.localIp, port: info.port })
     try {
       const qr = await QRCode.toDataURL(info.url, { width: 220, margin: 1 })
       setHostQrDataUrl(qr)
     } catch {
       setHostQrDataUrl('')
     }
+  }
+
+  async function refrescarIpEnMenu() {
+    try {
+      const resolved = await resolveDeviceLanIp()
+      setUltimaIpHost({ localIp: resolved.localIp, port: resolved.port })
+    } catch {
+      /* ignore */
+    }
+  }
+
+  async function copiarIpHost() {
+    let ip = ultimaIpHost?.localIp ?? hostInfo?.localIp
+    let port = ultimaIpHost?.port ?? hostInfo?.port ?? P2P_PORT
+    if (!ip) {
+      try {
+        const resolved = await resolveDeviceLanIp()
+        ip = resolved.localIp
+        port = resolved.port
+        setUltimaIpHost({ localIp: ip, port })
+      } catch {
+        ip = HOTSPOT_IP_TIPICA
+        port = P2P_PORT
+      }
+    }
+    const text = `${ip}:${port}`
+    try {
+      await navigator.clipboard.writeText(text)
+      setMsg(`IP copiada: ${text} — el compañero la pega en «Me conecto»`)
+    } catch {
+      setMsg(`IP de este celular: ${text}`)
+    }
+    setShowHeaderMenu(false)
   }
 
   function startHostIpPolling() {
@@ -279,6 +392,7 @@ export function InventarioOfflinePage() {
     setHostInfo(null)
     setHostQrDataUrl('')
     setHostSyncedOk(false)
+    setHostReintentosOpen(false)
     setP2pMode('idle')
     if (message) setMsg(message)
   }
@@ -327,14 +441,18 @@ export function InventarioOfflinePage() {
 
   const productosFiltrados = useMemo(() => {
     if (!paquete) return []
-    const q = productSearch.trim().toLowerCase()
+    const q = productSearch.trim()
     if (!q || selected) return []
     return paquete.productos
-      .filter(
-        (p) =>
-          p.nombre.toLowerCase().includes(q) ||
-          p.codigo_interno.toLowerCase().includes(q) ||
-          (p.codigo_barras ?? '').toLowerCase().includes(q)
+      .filter((p) =>
+        textoProductoMatches(
+          {
+            codigo_interno: p.codigo_interno,
+            codigo_barras: p.codigo_barras,
+            nombre: p.nombre
+          },
+          q
+        )
       )
       .slice(0, 20)
   }, [paquete, productSearch, selected])
@@ -382,6 +500,16 @@ export function InventarioOfflinePage() {
     })
   }, [estado, paquete, misLineasRonda])
 
+  const lineasPorProductoVistaPrevia = useMemo(() => {
+    const q = vistaPreviaSearch.trim()
+    if (!q) return lineasPorProducto
+    return lineasPorProducto.filter(
+      (g) =>
+        textoProductoMatches({ codigo_interno: g.codigo, nombre: g.nombre }, q) ||
+        g.lineas.some((l) => (l.ubicacion ?? '').toLowerCase().includes(q.toLowerCase()))
+    )
+  }, [lineasPorProducto, vistaPreviaSearch])
+
   const comparacion = useMemo(() => {
     if (!paquete || !estado) return null
     return getComparacionActual(paquete, estado)
@@ -412,6 +540,7 @@ export function InventarioOfflinePage() {
   )
 
   const puedeEditar = Boolean(paquete && estado && !estado.mi_finalizo)
+  const postConteo = Boolean(estado?.mi_finalizo)
   const enReconteo = (estado?.ronda_actual ?? 1) > 1
   const miRol = paquete?.inventario_sector.mi_rol
   const miContadorLabel = useMemo(() => {
@@ -454,17 +583,36 @@ export function InventarioOfflinePage() {
     return String(p.unidades_por_caja_default ?? 6)
   }
 
+  function armKeyboardForCantidadModal() {
+    pendingFocusCantidadRef.current = true
+    // Abrir teclado YA (gesto del usuario), antes de que React monte el modal
+    keyboardBridgeRef.current?.focus({ preventScroll: true })
+  }
+
+  function focusCantidadEnModal(tipo: TipoBultoOffline = 'PALLET') {
+    const el = tipo === 'SUELTO' ? cantidadSueltaRef.current : cantidadBultosRef.current
+    el?.focus({ preventScroll: true })
+    if (el) scrollFocusedFieldIntoSheet(el, 0)
+  }
+
   function selectProduct(p: OfflineProducto) {
+    armKeyboardForCantidadModal()
     setSelected(p)
     setProductSearch(p.codigo_interno)
     if (!editingLocalId) {
       setTipoBulto('PALLET')
       setUnidadesPorBulto(defaultUnidadesPorBulto('PALLET', p))
     }
-    requestAnimationFrame(() => {
-      productLineFormRef.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
-    })
   }
+
+  useEffect(() => {
+    if (!selected || !pendingFocusCantidadRef.current) return
+    pendingFocusCantidadRef.current = false
+    // Tras pintar el modal: pasar el foco al campo real (el teclado ya está abriéndose)
+    const tipo = editingLocalId ? tipoBulto : 'PALLET'
+    const id = window.requestAnimationFrame(() => focusCantidadEnModal(tipo))
+    return () => window.cancelAnimationFrame(id)
+  }, [selected, editingLocalId, tipoBulto])
 
   function handleTipoBultoChange(tipo: TipoBultoOffline) {
     setTipoBulto(tipo)
@@ -503,6 +651,8 @@ export function InventarioOfflinePage() {
       setCantidadSuelta(l.cantidad_suelta != null ? String(l.cantidad_suelta) : '')
     }
     setExpandedProductos((prev) => new Set(prev).add(l.producto_id))
+    armKeyboardForCantidadModal()
+    // selected ya se setea arriba; el effect mueve el foco al campo de cantidad
   }
 
   function empezarAgregarLineaProducto(productoId: number) {
@@ -574,15 +724,13 @@ export function InventarioOfflinePage() {
       pendingScrollProductoIdRef.current = linea.producto_id
       cancelarLineaForm()
       await reload()
-      requestAnimationFrame(() => {
-        const id = pendingScrollProductoIdRef.current
-        pendingScrollProductoIdRef.current = null
-        if (!id) return
-        const el = listScrollRef.current?.querySelector(
-          `[data-producto-id="${id}"]`
-        ) as HTMLElement | null
-        el?.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
+      const id = pendingScrollProductoIdRef.current
+      pendingScrollProductoIdRef.current = null
+      scrollProductoIntoListVisible(listScrollRef.current, id, {
+        marginBottom: 24,
+        delayMs: 320
       })
+      setTimeout(() => productSearchRef.current?.focus(), 100)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error al guardar línea')
     } finally {
@@ -622,6 +770,7 @@ export function InventarioOfflinePage() {
       await reabrirMiConteoAntesDeSync(sectorInvId)
       await reload()
       setP2pMode('idle')
+      closeVistaPrevia()
       setMsg('Podés seguir editando el conteo.')
       setTimeout(() => productSearchRef.current?.focus(), 80)
     } catch (e) {
@@ -632,16 +781,30 @@ export function InventarioOfflinePage() {
   }
 
   async function onP2PSynced() {
-    // Primero cargar estado (companero_finalizo). Recién después habilitar
-    // "Ver comparación": si no, al tocar Listo muy rápido volvías al hotspot vacío.
-    await reload()
-    setHostSyncedOk(true)
-    setMsg('Sincronizado.')
-    clearHostAutoStop()
     clearHostIpPoll()
-    hostAutoStopRef.current = setTimeout(() => {
-      void shutdownHostUi()
-    }, 60000)
+    clearHostAutoStop()
+    try {
+      await reload()
+      const data = await getOfflineSession(sectorInvId)
+      if (data.estado && puedeRecuperarComparacionLocal(data.estado)) {
+        await recuperarComparacionLocal(sectorInvId)
+      }
+      await reload()
+      setHostSyncedOk(true)
+      setHostReintentosOpen(false)
+      setMsg(
+        'Datos recibidos. Dejá el hotspot prendido hasta que el compañero también vea la comparación (puede reintentar).'
+      )
+      // No apagar el servidor ya: si al otro se le cortó la red, necesita
+      // volver a pedir el resultado. Auto-cierre a los 3 minutos.
+      hostAutoStopRef.current = setTimeout(() => {
+        void shutdownHostUi('Host cerrado. La comparación ya está en este celular.')
+      }, 3 * 60 * 1000)
+    } catch {
+      setHostSyncedOk(true)
+      setHostReintentosOpen(false)
+      setMsg('Sincronizado. Dejá el hotspot un momento por si el otro reintenta.')
+    }
   }
 
   async function handleStartHost() {
@@ -649,6 +812,7 @@ export function InventarioOfflinePage() {
     setError('')
     setMsg('')
     setHostSyncedOk(false)
+    setHostReintentosOpen(false)
     clearHostAutoStop()
     clearHostIpPoll()
     try {
@@ -737,7 +901,7 @@ export function InventarioOfflinePage() {
     } catch (e) {
       setError(
         e instanceof Error
-          ? `${e.message} Si el otro ya recibió tu conteo, que deje el host activo y reintentá.`
+          ? `${e.message} Conectate al hotspot del compañero y tocá Reintentar. Si el otro ya vio la comparación, que deje el host activo.`
           : 'No se pudo sincronizar'
       )
     } finally {
@@ -1003,17 +1167,23 @@ export function InventarioOfflinePage() {
   const sector = paquete.inventario_sector
   const ronda = estado?.ronda_actual ?? 1
 
-  const lineasListContent =
-    lineasPorProducto.length === 0 ? (
+  const renderGruposList = (grupos: typeof lineasPorProducto) =>
+    grupos.length === 0 ? (
       <div className="flex h-full min-h-[140px] flex-col items-center justify-center px-6 py-12 text-center">
         <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-100 text-slate-400">
           <Package className="h-6 w-6" />
         </div>
-        <p className="mt-3 text-sm font-medium text-slate-600">Sin líneas cargadas</p>
-        <p className="mt-1 text-xs text-slate-500">Cada conteo es una línea independiente</p>
+        <p className="mt-3 text-sm font-medium text-slate-600">
+          {vistaPreviaSearch.trim() ? 'Sin resultados' : 'Sin líneas cargadas'}
+        </p>
+        <p className="mt-1 text-xs text-slate-500">
+          {vistaPreviaSearch.trim()
+            ? 'Probá otro código o nombre'
+            : 'Cada conteo es una línea independiente'}
+        </p>
       </div>
     ) : (
-      lineasPorProducto.map((grupo) => {
+      grupos.map((grupo) => {
         const isExpanded = expandedProductos.has(grupo.producto_id)
         const ref = grupo.referencia
         return (
@@ -1164,36 +1334,34 @@ export function InventarioOfflinePage() {
       })
     )
 
+  const lineasListContent = renderGruposList(lineasPorProducto)
+
   return (
     <div className="-m-4 flex h-[calc(100vh-5rem)] flex-col bg-surface-muted/30 lg:-m-6">
-      <div className="relative z-20 shrink-0 overflow-visible border-b border-surface-border bg-white shadow-sm">
+      <div
+        className={cn(
+          'relative z-20 overflow-visible border-b border-surface-border bg-white shadow-sm',
+          postConteo ? 'flex min-h-0 flex-1 flex-col' : 'shrink-0'
+        )}
+      >
         <div className="border-b border-brand-100 bg-gradient-to-r from-brand-50/80 via-white to-white px-4 py-3 sm:px-5">
-          <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-            <Button
-              variant="ghost"
-              size="sm"
-              className="-ml-2 h-8 rounded-lg px-2"
-              onClick={() => navigate('/inventario')}
-            >
-              <ChevronLeft className="h-3.5 w-3.5" />
-              Salir
-            </Button>
+          <div className="flex items-center gap-3">
             <div className="min-w-0 flex-1">
               <h1 className="truncate text-sm font-semibold text-slate-900">{sector.sector_nombre}</h1>
-              <div className="mt-1 flex flex-wrap items-center gap-2 text-xs">
-                <span className="rounded-full bg-white px-2.5 py-1 font-medium text-slate-700 ring-1 ring-surface-border">
+              <div className="mt-1.5 flex items-center gap-1.5 overflow-x-auto text-xs scrollbar-none">
+                <span className="shrink-0 rounded-full bg-white px-2.5 py-1 font-medium text-slate-700 ring-1 ring-surface-border">
                   Ronda {ronda}
                 </span>
                 {miContadorLabel && (
-                  <span className="rounded-full bg-violet-50 px-2.5 py-1 font-medium text-violet-900 ring-1 ring-violet-100">
+                  <span className="shrink-0 rounded-full bg-violet-50 px-2.5 py-1 font-medium text-violet-900 ring-1 ring-violet-100">
                     {miContadorLabel}
                   </span>
                 )}
-                <span className="rounded-full bg-amber-50 px-2.5 py-1 font-medium text-amber-900 ring-1 ring-amber-100">
+                <span className="shrink-0 rounded-full bg-amber-50 px-2.5 py-1 font-medium text-amber-900 ring-1 ring-amber-100">
                   Offline
                 </span>
                 {estado?.mi_finalizo && (
-                  <span className="rounded-full bg-emerald-50 px-2.5 py-1 font-medium text-emerald-800 ring-1 ring-emerald-100">
+                  <span className="shrink-0 rounded-full bg-emerald-50 px-2.5 py-1 font-medium text-emerald-800 ring-1 ring-emerald-100">
                     Finalizado
                   </span>
                 )}
@@ -1206,7 +1374,13 @@ export function InventarioOfflinePage() {
                 disabled={busy}
                 aria-label="Más opciones"
                 aria-expanded={showHeaderMenu}
-                onClick={() => setShowHeaderMenu((v) => !v)}
+                onClick={() => {
+                  setShowHeaderMenu((v) => {
+                    const next = !v
+                    if (next) void refrescarIpEnMenu()
+                    return next
+                  })
+                }}
               >
                 <MoreVertical className="h-4 w-4" />
               </button>
@@ -1233,6 +1407,24 @@ export function InventarioOfflinePage() {
                           {tecladoNumerico
                             ? 'Volver al teclado completo para buscar por nombre'
                             : 'Números y guion — útil para códigos y cosecha'}
+                        </span>
+                      </span>
+                    </button>
+                    <button
+                      type="button"
+                      className="flex w-full items-start gap-2 px-3 py-2.5 text-left text-sm text-slate-700 hover:bg-slate-50"
+                      onClick={() => void copiarIpHost()}
+                    >
+                      <Copy className="mt-0.5 h-3.5 w-3.5 shrink-0 text-slate-400" />
+                      <span>
+                        <span className="block font-medium">IP para el compañero</span>
+                        <span className="mt-0.5 block font-mono text-sm font-semibold leading-snug text-brand-700">
+                          {(ultimaIpHost ?? hostInfo)
+                            ? `${(ultimaIpHost ?? hostInfo)!.localIp}:${(ultimaIpHost ?? hostInfo)!.port}`
+                            : `${HOTSPOT_IP_TIPICA}:${P2P_PORT}`}
+                        </span>
+                        <span className="mt-0.5 block text-[11px] leading-snug text-slate-500">
+                          Tocá para copiar · el otro celu la pega en «Me conecto»
                         </span>
                       </span>
                     </button>
@@ -1271,7 +1463,8 @@ export function InventarioOfflinePage() {
           </div>
         )}
 
-        {puedeRecuperarComparacion && (
+        <div className={cn(postConteo && 'min-h-0 flex-1 overflow-y-auto')}>
+        {puedeRecuperarComparacion && !comparacion && (
           <div className="border-b border-amber-200 bg-amber-50 px-4 py-3 sm:px-5">
             <p className="text-sm font-medium text-amber-950">Datos del compañero ya están acá</p>
             <Button
@@ -1286,65 +1479,124 @@ export function InventarioOfflinePage() {
           </div>
         )}
 
-        {estado?.mi_finalizo &&
-          (!estado.companero_finalizo || p2pMode !== 'idle') &&
-          !puedeRecuperarComparacion && (
-          <div className="border-b border-sky-100 bg-sky-50 px-4 py-3 sm:px-5">
-            <p className="text-sm font-medium text-sky-950">Sincronizar con el compañero</p>
-
-            {p2pMode === 'idle' && (
-              <div className="mt-3 flex flex-col gap-2 sm:flex-row">
-                <Button size="sm" className="rounded-xl" disabled={busy} onClick={() => void handleStartHost()}>
-                  <Radio className="h-3.5 w-3.5" />
-                  Yo espero (hotspot)
-                </Button>
+        {p2pMode === 'host' && hostSyncedOk && (
+          <div className="border-b border-emerald-200 bg-emerald-50">
+            <button
+              type="button"
+              className="flex w-full items-center gap-2 px-4 py-2 text-left sm:px-5"
+              aria-expanded={hostReintentosOpen}
+              onClick={() => setHostReintentosOpen((v) => !v)}
+            >
+              <span className="h-2 w-2 shrink-0 animate-pulse rounded-full bg-emerald-600" />
+              <span className="min-w-0 flex-1 truncate text-sm font-medium text-emerald-950">
+                Host activo para reintentos
+              </span>
+              <ChevronDown
+                className={cn(
+                  'h-4 w-4 shrink-0 text-emerald-700 transition-transform',
+                  hostReintentosOpen && 'rotate-180'
+                )}
+              />
+            </button>
+            {hostReintentosOpen ? (
+              <div className="space-y-2 border-t border-emerald-200/70 px-4 pb-3 pt-2 sm:px-5">
+                <p className="text-xs leading-snug text-emerald-900/90">
+                  Ya recibiste el conteo. Dejá el hotspot prendido hasta que el compañero también vea
+                  la comparación (si le falló la red, puede reintentar).
+                </p>
+                {hostInfo && (
+                  <p className="font-mono text-xs font-semibold text-emerald-950">
+                    {hostInfo.localIp}:{hostInfo.port}
+                  </p>
+                )}
                 <Button
                   size="sm"
                   variant="secondary"
                   className="rounded-xl"
                   disabled={busy}
-                  onClick={() => setP2pMode('client')}
+                  onClick={() => void handleStopHost()}
                 >
-                  <Wifi className="h-3.5 w-3.5" />
-                  Me conecto
+                  Cerrar host
                 </Button>
+              </div>
+            ) : null}
+          </div>
+        )}
+
+        {estado?.mi_finalizo &&
+          (!estado.companero_finalizo || p2pMode !== 'idle') &&
+          !puedeRecuperarComparacion &&
+          !comparacion && (
+          <div className="border-b border-sky-100 bg-sky-50 px-4 py-3 sm:px-5">
+            <p className="text-sm font-medium text-sky-950">Sincronizar con el compañero</p>
+
+            {p2pMode === 'idle' && (
+              <div className="mt-3 grid gap-2.5 sm:grid-cols-2">
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => void handleStartHost()}
+                  className="flex w-full items-center gap-3 rounded-2xl border border-sky-300 bg-gradient-to-br from-sky-600 to-sky-700 px-3.5 py-3.5 text-left text-white shadow-md shadow-sky-600/25 transition hover:from-sky-500 hover:to-sky-600 active:scale-[0.99] disabled:pointer-events-none disabled:opacity-50"
+                >
+                  <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-white/15 ring-1 ring-white/25">
+                    <Radio className="h-5 w-5" />
+                  </div>
+                  <span className="min-w-0">
+                    <span className="block text-sm font-semibold tracking-tight">Yo espero</span>
+                    <span className="mt-0.5 block text-[11px] leading-snug text-sky-100">
+                      Activá tu hotspot y mostrá el QR
+                    </span>
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => setP2pMode('client')}
+                  className="flex w-full items-center gap-3 rounded-2xl border border-violet-200 bg-gradient-to-br from-white to-violet-50 px-3.5 py-3.5 text-left shadow-sm ring-1 ring-violet-100 transition hover:border-violet-300 hover:from-violet-50 hover:to-violet-100/80 active:scale-[0.99] disabled:pointer-events-none disabled:opacity-50"
+                >
+                  <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-violet-600 text-white shadow-sm">
+                    <Wifi className="h-5 w-5" />
+                  </div>
+                  <span className="min-w-0">
+                    <span className="block text-sm font-semibold tracking-tight text-slate-900">
+                      Me conecto
+                    </span>
+                    <span className="mt-0.5 block text-[11px] leading-snug text-slate-500">
+                      Unite al hotspot del compañero
+                    </span>
+                  </span>
+                </button>
               </div>
             )}
 
-            {p2pMode === 'host' && hostInfo && (
+            {p2pMode === 'host' && hostInfo && !hostSyncedOk && (
               <div className="mt-3 space-y-3 rounded-xl border border-sky-200 bg-white p-3">
-                {hostSyncedOk ? (
-                  <p className="text-sm font-medium text-emerald-800">Listo — datos recibidos</p>
-                ) : (
-                  <>
-                    <p className="text-sm text-slate-700">
-                      Activá el hotspot primero. Si la IP cambia, el QR se actualiza solo.
-                    </p>
-                    <p className="font-mono text-xs font-semibold text-slate-800">
-                      {hostInfo.localIp}:{hostInfo.port}
-                    </p>
-                    {hostQrDataUrl && (
-                      <div className="flex justify-center">
-                        <img
-                          src={hostQrDataUrl}
-                          alt="QR sync"
-                          className="h-40 w-40 rounded-lg border border-slate-200 bg-white p-1"
-                        />
-                      </div>
-                    )}
-                    <Button
-                      size="sm"
-                      variant="secondary"
-                      className="w-full rounded-xl"
-                      disabled={busy}
-                      onClick={() => void handleRefreshHostIp()}
-                    >
-                      Actualizar IP / QR
-                    </Button>
-                  </>
+                <p className="text-sm text-slate-700">
+                  Activá el hotspot primero. Si la IP cambia, el QR se actualiza solo.
+                </p>
+                <p className="font-mono text-xs font-semibold text-slate-800">
+                  {hostInfo.localIp}:{hostInfo.port}
+                </p>
+                {hostQrDataUrl && (
+                  <div className="flex justify-center">
+                    <img
+                      src={hostQrDataUrl}
+                      alt="QR sync"
+                      className="h-40 w-40 rounded-lg border border-slate-200 bg-white p-1"
+                    />
+                  </div>
                 )}
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  className="w-full rounded-xl"
+                  disabled={busy}
+                  onClick={() => void handleRefreshHostIp()}
+                >
+                  Actualizar IP / QR
+                </Button>
                 <Button size="sm" variant="ghost" disabled={busy} onClick={() => void handleStopHost()}>
-                  {hostSyncedOk ? 'Ver comparación' : 'Cancelar'}
+                  Cancelar
                 </Button>
               </div>
             )}
@@ -1376,7 +1628,7 @@ export function InventarioOfflinePage() {
                     onClick={() => void handleConnectClient()}
                   >
                     {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Wifi className="h-3.5 w-3.5" />}
-                    Sincronizar
+                    {error ? 'Reintentar sync' : 'Sincronizar'}
                   </Button>
                   <Button size="sm" variant="ghost" disabled={busy} onClick={() => setP2pMode('idle')}>
                     Volver
@@ -1464,13 +1716,25 @@ export function InventarioOfflinePage() {
               Vos {resumenSync.mis_productos} prod. · compañero sin datos — reintentá sync
             </p>
             {p2pMode === 'idle' && (
-              <div className="mt-2 flex flex-wrap gap-2">
-                <Button size="sm" disabled={busy} onClick={() => void handleStartHost()}>
-                  Yo espero
-                </Button>
-                <Button size="sm" variant="secondary" disabled={busy} onClick={() => setP2pMode('client')}>
-                  Me conecto
-                </Button>
+              <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => void handleStartHost()}
+                  className="flex w-full items-center gap-2.5 rounded-xl border border-sky-300 bg-sky-600 px-3 py-2.5 text-left text-white shadow-sm transition hover:bg-sky-500 disabled:opacity-50"
+                >
+                  <Radio className="h-4 w-4 shrink-0" />
+                  <span className="text-sm font-semibold">Yo espero</span>
+                </button>
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => setP2pMode('client')}
+                  className="flex w-full items-center gap-2.5 rounded-xl border border-violet-200 bg-white px-3 py-2.5 text-left shadow-sm transition hover:bg-violet-50 disabled:opacity-50"
+                >
+                  <Wifi className="h-4 w-4 shrink-0 text-violet-600" />
+                  <span className="text-sm font-semibold text-slate-900">Me conecto</span>
+                </button>
               </div>
             )}
           </div>
@@ -1486,71 +1750,114 @@ export function InventarioOfflinePage() {
         )}
 
         {comparacion && (
-          <div className="border-b border-amber-100 bg-amber-50/80 px-4 py-3 sm:px-5">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <h2 className="text-sm font-medium text-slate-800">Comparación</h2>
-              {companeroYaEnReconteo && (
-                <span className="text-xs font-medium text-sky-800">El otro ya está en reconteo</span>
-              )}
-            </div>
+          <div
+            className={cn(
+              'border-b px-4 py-3 sm:px-5',
+              comparacion.coincide
+                ? 'border-emerald-200 bg-gradient-to-b from-emerald-50 via-emerald-50/90 to-white'
+                : 'border-amber-100 bg-amber-50/80'
+            )}
+          >
             {comparacion.coincide ? (
-              <div className="mt-2 space-y-2">
-                <p className="flex items-center gap-2 text-sm text-emerald-700">
-                  <Check className="h-4 w-4" />
-                  Todo coincide
-                </p>
-                <Button size="sm" className="rounded-xl" disabled={busy} onClick={() => void handleImportPc()}>
-                  <Upload className="h-3.5 w-3.5" />
-                  Importar al PC
-                </Button>
-                <Button
-                  size="sm"
-                  variant="secondary"
-                  className="rounded-xl"
-                  disabled={busy}
-                  onClick={() => void handleGuardarArchivoParaPc()}
-                >
-                  <Download className="h-3.5 w-3.5" />
-                  Guardar archivo para PC
-                </Button>
-                <p className="text-xs text-slate-500">
-                  Plan B: llevá este archivo a la computadora si la importación por red falla.
-                </p>
+              <div className="space-y-3">
+                <div className="flex items-start gap-3 rounded-2xl border border-emerald-300/80 bg-white/90 p-4 shadow-sm ring-1 ring-emerald-100">
+                  <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-emerald-600 text-white shadow-md shadow-emerald-600/30">
+                    <Check className="h-7 w-7 stroke-[2.5]" />
+                  </div>
+                  <div className="min-w-0 flex-1 pt-0.5">
+                    <p className="text-lg font-bold tracking-tight text-emerald-900">¡Todo coincide!</p>
+                    <p className="mt-1 text-sm leading-snug text-emerald-800/90">
+                      Vos y el compañero contaron lo mismo. Ya podés llevar el resultado al PC.
+                    </p>
+                  </div>
+                </div>
+                <div className="flex flex-col gap-2.5">
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() => void handleImportPc()}
+                    className="flex w-full items-center gap-3 rounded-2xl border border-emerald-400/80 bg-gradient-to-r from-emerald-600 to-emerald-700 px-4 py-3.5 text-left text-white shadow-md shadow-emerald-600/25 transition hover:from-emerald-500 hover:to-emerald-600 active:scale-[0.99] disabled:pointer-events-none disabled:opacity-50"
+                  >
+                    <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-white/15 ring-1 ring-white/25">
+                      <Upload className="h-5 w-5" />
+                    </div>
+                    <span className="min-w-0 flex-1">
+                      <span className="block text-sm font-semibold tracking-tight">Importar al PC</span>
+                      <span className="mt-0.5 block text-[11px] leading-snug text-emerald-100">
+                        Enviá el resultado por red al servidor
+                      </span>
+                    </span>
+                    <ChevronRight className="h-5 w-5 shrink-0 text-emerald-100" />
+                  </button>
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() => void handleGuardarArchivoParaPc()}
+                    className="flex w-full items-center gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-3.5 text-left shadow-sm ring-1 ring-slate-100 transition hover:border-slate-300 hover:bg-slate-50 active:scale-[0.99] disabled:pointer-events-none disabled:opacity-50"
+                  >
+                    <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-slate-800 text-white shadow-sm">
+                      <Download className="h-5 w-5" />
+                    </div>
+                    <span className="min-w-0 flex-1">
+                      <span className="block text-sm font-semibold tracking-tight text-slate-900">
+                        Guardar archivo para PC
+                      </span>
+                      <span className="mt-0.5 block text-[11px] leading-snug text-slate-500">
+                        Plan B si la importación por red falla
+                      </span>
+                    </span>
+                    <ChevronRight className="h-5 w-5 shrink-0 text-slate-400" />
+                  </button>
+                </div>
               </div>
             ) : (
-              <div className="mt-2 space-y-2">
-                {comparacion.diferencias.map((d) => {
-                  const misLineas = miRol === 1 ? d.lineas_contador_1 : d.lineas_contador_2
-                  const compLineas = miRol === 1 ? d.lineas_contador_2 : d.lineas_contador_1
-                  const miResumen = miRol === 1 ? d.resumen_contador_1 : d.resumen_contador_2
-                  const compResumen = miRol === 1 ? d.resumen_contador_2 : d.resumen_contador_1
-                  return (
-                    <div key={d.producto_id} className="space-y-2 rounded-lg border border-red-200 bg-white p-2">
-                      <div className="min-w-0">
-                        <span className="inline-flex rounded-md bg-slate-100 px-2 py-0.5 font-mono text-xs font-semibold text-slate-700">
-                          {d.codigo_interno}
-                        </span>
-                        <p className="mt-1 text-sm font-medium text-slate-900">{d.nombre}</p>
+              <>
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="min-w-0">
+                    <h2 className="text-sm font-semibold text-slate-900">
+                      Productos con diferencias ({comparacion.diferencias.length})
+                    </h2>
+                    <p className="mt-0.5 text-xs text-slate-600">
+                      Estos productos no coinciden entre vos y el compañero
+                    </p>
+                  </div>
+                  {companeroYaEnReconteo && (
+                    <span className="text-xs font-medium text-sky-800">El otro ya está en reconteo</span>
+                  )}
+                </div>
+                <div className="mt-2 space-y-2">
+                  {comparacion.diferencias.map((d) => {
+                    const misLineas = miRol === 1 ? d.lineas_contador_1 : d.lineas_contador_2
+                    const compLineas = miRol === 1 ? d.lineas_contador_2 : d.lineas_contador_1
+                    const miResumen = miRol === 1 ? d.resumen_contador_1 : d.resumen_contador_2
+                    const compResumen = miRol === 1 ? d.resumen_contador_2 : d.resumen_contador_1
+                    return (
+                      <div key={d.producto_id} className="space-y-2 rounded-lg border border-red-200 bg-white p-2">
+                        <div className="min-w-0">
+                          <span className="inline-flex rounded-md bg-slate-100 px-2 py-0.5 font-mono text-xs font-semibold text-slate-700">
+                            {d.codigo_interno}
+                          </span>
+                          <p className="mt-1 text-sm font-medium text-slate-900">{d.nombre}</p>
+                        </div>
+                        <p className="text-xs text-slate-600">
+                          Vos: {miResumen} · Compañero: {compResumen}
+                        </p>
+                        <DesgloseParaleloOffline
+                          titulo1="Vos"
+                          titulo2="Compañero"
+                          lineas1={misLineas}
+                          lineas2={compLineas}
+                        />
                       </div>
-                      <p className="text-xs text-slate-600">
-                        Vos: {miResumen} · Compañero: {compResumen}
-                      </p>
-                      <DesgloseParaleloOffline
-                        titulo1="Vos"
-                        titulo2="Compañero"
-                        lineas1={misLineas}
-                        lineas2={compLineas}
-                      />
-                    </div>
-                  )
-                })}
-                <Button size="sm" className="rounded-xl" disabled={busy} onClick={() => void handleReconteo()}>
-                  Iniciar reconteo
-                </Button>
-              </div>
+                    )
+                  })}
+                </div>
+              </>
             )}
           </div>
         )}
+
+        </div>
 
         {puedeEditar && (
           <div className="space-y-3 overflow-visible p-4 sm:p-5">
@@ -1583,9 +1890,9 @@ export function InventarioOfflinePage() {
               </div>
             )}
 
-            <div className="relative z-30 -mx-4 sm:-mx-5">
-              <div className="relative border-y border-surface-border bg-white shadow-sm">
-                <Search className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-brand-400" />
+            <div className="relative z-30 min-w-0">
+              <div className="relative rounded-xl border border-surface-border bg-white shadow-sm focus-within:border-brand-500 focus-within:ring-2 focus-within:ring-brand-500/20">
+                <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-brand-400" />
                 <input
                   ref={productSearchRef}
                   type={tecladoNumerico ? 'text' : 'search'}
@@ -1608,16 +1915,17 @@ export function InventarioOfflinePage() {
                       setSelected(null)
                     }
                   }}
-                  className="w-full border-0 bg-transparent py-3 pl-11 pr-4 text-sm outline-none focus:ring-0"
+                  className="w-full rounded-xl border-0 bg-transparent py-3 pl-10 pr-3 text-base outline-none focus:ring-0"
                 />
               </div>
               {productosFiltrados.length > 0 && (
-                <ul className="absolute inset-x-0 z-50 max-h-[min(55vh,22rem)] divide-y divide-slate-100 overflow-auto border-b border-surface-border bg-white shadow-panel">
+                <ul className="absolute inset-x-0 z-50 mt-1.5 max-h-[min(55vh,22rem)] divide-y divide-slate-100 overflow-auto rounded-xl border border-surface-border bg-white shadow-panel">
                   {productosFiltrados.map((p) => (
                     <li key={p.id}>
                       <button
                         type="button"
-                        className="flex min-h-14 w-full items-center gap-3 px-4 py-3 text-left hover:bg-slate-50 active:bg-slate-100"
+                        className="flex min-h-14 w-full items-center gap-3 px-3.5 py-3 text-left hover:bg-slate-50 active:bg-slate-100"
+                        onPointerDown={armKeyboardForCantidadModal}
                         onClick={() => selectProduct(p)}
                       >
                         <span className="shrink-0 rounded-md bg-slate-100 px-2 py-1 font-mono text-sm font-semibold text-slate-700">
@@ -1633,6 +1941,19 @@ export function InventarioOfflinePage() {
               )}
             </div>
 
+            {/* Puente: mantiene/abre teclado numérico en el mismo gesto del toque */}
+            <input
+              ref={keyboardBridgeRef}
+              type="text"
+              inputMode="numeric"
+              enterKeyHint="done"
+              aria-hidden
+              tabIndex={-1}
+              className="pointer-events-none fixed left-0 top-0 h-px w-px opacity-0"
+              value=""
+              onChange={() => {}}
+            />
+
             {selected && (
               <>
                 <div
@@ -1642,7 +1963,7 @@ export function InventarioOfflinePage() {
                 />
                 <div
                   ref={productLineFormRef}
-                  className="fixed inset-x-0 z-50 mx-auto max-h-[min(72dvh,34rem)] w-full max-w-3xl overflow-y-auto overscroll-contain rounded-t-2xl border-2 border-b-0 border-brand-400 bg-white p-4 shadow-[0_-12px_40px_rgba(15,23,42,0.25)] ring-4 ring-brand-500/15 sm:rounded-2xl sm:border sm:p-5"
+                  className="fixed inset-x-0 z-50 mx-auto max-h-[min(72dvh,34rem)] w-full max-w-3xl overflow-y-auto overscroll-contain rounded-t-2xl border-2 border-b-0 border-brand-400 bg-white p-4 shadow-[0_-12px_40px_rgba(15,23,42,0.25)] ring-4 ring-brand-500/15 transition-[bottom] duration-200 ease-out sm:rounded-2xl sm:border sm:p-5"
                   style={{ bottom: keyboardInset }}
                 >
                 <div className="mb-3 flex items-center gap-3 sm:mb-4">
@@ -1686,6 +2007,7 @@ export function InventarioOfflinePage() {
                   {tipoBulto === 'SUELTO' ? (
                     <div className="col-span-2">
                       <Input
+                        ref={cantidadSueltaRef}
                         label="Cantidad suelta"
                         type="number"
                         inputMode="numeric"
@@ -1700,6 +2022,7 @@ export function InventarioOfflinePage() {
                   ) : (
                     <>
                       <Input
+                        ref={cantidadBultosRef}
                         label={tipoBulto === 'PALLET' ? 'Cant. pallets' : 'Cant. cajas'}
                         type="number"
                         inputMode="numeric"
@@ -1765,13 +2088,42 @@ export function InventarioOfflinePage() {
         )}
       </div>
 
-      <div ref={listScrollRef} className="relative z-0 min-h-0 flex-1 overflow-y-auto bg-white">
-        {lineasListContent}
-      </div>
+      {puedeEditar ? (
+        <div ref={listScrollRef} className="relative z-0 min-h-0 flex-1 overflow-y-auto bg-white">
+          {lineasListContent}
+        </div>
+      ) : null}
+
+      {postConteo && lineasPorProducto.length > 0 && (
+        <div className="shrink-0 border-t border-surface-border bg-white px-4 py-3 sm:px-5">
+          <button
+            type="button"
+            className="flex w-full items-center gap-3 rounded-2xl border border-brand-200 bg-gradient-to-r from-brand-50 to-white px-4 py-3.5 text-left shadow-sm ring-1 ring-brand-100 transition-colors hover:border-brand-300 hover:from-brand-100/80 active:bg-brand-50"
+            onClick={() => {
+              setVistaPreviaSearch('')
+              setShowVistaPrevia(true)
+            }}
+          >
+            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-brand-600 text-white shadow-sm">
+              <Eye className="h-5 w-5" />
+            </div>
+            <div className="min-w-0 flex-1">
+              <p className="text-sm font-semibold text-slate-900">Vista previa del conteo</p>
+              <p className="mt-0.5 text-xs text-slate-500">
+                {lineasPorProducto.length} producto
+                {lineasPorProducto.length === 1 ? '' : 's'} ·{' '}
+                {misLineasRonda.length} línea
+                {misLineasRonda.length === 1 ? '' : 's'} · buscá y revisá el desglose
+              </p>
+            </div>
+            <ChevronRight className="h-5 w-5 shrink-0 text-brand-600" />
+          </button>
+        </div>
+      )}
 
       <div className="shrink-0 border-t border-slate-200 bg-gradient-to-t from-slate-200/90 via-slate-100 to-slate-50 px-4 py-4 shadow-[0_-6px_16px_rgba(15,23,42,0.08)] sm:px-5">
         <div className="flex items-center justify-between gap-4">
-          <div>
+          <div className="min-w-0">
             <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
               Total contado
             </p>
@@ -1781,25 +2133,61 @@ export function InventarioOfflinePage() {
               {lineasPorProducto.length} producto{lineasPorProducto.length === 1 ? '' : 's'}
             </p>
           </div>
-          {puedeEditar && misLineasRonda.length > 0 && (
-            <Button className="shrink-0 rounded-xl" disabled={busy} onClick={() => void handleFinalizar()}>
-              <Check className="h-4 w-4" />
-              Finalicé este sector
-            </Button>
-          )}
-          {estado?.mi_finalizo && !estado.companero_finalizo && (
-            <Button
-              variant="secondary"
-              className="shrink-0 rounded-xl"
-              disabled={busy}
-              onClick={() => void handleReabrirConteo()}
-            >
-              <Pencil className="h-4 w-4" />
-              Seguir editando
-            </Button>
-          )}
+          <div className="flex shrink-0 flex-col items-stretch gap-2 sm:flex-row sm:items-center">
+            {comparacion && !comparacion.coincide && (
+              <Button className="rounded-xl" disabled={busy} onClick={() => void handleReconteo()}>
+                Iniciar reconteo
+              </Button>
+            )}
+            {puedeEditar && misLineasRonda.length > 0 && (
+              <Button className="rounded-xl" disabled={busy} onClick={() => void handleFinalizar()}>
+                <Check className="h-4 w-4" />
+                Finalicé este sector
+              </Button>
+            )}
+            {estado?.mi_finalizo && !estado.companero_finalizo && (
+              <Button
+                variant="secondary"
+                className="rounded-xl"
+                disabled={busy}
+                onClick={() => void handleReabrirConteo()}
+              >
+                <Pencil className="h-4 w-4" />
+                Seguir editando
+              </Button>
+            )}
+          </div>
         </div>
       </div>
+
+      {showVistaPrevia && (
+        <div className="fixed inset-0 z-[60] flex flex-col bg-white">
+          <div className="shrink-0 border-b border-surface-border px-4 py-3 sm:px-5">
+            <h2 className="truncate text-sm font-semibold text-slate-900">Vista previa del conteo</h2>
+            <p className="mt-0.5 truncate text-xs text-slate-500">
+              {lineasPorProducto.length} producto
+              {lineasPorProducto.length === 1 ? '' : 's'} · atrás para volver al sync · tocá para
+              ver desglose
+            </p>
+          </div>
+          <div className="shrink-0 border-b border-surface-border px-3 py-2.5 sm:px-4">
+            <div className="relative">
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-brand-400" />
+              <input
+                type="search"
+                value={vistaPreviaSearch}
+                onChange={(e) => setVistaPreviaSearch(e.target.value)}
+                placeholder="Buscar en lo contado — código o nombre"
+                className="w-full rounded-xl border border-surface-border bg-white py-2.5 pl-10 pr-3 text-base shadow-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20"
+                autoFocus
+              />
+            </div>
+          </div>
+          <div className="min-h-0 flex-1 overflow-y-auto bg-white">
+            {renderGruposList(lineasPorProductoVistaPrevia)}
+          </div>
+        </div>
+      )}
 
       <BarcodeScannerModal
         open={showP2PQrScanner}

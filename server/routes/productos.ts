@@ -14,6 +14,7 @@ import {
   readSheetAsObjects,
   sendExcelFile
 } from '../utils/excel-export'
+import { sqlProductoSearchClause } from '../utils/productoSearch'
 
 interface ProductoBody {
   codigo_interno?: string
@@ -68,13 +69,11 @@ export async function productosRoutes(app: FastifyInstance): Promise<void> {
     }
 
     if (q?.trim()) {
-      whereSql += ` AND (
-        codigo_interno LIKE ? OR
-        codigo_barras LIKE ? OR
-        nombre LIKE ?
-      )`
-      const term = `%${q.trim()}%`
-      params.push(term, term, term)
+      const search = sqlProductoSearchClause(q)
+      if (search) {
+        whereSql += ` AND ${search.sql}`
+        params.push(...search.params)
+      }
     }
 
     const selectSql = `

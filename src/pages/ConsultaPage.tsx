@@ -82,11 +82,13 @@ function StockDetallePanel({
                 </div>
                 <div className="min-w-0">
                   <p className="font-semibold text-slate-900">{sector.sector_nombre}</p>
-                  {sector.sector_codigo && (
-                    <p className="text-[11px] font-medium uppercase tracking-wide text-slate-400">
-                      {sector.sector_codigo}
-                    </p>
-                  )}
+                  {sector.sector_codigo &&
+                    sector.sector_codigo.trim().toLowerCase() !==
+                      sector.sector_nombre.trim().toLowerCase() && (
+                      <p className="text-[11px] font-medium uppercase tracking-wide text-slate-400">
+                        {sector.sector_codigo}
+                      </p>
+                    )}
                 </div>
                 {puedeReorganizar && !showConfirm && (
                   <Button

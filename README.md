@@ -15,11 +15,12 @@ Toda la especificación del proyecto está en la carpeta [`docs/`](docs/):
 | [INVENTARIO-OFFLINE-ESTADO.md](docs/INVENTARIO-OFFLINE-ESTADO.md) | **Respaldo del flujo offline:** idea, estado, archivos, no desviarse |
 | [DESGLOSE-DE-CANTIDADES.md](docs/DESGLOSE-DE-CANTIDADES.md) | Formato pallet × unidades + sueltos (todo el sistema) |
 | [APP-MOVIL.md](docs/APP-MOVIL.md) | APK Android: terminal de bodega, módulos, roles, fases y priorización |
+| [ANDROID-DEV.md](docs/ANDROID-DEV.md) | **Desarrollo Android:** live reload en celular/emulador y cómo armar la APK |
 | [FICHA-TECNICA-COTIZACION.md](docs/FICHA-TECNICA-COTIZACION.md) | Ficha técnica para cotizar / pasar a terceros o a una IA |
 
 ## Estado del proyecto
 
-**v0.3.16** — Mostrar/ocultar contraseña en el login (PC y APK).
+**v0.3.17** — Inventario offline (reintentos P2P), cierre en PC (totales unificados) y UX APK.
 
 ## Desarrollo local
 
@@ -34,10 +35,21 @@ Usuario inicial: `admin` / `admin123`
 
 La web en `:3847` sigue siendo el canal online. La APK reutiliza la misma UI React.
 
+**Desarrollo (live reload, sin APK a cada rato):** ver guía completa en [docs/ANDROID-DEV.md](docs/ANDROID-DEV.md).
+
+```bash
+npm run dev:android              # celular físico (misma WiFi)
+npm run dev:android:emulator     # emulador Android Studio
+```
+
+No hace falta activar/desactivar nada a mano: ese script pone live reload; al armar la APK el `cap:sync` normal deja la web embebida.
+
+**APK / build:**
+
 ```bash
 npm run icons          # genera iconos desktop + mipmaps Android desde build/icon.svg
 npm run build:mobile   # genera dist/
-npm run cap:sync       # icons + build:mobile + copia a android/
+npm run cap:sync       # icons + build:mobile + copia a android/ (sin live reload)
 npm run cap:android    # abre Android Studio
 ```
 

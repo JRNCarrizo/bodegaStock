@@ -34,6 +34,7 @@ import {
 } from '@/lib/desglose'
 import { downloadApiFile } from '@/lib/downloadFile'
 import { api, cn } from '@/lib/utils'
+import { codigoProductoExacto } from '@/lib/productoSearch'
 import type {
   Camionero,
   CamioneroVehiculo,
@@ -461,11 +462,9 @@ export function PlanillasPage() {
 
   function pickProductFromSearch() {
     if (!productSearch.trim()) return
-    const term = productSearch.trim().toLowerCase()
-    const exact = productResults.find(
-      (p) =>
-        p.codigo_interno.toLowerCase() === term ||
-        p.codigo_barras?.toLowerCase() === term
+    const term = productSearch.trim()
+    const exact = productResults.find((p) =>
+      codigoProductoExacto(p.codigo_interno, p.codigo_barras, term)
     )
     if (exact) {
       selectProduct(exact)

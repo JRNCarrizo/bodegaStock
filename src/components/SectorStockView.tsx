@@ -12,6 +12,7 @@ import {
 } from 'lucide-react'
 import { formatCantidad } from '@/lib/desglose'
 import { api, cn } from '@/lib/utils'
+import { textoProductoMatches } from '@/lib/productoSearch'
 import type {
   ReorganizarDesglosePayload,
   Sector,
@@ -147,12 +148,13 @@ export function SectorStockView({
 
   const productosStockFiltrados = useMemo(() => {
     if (!stockDetalle) return []
-    const q = stockSearch.trim().toLowerCase()
+    const q = stockSearch.trim()
     if (!q) return stockDetalle.productos
-    return stockDetalle.productos.filter(
-      (p) =>
-        p.codigo_interno.toLowerCase().includes(q) ||
-        p.nombre.toLowerCase().includes(q)
+    return stockDetalle.productos.filter((p) =>
+      textoProductoMatches(
+        { codigo_interno: p.codigo_interno, nombre: p.nombre },
+        q
+      )
     )
   }, [stockDetalle, stockSearch])
 

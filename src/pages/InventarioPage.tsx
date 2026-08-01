@@ -78,7 +78,8 @@ import {
 } from '@/lib/inventarioTeclado'
 import { useInventarioActivo } from '@/context/InventarioActivoContext'
 import { INVENTARIO_POLL_MS, usePolling } from '@/hooks/usePolling'
-import { focusAndScrollIntoView } from '@/lib/scroll'
+import { focusAndScrollIntoView, scrollProductoIntoListVisible } from '@/lib/scroll'
+import { codigoProductoExacto, textoProductoMatches } from '@/lib/productoSearch'
 import {
   scrollFocusedFieldIntoSheet,
   useVisualViewportBottomInset
@@ -297,6 +298,72 @@ function stockFinalDesdeDetalle(detalle: Array<Record<string, unknown>>) {
     .filter((row) => row.cantidad > 0)
     .sort((a, b) =>
       a.codigo_interno.localeCompare(b.codigo_interno, 'es', { sensitivity: 'base' })
+    )
+}
+
+/** Totales unificados contado vs sistema (suma de todos los sectores). */
+function totalesUnificadosDesdeDetalle(detalle: Array<Record<string, unknown>>) {
+  const map = new Map<
+    number,
+    {
+      producto_id: number
+      codigo_interno: string
+      nombre: string
+      unidad: string
+      cajasSistema: number
+      sueltoSistema: number
+      cajasContado: number
+      sueltoContado: number
+    }
+  >()
+
+  for (const item of detalle) {
+    const productoId = Number(item.producto_id)
+    if (!Number.isFinite(productoId) || productoId <= 0) continue
+    const prev = map.get(productoId)
+    const cajasSistema = Number(item.total_sistema ?? 0)
+    const sueltoSistema = Number(item.total_suelto_sistema ?? 0)
+    const cajasContado = Number(item.total_contado ?? 0)
+    const sueltoContado = Number(item.total_suelto_contado ?? 0)
+    if (prev) {
+      prev.cajasSistema += cajasSistema
+      prev.sueltoSistema += sueltoSistema
+      prev.cajasContado += cajasContado
+      prev.sueltoContado += sueltoContado
+    } else {
+      map.set(productoId, {
+        producto_id: productoId,
+        codigo_interno: String(item.codigo_interno ?? ''),
+        nombre: String(item.nombre ?? ''),
+        unidad: String(item.unidad ?? ''),
+        cajasSistema,
+        sueltoSistema,
+        cajasContado,
+        sueltoContado
+      })
+    }
+  }
+
+  return [...map.values()]
+    .map((row) => {
+      const sistema = { cajas: row.cajasSistema, suelto: row.sueltoSistema }
+      const contado = { cajas: row.cajasContado, suelto: row.sueltoContado }
+      return {
+        producto_id: row.producto_id,
+        codigo_interno: row.codigo_interno,
+        nombre: row.nombre,
+        unidad: row.unidad,
+        sistema,
+        contado,
+        resumen_sistema: formatTotalesInventarioResumen(sistema, row.unidad),
+        resumen_contado: formatTotalesInventarioResumen(contado, row.unidad),
+        difCajas: row.cajasContado - row.cajasSistema,
+        difSuelto: row.sueltoContado - row.sueltoSistema,
+        coincide: totalesInventarioCoinciden(sistema, contado)
+      }
+    })
+    .sort((a, b) =>
+      a.codigo_interno.localeCompare(b.codigo_interno, 'es', { numeric: true })
     )
 }
 
@@ -645,13 +712,30 @@ function InventarioReporteCierre({
   const { resumen, detalle, ajustes_aplicados, created_at } = reporte
   const [filtro, setFiltro] = useState<'todos' | 'ajustes' | 'ok'>('todos')
   const [showStockFinal, setShowStockFinal] = useState(false)
+  const [unificadosOpen, setUnificadosOpen] = useState(false)
+  const [unificadosSearch, setUnificadosSearch] = useState('')
+  const [listadoOpen, setListadoOpen] = useState(false)
+  const [ajustesOpen, setAjustesOpen] = useState(false)
   const todoOk = (resumen.con_ajuste ?? 0) === 0
   const exporting = Boolean(exportingReporte || exportingStock)
+  const hayAjustesAplicados = ajustes_aplicados.length > 0
 
   const stockFinal = useMemo(() => stockFinalDesdeDetalle(detalle), [detalle])
   const totalStockFinal = useMemo(
     () => stockFinal.reduce((s, r) => s + r.cantidad, 0),
     [stockFinal]
+  )
+  const totalesUnificados = useMemo(() => totalesUnificadosDesdeDetalle(detalle), [detalle])
+  const unificadosFiltrados = useMemo(() => {
+    const q = unificadosSearch.trim()
+    if (!q) return totalesUnificados
+    return totalesUnificados.filter((p) =>
+      textoProductoMatches({ codigo_interno: p.codigo_interno, nombre: p.nombre }, q)
+    )
+  }, [totalesUnificados, unificadosSearch])
+  const unificadosConDif = useMemo(
+    () => totalesUnificados.filter((p) => !p.coincide).length,
+    [totalesUnificados]
   )
 
   const itemsFiltrados = useMemo(() => {
@@ -672,86 +756,89 @@ function InventarioReporteCierre({
   }, [itemsFiltrados])
 
   return (
-    <Card>
-      <CardBody className="space-y-5">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div>
-            <h2 className="font-semibold text-slate-800">Reporte de cierre</h2>
-            <p className="mt-1 text-xs text-slate-500">
-              Generado el {formatDbDateTimeLocal(created_at)}
-            </p>
+    <Card className="overflow-hidden shadow-panel">
+      <div className="flex flex-wrap items-start justify-between gap-3 border-b border-slate-200 bg-slate-100 px-4 py-3.5 sm:px-5">
+        <div className="min-w-0">
+          <div className="flex items-center gap-2">
+            <BarChart3 className="h-4 w-4 text-slate-500" />
+            <h2 className="text-sm font-semibold text-slate-900">Reporte de cierre</h2>
           </div>
-          <div className="flex flex-wrap items-center gap-2">
-            {onRepararCierre && (
-              <Button
-                variant="secondary"
-                size="sm"
-                className="rounded-lg border-amber-200 bg-amber-50 text-amber-900 hover:bg-amber-100"
-                disabled={reparandoCierre || exporting}
-                onClick={onRepararCierre}
-                title="Vuelve a aplicar al stock los productos contados que faltaron en el cierre"
-              >
-                {reparandoCierre ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  <RefreshCw className="h-4 w-4" />
-                )}
-                Reparar stock
-              </Button>
-            )}
+          <p className="mt-1 text-xs text-slate-500">
+            Generado el {formatDbDateTimeLocal(created_at)}
+          </p>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          {onRepararCierre && (
             <Button
               variant="secondary"
               size="sm"
-              className="rounded-lg"
-              onClick={() => setShowStockFinal(true)}
-              title="Ver el stock final limpio en pantalla"
+              className="rounded-xl border-amber-200 bg-amber-50 text-amber-900 hover:bg-amber-100"
+              disabled={reparandoCierre || exporting}
+              onClick={onRepararCierre}
+              title="Vuelve a aplicar al stock los productos contados que faltaron en el cierre"
             >
-              <Eye className="h-4 w-4" />
-              Ver stock final
+              {reparandoCierre ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <RefreshCw className="h-4 w-4" />
+              )}
+              Reparar stock
             </Button>
-            {onExportReporte && (
-              <Button
-                variant="secondary"
-                size="sm"
-                className="rounded-lg"
-                disabled={exporting}
-                onClick={onExportReporte}
-                title="Excel del reporte con sistema, contado y diferencias"
-              >
-                {exportingReporte ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  <Download className="h-4 w-4" />
-                )}
-                Exportar reporte
-              </Button>
-            )}
-            {onExportStock && (
-              <Button
-                variant="secondary"
-                size="sm"
-                className="rounded-lg"
-                disabled={exporting}
-                onClick={onExportStock}
-                title="Excel del stock final (código, nombre y cantidad)"
-              >
-                {exportingStock ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  <Download className="h-4 w-4" />
-                )}
-                Exportar stock final
-              </Button>
-            )}
-            {todoOk && (
-              <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-3 py-1 text-sm font-medium text-emerald-700 ring-1 ring-emerald-100">
-                <Check className="h-4 w-4" />
-                Inventario OK — sin ajustes
-              </span>
-            )}
-          </div>
+          )}
+          <Button
+            variant="secondary"
+            size="sm"
+            className="rounded-xl"
+            onClick={() => setShowStockFinal(true)}
+            title="Ver el stock final limpio en pantalla"
+          >
+            <Eye className="h-4 w-4" />
+            Ver stock final
+          </Button>
+          {onExportReporte && (
+            <Button
+              variant="secondary"
+              size="sm"
+              className="rounded-xl"
+              disabled={exporting}
+              onClick={onExportReporte}
+              title="Excel del reporte con sistema, contado y diferencias"
+            >
+              {exportingReporte ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Download className="h-4 w-4" />
+              )}
+              Exportar reporte
+            </Button>
+          )}
+          {onExportStock && (
+            <Button
+              variant="secondary"
+              size="sm"
+              className="rounded-xl"
+              disabled={exporting}
+              onClick={onExportStock}
+              title="Excel del stock final (código, nombre y cantidad)"
+            >
+              {exportingStock ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Download className="h-4 w-4" />
+              )}
+              Exportar stock final
+            </Button>
+          )}
+          {todoOk && (
+            <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-3 py-1 text-sm font-medium text-emerald-700 ring-1 ring-emerald-100">
+              <Check className="h-4 w-4" />
+              Inventario OK — sin ajustes
+            </span>
+          )}
         </div>
+      </div>
 
+      <CardBody className="space-y-4">
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
           <div className="rounded-xl border border-surface-border bg-slate-50 px-3 py-2.5">
             <p className="text-xs font-medium uppercase tracking-wide text-slate-400">Revisados</p>
@@ -777,7 +864,7 @@ function InventarioReporteCierre({
               {resumen.reorganizaciones ?? 0}
             </p>
           </div>
-          <div className="rounded-xl border border-surface-border bg-white px-3 py-2.5 col-span-2 sm:col-span-1">
+          <div className="col-span-2 rounded-xl border border-surface-border bg-white px-3 py-2.5 sm:col-span-1">
             <p className="text-xs font-medium uppercase tracking-wide text-slate-400">Con ajuste</p>
             <p className="mt-1 text-xl font-bold tabular-nums text-slate-900">
               {resumen.con_ajuste ?? 0}
@@ -785,155 +872,304 @@ function InventarioReporteCierre({
           </div>
         </div>
 
-        <div>
-          <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
-            <h3 className="text-sm font-semibold text-slate-800">
-              Listado general ({detalle.length} producto{detalle.length === 1 ? '' : 's'})
-            </h3>
-            <div className="flex flex-wrap gap-1.5">
-              {(
-                [
-                  ['todos', 'Todos'],
-                  ['ajustes', 'Con diferencias'],
-                  ['ok', 'Sin cambio']
-                ] as const
-              ).map(([id, label]) => (
-                <button
-                  key={id}
-                  type="button"
-                  onClick={() => setFiltro(id)}
-                  className={cn(
-                    'rounded-lg px-2.5 py-1 text-xs font-medium transition-colors',
-                    filtro === id
-                      ? 'bg-brand-600 text-white'
-                      : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                  )}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {porSector.length === 0 ? (
-            <p className="rounded-xl border border-surface-border bg-slate-50 px-4 py-3 text-sm text-slate-500">
-              No hay productos para este filtro.
-            </p>
-          ) : (
-            <div className="space-y-4">
-              {porSector.map(([sectorNombre, items]) => (
-                <div
-                  key={sectorNombre}
-                  className="overflow-hidden rounded-xl border border-surface-border"
-                >
-                  <div className="flex items-center justify-between border-b border-surface-border bg-slate-50 px-4 py-2.5">
-                    <p className="text-sm font-semibold text-slate-800">{sectorNombre}</p>
-                    <span className="text-xs text-slate-500">
-                      {items.length} producto{items.length === 1 ? '' : 's'}
-                    </span>
-                  </div>
-                  <div className="overflow-x-auto">
-                    <table className={TABLA_CIERRE_CLASS}>
-                      <thead className="bg-white text-left text-xs font-semibold uppercase tracking-wide text-slate-400">
-                        <tr>
-                          <th className={cn('whitespace-nowrap', TABLA_CIERRE_TH)}>Código</th>
-                          <th className={TABLA_CIERRE_TH}>Producto</th>
-                          <th className={TABLA_CIERRE_TH}>Resultado</th>
-                          {filtro !== 'ok' && (
-                            <>
-                              <th className={cn(TABLA_CIERRE_TH, 'text-right')}>Sistema</th>
-                              <th className={cn(TABLA_CIERRE_TH, 'text-right')}>Contado</th>
-                              <th className={cn(TABLA_CIERRE_TH, 'text-right')}>Dif.</th>
-                            </>
-                          )}
-                          {filtro === 'ok' && (
-                            <th className={cn(TABLA_CIERRE_TH, 'text-right')}>Total</th>
-                          )}
+        <div className="overflow-hidden rounded-xl border border-brand-200/80 bg-white ring-1 ring-brand-100/60">
+          <button
+            type="button"
+            className="flex w-full items-center gap-2 border-b border-brand-100 bg-brand-50/50 px-3 py-2.5 text-left sm:px-4"
+            aria-expanded={unificadosOpen}
+            onClick={() => setUnificadosOpen((v) => !v)}
+          >
+            <ChevronDown
+              className={cn(
+                'h-4 w-4 shrink-0 text-brand-500 transition-transform',
+                !unificadosOpen && '-rotate-90'
+              )}
+            />
+            <ClipboardList className="h-4 w-4 shrink-0 text-brand-600" />
+            <span className="min-w-0 flex-1 text-sm font-semibold text-slate-900">
+              Totales unificados
+            </span>
+            <span className="shrink-0 text-xs text-slate-500">
+              {totalesUnificados.length} producto{totalesUnificados.length === 1 ? '' : 's'}
+              {unificadosConDif > 0 ? ` · ${unificadosConDif} con dif.` : ''}
+            </span>
+          </button>
+          {unificadosOpen && (
+            <div className="space-y-2.5 p-3">
+              <p className="text-xs text-slate-500">
+                Contado vs sistema sumando todos los sectores (sin discriminar ubicación).
+              </p>
+              <div className="relative">
+                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-brand-400" />
+                <input
+                  type="search"
+                  value={unificadosSearch}
+                  onChange={(e) => setUnificadosSearch(e.target.value)}
+                  placeholder="Buscar por código o nombre…"
+                  className="w-full rounded-xl border border-surface-border bg-white py-2 pl-10 pr-3 text-sm shadow-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20"
+                />
+              </div>
+              <div className="max-h-[min(380px,45vh)] overflow-auto overscroll-contain rounded-xl border border-surface-border">
+                {unificadosFiltrados.length === 0 ? (
+                  <p className="px-4 py-8 text-center text-sm text-slate-500">
+                    {totalesUnificados.length === 0
+                      ? 'No hay productos en el reporte'
+                      : `Ningún producto coincide con «${unificadosSearch.trim()}»`}
+                  </p>
+                ) : (
+                  <table className={TABLA_CIERRE_CLASS}>
+                    <thead className="sticky top-0 bg-slate-50 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+                      <tr>
+                        <th className={cn('whitespace-nowrap', TABLA_CIERRE_TH)}>Código</th>
+                        <th className={TABLA_CIERRE_TH}>Producto</th>
+                        <th className={cn(TABLA_CIERRE_TH, 'text-right')}>Sistema</th>
+                        <th className={cn(TABLA_CIERRE_TH, 'text-right')}>Contado</th>
+                        <th className={cn(TABLA_CIERRE_TH, 'text-right')}>Dif.</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-surface-border bg-white">
+                      {unificadosFiltrados.map((row) => (
+                        <tr
+                          key={row.producto_id}
+                          className={cn(!row.coincide && 'bg-amber-50/40')}
+                        >
+                          <td className={cn('whitespace-nowrap', TABLA_CIERRE_TD)}>
+                            <CeldaCodigoProducto codigo={row.codigo_interno || '—'} />
+                          </td>
+                          <td className={TABLA_CIERRE_TD}>
+                            <CeldaNombreProducto nombre={row.nombre} />
+                          </td>
+                          <td className={cn(TABLA_CIERRE_TD, 'text-right')}>
+                            <CeldaTotalesInventario
+                              totales={row.sistema}
+                              unidad={row.unidad}
+                              variant="muted"
+                            />
+                          </td>
+                          <td className={cn(TABLA_CIERRE_TD, 'text-right')}>
+                            <CeldaTotalesInventario
+                              totales={row.contado}
+                              unidad={row.unidad}
+                              variant="emphasis"
+                            />
+                          </td>
+                          <td className={cn(TABLA_CIERRE_TD, 'text-right')}>
+                            {row.coincide ? (
+                              <span className="text-xs font-medium text-emerald-600">OK</span>
+                            ) : (
+                              <CeldaDiferenciaInventario
+                                difCajas={row.difCajas}
+                                difSuelto={row.difSuelto}
+                              />
+                            )}
+                          </td>
                         </tr>
-                      </thead>
-                      <tbody className="divide-y divide-surface-border">
-                        {items.map((item, idx) => (
-                          <ReporteDetalleItem
-                            key={`${String(item.producto_id)}-${idx}`}
-                            item={item}
-                            compacto={filtro === 'ok'}
-                            desgloseColapsado
-                            colSpanDesglose={filtro === 'ok' ? 4 : 6}
-                          />
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              ))}
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+              </div>
             </div>
           )}
         </div>
 
-        {ajustes_aplicados.length > 0 && (
-          <div>
-            <h3 className="mb-3 text-sm font-semibold text-slate-800">Ajustes aplicados al stock</h3>
-            <div className="overflow-x-auto rounded-xl border border-surface-border">
-              <table className="min-w-full text-sm">
-                <thead className="bg-slate-50 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
-                  <tr>
-                    <th className={cn('whitespace-nowrap', TABLA_CIERRE_TH)}>Código</th>
-                    <th className={TABLA_CIERRE_TH}>Producto</th>
-                    <th className={TABLA_CIERRE_TH}>Sector</th>
-                    <th className={TABLA_CIERRE_TH}>Tipo</th>
-                    <th className={cn(TABLA_CIERRE_TH, 'text-right')}>Antes</th>
-                    <th className={cn(TABLA_CIERRE_TH, 'text-right')}>Después</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-surface-border">
-                  {ajustes_aplicados.map((ajuste, idx) => {
-                    const det = detalle.find(
-                      (d) =>
-                        d.producto_id === ajuste.producto_id && d.sector_id === ajuste.sector_id
-                    )
-                    return (
-                      <tr key={idx} className="bg-white">
-                        <td className={cn('whitespace-nowrap', TABLA_CIERRE_TD)}>
-                          <CeldaCodigoProducto
-                            codigo={String(det?.codigo_interno ?? `#${String(ajuste.producto_id)}`)}
-                          />
-                        </td>
-                        <td className={TABLA_CIERRE_TD}>
-                          <CeldaNombreProducto
-                            nombre={String(det?.nombre ?? `Producto #${String(ajuste.producto_id)}`)}
-                          />
-                        </td>
-                        <td className={cn(TABLA_CIERRE_TD, 'text-slate-600')}>
-                          {String(det?.sector_nombre ?? `#${String(ajuste.sector_id)}`)}
-                        </td>
-                        <td className={TABLA_CIERRE_TD}>
-                          <span
+        <div className="overflow-hidden rounded-xl border border-surface-border bg-white">
+          <div className="flex flex-wrap items-center gap-2 border-b border-surface-border bg-slate-50/90 px-3 py-2.5 sm:px-4">
+            <button
+              type="button"
+              className="flex min-w-0 flex-1 items-center gap-2 text-left"
+              aria-expanded={listadoOpen}
+              onClick={() => setListadoOpen((v) => !v)}
+            >
+              <ChevronDown
+                className={cn(
+                  'h-4 w-4 shrink-0 text-slate-400 transition-transform',
+                  !listadoOpen && '-rotate-90'
+                )}
+              />
+              <Warehouse className="h-4 w-4 shrink-0 text-slate-400" />
+              <span className="truncate text-sm font-semibold text-slate-800">
+                Comparación por sector
+              </span>
+              <span className="shrink-0 text-xs text-slate-500">
+                {detalle.length} producto{detalle.length === 1 ? '' : 's'}
+              </span>
+            </button>
+            {listadoOpen && (
+              <div className="flex w-full flex-wrap gap-1.5 sm:ml-auto sm:w-auto">
+                {(
+                  [
+                    ['todos', 'Todos'],
+                    ['ajustes', 'Con diferencias'],
+                    ['ok', 'Sin cambio']
+                  ] as const
+                ).map(([id, label]) => (
+                  <button
+                    key={id}
+                    type="button"
+                    onClick={() => setFiltro(id)}
+                    className={cn(
+                      'rounded-lg px-2.5 py-1 text-xs font-medium transition-colors',
+                      filtro === id
+                        ? 'bg-brand-600 text-white'
+                        : 'bg-white text-slate-600 ring-1 ring-surface-border hover:bg-slate-100'
+                    )}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {listadoOpen && (
+            <div className="max-h-[min(420px,50vh)] space-y-3 overflow-y-auto overscroll-contain bg-slate-50/40 p-3">
+              {porSector.length === 0 ? (
+                <p className="rounded-xl border border-surface-border bg-white px-4 py-3 text-sm text-slate-500">
+                  No hay productos para este filtro.
+                </p>
+              ) : (
+                porSector.map(([sectorNombre, items]) => (
+                  <div
+                    key={sectorNombre}
+                    className="overflow-hidden rounded-xl border border-surface-border bg-white shadow-sm"
+                  >
+                    <div className="flex items-center justify-between border-b border-surface-border bg-white px-4 py-2.5">
+                      <p className="text-sm font-semibold text-slate-800">{sectorNombre}</p>
+                      <span className="text-xs text-slate-500">
+                        {items.length} producto{items.length === 1 ? '' : 's'}
+                      </span>
+                    </div>
+                    <div className="overflow-x-auto">
+                      <table className={TABLA_CIERRE_CLASS}>
+                        <thead className="bg-slate-50/80 text-left text-xs font-semibold uppercase tracking-wide text-slate-400">
+                          <tr>
+                            <th className={cn('whitespace-nowrap', TABLA_CIERRE_TH)}>Código</th>
+                            <th className={TABLA_CIERRE_TH}>Producto</th>
+                            <th className={TABLA_CIERRE_TH}>Resultado</th>
+                            {filtro !== 'ok' && (
+                              <>
+                                <th className={cn(TABLA_CIERRE_TH, 'text-right')}>Sistema</th>
+                                <th className={cn(TABLA_CIERRE_TH, 'text-right')}>Contado</th>
+                                <th className={cn(TABLA_CIERRE_TH, 'text-right')}>Dif.</th>
+                              </>
+                            )}
+                            {filtro === 'ok' && (
+                              <th className={cn(TABLA_CIERRE_TH, 'text-right')}>Total</th>
+                            )}
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-surface-border">
+                          {items.map((item, idx) => (
+                            <ReporteDetalleItem
+                              key={`${String(item.producto_id)}-${idx}`}
+                              item={item}
+                              compacto={filtro === 'ok'}
+                              desgloseColapsado
+                              colSpanDesglose={filtro === 'ok' ? 4 : 6}
+                            />
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          )}
+        </div>
+
+        {hayAjustesAplicados && (
+          <div className="overflow-hidden rounded-xl border border-orange-200/80 bg-white">
+            <button
+              type="button"
+              className="flex w-full items-center gap-2 border-b border-orange-100 bg-orange-50/70 px-3 py-2.5 text-left sm:px-4"
+              aria-expanded={ajustesOpen}
+              onClick={() => setAjustesOpen((v) => !v)}
+            >
+              <ChevronDown
+                className={cn(
+                  'h-4 w-4 shrink-0 text-orange-500 transition-transform',
+                  !ajustesOpen && '-rotate-90'
+                )}
+              />
+              <RefreshCw className="h-4 w-4 shrink-0 text-orange-600" />
+              <span className="min-w-0 flex-1 text-sm font-semibold text-orange-950">
+                Ajustes aplicados al stock
+              </span>
+              <span className="shrink-0 rounded-full bg-white px-2 py-0.5 text-xs font-medium text-orange-800 ring-1 ring-orange-200">
+                {ajustes_aplicados.length}
+              </span>
+            </button>
+            {ajustesOpen && (
+              <div className="max-h-[min(320px,40vh)] overflow-auto overscroll-contain">
+                <table className="min-w-full text-sm">
+                  <thead className="sticky top-0 bg-slate-50 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+                    <tr>
+                      <th className={cn('whitespace-nowrap', TABLA_CIERRE_TH)}>Código</th>
+                      <th className={TABLA_CIERRE_TH}>Producto</th>
+                      <th className={TABLA_CIERRE_TH}>Sector</th>
+                      <th className={TABLA_CIERRE_TH}>Tipo</th>
+                      <th className={cn(TABLA_CIERRE_TH, 'text-right')}>Antes</th>
+                      <th className={cn(TABLA_CIERRE_TH, 'text-right')}>Después</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-surface-border">
+                    {ajustes_aplicados.map((ajuste, idx) => {
+                      const det = detalle.find(
+                        (d) =>
+                          d.producto_id === ajuste.producto_id && d.sector_id === ajuste.sector_id
+                      )
+                      return (
+                        <tr key={idx} className="bg-white">
+                          <td className={cn('whitespace-nowrap', TABLA_CIERRE_TD)}>
+                            <CeldaCodigoProducto
+                              codigo={String(
+                                det?.codigo_interno ?? `#${String(ajuste.producto_id)}`
+                              )}
+                            />
+                          </td>
+                          <td className={TABLA_CIERRE_TD}>
+                            <CeldaNombreProducto
+                              nombre={String(
+                                det?.nombre ?? `Producto #${String(ajuste.producto_id)}`
+                              )}
+                            />
+                          </td>
+                          <td className={cn(TABLA_CIERRE_TD, 'text-slate-600')}>
+                            {String(det?.sector_nombre ?? `#${String(ajuste.sector_id)}`)}
+                          </td>
+                          <td className={TABLA_CIERRE_TD}>
+                            <span
+                              className={cn(
+                                'rounded-full px-2 py-0.5 text-xs font-medium',
+                                TIPO_INVENTARIO_COLOR[String(ajuste.tipo)] ??
+                                  'bg-slate-100 text-slate-700'
+                              )}
+                            >
+                              {tipoInventarioLabel(String(ajuste.tipo))}
+                            </span>
+                          </td>
+                          <td
+                            className={cn(TABLA_CIERRE_TD, 'text-right tabular-nums text-slate-600')}
+                          >
+                            {formatCantidad(Number(ajuste.antes ?? 0))}
+                          </td>
+                          <td
                             className={cn(
-                              'rounded-full px-2 py-0.5 text-xs font-medium',
-                              TIPO_INVENTARIO_COLOR[String(ajuste.tipo)] ??
-                                'bg-slate-100 text-slate-700'
+                              TABLA_CIERRE_TD,
+                              'text-right tabular-nums font-semibold text-slate-900'
                             )}
                           >
-                            {tipoInventarioLabel(String(ajuste.tipo))}
-                          </span>
-                        </td>
-                        <td className={cn(TABLA_CIERRE_TD, 'text-right tabular-nums text-slate-600')}>
-                          {formatCantidad(Number(ajuste.antes ?? 0))}
-                        </td>
-                        <td
-                          className={cn(
-                            TABLA_CIERRE_TD,
-                            'text-right tabular-nums font-semibold text-slate-900'
-                          )}
-                        >
-                          {formatCantidad(Number(ajuste.despues ?? 0))}
-                        </td>
-                      </tr>
-                    )
-                  })}
-                </tbody>
-              </table>
-            </div>
+                            {formatCantidad(Number(ajuste.despues ?? 0))}
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
         )}
 
@@ -945,114 +1181,173 @@ function InventarioReporteCierre({
       </CardBody>
 
       {showStockFinal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div
-            className="absolute inset-0 bg-slate-900/50"
-            onClick={() => setShowStockFinal(false)}
-            aria-hidden
-          />
-          <div
-            className="relative z-10 flex max-h-[min(90vh,720px)] w-full max-w-3xl flex-col overflow-hidden rounded-xl border border-surface-border bg-white shadow-xl"
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="stock-final-title"
-          >
-            <div className="flex shrink-0 items-start justify-between gap-3 border-b border-surface-border px-5 py-4">
-              <div className="min-w-0">
-                <h3 id="stock-final-title" className="font-semibold text-slate-900">
-                  Stock final
-                </h3>
-                <p className="mt-0.5 text-sm text-slate-500">
-                  {stockFinal.length} producto{stockFinal.length === 1 ? '' : 's'} con stock · total{' '}
-                  <span className="font-semibold tabular-nums text-slate-700">
-                    {formatCantidad(totalStockFinal)}
-                  </span>
-                </p>
-              </div>
-              <div className="flex shrink-0 items-center gap-2">
-                {onExportStock && (
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    className="rounded-lg"
-                    disabled={exporting}
-                    onClick={onExportStock}
-                  >
-                    {exportingStock ? (
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                    ) : (
-                      <Download className="h-4 w-4" />
-                    )}
-                    Excel
-                  </Button>
-                )}
-                <button
-                  type="button"
-                  onClick={() => setShowStockFinal(false)}
-                  className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
-                  aria-label="Cerrar"
-                >
-                  <X className="h-5 w-5" />
-                </button>
-              </div>
-            </div>
-
-            <div className="min-h-0 flex-1 overflow-auto">
-              {stockFinal.length === 0 ? (
-                <p className="px-5 py-8 text-center text-sm text-slate-500">
-                  No quedó stock registrado en este inventario.
-                </p>
-              ) : (
-                <table className={TABLA_CIERRE_CLASS}>
-                  <thead className="sticky top-0 bg-slate-50 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
-                    <tr>
-                      <th className={cn('whitespace-nowrap', TABLA_CIERRE_TH)}>Código</th>
-                      <th className={TABLA_CIERRE_TH}>Producto</th>
-                      <th className={cn(TABLA_CIERRE_TH, 'text-right')}>Cantidad</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-surface-border">
-                    {stockFinal.map((row) => (
-                      <tr key={row.codigo_interno} className="bg-white">
-                        <td className={cn('whitespace-nowrap', TABLA_CIERRE_TD)}>
-                          <CeldaCodigoProducto codigo={row.codigo_interno || '—'} />
-                        </td>
-                        <td className={TABLA_CIERRE_TD}>
-                          <CeldaNombreProducto nombre={row.nombre} />
-                        </td>
-                        <td
-                          className={cn(
-                            TABLA_CIERRE_TD,
-                            'text-right tabular-nums font-semibold text-slate-900'
-                          )}
-                        >
-                          {formatCantidad(row.cantidad)}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                  <tfoot className="sticky bottom-0 border-t border-surface-border bg-slate-50">
-                    <tr>
-                      <td className={TABLA_CIERRE_TD} colSpan={2}>
-                        <span className="text-sm font-semibold text-slate-700">TOTAL</span>
-                      </td>
-                      <td
-                        className={cn(
-                          TABLA_CIERRE_TD,
-                          'text-right tabular-nums font-bold text-slate-900'
-                        )}
-                      >
-                        {formatCantidad(totalStockFinal)}
-                      </td>
-                    </tr>
-                  </tfoot>
-                </table>
-              )}
-            </div>
-          </div>
-        </div>
+        <InventarioStockFinalVista
+          rows={stockFinal}
+          total={totalStockFinal}
+          onVolver={() => setShowStockFinal(false)}
+          onExportStock={onExportStock}
+          exporting={exporting}
+          exportingStock={exportingStock}
+        />
       )}
     </Card>
+  )
+}
+
+function InventarioStockFinalVista({
+  rows,
+  total,
+  onVolver,
+  onExportStock,
+  exporting,
+  exportingStock
+}: {
+  rows: Array<{ codigo_interno: string; nombre: string; cantidad: number }>
+  total: number
+  onVolver: () => void
+  onExportStock?: () => void
+  exporting?: boolean
+  exportingStock?: boolean
+}) {
+  const [search, setSearch] = useState('')
+
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key !== 'Escape') return
+      e.preventDefault()
+      e.stopImmediatePropagation()
+      onVolver()
+    }
+    window.addEventListener('keydown', onKeyDown, true)
+    return () => window.removeEventListener('keydown', onKeyDown, true)
+  }, [onVolver])
+
+  const filtrados = useMemo(() => {
+    const q = search.trim()
+    if (!q) return rows
+    return rows.filter((r) =>
+      textoProductoMatches({ codigo_interno: r.codigo_interno, nombre: r.nombre }, q)
+    )
+  }, [rows, search])
+  const totalFiltrado = useMemo(
+    () => filtrados.reduce((s, r) => s + r.cantidad, 0),
+    [filtrados]
+  )
+
+  return (
+    <div className="fixed inset-0 z-[70] flex flex-col bg-white">
+      <div className="shrink-0 border-b border-surface-border px-4 py-3 sm:px-5">
+        <div className="mx-auto flex max-w-5xl flex-wrap items-center gap-x-2 gap-y-1">
+          <Button
+            variant="ghost"
+            size="sm"
+            className="-ml-2 h-8 shrink-0 rounded-lg px-2"
+            onClick={onVolver}
+          >
+            <ChevronLeft className="h-4 w-4" />
+            Volver
+          </Button>
+          <span className="hidden h-4 w-px bg-surface-border sm:block" aria-hidden />
+          <h1 className="text-base font-semibold text-slate-900 sm:text-lg">Stock final</h1>
+          <span className="text-xs text-slate-400">
+            {rows.length} producto{rows.length === 1 ? '' : 's'} · total{' '}
+            <span className="font-semibold tabular-nums text-slate-600">
+              {formatCantidad(total)}
+            </span>
+          </span>
+          {onExportStock && (
+            <Button
+              variant="secondary"
+              size="sm"
+              className="ml-auto rounded-xl"
+              disabled={exporting}
+              onClick={onExportStock}
+            >
+              {exportingStock ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Download className="h-4 w-4" />
+              )}
+              Excel
+            </Button>
+          )}
+        </div>
+        <p className="mx-auto mt-1 max-w-5xl text-xs text-slate-500">
+          Stock unificado después del cierre (código, nombre y cantidad).
+        </p>
+      </div>
+
+      <div className="shrink-0 border-b border-surface-border px-3 py-2.5 sm:px-4">
+        <div className="relative mx-auto max-w-5xl">
+          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-brand-400" />
+          <input
+            type="search"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Buscar por código o nombre…"
+            className="w-full rounded-xl border border-surface-border bg-white py-2.5 pl-10 pr-3 text-sm shadow-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20"
+            autoFocus
+          />
+        </div>
+        {search.trim() && (
+          <p className="mx-auto mt-1.5 max-w-5xl text-xs text-slate-500">
+            {filtrados.length} de {rows.length} producto{rows.length === 1 ? '' : 's'}
+            {filtrados.length > 0 && (
+              <>
+                {' '}
+                · subtotal{' '}
+                <span className="font-semibold tabular-nums text-slate-600">
+                  {formatCantidad(totalFiltrado)}
+                </span>
+              </>
+            )}
+          </p>
+        )}
+      </div>
+
+      <div className="min-h-0 flex-1 overflow-y-auto bg-slate-50/60">
+        <div className="mx-auto max-w-5xl p-3 sm:p-4">
+          {filtrados.length === 0 ? (
+            <div className="rounded-xl border border-surface-border bg-white px-4 py-12 text-center text-sm text-slate-500">
+              {rows.length === 0
+                ? 'No quedó stock registrado en este inventario.'
+                : `Ningún producto coincide con «${search.trim()}»`}
+            </div>
+          ) : (
+            <div className="overflow-hidden rounded-xl border border-surface-border bg-white shadow-sm">
+              <div className="divide-y divide-surface-border">
+                {filtrados.map((row) => (
+                  <div
+                    key={`${row.codigo_interno}-${row.nombre}`}
+                    className="flex items-center gap-3 px-4 py-3 sm:px-5"
+                  >
+                    <div className="min-w-0 flex-1">
+                      <div className="flex min-w-0 items-baseline gap-2">
+                        <span className="shrink-0 font-mono text-sm font-semibold text-slate-900">
+                          {row.codigo_interno || '—'}
+                        </span>
+                        <span className="min-w-0 truncate text-sm text-slate-600">{row.nombre}</span>
+                      </div>
+                    </div>
+                    <span className="shrink-0 rounded-md bg-slate-50 px-2.5 py-1 text-sm font-semibold tabular-nums text-slate-900 ring-1 ring-surface-border">
+                      {formatCantidad(row.cantidad)}
+                    </span>
+                  </div>
+                ))}
+              </div>
+              <div className="flex items-center justify-between gap-3 border-t border-surface-border bg-slate-50 px-4 py-3 sm:px-5">
+                <span className="text-sm font-semibold text-slate-700">
+                  {search.trim() ? 'Subtotal filtrado' : 'TOTAL'}
+                </span>
+                <span className="text-sm font-bold tabular-nums text-slate-900">
+                  {formatCantidad(search.trim() ? totalFiltrado : total)}
+                </span>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
   )
 }
 
@@ -1716,6 +2011,190 @@ function VistaPreviaItemConDecision({
   )
 }
 
+function consolidarConteoCompleto(
+  items: Array<Record<string, unknown>>
+): Array<{
+  producto_id: number
+  codigo_interno: string
+  nombre: string
+  unidad: string
+  cajas: number
+  suelto: number
+  resumen: string
+  sectores: number
+}> {
+  const map = new Map<
+    number,
+    {
+      producto_id: number
+      codigo_interno: string
+      nombre: string
+      unidad: string
+      cajas: number
+      suelto: number
+      sectorIds: Set<number>
+    }
+  >()
+
+  for (const item of items) {
+    const productoId = Number(item.producto_id)
+    if (!Number.isFinite(productoId)) continue
+    const cajas = Number(item.total_contado ?? 0)
+    const suelto = Number(item.total_suelto_contado ?? 0)
+    const sectorId = Number(item.sector_id)
+    const prev = map.get(productoId)
+    if (prev) {
+      prev.cajas += cajas
+      prev.suelto += suelto
+      if (Number.isFinite(sectorId)) prev.sectorIds.add(sectorId)
+    } else {
+      map.set(productoId, {
+        producto_id: productoId,
+        codigo_interno: String(item.codigo_interno ?? ''),
+        nombre: String(item.nombre ?? ''),
+        unidad: String(item.unidad ?? ''),
+        cajas,
+        suelto,
+        sectorIds: new Set(Number.isFinite(sectorId) ? [sectorId] : [])
+      })
+    }
+  }
+
+  return [...map.values()]
+    .map((row) => ({
+      producto_id: row.producto_id,
+      codigo_interno: row.codigo_interno,
+      nombre: row.nombre,
+      unidad: row.unidad,
+      cajas: row.cajas,
+      suelto: row.suelto,
+      resumen: formatTotalesInventarioResumen(
+        { cajas: row.cajas, suelto: row.suelto },
+        row.unidad
+      ),
+      sectores: row.sectorIds.size
+    }))
+    .sort((a, b) =>
+      a.codigo_interno.localeCompare(b.codigo_interno, 'es', { numeric: true })
+    )
+}
+
+function InventarioConteoCompletoVista({
+  items,
+  onVolver
+}: {
+  items: Array<Record<string, unknown>>
+  onVolver: () => void
+}) {
+  const [search, setSearch] = useState('')
+  const productos = useMemo(() => consolidarConteoCompleto(items), [items])
+  const filtrados = useMemo(() => {
+    const q = search.trim()
+    if (!q) return productos
+    return productos.filter((p) =>
+      textoProductoMatches({ codigo_interno: p.codigo_interno, nombre: p.nombre }, q)
+    )
+  }, [productos, search])
+
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key !== 'Escape') return
+      e.preventDefault()
+      e.stopImmediatePropagation()
+      onVolver()
+    }
+    window.addEventListener('keydown', onKeyDown, true)
+    return () => window.removeEventListener('keydown', onKeyDown, true)
+  }, [onVolver])
+
+  return (
+    <div className="fixed inset-0 z-[70] flex flex-col bg-white">
+      <div className="shrink-0 border-b border-surface-border px-4 py-3 sm:px-5">
+        <div className="mx-auto flex max-w-5xl flex-wrap items-center gap-x-2 gap-y-1">
+          <Button
+            variant="ghost"
+            size="sm"
+            className="-ml-2 h-8 shrink-0 rounded-lg px-2"
+            onClick={onVolver}
+          >
+            <ChevronLeft className="h-4 w-4" />
+            Volver
+          </Button>
+          <span className="hidden h-4 w-px bg-surface-border sm:block" aria-hidden />
+          <h1 className="text-base font-semibold text-slate-900 sm:text-lg">
+            Conteo completo
+          </h1>
+          <span className="text-xs text-slate-400">
+            {productos.length} producto{productos.length === 1 ? '' : 's'} · todos los sectores
+          </span>
+        </div>
+        <p className="mx-auto mt-1 max-w-5xl text-xs text-slate-500">
+          Totales unificados de lo contado, sin discriminar por sector.
+        </p>
+      </div>
+
+      <div className="shrink-0 border-b border-surface-border px-3 py-2.5 sm:px-4">
+        <div className="relative mx-auto max-w-5xl">
+          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-brand-400" />
+          <input
+            type="search"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Buscar por código o nombre…"
+            className="w-full rounded-xl border border-surface-border bg-white py-2.5 pl-10 pr-3 text-sm shadow-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20"
+            autoFocus
+          />
+        </div>
+        {search.trim() && (
+          <p className="mx-auto mt-1.5 max-w-5xl text-xs text-slate-500">
+            {filtrados.length} de {productos.length} producto{productos.length === 1 ? '' : 's'}
+          </p>
+        )}
+      </div>
+
+      <div className="min-h-0 flex-1 overflow-y-auto bg-slate-50/60">
+        <div className="mx-auto max-w-5xl p-3 sm:p-4">
+          {filtrados.length === 0 ? (
+            <div className="rounded-xl border border-surface-border bg-white px-4 py-12 text-center text-sm text-slate-500">
+              {productos.length === 0
+                ? 'No hay productos contados en esta sesión'
+                : `Ningún producto coincide con «${search.trim()}»`}
+            </div>
+          ) : (
+            <div className="overflow-hidden rounded-xl border border-surface-border bg-white shadow-sm">
+              <div className="divide-y divide-surface-border">
+                {filtrados.map((p) => (
+                  <div
+                    key={p.producto_id}
+                    className="flex items-center gap-3 px-4 py-3 sm:px-5"
+                  >
+                    <div className="min-w-0 flex-1">
+                      <div className="flex min-w-0 items-baseline gap-2">
+                        <span className="shrink-0 font-mono text-sm font-semibold text-slate-900">
+                          {p.codigo_interno}
+                        </span>
+                        <span className="min-w-0 truncate text-sm text-slate-600">{p.nombre}</span>
+                      </div>
+                      {p.sectores > 1 && (
+                        <p className="mt-0.5 text-xs text-slate-400">
+                          En {p.sectores} sectores
+                        </p>
+                      )}
+                    </div>
+                    <span className="shrink-0 rounded-md bg-slate-50 px-2.5 py-1 text-sm font-semibold tabular-nums text-slate-900 ring-1 ring-surface-border">
+                      {p.resumen}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function InventarioVistaPreviaCierre({
   comparacion,
   onCerrar,
@@ -1734,6 +2213,7 @@ function InventarioVistaPreviaCierre({
   const [filtro, setFiltro] = useState<'todos' | 'ajustes' | 'ok'>('ajustes')
   const [revisionConfirmada, setRevisionConfirmada] = useState(false)
   const [decisiones, setDecisiones] = useState<Map<string, ItemDecisionState>>(() => new Map())
+  const [showConteoCompleto, setShowConteoCompleto] = useState(false)
 
   const resumen = useMemo(
     () => calcResumenConDecisiones(items, decisiones),
@@ -1816,6 +2296,13 @@ function InventarioVistaPreviaCierre({
   const colSpanDesglose = mostrarDecisiones ? 7 : 6
 
   return (
+    <>
+    {showConteoCompleto && (
+      <InventarioConteoCompletoVista
+        items={items}
+        onVolver={() => setShowConteoCompleto(false)}
+      />
+    )}
     <Card className="border-brand-200 ring-1 ring-brand-100">
       <CardBody className="space-y-5">
         <div className="flex flex-wrap items-start justify-between gap-3">
@@ -1828,12 +2315,24 @@ function InventarioVistaPreviaCierre({
               Revisá las diferencias con el sistema antes de aplicar ajustes al stock.
             </p>
           </div>
-          {!hayDiferencias && (
-            <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-3 py-1 text-sm font-medium text-emerald-700 ring-1 ring-emerald-100">
-              <Check className="h-4 w-4" />
-              Listo para cerrar
-            </span>
-          )}
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              className="rounded-xl"
+              onClick={() => setShowConteoCompleto(true)}
+            >
+              <ClipboardList className="h-3.5 w-3.5" />
+              Ver conteo completo
+            </Button>
+            {!hayDiferencias && (
+              <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-3 py-1 text-sm font-medium text-emerald-700 ring-1 ring-emerald-100">
+                <Check className="h-4 w-4" />
+                Listo para cerrar
+              </span>
+            )}
+          </div>
         </div>
 
         {hayDiferencias && (
@@ -2031,6 +2530,7 @@ function InventarioVistaPreviaCierre({
         </div>
       </CardBody>
     </Card>
+    </>
   )
 }
 
@@ -2241,6 +2741,18 @@ export function InventarioPage() {
       setView('contar')
     }
   }, [sectorInvId])
+
+  useEffect(() => {
+    if (view !== 'sesion' || conteoFinal != null) return
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key !== 'Escape') return
+      e.preventDefault()
+      setView('list')
+      setSesionDetalle(null)
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [view, conteoFinal])
 
   async function loadSesion(id: number, options?: { silent?: boolean }) {
     if (!options?.silent) setLoading(true)
@@ -2583,19 +3095,6 @@ export function InventarioPage() {
           className="hidden"
           onChange={(event) => void importarArchivoOffline(event.target.files?.[0] ?? null)}
         />
-
-        <Button
-          variant="ghost"
-          size="sm"
-          className="-ml-2 h-9 self-start rounded-xl px-3"
-          onClick={() => {
-            setView('list')
-            setSesionDetalle(null)
-          }}
-        >
-          <ChevronLeft className="h-4 w-4" />
-          Volver al listado
-        </Button>
 
         <section className="space-y-3">
           <div className="flex flex-wrap items-end justify-between gap-3">
@@ -2989,18 +3488,32 @@ export function InventarioPage() {
       )}
 
       {canCount && misSectores.length > 0 && (
-        <Card>
-          <CardBody>
-            <h2 className="mb-3 flex items-center gap-2 font-semibold text-slate-800">
-              <ClipboardList className="h-5 w-5" />
-              Mis sectores
-            </h2>
-            <div className="space-y-2">
-              {misSectores.map((sec) => {
-                const offlineListo =
-                  sec.modo_conectividad === 'OFFLINE' &&
-                  (sec.estado === 'CERRADO_OK' || Boolean(sec.importado_at))
-                return (
+        <Card className="overflow-hidden shadow-panel">
+          <div className="flex items-center justify-between gap-3 border-b border-slate-200 bg-gradient-to-r from-brand-50/90 via-white to-white px-4 py-3.5 sm:px-5">
+            <div className="min-w-0">
+              <div className="flex items-center gap-2">
+                <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-brand-600 text-white shadow-sm">
+                  <ClipboardList className="h-4 w-4" />
+                </div>
+                <h2 className="text-sm font-semibold text-slate-900">Mis sectores</h2>
+              </div>
+              <p className="mt-1 text-xs text-slate-500">
+                {misSectores.length} asignado{misSectores.length === 1 ? '' : 's'} · tocá para contar
+              </p>
+            </div>
+          </div>
+          <div className="space-y-2.5 bg-slate-50/80 p-2.5 sm:p-3">
+            {misSectores.map((sec) => {
+              const offlineListo =
+                sec.modo_conectividad === 'OFFLINE' &&
+                (sec.estado === 'CERRADO_OK' || Boolean(sec.importado_at))
+              const esOffline = sec.modo_conectividad === 'OFFLINE'
+              const companero = sec.soy_contador_1 ? sec.contador_2_nombre : sec.contador_1_nombre
+              const enCurso =
+                sec.estado === 'EN_CONTEO' ||
+                sec.estado === 'ESPERANDO_COMPANERO' ||
+                sec.estado === 'CON_DIFERENCIAS'
+              return (
                 <button
                   key={sec.id}
                   type="button"
@@ -3008,47 +3521,92 @@ export function InventarioPage() {
                   onClick={() => {
                     if (offlineListo) return
                     navigate(
-                      sec.modo_conectividad === 'OFFLINE'
-                        ? `/inventario/offline/${sec.id}`
-                        : `/inventario/contar/${sec.id}`
+                      esOffline ? `/inventario/offline/${sec.id}` : `/inventario/contar/${sec.id}`
                     )
                   }}
                   className={cn(
-                    'flex w-full items-center justify-between rounded-lg border border-surface-border px-3 py-3 text-left',
+                    'flex w-full items-center gap-3 rounded-2xl border bg-white px-3.5 py-3.5 text-left shadow-sm transition-colors sm:px-4',
                     offlineListo
-                      ? 'cursor-default bg-emerald-50/40'
-                      : 'hover:bg-slate-50'
+                      ? 'cursor-default border-emerald-200/80 bg-emerald-50/50'
+                      : enCurso
+                        ? 'border-brand-200 ring-1 ring-brand-100 hover:bg-brand-50/40 active:bg-brand-50'
+                        : 'border-slate-200/90 hover:bg-slate-50 active:bg-slate-100'
                   )}
                 >
-                  <div>
-                    <p className="font-medium text-slate-800">{sec.sector_nombre}</p>
-                    <p className="text-xs text-slate-500">
-                      Con {sec.soy_contador_1 ? sec.contador_2_nombre : sec.contador_1_nombre} · Ronda{' '}
-                      {sec.ronda_actual}
-                      {sec.modo_conectividad === 'OFFLINE' ? ' · Offline' : ''}
-                      {offlineListo ? ' · Ya enviado al PC' : ''}
+                  <div
+                    className={cn(
+                      'flex h-12 w-12 shrink-0 items-center justify-center rounded-xl shadow-sm',
+                      offlineListo && 'bg-emerald-600 text-white',
+                      !offlineListo && esOffline && 'bg-amber-500 text-white',
+                      !offlineListo && !esOffline && enCurso && 'bg-brand-600 text-white',
+                      !offlineListo && !esOffline && !enCurso && 'bg-slate-800 text-white'
+                    )}
+                  >
+                    {offlineListo ? (
+                      <Check className="h-6 w-6" />
+                    ) : esOffline ? (
+                      <WifiOff className="h-5 w-5" />
+                    ) : (
+                      <Warehouse className="h-5 w-5" />
+                    )}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      <p className="truncate text-base font-semibold tracking-tight text-slate-900">
+                        {sec.sector_nombre}
+                      </p>
+                      {sec.sector_codigo &&
+                        sec.sector_codigo.trim().toLowerCase() !==
+                          sec.sector_nombre.trim().toLowerCase() && (
+                          <span className="shrink-0 rounded-md bg-slate-100 px-1.5 py-0.5 font-mono text-[10px] font-semibold text-slate-600">
+                            {sec.sector_codigo}
+                          </span>
+                        )}
+                    </div>
+                    <p className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-slate-500">
+                      <span className="inline-flex items-center gap-1">
+                        <User className="h-3 w-3 shrink-0 text-slate-400" />
+                        Con {companero}
+                      </span>
+                      <span className="text-slate-300">·</span>
+                      <span>Ronda {sec.ronda_actual}</span>
                     </p>
-                  </div>
-                  <div className="flex flex-col items-end gap-1">
-                    {sec.modo_conectividad === 'OFFLINE' && !offlineListo && (
-                      <span className="rounded-full bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-900 ring-1 ring-amber-100">
-                        Offline
+                    <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                      <span
+                        className={cn(
+                          'rounded-full px-2 py-0.5 text-[11px] font-medium',
+                          ESTADO_SECTOR_COLOR[sec.estado]
+                        )}
+                      >
+                        {ESTADO_SECTOR_LABEL[sec.estado]}
                       </span>
-                    )}
-                    {offlineListo && (
-                      <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-800 ring-1 ring-emerald-100">
-                        En PC
-                      </span>
-                    )}
-                    <span className={cn('rounded-full px-2 py-0.5 text-xs font-medium', ESTADO_SECTOR_COLOR[sec.estado])}>
-                      {ESTADO_SECTOR_LABEL[sec.estado]}
-                    </span>
+                      {esOffline && !offlineListo && (
+                        <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-900 ring-1 ring-amber-100">
+                          <WifiOff className="h-3 w-3" />
+                          Offline
+                        </span>
+                      )}
+                      {offlineListo && (
+                        <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-medium text-emerald-800 ring-1 ring-emerald-100">
+                          <Check className="h-3 w-3" />
+                          Ya en el PC
+                        </span>
+                      )}
+                      {!esOffline && (
+                        <span className="inline-flex items-center gap-1 rounded-full bg-sky-50 px-2 py-0.5 text-[11px] font-medium text-sky-800 ring-1 ring-sky-100">
+                          <Wifi className="h-3 w-3" />
+                          Online
+                        </span>
+                      )}
+                    </div>
                   </div>
+                  {!offlineListo && (
+                    <ChevronRight className="h-5 w-5 shrink-0 text-slate-300" />
+                  )}
                 </button>
-                )
-              })}
-            </div>
-          </CardBody>
+              )
+            })}
+          </div>
         </Card>
       )}
 
@@ -3266,6 +3824,26 @@ function InventarioConteoFinalVista({
 }) {
   const { sector, resumen, productos } = data
   const [expanded, setExpanded] = useState<Set<number>>(() => new Set())
+  const [search, setSearch] = useState('')
+
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key !== 'Escape') return
+      e.preventDefault()
+      e.stopImmediatePropagation()
+      onVolver()
+    }
+    window.addEventListener('keydown', onKeyDown, true)
+    return () => window.removeEventListener('keydown', onKeyDown, true)
+  }, [onVolver])
+
+  const productosFiltrados = useMemo(() => {
+    const q = search.trim()
+    if (!q) return productos
+    return productos.filter((p) =>
+      textoProductoMatches({ codigo_interno: p.codigo_interno, nombre: p.nombre }, q)
+    )
+  }, [productos, search])
 
   function toggle(productoId: number) {
     setExpanded((prev) => {
@@ -3332,13 +3910,39 @@ function InventarioConteoFinalVista({
           </div>
         </div>
 
+        {productos.length > 0 && (
+          <div className="border-b border-surface-border px-3 py-2.5 sm:px-4">
+            <div className="relative">
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-brand-400" />
+              <input
+                type="search"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Buscar por código o nombre…"
+                className="w-full rounded-xl border border-surface-border bg-white py-2.5 pl-10 pr-3 text-sm shadow-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20"
+                autoFocus
+              />
+            </div>
+            {search.trim() && (
+              <p className="mt-1.5 text-xs text-slate-500">
+                {productosFiltrados.length} de {productos.length} producto
+                {productos.length === 1 ? '' : 's'}
+              </p>
+            )}
+          </div>
+        )}
+
         {productos.length === 0 ? (
           <div className="px-4 py-12 text-center text-sm text-slate-500">
             No hay líneas de conteo en este sector
           </div>
+        ) : productosFiltrados.length === 0 ? (
+          <div className="px-4 py-12 text-center text-sm text-slate-500">
+            Ningún producto coincide con «{search.trim()}»
+          </div>
         ) : (
           <div className="divide-y divide-surface-border">
-            {productos.map((p) => {
+            {productosFiltrados.map((p) => {
               const isExpanded = expanded.has(p.producto_id)
               return (
                 <div key={p.producto_id}>
@@ -3655,9 +4259,10 @@ function CrearSesionForm({
                         )}
                         <div className="min-w-0 flex-1">
                           <p className="font-semibold text-slate-900">{sec.nombre}</p>
-                          {sec.codigo && (
-                            <p className="text-xs text-slate-500">{sec.codigo}</p>
-                          )}
+                          {sec.codigo &&
+                            sec.codigo.trim().toLowerCase() !== sec.nombre.trim().toLowerCase() && (
+                              <p className="text-xs text-slate-500">{sec.codigo}</p>
+                            )}
                         </div>
                         {selected && (
                           <span className="inline-flex items-center gap-1 rounded-full bg-white px-2 py-0.5 text-[11px] font-medium text-slate-600 ring-1 ring-surface-border">
@@ -3885,11 +4490,18 @@ function ConteoSectorView({
   const cantidadBultosRef = useRef<HTMLInputElement>(null)
   const unidadesRef = useRef<HTMLInputElement>(null)
   const cantidadSueltaRef = useRef<HTMLInputElement>(null)
+  const keyboardBridgeRef = useRef<HTMLInputElement>(null)
+  const pendingFocusCantidadRef = useRef(false)
   const ubicacionSelectRef = useRef<HTMLSelectElement>(null)
   const listScrollRef = useRef<HTMLDivElement>(null)
   const cargaPanelRef = useRef<HTMLDivElement>(null)
   const productLineFormRef = useRef<HTMLDivElement>(null)
   const keyboardInset = useVisualViewportBottomInset()
+
+  function armKeyboardForCantidadModal() {
+    pendingFocusCantidadRef.current = true
+    keyboardBridgeRef.current?.focus({ preventScroll: true })
+  }
 
   function focusField(ref: React.RefObject<HTMLElement | null>) {
     requestAnimationFrame(() => {
@@ -3921,7 +4533,13 @@ function ConteoSectorView({
   function scrollListToBottom() {
     requestAnimationFrame(() => {
       const el = listScrollRef.current
-      if (el) {
+      if (!el) return
+      const last = el.querySelector('[data-producto-id]:last-of-type') as HTMLElement | null
+      if (last) {
+        const idAttr = last.getAttribute('data-producto-id')
+        const id = idAttr ? Number(idAttr) : null
+        scrollProductoIntoListVisible(el, id, { delayMs: 80, marginBottom: 24 })
+      } else {
         el.scrollTop = el.scrollHeight
       }
     })
@@ -3955,22 +4573,31 @@ function ConteoSectorView({
   }
 
   function selectProduct(p: Producto) {
+    armKeyboardForCantidadModal()
     setSelectedProduct(p)
     setProductSearch(p.codigo_interno)
     setProductResults([])
     setProductHighlightIndex(-1)
     if (!editingLineaId) resetLineaForm(p)
     setError('')
-    setTimeout(() => focusField(tipoRef), 50)
   }
+
+  useEffect(() => {
+    if (!selectedProduct || !pendingFocusCantidadRef.current) return
+    pendingFocusCantidadRef.current = false
+    const id = window.requestAnimationFrame(() => {
+      const ref = tipoBulto === 'SUELTO' ? cantidadSueltaRef : cantidadBultosRef
+      focusField(ref)
+      scrollFocusedFieldIntoSheet(ref.current, 0)
+    })
+    return () => window.cancelAnimationFrame(id)
+  }, [selectedProduct, tipoBulto, editingLineaId])
 
   function pickProductFromSearch() {
     if (!productSearch.trim()) return
-    const term = productSearch.trim().toLowerCase()
-    const exact = productResults.find(
-      (p) =>
-        p.codigo_interno.toLowerCase() === term ||
-        p.codigo_barras?.toLowerCase() === term
+    const term = productSearch.trim()
+    const exact = productResults.find((p) =>
+      codigoProductoExacto(p.codigo_interno, p.codigo_barras, term)
     )
     if (exact) {
       selectProduct(exact)
@@ -4276,18 +4903,16 @@ function ConteoSectorView({
       setProductResults([])
       resetLineaForm()
       await loadSector({ silent: true })
-      requestAnimationFrame(() => {
-        const id = pendingScrollProductoIdRef.current
-        pendingScrollProductoIdRef.current = null
-        if (id) {
-          const el = listScrollRef.current?.querySelector(
-            `[data-producto-id="${id}"]`
-          ) as HTMLElement | null
-          el?.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
-        } else {
-          scrollListToBottom()
-        }
-      })
+      const id = pendingScrollProductoIdRef.current
+      pendingScrollProductoIdRef.current = null
+      if (id) {
+        scrollProductoIntoListVisible(listScrollRef.current, id, {
+          marginBottom: 24,
+          delayMs: 320
+        })
+      } else {
+        scrollListToBottom()
+      }
       setTimeout(() => productSearchRef.current?.focus(), 50)
       return true
     } catch (e) {
@@ -4322,6 +4947,7 @@ function ConteoSectorView({
         setCantidadSuelta(l.cantidad_suelta != null ? String(l.cantidad_suelta) : '')
       }
       scrollFieldIntoView(productLineFormRef)
+      armKeyboardForCantidadModal()
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Error al cargar línea')
     }
@@ -4786,6 +5412,7 @@ function ConteoSectorView({
             )}
 
             <div className="relative z-30 min-w-0">
+                <div className="relative rounded-xl border border-surface-border bg-white shadow-sm focus-within:border-brand-500 focus-within:ring-2 focus-within:ring-brand-500/20">
                 <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-brand-400" />
                 <input
                   ref={productSearchRef}
@@ -4812,11 +5439,12 @@ function ConteoSectorView({
                     }
                   }}
                   onKeyDown={handleProductSearchKeyDown}
-                  className="w-full rounded-xl border border-surface-border bg-white py-2.5 pl-10 pr-3 text-sm shadow-sm focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20"
+                  className="w-full rounded-xl border-0 bg-transparent py-2.5 pl-10 pr-10 text-base outline-none focus:ring-0"
                 />
                 {searchingProducts && (
                   <Loader2 className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 animate-spin text-brand-600" />
                 )}
+                </div>
                 {productResults.length > 0 && !selectedProduct && (
                   <ul
                     ref={productResultsListRef}
@@ -4834,6 +5462,7 @@ function ConteoSectorView({
                               : 'hover:bg-slate-50'
                           )}
                           onMouseEnter={() => setProductHighlightIndex(index)}
+                          onPointerDown={armKeyboardForCantidadModal}
                           onClick={() => selectProduct(p)}
                         >
                           <span className="shrink-0 rounded-md bg-slate-100 px-2 py-1 font-mono text-sm font-semibold text-slate-700">
@@ -4848,6 +5477,19 @@ function ConteoSectorView({
                   </ul>
                 )}
             </div>
+
+            <input
+              ref={keyboardBridgeRef}
+              type="text"
+              inputMode="numeric"
+              enterKeyHint="done"
+              aria-hidden
+              tabIndex={-1}
+              className="pointer-events-none fixed left-0 top-0 h-px w-px opacity-0"
+              value=""
+              onChange={() => {}}
+            />
+
             {usaUbicaciones && (
               <p className="text-xs text-slate-500">
                 Elegí la ubicación una vez; se aplica a cada producto hasta que la cambies.
@@ -4863,7 +5505,7 @@ function ConteoSectorView({
                 />
                 <div
                   ref={productLineFormRef}
-                  className="fixed inset-x-0 z-50 mx-auto max-h-[min(72dvh,34rem)] w-full max-w-3xl overflow-y-auto overscroll-contain rounded-t-2xl border-2 border-b-0 border-brand-400 bg-white p-4 shadow-[0_-12px_40px_rgba(15,23,42,0.25)] ring-4 ring-brand-500/15 sm:rounded-2xl sm:border sm:p-5"
+                  className="fixed inset-x-0 z-50 mx-auto max-h-[min(72dvh,34rem)] w-full max-w-3xl overflow-y-auto overscroll-contain rounded-t-2xl border-2 border-b-0 border-brand-400 bg-white p-4 shadow-[0_-12px_40px_rgba(15,23,42,0.25)] ring-4 ring-brand-500/15 transition-[bottom] duration-200 ease-out sm:rounded-2xl sm:border sm:p-5"
                   style={{ bottom: keyboardInset }}
                 >
                 <div className="mb-3 flex items-center gap-3 sm:mb-4">

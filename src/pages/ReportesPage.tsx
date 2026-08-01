@@ -19,16 +19,11 @@ import { useAuth } from '@/context/AuthContext'
 import { useSidebarNav } from '@/context/SidebarNavContext'
 import { useEscHandler } from '@/hooks/useEscHandler'
 import { shouldAbrirFormularioConEnter } from '@/hooks/useRegistroListKeyboard'
+import { textoProductoMatches } from '@/lib/productoSearch'
 
 function formatSignedCantidad(value: number, sign: '+' | '-'): string {
   if (value === 0) return '0'
   return `${sign}${formatCantidad(value)}`
-}
-
-function matchesBusqueda(textos: string[], query: string): boolean {
-  const q = query.trim().toLowerCase()
-  if (!q) return true
-  return textos.some((t) => t.toLowerCase().includes(q))
 }
 
 function ModalSearchBar({
@@ -165,7 +160,10 @@ function DetalleModal({
   const itemsFiltrados = useMemo(() => {
     if (!detalle) return []
     return detalle.items.filter((item) =>
-      matchesBusqueda([item.nombre, item.codigo_interno], search)
+      textoProductoMatches(
+        { nombre: item.nombre, codigo_interno: item.codigo_interno },
+        search
+      )
     )
   }, [detalle, search])
 

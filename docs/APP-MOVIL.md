@@ -281,6 +281,7 @@ Durante el conteo **no** se emiten las líneas del otro contador (independencia)
 | Escaneo | Cámara del dispositivo (código de barras / QR conexión) |
 | Offline | **Inventario offline implementado** (paquete + conteo local + sync P2P/hotspot + import por red + archivo final Plan B). Consulta/cola genérica offline: pendiente. Online requiere LAN al servidor. |
 | Iconos | Fuente: `build/icon.svg` → `npm run icons` genera desktop (`icon.png`/`icon.ico`) y mipmaps Android. `npm run cap:sync` = icons + `build:mobile` + `cap sync`. |
+| Desarrollo local | Live reload en celular/emulador sin regenerar APK: ver [ANDROID-DEV.md](ANDROID-DEV.md) (`npm run dev:android`). |
 | Imágenes productos | Servidas por API (`GET /api/productos/:id/imagen`) |
 | Distribución | APK firmada; instalación manual o enlace de descarga (release GitHub u otro) |
 | Actualizaciones APK | Pendiente (Play Store interna, descarga directa, etc.) |

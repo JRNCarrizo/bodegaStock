@@ -9,6 +9,7 @@ import {
   formatEtiquetaLinea,
   getStockDisponibleCajasEnSector
 } from '../utils/stock'
+import { sqlProductoSearchClause, sqlNormalizeCodigoExpr } from '../utils/productoSearch'
 
 type MovimientoTipo = 'ENVIAR' | 'RECIBIR'
 type MovimientoEstado = 'PENDIENTE' | 'COMPLETADO' | 'CANCELADO'
@@ -311,7 +312,7 @@ export async function movimientosInternosRoutes(app: FastifyInstance): Promise<v
     const db = getDb()
     assertSectorActivo(db, sectorId, 'Sector')
 
-    const term = q?.trim() ? `%${q.trim()}%` : null
+    const search = q?.trim() ? sqlProductoSearchClause(q, { prefix: 'p.' }) : null
     let sql: string
     const params: Array<number | string> = []
 
@@ -343,9 +344,9 @@ export async function movimientosInternosRoutes(app: FastifyInstance): Promise<v
       params.push(sectorId, sectorId)
     }
 
-    if (term) {
-      sql += ' AND (p.codigo_interno LIKE ? OR p.nombre LIKE ? OR p.codigo_barras LIKE ?)'
-      params.push(term, term, term)
+    if (search) {
+      sql += ` AND ${search.sql}`
+      params.push(...search.params)
     }
 
     sql += ' ORDER BY p.nombre COLLATE NOCASE ASC LIMIT 40'
@@ -468,6 +469,8 @@ export async function movimientosInternosRoutes(app: FastifyInstance): Promise<v
       params.push(tipo)
     }
     if (q?.trim()) {
+      const norm = `%${q.trim().toLowerCase().replace(/[\s\-_.]+/g, '')}%`
+      const term = `%${q.trim()}%`
       sql += ` AND (
         m.observacion LIKE ?
         OR so.nombre LIKE ?
@@ -476,11 +479,14 @@ export async function movimientosInternosRoutes(app: FastifyInstance): Promise<v
           SELECT 1 FROM movimiento_interno_lineas ml
           JOIN productos p ON p.id = ml.producto_id
           WHERE ml.movimiento_interno_id = m.id
-            AND (p.codigo_interno LIKE ? OR p.nombre LIKE ?)
+            AND (
+              p.codigo_interno LIKE ?
+              OR p.nombre LIKE ?
+              OR ${sqlNormalizeCodigoExpr('p.codigo_interno')} LIKE ?
+            )
         )
       )`
-      const term = `%${q.trim()}%`
-      params.push(term, term, term, term, term)
+      params.push(term, term, term, term, term, norm)
     }
 
     sql += ' ORDER BY m.fecha DESC, m.id DESC LIMIT 500'

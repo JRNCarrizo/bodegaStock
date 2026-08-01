@@ -347,11 +347,11 @@ export function LoginPage() {
                       />
                     </div>
                   </div>
-                  <div className="flex flex-col gap-2 sm:flex-row">
+                  <div className="flex flex-col gap-2.5">
                     <Button
                       type="button"
                       variant="secondary"
-                      className="w-full sm:flex-1"
+                      className="w-full border-slate-300 bg-slate-800 py-2.5 text-white shadow-sm hover:bg-slate-900 hover:text-white"
                       disabled={testingServer}
                       onClick={() => setShowServerQr(true)}
                     >
@@ -360,8 +360,7 @@ export function LoginPage() {
                     </Button>
                     <Button
                       type="button"
-                      variant="secondary"
-                      className="w-full sm:flex-1"
+                      className="w-full py-2.5 shadow-sm"
                       disabled={testingServer || !serverHost.trim()}
                       onClick={() => void handleSaveServer()}
                     >
@@ -424,6 +423,7 @@ export function LoginPage() {
                   autoComplete="username"
                   placeholder="Tu nombre de usuario"
                   required
+                  className="px-3.5 py-3 text-base"
                 />
                 <Input
                   label="Contraseña"
@@ -433,6 +433,7 @@ export function LoginPage() {
                   autoComplete="current-password"
                   placeholder="••••••••"
                   required
+                  className="px-3.5 py-3 text-base"
                   trailing={
                     <button
                       type="button"
@@ -441,7 +442,7 @@ export function LoginPage() {
                       aria-label={showPassword ? 'Ocultar contraseña' : 'Mostrar contraseña'}
                       onClick={() => setShowPassword((v) => !v)}
                     >
-                      {showPassword ? <Eye className="h-4 w-4" /> : <EyeOff className="h-4 w-4" />}
+                      {showPassword ? <Eye className="h-5 w-5" /> : <EyeOff className="h-5 w-5" />}
                     </button>
                   }
                 />

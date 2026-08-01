@@ -31,6 +31,7 @@ import { Card, CardBody } from '@/components/ui/Card'
 import { calcTotalEnCajas, botellasPorCajaDefault, formatCantidad, formatDayTabLabel, formatEtiqueta, formatTotalCajas, normalizarUnidadProducto, todayIsoDate } from '@/lib/desglose'
 import { downloadApiFile } from '@/lib/downloadFile'
 import { api, cn } from '@/lib/utils'
+import { codigoProductoExacto } from '@/lib/productoSearch'
 import type {
   IngresoDetalle,
   IngresoLineaDraft,
@@ -473,11 +474,9 @@ export function IngresosPage() {
 
   function pickProductFromSearch() {
     if (!productSearch.trim()) return
-    const term = productSearch.trim().toLowerCase()
-    const exact = productResults.find(
-      (p) =>
-        p.codigo_interno.toLowerCase() === term ||
-        p.codigo_barras?.toLowerCase() === term
+    const term = productSearch.trim()
+    const exact = productResults.find((p) =>
+      codigoProductoExacto(p.codigo_interno, p.codigo_barras, term)
     )
     if (exact) {
       selectProduct(exact)

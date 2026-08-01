@@ -12,6 +12,7 @@ import {
   applyRoturaLineDeduction,
   getStockDisponibleCajasEnSector
 } from '../utils/stock'
+import { sqlNormalizeCodigoExpr } from '../utils/productoSearch'
 
 interface RoturaLineaBody {
   producto_id: number
@@ -118,17 +119,22 @@ export async function roturasRoutes(app: FastifyInstance): Promise<void> {
       params.push(fecha_hasta)
     }
     if (q?.trim()) {
+      const term = `%${q.trim()}%`
+      const norm = `%${q.trim().toLowerCase().replace(/[\s\-_.]+/g, '')}%`
       sql += ` AND (
         r.observacion LIKE ?
         OR EXISTS (
           SELECT 1 FROM rotura_lineas rl
           JOIN productos p ON p.id = rl.producto_id
           WHERE rl.rotura_id = r.id
-            AND (p.codigo_interno LIKE ? OR p.nombre LIKE ?)
+            AND (
+              p.codigo_interno LIKE ?
+              OR p.nombre LIKE ?
+              OR ${sqlNormalizeCodigoExpr('p.codigo_interno')} LIKE ?
+            )
         )
       )`
-      const term = `%${q.trim()}%`
-      params.push(term, term, term)
+      params.push(term, term, term, norm)
     }
 
     sql += ' ORDER BY r.fecha DESC, r.id DESC LIMIT 500'

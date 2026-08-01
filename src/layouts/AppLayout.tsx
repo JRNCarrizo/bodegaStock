@@ -108,7 +108,18 @@ function AppLayoutShell({
 }) {
   const { user, logout, offlineSession } = useAuth()
   const [mobileOpen, setMobileOpen] = useState(false)
+  const [showOfflineBanner, setShowOfflineBanner] = useState(false)
   const { sidebarActive } = useSidebarNav()
+
+  useEffect(() => {
+    if (!offlineSession) {
+      setShowOfflineBanner(false)
+      return
+    }
+    setShowOfflineBanner(true)
+    const t = window.setTimeout(() => setShowOfflineBanner(false), 4000)
+    return () => window.clearTimeout(t)
+  }, [offlineSession])
 
   const groups = [...new Set(visibleItems.map((i) => i.group))]
   const canViewRetornos = visibleItems.some((item) => item.id === 'retornos')
@@ -315,7 +326,7 @@ function AppLayoutShell({
         </header>
 
         <InventarioActivoBanner />
-        {offlineSession && (
+        {offlineSession && showOfflineBanner && (
           <div className="border-b border-sky-200 bg-sky-50 px-4 py-2 text-center text-xs font-medium text-sky-900 sm:text-sm">
             Sin conexión al PC — sesión offline activa (conteo local)
           </div>

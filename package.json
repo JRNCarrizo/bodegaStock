@@ -1,6 +1,6 @@
 {
   "name": "bodega-stock",
-  "version": "0.3.16",
+  "version": "0.3.17",
   "description": "Sistema de gestión de stock para bodega",
   "author": "JRNCarrizo",
   "main": "out/main/index.js",
@@ -12,6 +12,8 @@
     "icons": "node scripts/generate-icons.mjs",
     "postinstall": "electron-builder install-app-deps",
     "build:mobile": "vite build --config vite.config.mobile.ts",
+    "dev:android": "node scripts/dev-android.mjs",
+    "dev:android:emulator": "node scripts/dev-android.mjs --emulator",
     "cap:sync": "npm run icons && npm run build:mobile && npx cap sync",
     "cap:android": "npm run cap:sync && npx cap open android",
     "cap:add:android": "npx cap add android"

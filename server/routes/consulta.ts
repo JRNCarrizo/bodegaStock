@@ -13,6 +13,7 @@ import {
   STOCK_SECTOR_VISIBLE_SQL,
   type ReorganizarDesgloseInput
 } from '../utils/stock'
+import { sqlProductoSearchClause } from '../utils/productoSearch'
 
 interface StockLineaRow {
   id: number
@@ -241,7 +242,10 @@ export async function consultaRoutes(app: FastifyInstance): Promise<void> {
     }
 
     const db = getDb()
-    const term = `%${q.trim()}%`
+    const search = sqlProductoSearchClause(q, { prefix: 'p.' })
+    if (!search) {
+      return reply.status(400).send({ error: 'Ingresá un término de búsqueda' })
+    }
 
     const productos = db.prepare(`
       SELECT
@@ -257,14 +261,10 @@ export async function consultaRoutes(app: FastifyInstance): Promise<void> {
         ), 0) AS sectores_con_stock
       FROM productos p
       WHERE p.activo = 1
-        AND (
-          p.codigo_interno LIKE ?
-          OR p.codigo_barras LIKE ?
-          OR p.nombre LIKE ?
-        )
+        AND ${search.sql}
       ORDER BY p.nombre COLLATE NOCASE ASC
       LIMIT 25
-    `).all(term, term, term)
+    `).all(...search.params)
 
     return productos
   })

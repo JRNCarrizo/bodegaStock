@@ -1,5 +1,6 @@
 import { api } from '@/lib/utils'
 import { compararContadoresLocal } from './compare'
+import { sha256Hex } from '@/lib/sha256'
 import {
   clearOfflineSectorLocal,
   emptyEstado,
@@ -385,13 +386,6 @@ export async function iniciarReconteoLocal(sectorInvId: number): Promise<Offline
   estado.companero_finalizo = false
   await saveEstado(estado)
   return estado
-}
-
-async function sha256Hex(value: string): Promise<string> {
-  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(value))
-  return Array.from(new Uint8Array(digest))
-    .map((byte) => byte.toString(16).padStart(2, '0'))
-    .join('')
 }
 
 /** Paquete final de contingencia para llevar manualmente a la PC. */

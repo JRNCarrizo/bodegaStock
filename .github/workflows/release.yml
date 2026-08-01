@@ -9,7 +9,7 @@ on:
       version:
         description: 'Versión sin v (ej. 0.1.0)'
         required: true
-        default: '0.3.16'
+        default: '0.3.17'
 
 permissions:
   contents: write
@@ -68,14 +68,18 @@ jobs:
           body: |
             ## ControlStock ${{ steps.tag.outputs.name }}
 
-            Ojito para mostrar/ocultar la contraseña en el login (PC y APK).
+            Inventario offline más robusto, UX de cierre en PC y APK lista para producción.
 
             ### Mejorado
-            - Login: ver u ocultar la contraseña con el ícono del ojo
+            - Sync P2P: reintentos si falla la red, host activo unos minutos, IP en el menú ⋮
+            - Cierre de inventario: totales unificados, secciones desplegables, stock final a pantalla completa
+            - Buscadores en ver conteo / stock final; Esc para volver
+            - Cards de sectores, botones de sync e importación más claros
 
             ### Actualización
             - Desde **v0.2.7 o superior:** Configuración → Buscar actualizaciones
-            - O instalá el `.exe` de este release manualmente
+            - O instalá el `.exe` / APK de este release manualmente
           files: |
             release/ControlStock-Setup-*.exe
             release/latest.yml
+            release/ControlStock-*.apk

@@ -7,6 +7,7 @@ import {
   getInventarioSector,
   getSesionOrThrow,
   mapConteoLinea,
+  reemplazarProductosReconteo,
   validarYCalcularLinea,
   type ConteoLineaInput,
   type InventarioSectorEstado
@@ -70,6 +71,8 @@ export interface ImportarOfflineBody {
   ronda_actual: number
   contador_1_finalizo?: boolean
   contador_2_finalizo?: boolean
+  /** Productos que entraron a cada ronda de reconteo (sin líneas = 0). */
+  productos_reconteo?: Array<{ ronda: number; producto_ids: number[] }>
   lineas: OfflineLineaInput[]
 }
 
@@ -84,6 +87,7 @@ export interface ImportarOfflineArchivoBody {
     contador_1_id: number
     contador_2_id: number
     generado_at: string
+    productos_reconteo?: Array<{ ronda: number; producto_ids: number[] }>
     lineas: OfflineLineaInput[]
   }
   checksum_sha256: string
@@ -151,6 +155,7 @@ export function validarPaqueteImportacionPc(
     ronda_actual: contenido.ronda_actual,
     contador_1_finalizo: true,
     contador_2_finalizo: true,
+    productos_reconteo: contenido.productos_reconteo,
     lineas: contenido.lineas
   }
 }
@@ -391,6 +396,8 @@ export function importarConteoOffline(
 
     const c1Finalizo = body.contador_1_finalizo !== false ? 1 : 0
     const c2Finalizo = body.contador_2_finalizo !== false ? 1 : 0
+
+    reemplazarProductosReconteo(db, inventarioSectorId, body.productos_reconteo ?? [])
 
     db.prepare(
       `

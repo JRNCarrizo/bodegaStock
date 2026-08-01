@@ -690,4 +690,19 @@ export function runMigrations(db: Database.Database): void {
     db.exec(`ALTER TABLE inventario_sesiones ADD COLUMN archivada_at TEXT`)
     db.exec(`ALTER TABLE inventario_sesiones ADD COLUMN archivada_por_id INTEGER REFERENCES usuarios(id)`)
   }
+
+  // Productos incluidos en cada ronda de reconteo (cero en esa ronda no cae al conteo anterior)
+  if (
+    tableExists(db, 'inventario_sectores') &&
+    !tableExists(db, 'inventario_sector_reconteo_productos')
+  ) {
+    db.exec(`
+      CREATE TABLE inventario_sector_reconteo_productos (
+        inventario_sector_id INTEGER NOT NULL REFERENCES inventario_sectores(id) ON DELETE CASCADE,
+        ronda INTEGER NOT NULL,
+        producto_id INTEGER NOT NULL REFERENCES productos(id),
+        PRIMARY KEY (inventario_sector_id, ronda, producto_id)
+      )
+    `)
+  }
 }

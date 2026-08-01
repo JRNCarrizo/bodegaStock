@@ -559,6 +559,8 @@ export function iniciarReconteoSector(db: Database.Database, inventarioSectorId:
       productoIds
     )
 
+    registrarProductosReconteo(db, inventarioSectorId, nuevaRonda, productoIds)
+
     db.prepare(`
       UPDATE inventario_sectores
       SET
@@ -758,6 +760,8 @@ function desgloseFromLineas(
  * Líneas acordadas del sector para cierre vs sistema.
  * Tras reconteo, cada producto puede quedar en la ronda donde se contó por última vez
  * (los que coincidieron en ronda 1 no se vuelven a cargar en ronda 2).
+ * Si un producto entró a reconteo y en esa ronda no tiene líneas, cuenta 0
+ * (no se vuelve al conteo anterior).
  */
 function getLineasAcordadasSector(
   db: Database.Database,
@@ -774,16 +778,34 @@ function getLineasAcordadasSector(
     FROM inventario_conteo_lineas icl
     JOIN productos p ON p.id = icl.producto_id
     INNER JOIN (
-      SELECT producto_id, MAX(ronda) AS ronda_final
-      FROM inventario_conteo_lineas
-      WHERE inventario_sector_id = ? AND contador_id = ? AND ronda <= ?
-      GROUP BY producto_id
+      SELECT
+        icl2.producto_id,
+        CASE
+          WHEN MAX(rp.ronda_reconteo) IS NOT NULL THEN MAX(rp.ronda_reconteo)
+          ELSE MAX(icl2.ronda)
+        END AS ronda_final
+      FROM inventario_conteo_lineas icl2
+      LEFT JOIN (
+        SELECT producto_id, MAX(ronda) AS ronda_reconteo
+        FROM inventario_sector_reconteo_productos
+        WHERE inventario_sector_id = ?
+        GROUP BY producto_id
+      ) rp ON rp.producto_id = icl2.producto_id
+      WHERE icl2.inventario_sector_id = ? AND icl2.contador_id = ? AND icl2.ronda <= ?
+      GROUP BY icl2.producto_id
     ) ult ON ult.producto_id = icl.producto_id AND ult.ronda_final = icl.ronda
     WHERE icl.inventario_sector_id = ? AND icl.contador_id = ?
     ORDER BY icl.producto_id, icl.orden, icl.id
   `
     )
-    .all(inventarioSectorId, contador1, ronda, inventarioSectorId, contador1) as ConteoLineaRow[]
+    .all(
+      inventarioSectorId,
+      inventarioSectorId,
+      contador1,
+      ronda,
+      inventarioSectorId,
+      contador1
+    ) as ConteoLineaRow[]
 
   const map = new Map<number, ConteoLineaRow[]>()
   for (const l of lineas) {
@@ -792,6 +814,40 @@ function getLineasAcordadasSector(
     map.set(l.producto_id, arr)
   }
   return map
+}
+
+/** Registra qué productos entraron a una ronda de reconteo. */
+export function registrarProductosReconteo(
+  db: Database.Database,
+  inventarioSectorId: number,
+  ronda: number,
+  productoIds: number[]
+): void {
+  if (!Number.isFinite(ronda) || ronda < 2 || productoIds.length === 0) return
+  const insert = db.prepare(`
+    INSERT OR IGNORE INTO inventario_sector_reconteo_productos (
+      inventario_sector_id, ronda, producto_id
+    ) VALUES (?, ?, ?)
+  `)
+  for (const productoId of productoIds) {
+    const id = Number(productoId)
+    if (!Number.isFinite(id) || id <= 0) continue
+    insert.run(inventarioSectorId, ronda, id)
+  }
+}
+
+/** Reemplaza el set de productos-en-reconteo del sector (p. ej. al importar offline). */
+export function reemplazarProductosReconteo(
+  db: Database.Database,
+  inventarioSectorId: number,
+  entradas: Array<{ ronda: number; producto_ids: number[] }>
+): void {
+  db.prepare(
+    `DELETE FROM inventario_sector_reconteo_productos WHERE inventario_sector_id = ?`
+  ).run(inventarioSectorId)
+  for (const entry of entradas ?? []) {
+    registrarProductosReconteo(db, inventarioSectorId, Number(entry.ronda), entry.producto_ids ?? [])
+  }
 }
 
 /** Conteo acordado del sector (lectura): última ronda por producto, con desglose y ubicación. */

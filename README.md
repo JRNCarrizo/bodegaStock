@@ -20,7 +20,7 @@ Toda la especificación del proyecto está en la carpeta [`docs/`](docs/):
 
 ## Estado del proyecto
 
-**v0.3.17** — Inventario offline (reintentos P2P), cierre en PC (totales unificados) y UX APK.
+**v0.3.21** — Fix reconteo a cero en cierre; UX de diferencias y totales en APK.
 
 ## Desarrollo local
 

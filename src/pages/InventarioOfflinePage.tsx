@@ -134,6 +134,57 @@ function DesgloseParaleloOffline({
   )
 }
 
+/** Desglose Vos/Compañero plegable; cerrado por defecto. */
+function DesgloseDiferenciaColapsable({
+  lineas1,
+  lineas2,
+  titulo1,
+  titulo2
+}: {
+  lineas1: OfflineLinea[]
+  lineas2: OfflineLinea[]
+  titulo1: string
+  titulo2: string
+}) {
+  const [open, setOpen] = useState(false)
+  const n1 = lineas1.length
+  const n2 = lineas2.length
+  return (
+    <div>
+      <button
+        type="button"
+        className="flex w-full items-center justify-between gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-left transition-colors hover:bg-slate-100"
+        aria-expanded={open}
+        onClick={() => setOpen((v) => !v)}
+      >
+        <span className="text-xs font-medium text-slate-700">
+          {open ? 'Ocultar detalle de líneas' : 'Ver detalle de líneas'}
+          <span className="ml-1 font-normal text-slate-500">
+            ({n1} / {n2})
+          </span>
+        </span>
+        <ChevronDown
+          className={cn('h-4 w-4 shrink-0 text-slate-500 transition-transform', open && 'rotate-180')}
+        />
+      </button>
+      {open && (
+        <div className="mt-2">
+          <DesgloseParaleloOffline
+            titulo1={titulo1}
+            titulo2={titulo2}
+            lineas1={lineas1}
+            lineas2={lineas2}
+          />
+        </div>
+      )}
+    </div>
+  )
+}
+
+/** Altura a pantalla: header h-14; -m-4/-m-6 cancelan el padding del main. */
+const PAGE_SHELL =
+  '-m-4 flex h-[calc(100dvh-3.5rem)] flex-col bg-surface-muted/30 lg:-m-6'
+
 export function InventarioOfflinePage() {
   const { sectorInvId: rawId } = useParams()
   const sectorInvId = Number(rawId)
@@ -1076,7 +1127,7 @@ export function InventarioOfflinePage() {
 
   if (loading) {
     return (
-      <div className="flex h-[calc(100vh-5rem)] items-center justify-center">
+      <div className="flex h-[calc(100dvh-3.5rem)] items-center justify-center">
         <Loader2 className="h-8 w-8 animate-spin text-slate-400" />
       </div>
     )
@@ -1088,7 +1139,7 @@ export function InventarioOfflinePage() {
       Boolean(sectorServer?.importado_at) || sectorServer?.estado === 'CERRADO_OK'
 
     return (
-      <div className="-m-4 flex h-[calc(100vh-5rem)] flex-col bg-surface-muted/30 lg:-m-6">
+      <div className={PAGE_SHELL}>
         <div className="border-b border-brand-100 bg-gradient-to-r from-brand-50/80 via-white to-white px-4 py-3 sm:px-5">
           <div className="flex items-center gap-3">
             <Button
@@ -1337,7 +1388,7 @@ export function InventarioOfflinePage() {
   const lineasListContent = renderGruposList(lineasPorProducto)
 
   return (
-    <div className="-m-4 flex h-[calc(100vh-5rem)] flex-col bg-surface-muted/30 lg:-m-6">
+    <div className={PAGE_SHELL}>
       <div
         className={cn(
           'relative z-20 overflow-visible border-b border-surface-border bg-white shadow-sm',
@@ -1833,16 +1884,18 @@ export function InventarioOfflinePage() {
                     const compResumen = miRol === 1 ? d.resumen_contador_2 : d.resumen_contador_1
                     return (
                       <div key={d.producto_id} className="space-y-2 rounded-lg border border-red-200 bg-white p-2">
-                        <div className="min-w-0">
-                          <span className="inline-flex rounded-md bg-slate-100 px-2 py-0.5 font-mono text-xs font-semibold text-slate-700">
+                        <div className="flex min-w-0 items-center gap-2">
+                          <span className="inline-flex shrink-0 rounded-md bg-slate-100 px-2 py-0.5 font-mono text-xs font-semibold text-slate-700">
                             {d.codigo_interno}
                           </span>
-                          <p className="mt-1 text-sm font-medium text-slate-900">{d.nombre}</p>
+                          <ScrollableProductName className="min-w-0 flex-1 text-sm font-medium text-slate-900">
+                            {d.nombre}
+                          </ScrollableProductName>
                         </div>
                         <p className="text-xs text-slate-600">
                           Vos: {miResumen} · Compañero: {compResumen}
                         </p>
-                        <DesgloseParaleloOffline
+                        <DesgloseDiferenciaColapsable
                           titulo1="Vos"
                           titulo2="Compañero"
                           lineas1={misLineas}
@@ -2094,44 +2147,35 @@ export function InventarioOfflinePage() {
         </div>
       ) : null}
 
-      {postConteo && lineasPorProducto.length > 0 && (
-        <div className="shrink-0 border-t border-surface-border bg-white px-4 py-3 sm:px-5">
-          <button
-            type="button"
-            className="flex w-full items-center gap-3 rounded-2xl border border-brand-200 bg-gradient-to-r from-brand-50 to-white px-4 py-3.5 text-left shadow-sm ring-1 ring-brand-100 transition-colors hover:border-brand-300 hover:from-brand-100/80 active:bg-brand-50"
-            onClick={() => {
-              setVistaPreviaSearch('')
-              setShowVistaPrevia(true)
-            }}
-          >
-            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-brand-600 text-white shadow-sm">
-              <Eye className="h-5 w-5" />
-            </div>
-            <div className="min-w-0 flex-1">
-              <p className="text-sm font-semibold text-slate-900">Vista previa del conteo</p>
-              <p className="mt-0.5 text-xs text-slate-500">
-                {lineasPorProducto.length} producto
-                {lineasPorProducto.length === 1 ? '' : 's'} ·{' '}
-                {misLineasRonda.length} línea
-                {misLineasRonda.length === 1 ? '' : 's'} · buscá y revisá el desglose
+      <div className="shrink-0 border-t border-slate-200 bg-gradient-to-t from-slate-200/90 via-slate-100 to-slate-50 px-4 pt-4 shadow-[0_-6px_16px_rgba(15,23,42,0.08)] sm:px-5 pb-[max(1rem,env(safe-area-inset-bottom))]">
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex min-w-0 items-center gap-3">
+            <div className="min-w-0">
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                Total contado
+              </p>
+              <p className="text-lg font-bold tabular-nums text-brand-700 sm:text-2xl">
+                {resumenGeneral}
+              </p>
+              <p className="mt-1 text-xs text-slate-500">
+                {misLineasRonda.length} línea{misLineasRonda.length === 1 ? '' : 's'} ·{' '}
+                {lineasPorProducto.length} producto{lineasPorProducto.length === 1 ? '' : 's'}
               </p>
             </div>
-            <ChevronRight className="h-5 w-5 shrink-0 text-brand-600" />
-          </button>
-        </div>
-      )}
-
-      <div className="shrink-0 border-t border-slate-200 bg-gradient-to-t from-slate-200/90 via-slate-100 to-slate-50 px-4 py-4 shadow-[0_-6px_16px_rgba(15,23,42,0.08)] sm:px-5">
-        <div className="flex items-center justify-between gap-4">
-          <div className="min-w-0">
-            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-              Total contado
-            </p>
-            <p className="text-lg font-bold tabular-nums text-brand-700 sm:text-2xl">{resumenGeneral}</p>
-            <p className="mt-1 text-xs text-slate-500">
-              {misLineasRonda.length} línea{misLineasRonda.length === 1 ? '' : 's'} ·{' '}
-              {lineasPorProducto.length} producto{lineasPorProducto.length === 1 ? '' : 's'}
-            </p>
+            {postConteo && lineasPorProducto.length > 0 && (
+              <button
+                type="button"
+                title="Vista previa del conteo"
+                aria-label="Vista previa del conteo"
+                className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-brand-200 bg-white text-brand-700 shadow-sm transition-colors hover:border-brand-300 hover:bg-brand-50 active:bg-brand-100"
+                onClick={() => {
+                  setVistaPreviaSearch('')
+                  setShowVistaPrevia(true)
+                }}
+              >
+                <Eye className="h-5 w-5" />
+              </button>
+            )}
           </div>
           <div className="flex shrink-0 flex-col items-stretch gap-2 sm:flex-row sm:items-center">
             {comparacion && !comparacion.coincide && (

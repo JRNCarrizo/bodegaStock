@@ -75,6 +75,12 @@ export interface OfflineLinea {
   nombre?: string
 }
 
+/** Productos que entraron a una ronda de reconteo (sin líneas = contado 0). */
+export interface OfflineProductosReconteoRonda {
+  ronda: number
+  producto_ids: number[]
+}
+
 export interface OfflineEstadoLocal {
   inventario_sector_id: number
   ronda_actual: number
@@ -82,6 +88,11 @@ export interface OfflineEstadoLocal {
   companero_finalizo: boolean
   /** Última ronda informada por el compañero en un sync (si avanzó a reconteo). */
   companero_ronda_actual?: number
+  /**
+   * Productos incluidos en cada ronda de reconteo.
+   * Si en esa ronda no quedan líneas, el cierre debe tomar 0 (no el conteo anterior).
+   */
+  productos_reconteo?: OfflineProductosReconteoRonda[]
   /** Líneas propias (todas las rondas). */
   mis_lineas: OfflineLinea[]
   /** Líneas del compañero recibidas por sync (todas las rondas). */
@@ -99,6 +110,7 @@ export interface OfflineSyncPayload {
   ronda_actual: number
   finalizo: boolean
   lineas: OfflineLinea[]
+  productos_reconteo?: OfflineProductosReconteoRonda[]
   enviado_at: string
 }
 
@@ -110,6 +122,7 @@ export interface OfflinePcImportContent {
   contador_1_id: number
   contador_2_id: number
   generado_at: string
+  productos_reconteo?: OfflineProductosReconteoRonda[]
   lineas: Array<{
     producto_id: number
     contador_id: number

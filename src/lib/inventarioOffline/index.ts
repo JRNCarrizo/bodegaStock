@@ -20,10 +20,34 @@ import type {
   OfflineLinea,
   OfflinePcImportPackage,
   OfflinePaquete,
+  OfflineProductosReconteoRonda,
   OfflineSyncPayload
 } from './types'
 import { buildOfflineLinea } from './compare'
 import type { TipoBultoOffline } from './types'
+
+/** Une registros de productos-en-reconteo por ronda (ids únicos). */
+export function mergeProductosReconteo(
+  ...lists: Array<OfflineProductosReconteoRonda[] | undefined | null>
+): OfflineProductosReconteoRonda[] {
+  const byRonda = new Map<number, Set<number>>()
+  for (const list of lists) {
+    if (!list) continue
+    for (const entry of list) {
+      const ronda = Number(entry.ronda)
+      if (!Number.isFinite(ronda) || ronda < 2) continue
+      const set = byRonda.get(ronda) ?? new Set<number>()
+      for (const id of entry.producto_ids ?? []) {
+        const n = Number(id)
+        if (Number.isFinite(n) && n > 0) set.add(n)
+      }
+      byRonda.set(ronda, set)
+    }
+  }
+  return [...byRonda.entries()]
+    .sort((a, b) => a[0] - b[0])
+    .map(([ronda, ids]) => ({ ronda, producto_ids: [...ids].sort((a, b) => a - b) }))
+}
 
 export async function descargarPaqueteOffline(sectorInvId: number): Promise<OfflinePaquete> {
   const paquete = await api<OfflinePaquete>(
@@ -227,6 +251,7 @@ export async function buildMiSyncPayload(sectorInvId: number): Promise<OfflineSy
     ronda_actual: estado.ronda_actual,
     finalizo: estado.mi_finalizo,
     lineas: estado.mis_lineas,
+    productos_reconteo: estado.productos_reconteo ?? [],
     enviado_at: new Date().toISOString()
   }
 }
@@ -268,6 +293,10 @@ export async function recibirSyncCompanero(
 
   estado.lineas_companero = payload.lineas
   estado.companero_ronda_actual = payload.ronda_actual
+  estado.productos_reconteo = mergeProductosReconteo(
+    estado.productos_reconteo,
+    payload.productos_reconteo
+  )
 
   if (payload.finalizo) {
     estado.companero_finalizo = true
@@ -359,11 +388,15 @@ export async function iniciarReconteoLocal(sectorInvId: number): Promise<Offline
   if (!comp || comp.coincide) throw new Error('No hay diferencias para reconteo')
 
   const nuevaRonda = estado.ronda_actual + 1
-  const productoIds = new Set(comp.diferencias.map((d) => d.producto_id))
+  const productoIds = [...new Set(comp.diferencias.map((d) => d.producto_id))]
+
+  estado.productos_reconteo = mergeProductosReconteo(estado.productos_reconteo, [
+    { ronda: nuevaRonda, producto_ids: productoIds }
+  ])
 
   // Precargar mis líneas de la ronda anterior solo para productos con diferencia
   const prev = estado.mis_lineas.filter(
-    (l) => l.ronda === estado.ronda_actual && productoIds.has(l.producto_id)
+    (l) => l.ronda === estado.ronda_actual && productoIds.includes(l.producto_id)
   )
   for (const l of prev) {
     const producto = paquete.productos.find((p) => p.id === l.producto_id)
@@ -417,6 +450,7 @@ export async function crearPaqueteImportacionPc(
     contador_1_id: paquete.inventario_sector.contador_1_id,
     contador_2_id: paquete.inventario_sector.contador_2_id,
     generado_at: new Date().toISOString(),
+    productos_reconteo: mergeProductosReconteo(estado.productos_reconteo),
     lineas: [...lineas1, ...lineas2].map((linea) => ({
       producto_id: linea.producto_id,
       contador_id: linea.contador_id,
@@ -478,6 +512,7 @@ export async function importarAlPc(sectorInvId: number) {
       ronda_actual: estado.ronda_actual,
       contador_1_finalizo: true,
       contador_2_finalizo: true,
+      productos_reconteo: mergeProductosReconteo(estado.productos_reconteo),
       lineas: todas.map((l) => ({
         producto_id: l.producto_id,
         contador_id: l.contador_id,

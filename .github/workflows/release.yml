@@ -9,7 +9,7 @@ on:
       version:
         description: 'Versión sin v (ej. 0.1.0)'
         required: true
-        default: '0.3.23'
+        default: '0.3.24'
 
 permissions:
   contents: write
@@ -68,15 +68,15 @@ jobs:
           body: |
             ## ControlStock ${{ steps.tag.outputs.name }}
 
-            Instalación/actualización más confiable en Windows.
+            Fix real del instalador en Windows al actualizar.
 
             ### Corregido
-            - El instalador fuerza el cierre de ControlStock si queda en segundo plano
-            - Al cerrar la app / instalar update se apaga correctamente el servidor local
+            - Ya no debería aparecer “no se puede cerrar ControlStock” a mitad de la instalación
+            - El instalador fuerza el cierre y evita el desinstalador viejo que fallaba en silencio
 
             ### Actualización
+            - Preferí el Setup de este release (o desinstalá la versión anterior y después instalá)
             - Desde **v0.2.7 o superior:** Configuración → Buscar actualizaciones
-            - O instalá el `.exe` / APK de este release manualmente
           files: |
             release/ControlStock-Setup-*.exe
             release/latest.yml

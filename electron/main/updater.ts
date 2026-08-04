@@ -202,10 +202,10 @@ export function setupAutoUpdater(getWindow: () => BrowserWindow | null) {
       /* ignore */
     }
 
-    // Pequeña espera para liberar el .exe en Windows.
+    // Esperar a que Windows libere el .exe antes del NSIS.
     setTimeout(() => {
       autoUpdater.quitAndInstall(false, true)
-    }, 400)
+    }, 1500)
 
     return { ok: true as const }
   })

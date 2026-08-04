@@ -9,7 +9,7 @@ on:
       version:
         description: 'Versión sin v (ej. 0.1.0)'
         required: true
-        default: '0.3.21'
+        default: '0.3.22'
 
 permissions:
   contents: write
@@ -68,16 +68,11 @@ jobs:
           body: |
             ## ControlStock ${{ steps.tag.outputs.name }}
 
-            Fix de reconteo a cero, UX de diferencias en APK y cierre más claro.
+            Excel de stock por sectores al cierre del inventario.
 
-            ### Corregido
-            - Productos llevados a **cero** en reconteo ya no vuelven al stock del primer conteo en la vista previa de cierre
-
-            ### Mejorado (APK)
-            - Vista previa del conteo como ícono (ojo) en la franja de totales
-            - Detalle Vos/Compañero en diferencias plegable (cerrado por defecto)
-            - Código + nombre en una fila con scroll lateral
-            - Pie de totales sin hueco inferior
+            ### Nuevo
+            - Exportar por sectores: Codigo | Descripcion | columnas por sector | Total
+            - Disponible en la vista previa de cierre y en el reporte después de cerrar
 
             ### Actualización
             - Desde **v0.2.7 o superior:** Configuración → Buscar actualizaciones

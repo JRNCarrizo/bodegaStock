@@ -215,6 +215,96 @@ function stockFinalInventarioExport(
     )
 }
 
+type StockPorSectorItem = {
+  producto_id: number
+  codigo_interno: string
+  nombre: string
+  sector_id: number
+  sector_nombre: string
+  cantidad: number
+}
+
+/**
+ * Matriz: Código | Producto | [cada sector] | Total.
+ * Una fila por producto; celdas = cantidad (cajas) en ese sector.
+ */
+function stockPorSectoresInventarioExport(
+  items: StockPorSectorItem[],
+  sectoresSesion: Array<{ sector_id: number; sector_nombre: string }>
+): {
+  sectores: Array<{ sector_id: number; sector_nombre: string; key: string }>
+  rows: Array<Record<string, unknown>>
+} {
+  const sectoresMap = new Map<number, string>()
+  for (const s of sectoresSesion) {
+    sectoresMap.set(Number(s.sector_id), String(s.sector_nombre))
+  }
+  for (const item of items) {
+    if (!sectoresMap.has(item.sector_id)) {
+      sectoresMap.set(item.sector_id, item.sector_nombre || `Sector ${item.sector_id}`)
+    }
+  }
+
+  const sectores = [...sectoresMap.entries()]
+    .map(([sector_id, sector_nombre]) => ({
+      sector_id,
+      sector_nombre,
+      key: `s_${sector_id}`
+    }))
+    .sort((a, b) =>
+      a.sector_nombre.localeCompare(b.sector_nombre, 'es', { sensitivity: 'base' })
+    )
+
+  const productos = new Map<
+    number,
+    { codigo_interno: string; nombre: string; porSector: Map<number, number> }
+  >()
+
+  for (const item of items) {
+    const productoId = Number(item.producto_id)
+    if (!Number.isFinite(productoId) || productoId <= 0) continue
+    let row = productos.get(productoId)
+    if (!row) {
+      row = {
+        codigo_interno: item.codigo_interno,
+        nombre: item.nombre,
+        porSector: new Map()
+      }
+      productos.set(productoId, row)
+    }
+    const prev = row.porSector.get(item.sector_id) ?? 0
+    row.porSector.set(item.sector_id, prev + (Number(item.cantidad) || 0))
+  }
+
+  const rows = [...productos.values()]
+    .map((p) => {
+      const out: Record<string, unknown> = {
+        codigo_interno: p.codigo_interno,
+        nombre: p.nombre
+      }
+      let total = 0
+      for (const sec of sectores) {
+        const qty = p.porSector.get(sec.sector_id) ?? 0
+        out[sec.key] = qty
+        total += qty
+      }
+      out.total = total
+      return out
+    })
+    .filter((r) => Number(r.total) > 0)
+    .sort((a, b) =>
+      String(a.codigo_interno).localeCompare(String(b.codigo_interno), 'es', {
+        sensitivity: 'base'
+      })
+    )
+
+  return { sectores, rows }
+}
+
+function cantidadExportItem(item: Record<string, unknown>): number {
+  return Number(item.total_aplicado != null ? item.total_aplicado : item.total_contado ?? 0)
+}
+
 export async function inventarioRoutes(app: FastifyInstance): Promise<void> {
   /** Visible para cualquier usuario autenticado (banner global). */
   app.get('/api/inventario/activo-banner', async () => {
@@ -486,6 +576,109 @@ export async function inventarioRoutes(app: FastifyInstance): Promise<void> {
         reply,
         buffer,
         `inventario-stock-${safeName || sesionId}-${todayFileStamp()}.xlsx`
+      )
+    }
+  )
+
+  /** Excel matriz: Código | Producto | columnas por sector | Total. */
+  app.get<{ Params: { id: string } }>(
+    '/api/inventario/sesiones/:id/export-por-sectores',
+    { preHandler: requirePermiso('inventario.ver') },
+    async (req, reply) => {
+      const db = getDb()
+      const sesionId = Number(req.params.id)
+      const sesion = getSesionOrThrow(db, sesionId)
+      const sectoresSesion = getSectoresSesion(db, sesionId).map((s) => ({
+        sector_id: Number(s.sector_id),
+        sector_nombre: String(s.sector_nombre)
+      }))
+
+      let rawItems: StockPorSectorItem[] = []
+
+      const reporte = db
+        .prepare(`SELECT detalle FROM inventario_reportes WHERE sesion_id = ?`)
+        .get(sesionId) as { detalle: string } | undefined
+
+      if (reporte?.detalle) {
+        const detalle = JSON.parse(reporte.detalle) as Array<Record<string, unknown>>
+        rawItems = detalle.map((item) => ({
+          producto_id: Number(item.producto_id),
+          codigo_interno: String(item.codigo_interno ?? ''),
+          nombre: String(item.nombre ?? ''),
+          sector_id: Number(item.sector_id),
+          sector_nombre: String(item.sector_nombre ?? ''),
+          cantidad: cantidadExportItem(item)
+        }))
+      } else {
+        try {
+          const comparacion = compararVsSistema(db, sesionId)
+          rawItems = comparacion.items.map((item) => ({
+            producto_id: Number(item.producto_id),
+            codigo_interno: String(item.codigo_interno ?? ''),
+            nombre: String(item.nombre ?? ''),
+            sector_id: Number(item.sector_id),
+            sector_nombre: String(item.sector_nombre ?? ''),
+            cantidad: Number(item.total_contado ?? 0)
+          }))
+        } catch (e) {
+          return reply.status(400).send({
+            error:
+              (e as Error).message ||
+              'El export por sectores requiere el inventario cerrado o todos los sectores OK'
+          })
+        }
+      }
+
+      const { sectores, rows } = stockPorSectoresInventarioExport(rawItems, sectoresSesion)
+      const totalGeneral = rows.reduce((s, r) => s + (Number(r.total) || 0), 0)
+
+      const columns = [
+        { header: 'Codigo', key: 'codigo_interno', width: 18 },
+        { header: 'Descripcion', key: 'nombre', width: 36 },
+        ...sectores.map((sec) => ({
+          header: sec.sector_nombre,
+          key: sec.key,
+          width: Math.min(22, Math.max(12, sec.sector_nombre.length + 2))
+        })),
+        { header: 'Total', key: 'total', width: 12 }
+      ]
+
+      const totalRow: Record<string, unknown> = {
+        codigo_interno: '',
+        nombre: 'TOTAL',
+        total: totalGeneral
+      }
+      for (const sec of sectores) {
+        totalRow[sec.key] = rows.reduce((s, r) => s + (Number(r[sec.key]) || 0), 0)
+      }
+
+      const buffer = await buildMultiSheetExcel([
+        resumenSheet('Resumen', [
+          ['Nombre', String(sesion.nombre)],
+          ['Estado', String(sesion.estado)],
+          ['Creada', String(sesion.created_at)],
+          ['Inicio', sesion.fecha_inicio as string | null],
+          ['Cierre', sesion.fecha_cierre as string | null],
+          ['Observación', sesion.observacion as string | null],
+          ['Sectores', sectores.length],
+          ['Productos', rows.length],
+          ['Cantidad total', totalGeneral]
+        ]),
+        {
+          name: 'Por sectores',
+          columns,
+          rows: [...rows, totalRow]
+        }
+      ])
+
+      const safeName = String(sesion.nombre)
+        .replace(/[^\w.\-() áéíóúÁÉÍÓÚñÑ]/g, '_')
+        .trim()
+        .slice(0, 40)
+      return sendExcelFile(
+        reply,
+        buffer,
+        `inventario-por-sectores-${safeName || sesionId}-${todayFileStamp()}.xlsx`
       )
     }
   )

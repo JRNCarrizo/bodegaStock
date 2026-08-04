@@ -696,18 +696,22 @@ function InventarioReporteCierre({
   reporte,
   onExportReporte,
   onExportStock,
+  onExportPorSectores,
   onRepararCierre,
   reparandoCierre,
   exportingReporte,
-  exportingStock
+  exportingStock,
+  exportingPorSectores
 }: {
   reporte: NonNullable<InventarioSesionDetalle['reporte']>
   onExportReporte?: () => void
   onExportStock?: () => void
+  onExportPorSectores?: () => void
   onRepararCierre?: () => void
   reparandoCierre?: boolean
   exportingReporte?: boolean
   exportingStock?: boolean
+  exportingPorSectores?: boolean
 }) {
   const { resumen, detalle, ajustes_aplicados, created_at } = reporte
   const [filtro, setFiltro] = useState<'todos' | 'ajustes' | 'ok'>('todos')
@@ -717,7 +721,7 @@ function InventarioReporteCierre({
   const [listadoOpen, setListadoOpen] = useState(false)
   const [ajustesOpen, setAjustesOpen] = useState(false)
   const todoOk = (resumen.con_ajuste ?? 0) === 0
-  const exporting = Boolean(exportingReporte || exportingStock)
+  const exporting = Boolean(exportingReporte || exportingStock || exportingPorSectores)
   const hayAjustesAplicados = ajustes_aplicados.length > 0
 
   const stockFinal = useMemo(() => stockFinalDesdeDetalle(detalle), [detalle])
@@ -827,6 +831,23 @@ function InventarioReporteCierre({
                 <Download className="h-4 w-4" />
               )}
               Exportar stock final
+            </Button>
+          )}
+          {onExportPorSectores && (
+            <Button
+              variant="secondary"
+              size="sm"
+              className="rounded-xl"
+              disabled={exporting}
+              onClick={onExportPorSectores}
+              title="Excel: código, producto, columnas por sector y total"
+            >
+              {exportingPorSectores ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Download className="h-4 w-4" />
+              )}
+              Exportar por sectores
             </Button>
           )}
           {todoOk && (
@@ -2198,7 +2219,9 @@ function InventarioConteoCompletoVista({
 function InventarioVistaPreviaCierre({
   comparacion,
   onCerrar,
-  cerrando
+  cerrando,
+  onExportPorSectores,
+  exportingPorSectores
 }: {
   comparacion: ComparacionSistemaData
   onCerrar: (decisiones: Array<{
@@ -2208,6 +2231,8 @@ function InventarioVistaPreviaCierre({
     lineas?: Array<Record<string, unknown>>
   }>) => void
   cerrando: boolean
+  onExportPorSectores?: () => void
+  exportingPorSectores?: boolean
 }) {
   const { items } = comparacion
   const [filtro, setFiltro] = useState<'todos' | 'ajustes' | 'ok'>('ajustes')
@@ -2326,6 +2351,24 @@ function InventarioVistaPreviaCierre({
               <ClipboardList className="h-3.5 w-3.5" />
               Ver conteo completo
             </Button>
+            {onExportPorSectores && (
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                className="rounded-xl"
+                disabled={cerrando || exportingPorSectores}
+                onClick={onExportPorSectores}
+                title="Excel: código, producto, columnas por sector y total"
+              >
+                {exportingPorSectores ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <Download className="h-3.5 w-3.5" />
+                )}
+                Exportar por sectores
+              </Button>
+            )}
             {!hayDiferencias && (
               <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-3 py-1 text-sm font-medium text-emerald-700 ring-1 ring-emerald-100">
                 <Check className="h-4 w-4" />
@@ -2565,6 +2608,7 @@ export function InventarioPage() {
   const [reparandoCierre, setReparandoCierre] = useState(false)
   const [exportingSesion, setExportingSesion] = useState(false)
   const [exportingStockFinal, setExportingStockFinal] = useState(false)
+  const [exportingPorSectores, setExportingPorSectores] = useState(false)
   const [importingFileSectorId, setImportingFileSectorId] = useState<number | null>(null)
   const [archiveModal, setArchiveModal] = useState<'archivar' | 'desarchivar' | null>(null)
   const [archivePassword, setArchivePassword] = useState('')
@@ -3004,6 +3048,21 @@ export function InventarioPage() {
     }
   }
 
+  async function exportarPorSectores(id: number, nombre: string) {
+    setExportingPorSectores(true)
+    setError('')
+    try {
+      await downloadApiFile(
+        `/api/inventario/sesiones/${id}/export-por-sectores`,
+        `inventario-por-sectores-${nombre || id}.xlsx`
+      )
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Error al exportar por sectores')
+    } finally {
+      setExportingPorSectores(false)
+    }
+  }
+
   function elegirArchivoImportacion(sectorId: number) {
     manualImportSectorIdRef.current = sectorId
     manualImportInputRef.current?.click()
@@ -3317,6 +3376,8 @@ export function InventarioPage() {
             comparacion={comparacionSistema}
             onCerrar={(decisiones) => void cerrarSesion(s.id, decisiones)}
             cerrando={cerrando}
+            onExportPorSectores={() => void exportarPorSectores(s.id, s.nombre)}
+            exportingPorSectores={exportingPorSectores}
           />
         )}
 
@@ -3325,6 +3386,7 @@ export function InventarioPage() {
             reporte={sesionDetalle.reporte}
             exportingReporte={exportingSesion}
             exportingStock={exportingStockFinal}
+            exportingPorSectores={exportingPorSectores}
             reparandoCierre={reparandoCierre}
             onRepararCierre={
               s.estado === 'CERRADA' && canClose
@@ -3333,6 +3395,7 @@ export function InventarioPage() {
             }
             onExportReporte={() => void exportarSesion(s.id, s.nombre)}
             onExportStock={() => void exportarStockFinal(s.id, s.nombre)}
+            onExportPorSectores={() => void exportarPorSectores(s.id, s.nombre)}
           />
         )}
 

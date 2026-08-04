@@ -177,11 +177,36 @@ export function setupAutoUpdater(getWindow: () => BrowserWindow | null) {
     }
   })
 
-  ipcMain.handle('update:install', () => {
+  ipcMain.handle('update:install', async () => {
     if (!app.isPackaged) {
       return { ok: false as const, reason: 'dev' as const }
     }
-    autoUpdater.quitAndInstall()
+
+    // Cerrar ventanas y API local antes del instalador NSIS.
+    for (const win of BrowserWindow.getAllWindows()) {
+      try {
+        win.removeAllListeners('close')
+        win.destroy()
+      } catch {
+        /* ignore */
+      }
+    }
+
+    try {
+      const { shutdownNetworkServer } = await import('./network')
+      await Promise.race([
+        shutdownNetworkServer(),
+        new Promise<void>((resolve) => setTimeout(resolve, 2000))
+      ])
+    } catch {
+      /* ignore */
+    }
+
+    // Pequeña espera para liberar el .exe en Windows.
+    setTimeout(() => {
+      autoUpdater.quitAndInstall(false, true)
+    }, 400)
+
     return { ok: true as const }
   })
 }

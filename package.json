@@ -1,6 +1,6 @@
 {
   "name": "bodega-stock",
-  "version": "0.3.22",
+  "version": "0.3.23",
   "description": "Sistema de gestión de stock para bodega",
   "author": "JRNCarrizo",
   "main": "out/main/index.js",
@@ -118,6 +118,7 @@
       "allowToChangeInstallationDirectory": true,
       "installerIcon": "build/icon.ico",
       "uninstallerIcon": "build/icon.ico",
+      "include": "build/installer.nsh",
       "installerLanguages": [
         "es"
       ]

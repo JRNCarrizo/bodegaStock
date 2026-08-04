@@ -9,7 +9,7 @@ on:
       version:
         description: 'Versión sin v (ej. 0.1.0)'
         required: true
-        default: '0.3.22'
+        default: '0.3.23'
 
 permissions:
   contents: write
@@ -68,11 +68,11 @@ jobs:
           body: |
             ## ControlStock ${{ steps.tag.outputs.name }}
 
-            Excel de stock por sectores al cierre del inventario.
+            Instalación/actualización más confiable en Windows.
 
-            ### Nuevo
-            - Exportar por sectores: Codigo | Descripcion | columnas por sector | Total
-            - Disponible en la vista previa de cierre y en el reporte después de cerrar
+            ### Corregido
+            - El instalador fuerza el cierre de ControlStock si queda en segundo plano
+            - Al cerrar la app / instalar update se apaga correctamente el servidor local
 
             ### Actualización
             - Desde **v0.2.7 o superior:** Configuración → Buscar actualizaciones

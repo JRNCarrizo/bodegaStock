@@ -20,7 +20,7 @@ Toda la especificación del proyecto está en la carpeta [`docs/`](docs/):
 
 ## Estado del proyecto
 
-**v0.3.22** — Excel de stock por sectores al cierre (Codigo, Descripcion, columnas por sector, Total).
+**v0.3.23** — Fix instalador Windows: cierra ControlStock en segundo plano al actualizar.
 
 ## Desarrollo local
 

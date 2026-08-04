@@ -7,6 +7,18 @@ import { setupAutoUpdater } from './updater'
 const isDev = !app.isPackaged
 
 let mainWindow: BrowserWindow | null = null
+let isShuttingDown = false
+
+async function gracefulShutdown(timeoutMs = 2500): Promise<void> {
+  try {
+    await Promise.race([
+      shutdownNetworkServer(),
+      new Promise<void>((resolve) => setTimeout(resolve, timeoutMs))
+    ])
+  } catch {
+    /* ignore */
+  }
+}
 
 function createWindow(): void {
   const icon = getAppIcon()
@@ -61,10 +73,19 @@ app.whenReady().then(async () => {
 })
 
 app.on('window-all-closed', () => {
-  void shutdownNetworkServer()
-  if (process.platform !== 'darwin') app.quit()
+  if (process.platform === 'darwin') return
+  if (isShuttingDown) return
+  isShuttingDown = true
+  void gracefulShutdown().finally(() => {
+    app.exit(0)
+  })
 })
 
-app.on('before-quit', () => {
-  void shutdownNetworkServer()
+app.on('before-quit', (event) => {
+  if (isShuttingDown) return
+  event.preventDefault()
+  isShuttingDown = true
+  void gracefulShutdown().finally(() => {
+    app.exit(0)
+  })
 })

@@ -47,6 +47,8 @@ import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { Badge, Card, CardBody } from '@/components/ui/Card'
 import {
+  botellasPorCajaDefault,
+  cajasPorPalletDefault,
   formatCantidad,
   formatEtiqueta,
   formatTotalesInventarioResumen,
@@ -276,29 +278,45 @@ const TABLA_CIERRE_TD = 'px-2.5 py-2'
 
 /** Mismo agregado que el Excel de stock final (por producto, cantidad > 0). */
 function stockFinalDesdeDetalle(detalle: Array<Record<string, unknown>>) {
-  const map = new Map<number, { codigo_interno: string; nombre: string; cantidad: number }>()
+  const map = new Map<
+    number,
+    { codigo_interno: string; nombre: string; cajas: number; botellas: number }
+  >()
   for (const item of detalle) {
     const productoId = Number(item.producto_id)
     if (!Number.isFinite(productoId) || productoId <= 0) continue
-    const cantidad = Number(
+    const cajas = Number(
       item.total_aplicado != null ? item.total_aplicado : item.total_contado ?? 0
+    )
+    const botellas = Number(
+      item.total_suelto_aplicado != null
+        ? item.total_suelto_aplicado
+        : item.total_suelto_contado ?? 0
     )
     const prev = map.get(productoId)
     if (prev) {
-      prev.cantidad += cantidad
+      prev.cajas += cajas
+      prev.botellas += botellas
     } else {
       map.set(productoId, {
         codigo_interno: String(item.codigo_interno ?? ''),
         nombre: String(item.nombre ?? ''),
-        cantidad
+        cajas,
+        botellas
       })
     }
   }
   return [...map.values()]
-    .filter((row) => row.cantidad > 0)
+    .filter((row) => row.cajas > 0 || row.botellas > 0)
     .sort((a, b) =>
       a.codigo_interno.localeCompare(b.codigo_interno, 'es', { sensitivity: 'base' })
     )
+}
+
+function formatStockFinal(cajas: number, botellas: number) {
+  return `${formatCantidad(cajas)} ${cajas === 1 ? 'caja' : 'cajas'} · ${formatCantidad(
+    botellas
+  )} ${botellas === 1 ? 'botella' : 'botellas'}`
 }
 
 /** Totales unificados contado vs sistema (suma de todos los sectores). */
@@ -705,8 +723,8 @@ function InventarioReporteCierre({
 }: {
   reporte: NonNullable<InventarioSesionDetalle['reporte']>
   onExportReporte?: () => void
-  onExportStock?: () => void
-  onExportPorSectores?: () => void
+  onExportStock?: (incluirCeros: boolean) => void
+  onExportPorSectores?: (incluirCeros: boolean) => void
   onRepararCierre?: () => void
   reparandoCierre?: boolean
   exportingReporte?: boolean
@@ -720,13 +738,21 @@ function InventarioReporteCierre({
   const [unificadosSearch, setUnificadosSearch] = useState('')
   const [listadoOpen, setListadoOpen] = useState(false)
   const [ajustesOpen, setAjustesOpen] = useState(false)
+  const [incluirCerosExport, setIncluirCerosExport] = useState(false)
   const todoOk = (resumen.con_ajuste ?? 0) === 0
   const exporting = Boolean(exportingReporte || exportingStock || exportingPorSectores)
   const hayAjustesAplicados = ajustes_aplicados.length > 0
 
   const stockFinal = useMemo(() => stockFinalDesdeDetalle(detalle), [detalle])
   const totalStockFinal = useMemo(
-    () => stockFinal.reduce((s, r) => s + r.cantidad, 0),
+    () =>
+      stockFinal.reduce(
+        (total, row) => ({
+          cajas: total.cajas + row.cajas,
+          botellas: total.botellas + row.botellas
+        }),
+        { cajas: 0, botellas: 0 }
+      ),
     [stockFinal]
   )
   const totalesUnificados = useMemo(() => totalesUnificadosDesdeDetalle(detalle), [detalle])
@@ -822,8 +848,8 @@ function InventarioReporteCierre({
               size="sm"
               className="rounded-xl"
               disabled={exporting}
-              onClick={onExportStock}
-              title="Excel del stock final (código, nombre y cantidad)"
+              onClick={() => onExportStock(incluirCerosExport)}
+              title="Excel del stock final (código, nombre, cajas y botellas)"
             >
               {exportingStock ? (
                 <Loader2 className="h-4 w-4 animate-spin" />
@@ -839,7 +865,7 @@ function InventarioReporteCierre({
               size="sm"
               className="rounded-xl"
               disabled={exporting}
-              onClick={onExportPorSectores}
+              onClick={() => onExportPorSectores(incluirCerosExport)}
               title="Excel: código, producto, columnas por sector y total"
             >
               {exportingPorSectores ? (
@@ -849,6 +875,18 @@ function InventarioReporteCierre({
               )}
               Exportar por sectores
             </Button>
+          )}
+          {(onExportStock || onExportPorSectores) && (
+            <label className="flex cursor-pointer items-center gap-2 rounded-xl border border-surface-border bg-white px-3 py-1.5 text-xs font-medium text-slate-600">
+              <input
+                type="checkbox"
+                checked={incluirCerosExport}
+                onChange={(e) => setIncluirCerosExport(e.target.checked)}
+                disabled={exporting}
+                className="h-4 w-4 rounded border-surface-border text-brand-600 focus:ring-brand-500"
+              />
+              Incluir productos en cero
+            </label>
           )}
           {todoOk && (
             <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-3 py-1 text-sm font-medium text-emerald-700 ring-1 ring-emerald-100">
@@ -1223,10 +1261,10 @@ function InventarioStockFinalVista({
   exporting,
   exportingStock
 }: {
-  rows: Array<{ codigo_interno: string; nombre: string; cantidad: number }>
-  total: number
+  rows: Array<{ codigo_interno: string; nombre: string; cajas: number; botellas: number }>
+  total: { cajas: number; botellas: number }
   onVolver: () => void
-  onExportStock?: () => void
+  onExportStock?: (incluirCeros: boolean) => void
   exporting?: boolean
   exportingStock?: boolean
 }) {
@@ -1251,7 +1289,11 @@ function InventarioStockFinalVista({
     )
   }, [rows, search])
   const totalFiltrado = useMemo(
-    () => filtrados.reduce((s, r) => s + r.cantidad, 0),
+    () =>
+      filtrados.reduce(
+        (s, r) => ({ cajas: s.cajas + r.cajas, botellas: s.botellas + r.botellas }),
+        { cajas: 0, botellas: 0 }
+      ),
     [filtrados]
   )
 
@@ -1273,7 +1315,7 @@ function InventarioStockFinalVista({
           <span className="text-xs text-slate-400">
             {rows.length} producto{rows.length === 1 ? '' : 's'} · total{' '}
             <span className="font-semibold tabular-nums text-slate-600">
-              {formatCantidad(total)}
+              {formatStockFinal(total.cajas, total.botellas)}
             </span>
           </span>
           {onExportStock && (
@@ -1282,7 +1324,7 @@ function InventarioStockFinalVista({
               size="sm"
               className="ml-auto rounded-xl"
               disabled={exporting}
-              onClick={onExportStock}
+              onClick={() => onExportStock(false)}
             >
               {exportingStock ? (
                 <Loader2 className="h-4 w-4 animate-spin" />
@@ -1294,7 +1336,7 @@ function InventarioStockFinalVista({
           )}
         </div>
         <p className="mx-auto mt-1 max-w-5xl text-xs text-slate-500">
-          Stock unificado después del cierre (código, nombre y cantidad).
+          Stock unificado después del cierre, separado en cajas y botellas sueltas.
         </p>
       </div>
 
@@ -1318,7 +1360,7 @@ function InventarioStockFinalVista({
                 {' '}
                 · subtotal{' '}
                 <span className="font-semibold tabular-nums text-slate-600">
-                  {formatCantidad(totalFiltrado)}
+                  {formatStockFinal(totalFiltrado.cajas, totalFiltrado.botellas)}
                 </span>
               </>
             )}
@@ -1351,7 +1393,7 @@ function InventarioStockFinalVista({
                       </div>
                     </div>
                     <span className="shrink-0 rounded-md bg-slate-50 px-2.5 py-1 text-sm font-semibold tabular-nums text-slate-900 ring-1 ring-surface-border">
-                      {formatCantidad(row.cantidad)}
+                      {formatStockFinal(row.cajas, row.botellas)}
                     </span>
                   </div>
                 ))}
@@ -1361,7 +1403,10 @@ function InventarioStockFinalVista({
                   {search.trim() ? 'Subtotal filtrado' : 'TOTAL'}
                 </span>
                 <span className="text-sm font-bold tabular-nums text-slate-900">
-                  {formatCantidad(search.trim() ? totalFiltrado : total)}
+                  {formatStockFinal(
+                    (search.trim() ? totalFiltrado : total).cajas,
+                    (search.trim() ? totalFiltrado : total).botellas
+                  )}
                 </span>
               </div>
             </div>
@@ -2231,7 +2276,7 @@ function InventarioVistaPreviaCierre({
     lineas?: Array<Record<string, unknown>>
   }>) => void
   cerrando: boolean
-  onExportPorSectores?: () => void
+  onExportPorSectores?: (incluirCeros: boolean) => void
   exportingPorSectores?: boolean
 }) {
   const { items } = comparacion
@@ -2239,6 +2284,7 @@ function InventarioVistaPreviaCierre({
   const [revisionConfirmada, setRevisionConfirmada] = useState(false)
   const [decisiones, setDecisiones] = useState<Map<string, ItemDecisionState>>(() => new Map())
   const [showConteoCompleto, setShowConteoCompleto] = useState(false)
+  const [incluirCerosExport, setIncluirCerosExport] = useState(false)
 
   const resumen = useMemo(
     () => calcResumenConDecisiones(items, decisiones),
@@ -2358,7 +2404,7 @@ function InventarioVistaPreviaCierre({
                 size="sm"
                 className="rounded-xl"
                 disabled={cerrando || exportingPorSectores}
-                onClick={onExportPorSectores}
+                onClick={() => onExportPorSectores(incluirCerosExport)}
                 title="Excel: código, producto, columnas por sector y total"
               >
                 {exportingPorSectores ? (
@@ -2368,6 +2414,18 @@ function InventarioVistaPreviaCierre({
                 )}
                 Exportar por sectores
               </Button>
+            )}
+            {onExportPorSectores && (
+              <label className="flex cursor-pointer items-center gap-2 rounded-xl border border-surface-border bg-white px-3 py-1.5 text-xs font-medium text-slate-600">
+                <input
+                  type="checkbox"
+                  checked={incluirCerosExport}
+                  onChange={(e) => setIncluirCerosExport(e.target.checked)}
+                  disabled={cerrando || exportingPorSectores}
+                  className="h-4 w-4 rounded border-surface-border text-brand-600 focus:ring-brand-500"
+                />
+                Incluir productos en cero
+              </label>
             )}
             {!hayDiferencias && (
               <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-3 py-1 text-sm font-medium text-emerald-700 ring-1 ring-emerald-100">
@@ -3033,12 +3091,12 @@ export function InventarioPage() {
     }
   }
 
-  async function exportarStockFinal(id: number, nombre: string) {
+  async function exportarStockFinal(id: number, nombre: string, incluirCeros = false) {
     setExportingStockFinal(true)
     setError('')
     try {
       await downloadApiFile(
-        `/api/inventario/sesiones/${id}/export-stock`,
+        `/api/inventario/sesiones/${id}/export-stock${incluirCeros ? '?incluirCeros=1' : ''}`,
         `inventario-stock-${nombre || id}.xlsx`
       )
     } catch (e) {
@@ -3048,12 +3106,14 @@ export function InventarioPage() {
     }
   }
 
-  async function exportarPorSectores(id: number, nombre: string) {
+  async function exportarPorSectores(id: number, nombre: string, incluirCeros = false) {
     setExportingPorSectores(true)
     setError('')
     try {
       await downloadApiFile(
-        `/api/inventario/sesiones/${id}/export-por-sectores`,
+        `/api/inventario/sesiones/${id}/export-por-sectores${
+          incluirCeros ? '?incluirCeros=1' : ''
+        }`,
         `inventario-por-sectores-${nombre || id}.xlsx`
       )
     } catch (e) {
@@ -3376,7 +3436,9 @@ export function InventarioPage() {
             comparacion={comparacionSistema}
             onCerrar={(decisiones) => void cerrarSesion(s.id, decisiones)}
             cerrando={cerrando}
-            onExportPorSectores={() => void exportarPorSectores(s.id, s.nombre)}
+            onExportPorSectores={(incluirCeros) =>
+              void exportarPorSectores(s.id, s.nombre, incluirCeros)
+            }
             exportingPorSectores={exportingPorSectores}
           />
         )}
@@ -3394,8 +3456,12 @@ export function InventarioPage() {
                 : undefined
             }
             onExportReporte={() => void exportarSesion(s.id, s.nombre)}
-            onExportStock={() => void exportarStockFinal(s.id, s.nombre)}
-            onExportPorSectores={() => void exportarPorSectores(s.id, s.nombre)}
+            onExportStock={(incluirCeros) =>
+              void exportarStockFinal(s.id, s.nombre, incluirCeros)
+            }
+            onExportPorSectores={(incluirCeros) =>
+              void exportarPorSectores(s.id, s.nombre, incluirCeros)
+            }
           />
         )}
 
@@ -4609,11 +4675,10 @@ function ConteoSectorView({
   }
 
   function defaultUnidadesPorBulto(tipo: 'PALLET' | 'CAJA', p: Producto | null): string {
-    if (!p) return tipo === 'PALLET' ? '112' : '6'
     if (tipo === 'PALLET') {
-      return String(p.unidades_por_pallet_default ?? 112)
+      return String(cajasPorPalletDefault(p?.unidades_por_pallet_default))
     }
-    return String(p.unidades_por_caja_default ?? 6)
+    return String(botellasPorCajaDefault(p?.unidades_por_caja_default))
   }
 
   function resetLineaForm(forProduct?: Producto | null) {

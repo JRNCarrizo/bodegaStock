@@ -130,12 +130,10 @@ type InventarioExportItem = {
 
 /** Agrega por producto el reporte con diferencias (sin sectores ni desglose). */
 function agregarProductosInventarioExport(
-  db: ReturnType<typeof getDb>,
   items: InventarioExportItem[]
 ): Array<{
   codigo_interno: string
   nombre: string
-  descripcion: string
   sistema: number
   contado: number
   diferencia: number
@@ -161,18 +159,12 @@ function agregarProductosInventarioExport(
     }
   }
 
-  const descStmt = db.prepare(`
-    SELECT COALESCE(descripcion, '') AS descripcion FROM productos WHERE id = ?
-  `)
-
-  return [...map.entries()]
-    .map(([productoId, row]) => {
-      const desc = descStmt.get(productoId) as { descripcion: string } | undefined
+  return [...map.values()]
+    .map((row) => {
       const diferencia = row.contado - row.sistema
       return {
         codigo_interno: row.codigo_interno,
         nombre: row.nombre,
-        descripcion: desc?.descripcion ?? '',
         sistema: row.sistema,
         contado: row.contado,
         diferencia,
@@ -186,30 +178,41 @@ function agregarProductosInventarioExport(
 
 /** Stock final agregado por producto (sin sectores ni diferencias). */
 function stockFinalInventarioExport(
-  detalle: Array<Record<string, unknown>>
-): Array<{ codigo_interno: string; nombre: string; cantidad: number }> {
-  const map = new Map<number, { codigo_interno: string; nombre: string; cantidad: number }>()
+  detalle: Array<Record<string, unknown>>,
+  incluirCeros = false
+): Array<{ codigo_interno: string; nombre: string; cajas: number; botellas: number }> {
+  const map = new Map<
+    number,
+    { codigo_interno: string; nombre: string; cajas: number; botellas: number }
+  >()
 
   for (const item of detalle) {
     const productoId = Number(item.producto_id)
     if (!Number.isFinite(productoId) || productoId <= 0) continue
-    const cantidad = Number(
+    const cajas = Number(
       item.total_aplicado != null ? item.total_aplicado : item.total_contado ?? 0
+    )
+    const botellas = Number(
+      item.total_suelto_aplicado != null
+        ? item.total_suelto_aplicado
+        : item.total_suelto_contado ?? 0
     )
     const prev = map.get(productoId)
     if (prev) {
-      prev.cantidad += cantidad
+      prev.cajas += cajas
+      prev.botellas += botellas
     } else {
       map.set(productoId, {
         codigo_interno: String(item.codigo_interno ?? ''),
         nombre: String(item.nombre ?? ''),
-        cantidad
+        cajas,
+        botellas
       })
     }
   }
 
   return [...map.values()]
-    .filter((row) => row.cantidad > 0)
+    .filter((row) => incluirCeros || row.cajas > 0 || row.botellas > 0)
     .sort((a, b) =>
       a.codigo_interno.localeCompare(b.codigo_interno, 'es', { sensitivity: 'base' })
     )
@@ -230,7 +233,8 @@ type StockPorSectorItem = {
  */
 function stockPorSectoresInventarioExport(
   items: StockPorSectorItem[],
-  sectoresSesion: Array<{ sector_id: number; sector_nombre: string }>
+  sectoresSesion: Array<{ sector_id: number; sector_nombre: string }>,
+  incluirCeros = false
 ): {
   sectores: Array<{ sector_id: number; sector_nombre: string; key: string }>
   rows: Array<Record<string, unknown>>
@@ -291,7 +295,7 @@ function stockPorSectoresInventarioExport(
       out.total = total
       return out
     })
-    .filter((r) => Number(r.total) > 0)
+    .filter((r) => incluirCeros || Number(r.total) > 0)
     .sort((a, b) =>
       String(a.codigo_interno).localeCompare(String(b.codigo_interno), 'es', {
         sensitivity: 'base'
@@ -459,7 +463,7 @@ export async function inventarioRoutes(app: FastifyInstance): Promise<void> {
         }
       }
 
-      const rows = agregarProductosInventarioExport(db, rawItems)
+      const rows = agregarProductosInventarioExport(rawItems)
       const totalSistema = rows.reduce((s, r) => s + r.sistema, 0)
       const totalContado = rows.reduce((s, r) => s + r.contado, 0)
       const totalDif = totalContado - totalSistema
@@ -484,7 +488,6 @@ export async function inventarioRoutes(app: FastifyInstance): Promise<void> {
           columns: [
             { header: 'Código interno', key: 'codigo_interno', width: 18 },
             { header: 'Nombre', key: 'nombre', width: 36 },
-            { header: 'Descripción', key: 'descripcion', width: 40 },
             { header: 'Sistema', key: 'sistema', width: 12 },
             { header: 'Contado', key: 'contado', width: 12 },
             { header: 'Diferencia', key: 'diferencia', width: 12 },
@@ -495,7 +498,6 @@ export async function inventarioRoutes(app: FastifyInstance): Promise<void> {
             {
               codigo_interno: '',
               nombre: 'TOTAL',
-              descripcion: '',
               sistema: totalSistema,
               contado: totalContado,
               diferencia: totalDif,
@@ -517,12 +519,13 @@ export async function inventarioRoutes(app: FastifyInstance): Promise<void> {
     }
   )
 
-  app.get<{ Params: { id: string } }>(
+  app.get<{ Params: { id: string }; Querystring: { incluirCeros?: string } }>(
     '/api/inventario/sesiones/:id/export-stock',
     { preHandler: requirePermiso('inventario.ver') },
     async (req, reply) => {
       const db = getDb()
       const sesionId = Number(req.params.id)
+      const incluirCeros = req.query.incluirCeros === '1'
       const sesion = getSesionOrThrow(db, sesionId)
 
       const reporte = db.prepare(`
@@ -536,8 +539,9 @@ export async function inventarioRoutes(app: FastifyInstance): Promise<void> {
       }
 
       const detalle = JSON.parse(reporte.detalle) as Array<Record<string, unknown>>
-      const rows = stockFinalInventarioExport(detalle)
-      const totalCantidad = rows.reduce((s, r) => s + r.cantidad, 0)
+      const rows = stockFinalInventarioExport(detalle, incluirCeros)
+      const totalCajas = rows.reduce((s, r) => s + r.cajas, 0)
+      const totalBotellas = rows.reduce((s, r) => s + r.botellas, 0)
 
       const buffer = await buildMultiSheetExcel([
         resumenSheet('Resumen', [
@@ -547,22 +551,25 @@ export async function inventarioRoutes(app: FastifyInstance): Promise<void> {
           ['Inicio', sesion.fecha_inicio as string | null],
           ['Cierre', sesion.fecha_cierre as string | null],
           ['Observación', sesion.observacion as string | null],
-          ['Productos con stock', rows.length],
-          ['Cantidad total', totalCantidad]
+          [incluirCeros ? 'Productos incluidos' : 'Productos con stock', rows.length],
+          ['Total cajas', totalCajas],
+          ['Total botellas', totalBotellas]
         ]),
         {
           name: 'Stock final',
           columns: [
             { header: 'Código interno', key: 'codigo_interno', width: 18 },
             { header: 'Nombre', key: 'nombre', width: 36 },
-            { header: 'Cantidad', key: 'cantidad', width: 14 }
+            { header: 'Cajas', key: 'cajas', width: 14 },
+            { header: 'Botellas', key: 'botellas', width: 14 }
           ],
           rows: [
             ...rows,
             {
               codigo_interno: '',
               nombre: 'TOTAL',
-              cantidad: totalCantidad
+              cajas: totalCajas,
+              botellas: totalBotellas
             }
           ]
         }
@@ -581,12 +588,13 @@ export async function inventarioRoutes(app: FastifyInstance): Promise<void> {
   )
 
   /** Excel matriz: Código | Producto | columnas por sector | Total. */
-  app.get<{ Params: { id: string } }>(
+  app.get<{ Params: { id: string }; Querystring: { incluirCeros?: string } }>(
     '/api/inventario/sesiones/:id/export-por-sectores',
     { preHandler: requirePermiso('inventario.ver') },
     async (req, reply) => {
       const db = getDb()
       const sesionId = Number(req.params.id)
+      const incluirCeros = req.query.incluirCeros === '1'
       const sesion = getSesionOrThrow(db, sesionId)
       const sectoresSesion = getSectoresSesion(db, sesionId).map((s) => ({
         sector_id: Number(s.sector_id),
@@ -629,7 +637,11 @@ export async function inventarioRoutes(app: FastifyInstance): Promise<void> {
         }
       }
 
-      const { sectores, rows } = stockPorSectoresInventarioExport(rawItems, sectoresSesion)
+      const { sectores, rows } = stockPorSectoresInventarioExport(
+        rawItems,
+        sectoresSesion,
+        incluirCeros
+      )
       const totalGeneral = rows.reduce((s, r) => s + (Number(r.total) || 0), 0)
 
       const columns = [

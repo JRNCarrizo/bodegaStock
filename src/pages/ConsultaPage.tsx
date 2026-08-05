@@ -17,6 +17,7 @@ import { ImagePreviewModal } from '@/components/ImagePreviewModal'
 import { PaginationControls } from '@/components/PaginationControls'
 import { ProductImage } from '@/components/ProductImage'
 import { ReorganizarStockForm } from '@/components/ReorganizarStockForm'
+import { SueltoStockHint } from '@/components/SueltoStockHint'
 import { formatCantidad } from '@/lib/desglose'
 import { downloadApiFile } from '@/lib/downloadFile'
 import { scrollElementFullyIntoView, focusAndScrollIntoView } from '@/lib/scroll'
@@ -39,17 +40,27 @@ function StockDetallePanel({
   canReorganizar,
   confirmSectorId,
   reorganizingSectorId,
+  confirmLineaId,
+  reorganizingLineaId,
   onRequestReorganizar,
   onConfirmReorganizar,
-  onCancelReorganizar
+  onCancelReorganizar,
+  onRequestReorganizarLinea,
+  onConfirmReorganizarLinea,
+  onCancelReorganizarLinea
 }: {
   detalle: ConsultaDetalle
   canReorganizar: boolean
   confirmSectorId: number | null
   reorganizingSectorId: number | null
+  confirmLineaId: number | null
+  reorganizingLineaId: number | null
   onRequestReorganizar: (sector: SectorStockConsulta) => void
   onConfirmReorganizar: (stockSectorId: number, desglose: ReorganizarDesglosePayload) => void
   onCancelReorganizar: () => void
+  onRequestReorganizarLinea: (lineaId: number) => void
+  onConfirmReorganizarLinea: (lineaId: number, desglose: ReorganizarDesglosePayload) => void
+  onCancelReorganizarLinea: () => void
 }) {
   if (detalle.sectores.length === 0) {
     return (
@@ -103,9 +114,16 @@ function StockDetallePanel({
                   </Button>
                 )}
               </div>
-              <span className="inline-flex shrink-0 items-center rounded-full bg-brand-50 px-3 py-1 text-sm font-bold tabular-nums text-brand-700 ring-1 ring-brand-100">
-                {formatCantidad(sector.cantidad_total)}
-              </span>
+              <div className="shrink-0 text-right">
+                <span className="inline-flex items-center rounded-full bg-brand-50 px-3 py-1 text-sm font-bold tabular-nums text-brand-700 ring-1 ring-brand-100">
+                  {formatCantidad(sector.cantidad_total)}
+                </span>
+                <SueltoStockHint
+                  cantidad={sector.suelto_total}
+                  unidad={detalle.producto.unidad}
+                  className="mt-1"
+                />
+              </div>
             </div>
 
             <div className="p-4">
@@ -134,30 +152,68 @@ function StockDetallePanel({
                 <p className="text-sm text-slate-500">Total en sector (sin desglose cargado)</p>
               ) : (
                 <ul className="space-y-2">
-                  {sector.lineas.map((linea, idx) => (
-                    <li
-                      key={linea.id}
-                      className="flex items-center justify-between gap-3 rounded-lg border border-surface-border bg-surface-muted/30 px-3 py-2.5 text-sm"
-                    >
-                      <div className="min-w-0">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <span className="inline-flex h-5 min-w-[1.25rem] items-center justify-center rounded bg-white px-1 text-[10px] font-semibold text-slate-400 ring-1 ring-surface-border">
-                            {idx + 1}
-                          </span>
-                          <span className="font-medium text-slate-800">{linea.etiqueta}</span>
+                  {sector.lineas.map((linea, idx) => {
+                    const showLineaForm = confirmLineaId === linea.id
+                    const lineaInfo = {
+                      puede: true,
+                      total_unidades: linea.total_cajas,
+                      total_suelto: linea.total_suelto,
+                      botellas_por_caja: sector.reorganizar.botellas_por_caja,
+                      referencias_bulto: sector.reorganizar.referencias_bulto
+                    }
+
+                    return (
+                      <li
+                        key={linea.id}
+                        className="rounded-lg border border-surface-border bg-surface-muted/30 px-3 py-2.5 text-sm"
+                      >
+                        <div className="flex items-center justify-between gap-3">
+                          <div className="min-w-0">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <span className="inline-flex h-5 min-w-[1.25rem] items-center justify-center rounded bg-white px-1 text-[10px] font-semibold text-slate-400 ring-1 ring-surface-border">
+                                {idx + 1}
+                              </span>
+                              <span className="font-medium text-slate-800">{linea.etiqueta}</span>
+                            </div>
+                            {linea.ubicacion && (
+                              <p className="mt-1 flex items-center gap-1 pl-7 text-xs text-slate-500">
+                                <MapPin className="h-3 w-3 shrink-0" />
+                                {linea.ubicacion}
+                              </p>
+                            )}
+                          </div>
+                          <div className="flex shrink-0 items-center gap-2">
+                            {canReorganizar && !showLineaForm && (
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                className="h-7 gap-1 px-2 text-xs"
+                                disabled={reorganizingLineaId !== null}
+                                onClick={() => onRequestReorganizarLinea(linea.id)}
+                              >
+                                <Layers className="h-3.5 w-3.5" />
+                                Reorganizar
+                              </Button>
+                            )}
+                            <span className="rounded-md bg-white px-2 py-1 text-sm font-semibold tabular-nums text-slate-900 ring-1 ring-surface-border">
+                              {formatCantidad(linea.total_unidades)}
+                            </span>
+                          </div>
                         </div>
-                        {linea.ubicacion && (
-                          <p className="mt-1 flex items-center gap-1 pl-7 text-xs text-slate-500">
-                            <MapPin className="h-3 w-3 shrink-0" />
-                            {linea.ubicacion}
-                          </p>
+
+                        {showLineaForm && (
+                          <ReorganizarStockForm
+                            titulo={`línea ${idx + 1}`}
+                            info={lineaInfo}
+                            unidadProducto={detalle.producto.unidad}
+                            loading={reorganizingLineaId === linea.id}
+                            onConfirm={(desglose) => onConfirmReorganizarLinea(linea.id, desglose)}
+                            onCancel={onCancelReorganizarLinea}
+                          />
                         )}
-                      </div>
-                      <span className="shrink-0 rounded-md bg-white px-2 py-1 text-sm font-semibold tabular-nums text-slate-900 ring-1 ring-surface-border">
-                        {formatCantidad(linea.total_unidades)}
-                      </span>
-                    </li>
-                  ))}
+                      </li>
+                    )
+                  })}
                 </ul>
               )}
             </div>
@@ -186,8 +242,11 @@ export function ConsultaPage() {
   const [loadingDetalleId, setLoadingDetalleId] = useState<number | null>(null)
   const [confirmSectorId, setConfirmSectorId] = useState<number | null>(null)
   const [reorganizingSectorId, setReorganizingSectorId] = useState<number | null>(null)
+  const [confirmLineaId, setConfirmLineaId] = useState<number | null>(null)
+  const [reorganizingLineaId, setReorganizingLineaId] = useState<number | null>(null)
   const [loading, setLoading] = useState(false)
   const [exporting, setExporting] = useState(false)
+  const [exportingSectores, setExportingSectores] = useState(false)
   const [exportIncluirCero, setExportIncluirCero] = useState(false)
   const [error, setError] = useState('')
   const [showScanner, setShowScanner] = useState(false)
@@ -266,6 +325,24 @@ export function ConsultaPage() {
     }
   }
 
+  async function exportarStockPorSectores() {
+    setExportingSectores(true)
+    setError('')
+    try {
+      const params = new URLSearchParams()
+      if (exportIncluirCero) params.set('incluir_cero', '1')
+      const qs = params.toString()
+      await downloadApiFile(
+        `/api/consulta/export/stock-sectores${qs ? `?${qs}` : ''}`,
+        `stock-por-sectores.xlsx`
+      )
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Error al exportar')
+    } finally {
+      setExportingSectores(false)
+    }
+  }
+
   function scrollExpandedIntoView() {
     requestAnimationFrame(() => {
       requestAnimationFrame(() => {
@@ -289,6 +366,53 @@ export function ConsultaPage() {
       return null
     } finally {
       setLoadingDetalleId(null)
+    }
+  }
+
+  function sincronizarResumen(productoId: number, detalle: ConsultaDetalle) {
+    setResultados((prev) =>
+      prev.map((p) =>
+        p.id === productoId
+          ? {
+              ...p,
+              stock_total: detalle.stock_total,
+              suelto_total: detalle.suelto_total,
+              sectores_con_stock: detalle.sectores.length
+            }
+          : p
+      )
+    )
+  }
+
+  async function confirmReorganizarLinea(
+    lineaId: number,
+    desglose: ReorganizarDesglosePayload
+  ) {
+    if (!expandedId) return
+
+    setReorganizingLineaId(lineaId)
+    setError('')
+    try {
+      const res = await api<{
+        ok: boolean
+        detalle?: ConsultaDetalle
+      }>(`/api/consulta/stock-linea/${lineaId}/reorganizar`, {
+        method: 'POST',
+        body: JSON.stringify(desglose)
+      })
+
+      if (res.detalle) {
+        setDetalleCache((prev) => ({ ...prev, [expandedId]: res.detalle! }))
+        sincronizarResumen(expandedId, res.detalle)
+      } else {
+        const data = await cargarDetalle(expandedId, true)
+        if (data) sincronizarResumen(expandedId, data)
+      }
+      setConfirmLineaId(null)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Error al reorganizar la línea')
+    } finally {
+      setReorganizingLineaId(null)
     }
   }
 
@@ -319,8 +443,10 @@ export function ConsultaPage() {
 
       if (res.detalle) {
         setDetalleCache((prev) => ({ ...prev, [expandedId]: res.detalle! }))
+        sincronizarResumen(expandedId, res.detalle)
       } else {
-        await cargarDetalle(expandedId, true)
+        const data = await cargarDetalle(expandedId, true)
+        if (data) sincronizarResumen(expandedId, data)
       }
       setConfirmSectorId(null)
     } catch (err) {
@@ -580,6 +706,25 @@ export function ConsultaPage() {
           )}
           {exporting ? 'Exportando…' : 'Exportar Excel'}
         </Button>
+        <Button
+          variant="secondary"
+          size="sm"
+          className="rounded-xl"
+          disabled={exportingSectores}
+          onClick={() => void exportarStockPorSectores()}
+          title={
+            exportIncluirCero
+              ? 'Excel con una columna por sector (incluye stock 0)'
+              : 'Excel con una columna por sector (solo con stock)'
+          }
+        >
+          {exportingSectores ? (
+            <Loader2 className="h-4 w-4 animate-spin" />
+          ) : (
+            <Download className="h-4 w-4" />
+          )}
+          {exportingSectores ? 'Exportando…' : 'Exportar por sectores'}
+        </Button>
       </div>
     </div>
   )
@@ -685,6 +830,7 @@ export function ConsultaPage() {
             <span className="inline-flex min-w-[3rem] items-center justify-center rounded-lg bg-brand-50 px-2.5 py-1.5 text-sm font-bold tabular-nums text-brand-700 ring-1 ring-brand-100">
               {formatCantidad(p.stock_total)}
             </span>
+            <SueltoStockHint cantidad={p.suelto_total} unidad={p.unidad} className="mt-1" />
             {p.sectores_con_stock > 0 && (
               <p className="mt-1 text-[11px] font-medium text-slate-500">
                 {p.sectores_con_stock} sector{p.sectores_con_stock === 1 ? '' : 'es'}
@@ -714,9 +860,20 @@ export function ConsultaPage() {
                   canReorganizar={canReorganizar}
                   confirmSectorId={confirmSectorId}
                   reorganizingSectorId={reorganizingSectorId}
-                  onRequestReorganizar={(sector) => setConfirmSectorId(sector.stock_sector_id)}
+                  onRequestReorganizar={(sector) => {
+                    setConfirmLineaId(null)
+                    setConfirmSectorId(sector.stock_sector_id)
+                  }}
                   onConfirmReorganizar={confirmReorganizar}
                   onCancelReorganizar={() => setConfirmSectorId(null)}
+                  confirmLineaId={confirmLineaId}
+                  reorganizingLineaId={reorganizingLineaId}
+                  onRequestReorganizarLinea={(lineaId) => {
+                    setConfirmSectorId(null)
+                    setConfirmLineaId(lineaId)
+                  }}
+                  onConfirmReorganizarLinea={confirmReorganizarLinea}
+                  onCancelReorganizarLinea={() => setConfirmLineaId(null)}
                 />
               ) : (
                 <p className="py-4 text-sm text-slate-500">No se pudo cargar el detalle</p>

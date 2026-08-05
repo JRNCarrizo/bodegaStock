@@ -22,6 +22,7 @@ import type {
 } from '@/types'
 import { ProductImage } from '@/components/ProductImage'
 import { ReorganizarStockForm } from '@/components/ReorganizarStockForm'
+import { SueltoStockHint } from '@/components/SueltoStockHint'
 import { Button } from '@/components/ui/Button'
 import { Badge, Card, CardBody } from '@/components/ui/Card'
 import { useAuth } from '@/context/AuthContext'
@@ -394,9 +395,16 @@ export function SectorStockView({
                               Armar / reorganizar
                             </Button>
                           )}
-                          <span className="inline-flex shrink-0 items-center rounded-lg bg-brand-50 px-2.5 py-1.5 text-sm font-bold tabular-nums text-brand-700 ring-1 ring-brand-100">
-                            {formatCantidad(producto.cantidad_total)}
-                          </span>
+                          <div className="shrink-0 text-right">
+                            <span className="inline-flex items-center rounded-lg bg-brand-50 px-2.5 py-1.5 text-sm font-bold tabular-nums text-brand-700 ring-1 ring-brand-100">
+                              {formatCantidad(producto.cantidad_total)}
+                            </span>
+                            <SueltoStockHint
+                              cantidad={producto.suelto_total}
+                              unidad={producto.unidad}
+                              className="mt-1"
+                            />
+                          </div>
                         </div>
                         {isExpanded && (
                           <div className="space-y-2 border-t border-brand-100/80 bg-gradient-to-b from-surface-muted/40 to-white px-4 py-3 sm:px-5">

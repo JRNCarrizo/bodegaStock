@@ -28,7 +28,7 @@ import {
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { Card, CardBody } from '@/components/ui/Card'
-import { calcTotalEnCajas, botellasPorCajaDefault, formatCantidad, formatDayTabLabel, formatEtiqueta, formatTotalCajas, normalizarUnidadProducto, todayIsoDate } from '@/lib/desglose'
+import { calcTotalEnCajas, botellasPorCajaDefault, cajasPorPalletDefault, formatCantidad, formatDayTabLabel, formatEtiqueta, formatTotalCajas, normalizarUnidadProducto, todayIsoDate, totalSueltoLineaConteo } from '@/lib/desglose'
 import { downloadApiFile } from '@/lib/downloadFile'
 import { api, cn } from '@/lib/utils'
 import { codigoProductoExacto } from '@/lib/productoSearch'
@@ -111,9 +111,10 @@ export function IngresosPage() {
   const [selectedProduct, setSelectedProduct] = useState<Producto | null>(null)
   const [lineas, setLineas] = useState<IngresoLineaDraft[]>([])
 
-  const [tipoBulto, setTipoBulto] = useState<'PALLET' | 'CAJA'>('PALLET')
+  const [tipoBulto, setTipoBulto] = useState<'PALLET' | 'CAJA' | 'SUELTO'>('PALLET')
   const [cantidadBultos, setCantidadBultos] = useState('')
   const [unidadesPorBulto, setUnidadesPorBulto] = useState('')
+  const [cantidadSuelta, setCantidadSuelta] = useState('')
   const [ubicacionId, setUbicacionId] = useState('')
 
   const [showScanner, setShowScanner] = useState(false)
@@ -131,6 +132,7 @@ export function IngresosPage() {
   const tipoRef = useRef<HTMLSelectElement>(null)
   const cantidadBultosRef = useRef<HTMLInputElement>(null)
   const unidadesRef = useRef<HTMLInputElement>(null)
+  const cantidadSueltaRef = useRef<HTMLInputElement>(null)
   const ubicacionRef = useRef<HTMLSelectElement>(null)
   const listScrollRef = useRef<HTMLDivElement>(null)
   const listSearchRef = useRef<HTMLInputElement>(null)
@@ -293,6 +295,10 @@ export function IngresosPage() {
     () => lineas.reduce((s, l) => s + l.total_unidades, 0),
     [lineas]
   )
+  const totalSueltoGeneral = useMemo(
+    () => lineas.reduce((s, l) => s + totalSueltoLineaConteo(l), 0),
+    [lineas]
+  )
 
   const diasConIngresos = useMemo(() => {
     const dias = new Set<string>()
@@ -338,7 +344,8 @@ export function IngresosPage() {
     }
     return [...map.values()].map((g) => ({
       ...g,
-      total: g.lineas.reduce((s, l) => s + l.total_unidades, 0)
+      total: g.lineas.reduce((s, l) => s + l.total_unidades, 0),
+      totalSuelto: g.lineas.reduce((s, l) => s + totalSueltoLineaConteo(l), 0)
     }))
   }, [lineas])
 
@@ -411,11 +418,10 @@ export function IngresosPage() {
   }
 
   function defaultUnidadesPorBulto(tipo: 'PALLET' | 'CAJA', p: Producto | null): string {
-    if (!p) return tipo === 'PALLET' ? '112' : '6'
     if (tipo === 'PALLET') {
-      return String(p.unidades_por_pallet_default ?? 112)
+      return String(cajasPorPalletDefault(p?.unidades_por_pallet_default))
     }
-    return String(p.unidades_por_caja_default ?? 6)
+    return String(botellasPorCajaDefault(p?.unidades_por_caja_default))
   }
 
   function resetLineaForm(forProduct?: Producto | null) {
@@ -423,12 +429,21 @@ export function IngresosPage() {
     setTipoBulto('PALLET')
     setCantidadBultos('')
     setUnidadesPorBulto(defaultUnidadesPorBulto('PALLET', p))
+    setCantidadSuelta('')
     setUbicacionId('')
   }
 
-  function handleTipoBultoChange(tipo: 'PALLET' | 'CAJA') {
+  function handleTipoBultoChange(tipo: 'PALLET' | 'CAJA' | 'SUELTO') {
     setTipoBulto(tipo)
-    setUnidadesPorBulto(defaultUnidadesPorBulto(tipo, selectedProduct))
+    if (tipo === 'SUELTO') {
+      setCantidadBultos('')
+      setUnidadesPorBulto('')
+      setTimeout(() => focusField(cantidadSueltaRef), 0)
+    } else {
+      setCantidadSuelta('')
+      setUnidadesPorBulto(defaultUnidadesPorBulto(tipo, selectedProduct))
+      setTimeout(() => focusField(cantidadBultosRef), 0)
+    }
   }
 
   function selectProduct(p: Producto) {
@@ -534,26 +549,50 @@ export function IngresosPage() {
       return false
     }
 
-    const lineaInput = {
-      tipo_bulto: tipoBulto,
-      cantidad_bultos: Number(cantidadBultos),
-      unidades_por_bulto: Number(unidadesPorBulto)
+    const sueltaNum = cantidadSuelta.trim() === '' ? 0 : Number(cantidadSuelta)
+
+    const lineaInput =
+      tipoBulto === 'SUELTO'
+        ? {
+            tipo_bulto: tipoBulto,
+            cantidad_suelta: sueltaNum
+          }
+        : {
+            tipo_bulto: tipoBulto,
+            cantidad_bultos: Number(cantidadBultos),
+            unidades_por_bulto: Number(unidadesPorBulto),
+            cantidad_suelta: sueltaNum
+          }
+
+    if (!Number.isFinite(sueltaNum) || sueltaNum < 0) {
+      setError('Cantidad suelta inválida')
+      return false
     }
 
-    if (!Number.isFinite(lineaInput.cantidad_bultos) || lineaInput.cantidad_bultos <= 0) {
-      setError(`Indicá la cantidad de ${tipoBulto === 'PALLET' ? 'pallets' : 'cajas'}`)
-      return false
-    }
-    if (!Number.isFinite(lineaInput.unidades_por_bulto) || lineaInput.unidades_por_bulto <= 0) {
-      setError('Indicá las unidades por bulto')
-      return false
+    if (tipoBulto === 'SUELTO') {
+      if (sueltaNum <= 0) {
+        setError('Indicá la cantidad suelta')
+        return false
+      }
+    } else {
+      if (!Number.isFinite(lineaInput.cantidad_bultos) || Number(lineaInput.cantidad_bultos) <= 0) {
+        setError(`Indicá la cantidad de ${tipoBulto === 'PALLET' ? 'pallets' : 'cajas'}`)
+        return false
+      }
+      if (
+        !Number.isFinite(lineaInput.unidades_por_bulto) ||
+        Number(lineaInput.unidades_por_bulto) <= 0
+      ) {
+        setError('Indicá las unidades por bulto')
+        return false
+      }
     }
 
     const totalCajas = calcTotalEnCajas(
       lineaInput,
       botellasPorCajaDefault(selectedProduct.unidades_por_caja_default)
     )
-    if (totalCajas <= 0) {
+    if (tipoBulto !== 'SUELTO' && totalCajas <= 0) {
       setError('La cantidad debe ser mayor a cero')
       return false
     }
@@ -567,10 +606,13 @@ export function IngresosPage() {
       producto_id: selectedProduct.id,
       codigo_interno: selectedProduct.codigo_interno,
       nombre: selectedProduct.nombre,
+      unidad: selectedProduct.unidad,
       tipo_bulto: tipoBulto,
-      cantidad_bultos: lineaInput.cantidad_bultos,
-      unidades_por_bulto: lineaInput.unidades_por_bulto,
-      cantidad_suelta: undefined,
+      cantidad_bultos:
+        tipoBulto === 'SUELTO' ? undefined : Number(lineaInput.cantidad_bultos),
+      unidades_por_bulto:
+        tipoBulto === 'SUELTO' ? undefined : Number(lineaInput.unidades_por_bulto),
+      cantidad_suelta: sueltaNum > 0 ? sueltaNum : undefined,
       total_unidades: totalCajas,
       etiqueta: formatEtiqueta(lineaInput, selectedProduct.unidad),
       ubicacion_id: ub?.id ?? null,
@@ -884,9 +926,18 @@ export function IngresosPage() {
                     <p className="mt-0.5 text-xs text-slate-500">{grupo.lineas.length} líneas</p>
                   )}
                 </button>
-                <span className="inline-flex shrink-0 items-center rounded-lg bg-brand-50 px-2.5 py-1.5 text-sm font-bold tabular-nums text-brand-700 ring-1 ring-brand-100">
-                  {formatCantidad(grupo.total)}
-                </span>
+                <div className="shrink-0 text-right">
+                  <span className="inline-flex items-center rounded-lg bg-brand-50 px-2.5 py-1.5 text-sm font-bold tabular-nums text-brand-700 ring-1 ring-brand-100">
+                    {formatCantidad(grupo.total)}
+                  </span>
+                  {grupo.totalSuelto > 0 && (
+                    <p className="mt-1 text-[11px] font-medium text-slate-500">
+                      + {formatCantidad(grupo.totalSuelto)}{' '}
+                      {normalizarUnidadProducto(grupo.producto.unidad)}
+                      {grupo.totalSuelto === 1 ? '' : 's'} sueltas
+                    </p>
+                  )}
+                </div>
               </div>
               {isExpanded && (
                 <ul className="space-y-2 border-t border-brand-100/80 bg-gradient-to-b from-surface-muted/40 to-white px-4 py-3 sm:px-5">
@@ -903,7 +954,11 @@ export function IngresosPage() {
                       </div>
                       <div className="flex shrink-0 items-center gap-2">
                         <span className="rounded-md bg-slate-50 px-2 py-1 text-sm font-semibold tabular-nums text-slate-900 ring-1 ring-surface-border">
-                          {formatCantidad(l.total_unidades)}
+                          {l.tipo_bulto === 'SUELTO'
+                            ? `${formatCantidad(l.cantidad_suelta ?? 0)} ${normalizarUnidadProducto(
+                                l.unidad
+                              )}${l.cantidad_suelta === 1 ? '' : 's'}`
+                            : formatCantidad(l.total_unidades)}
                         </span>
                         <Button
                           type="button"
@@ -1089,60 +1144,108 @@ export function IngresosPage() {
                     <select
                       ref={tipoRef}
                       value={tipoBulto}
-                      onChange={(e) => handleTipoBultoChange(e.target.value as 'PALLET' | 'CAJA')}
+                      onChange={(e) =>
+                        handleTipoBultoChange(e.target.value as 'PALLET' | 'CAJA' | 'SUELTO')
+                      }
                       onKeyDown={(e) => {
                         if (e.key === 'Enter') {
                           e.preventDefault()
-                          focusField(cantidadBultosRef)
+                          focusField(tipoBulto === 'SUELTO' ? cantidadSueltaRef : cantidadBultosRef)
                         }
                       }}
                       className="w-full rounded-lg border border-surface-border px-2 py-1.5 text-sm"
                     >
                       <option value="PALLET">Pallet</option>
                       <option value="CAJA">Caja</option>
+                      <option value="SUELTO">Suelto</option>
                     </select>
                   </div>
 
-                  <Input
-                    ref={cantidadBultosRef}
-                    label={tipoBulto === 'PALLET' ? 'Cant. pallets' : 'Cant. cajas'}
-                    type="number"
-                    min="1"
-                    value={cantidadBultos}
-                    onChange={(e) => setCantidadBultos(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') {
-                        e.preventDefault()
-                        focusField(unidadesRef)
-                      }
-                    }}
-                    placeholder={tipoBulto === 'PALLET' ? '2' : '1'}
-                    className="[&_label]:text-xs"
-                  />
-                  <Input
-                    ref={unidadesRef}
-                    label={
-                      tipoBulto === 'PALLET'
-                        ? '× cajas por pallet'
-                        : `× botellas por caja`
-                    }
-                    type="number"
-                    min="1"
-                    value={unidadesPorBulto}
-                    onChange={(e) => setUnidadesPorBulto(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') {
-                        e.preventDefault()
-                        if (sectorSeleccionado?.usa_ubicaciones && ubicaciones.length > 0) {
-                          ubicacionRef.current?.focus()
-                        } else {
-                          agregarLineaYContinuar()
+                  {tipoBulto === 'SUELTO' ? (
+                    <Input
+                      ref={cantidadSueltaRef}
+                      label={`Cant. ${normalizarUnidadProducto(selectedProduct.unidad)}s sueltas`}
+                      type="number"
+                      min="1"
+                      value={cantidadSuelta}
+                      onChange={(e) => setCantidadSuelta(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault()
+                          if (sectorSeleccionado?.usa_ubicaciones && ubicaciones.length > 0) {
+                            ubicacionRef.current?.focus()
+                          } else {
+                            agregarLineaYContinuar()
+                          }
                         }
-                      }
-                    }}
-                    placeholder={tipoBulto === 'PALLET' ? '112' : '6'}
-                    className="[&_label]:text-xs"
-                  />
+                      }}
+                      placeholder="3"
+                      className="col-span-2 [&_label]:text-xs"
+                    />
+                  ) : (
+                    <>
+                      <Input
+                        ref={cantidadBultosRef}
+                        label={tipoBulto === 'PALLET' ? 'Cant. pallets' : 'Cant. cajas'}
+                        type="number"
+                        min="1"
+                        value={cantidadBultos}
+                        onChange={(e) => setCantidadBultos(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault()
+                            focusField(unidadesRef)
+                          }
+                        }}
+                        placeholder={tipoBulto === 'PALLET' ? '2' : '1'}
+                        className="[&_label]:text-xs"
+                      />
+                      <Input
+                        ref={unidadesRef}
+                        label={
+                          tipoBulto === 'PALLET'
+                            ? '× cajas por pallet'
+                            : `× botellas por caja`
+                        }
+                        type="number"
+                        min="1"
+                        value={unidadesPorBulto}
+                        onChange={(e) => setUnidadesPorBulto(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault()
+                            focusField(cantidadSueltaRef)
+                          }
+                        }}
+                        placeholder={tipoBulto === 'PALLET' ? '112' : '6'}
+                        className="[&_label]:text-xs"
+                      />
+                      <Input
+                        ref={cantidadSueltaRef}
+                        label={
+                          tipoBulto === 'PALLET'
+                            ? 'Cajas sueltas (opc.)'
+                            : `${normalizarUnidadProducto(selectedProduct.unidad)}s sueltas (opc.)`
+                        }
+                        type="number"
+                        min="0"
+                        value={cantidadSuelta}
+                        onChange={(e) => setCantidadSuelta(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault()
+                            if (sectorSeleccionado?.usa_ubicaciones && ubicaciones.length > 0) {
+                              ubicacionRef.current?.focus()
+                            } else {
+                              agregarLineaYContinuar()
+                            }
+                          }
+                        }}
+                        placeholder="0"
+                        className="[&_label]:text-xs"
+                      />
+                    </>
+                  )}
 
                   {sectorSeleccionado?.usa_ubicaciones && ubicaciones.length > 0 && (
                     <div>
@@ -1181,8 +1284,8 @@ export function IngresosPage() {
                   cajas.{' '}
                   <span className="font-medium text-slate-600">Caja:</span> 5 × 3 = 5 cajas de 3
                   botellas (cualquier formato de caja suma).{' '}
-                  <span className="font-medium text-slate-600">Suelto:</span> pucherio suelto — no suma
-                  en movimientos del día.
+                  <span className="font-medium text-slate-600">Suelto:</span> botellas sueltas que
+                  quedan visibles en Consulta.
                 </p>
               </div>
             )}
@@ -1205,6 +1308,11 @@ export function IngresosPage() {
               <p className="text-2xl font-bold tabular-nums text-brand-700">
                 {formatCantidad(totalGeneral)}
               </p>
+              {totalSueltoGeneral > 0 && (
+                <p className="mt-0.5 text-xs font-medium text-slate-500">
+                  + {formatCantidad(totalSueltoGeneral)} unidades sueltas
+                </p>
+              )}
               <p className="mt-1 text-xs text-slate-500">
                 {lineas.length} línea{lineas.length === 1 ? '' : 's'} cargada
                 {lineas.length === 1 ? '' : 's'}
@@ -1267,7 +1375,16 @@ export function IngresosPage() {
                     <div key={grupo.producto.producto_id} className="border-b border-surface-border last:border-0">
                       <div className="bg-slate-50 px-4 py-2 font-medium text-slate-900">
                         {grupo.producto.codigo_interno} — {grupo.producto.nombre}
-                        <span className="float-right text-brand-700">{formatTotalCajas(grupo.total)}</span>
+                        <span className="float-right text-right text-brand-700">
+                          {formatTotalCajas(grupo.total)}
+                          {grupo.totalSuelto > 0 && (
+                            <small className="block text-xs font-medium text-slate-500">
+                              + {formatCantidad(grupo.totalSuelto)}{' '}
+                              {normalizarUnidadProducto(grupo.producto.unidad)}
+                              {grupo.totalSuelto === 1 ? '' : 's'}
+                            </small>
+                          )}
+                        </span>
                       </div>
                       <ul className="divide-y divide-surface-border text-sm">
                         {grupo.lineas.map((l) => (
@@ -1276,7 +1393,13 @@ export function IngresosPage() {
                               {l.etiqueta}
                               {l.ubicacion_nombre && ` (${l.ubicacion_nombre})`}
                             </span>
-                            <span>{formatTotalCajas(l.total_unidades)}</span>
+                            <span>
+                              {l.tipo_bulto === 'SUELTO'
+                                ? `${formatCantidad(l.cantidad_suelta ?? 0)} ${normalizarUnidadProducto(
+                                    l.unidad
+                                  )}${l.cantidad_suelta === 1 ? '' : 's'}`
+                                : formatTotalCajas(l.total_unidades)}
+                            </span>
                           </li>
                         ))}
                       </ul>
@@ -1286,7 +1409,14 @@ export function IngresosPage() {
 
                 <div className="flex items-center justify-between rounded-lg bg-brand-50 px-4 py-3">
                   <span className="font-medium text-slate-800">Total general</span>
-                  <span className="text-xl font-bold text-brand-700">{formatTotalCajas(totalGeneral)}</span>
+                  <span className="text-right text-xl font-bold text-brand-700">
+                    {formatTotalCajas(totalGeneral)}
+                    {totalSueltoGeneral > 0 && (
+                      <small className="block text-xs font-medium text-slate-500">
+                        + {formatCantidad(totalSueltoGeneral)} unidades sueltas
+                      </small>
+                    )}
+                  </span>
                 </div>
 
                 <div className="flex gap-2 pt-2">

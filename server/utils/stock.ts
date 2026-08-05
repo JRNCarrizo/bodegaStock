@@ -131,6 +131,9 @@ export function lineaTotalEnCajas(
 /** Sector visible si tiene cajas en total o líneas de detalle (incl. botellerio). */
 export const STOCK_SECTOR_VISIBLE_SQL = `(ss.cantidad_total > 0 OR EXISTS (SELECT 1 FROM stock_lineas sl0 WHERE sl0.stock_sector_id = ss.id))`
 
+/** Botellas sueltas de una línea `sl`: misma regla que `totalSueltoLineaConteo`. */
+export const STOCK_LINEA_SUELTO_SQL = `(CASE WHEN sl.tipo_bulto IN ('SUELTO', 'CAJA') THEN COALESCE(sl.cantidad_suelta, 0) ELSE 0 END)`
+
 export function recalcAllStockSectorTotals(db: Database.Database): void {
   const sectors = db.prepare('SELECT id FROM stock_sector').all() as { id: number }[]
   for (const sector of sectors) {
@@ -480,6 +483,8 @@ export interface ReorganizarLineaInfo {
   puede: boolean
   motivo?: string
   total_unidades: number
+  total_suelto?: number
+  botellas_por_caja?: number
   referencias_bulto: ReferenciaBulto[]
 }
 
@@ -491,6 +496,8 @@ export interface ReorganizarDesgloseInput {
   }>
   /** Unidades sueltas (cajas, botellas, etc.) */
   unidades_sueltas: number
+  /** Capacidad elegida para convertir unidades sueltas en cajas completas. */
+  botellas_por_caja?: number
 }
 
 export function getReorganizarLineaInfo(
@@ -532,15 +539,19 @@ export function getReorganizarLineaInfo(
 export function getReorganizarSectorInfo(
   db: Database.Database,
   producto_id: number,
-  totalCajas: number
+  totalCajas: number,
+  totalSuelto = 0
 ): ReorganizarLineaInfo {
+  const { botellasPorCaja } = getProductoDefaults(db, producto_id)
   const referencias = findReferenciasBultoProducto(db, producto_id)
 
-  if (totalCajas <= 0) {
+  if (totalCajas <= 0 && totalSuelto <= 0) {
     return {
       puede: false,
       motivo: 'Sin stock para reorganizar',
       total_unidades: 0,
+      total_suelto: 0,
+      botellas_por_caja: botellasPorCaja,
       referencias_bulto: referencias
     }
   }
@@ -548,6 +559,8 @@ export function getReorganizarSectorInfo(
   return {
     puede: true,
     total_unidades: totalCajas,
+    total_suelto: totalSuelto,
+    botellas_por_caja: botellasPorCaja,
     referencias_bulto: referencias
   }
 }
@@ -562,9 +575,11 @@ function applyReorganizarDesgloseToStockSector(
     ubicacion: string | null
     startOrden: number
     sueltosModo: 'cajas' | 'botellas'
+    botellasPorCaja?: number
   }
 ): number {
-  const { botellasPorCaja } = getProductoDefaults(db, params.producto_id)
+  const defaults = getProductoDefaults(db, params.producto_id)
+  const botellasPorCaja = params.botellasPorCaja ?? defaults.botellasPorCaja
   let orden = params.startOrden
 
   for (const b of params.desglose.bultos) {
@@ -615,18 +630,14 @@ function applyReorganizarDesgloseToStockSector(
 
 function formatReorganizarEtiqueta(
   desglose: ReorganizarDesgloseInput,
-  unidadProducto: string
+  _unidadProducto: string
 ): string {
   const partes: string[] = desglose.bultos.map((b) => formatEtiquetaLinea(b))
-    if (desglose.unidades_sueltas > 0) {
-      partes.push(
-        formatEtiquetaLinea({
-          tipo_bulto: 'CAJA',
-          cantidad_bultos: 1,
-          unidades_por_bulto: desglose.unidades_sueltas
-        })
-      )
-    }
+  if (desglose.unidades_sueltas > 0) {
+    partes.push(
+      `${desglose.unidades_sueltas} caja${desglose.unidades_sueltas === 1 ? '' : 's'}`
+    )
+  }
   return partes.join(' + ') || 'vacío'
 }
 
@@ -634,12 +645,19 @@ function validateReorganizarDesglose(
   total: number,
   desglose: ReorganizarDesgloseInput
 ): string | null {
-  if (!Number.isFinite(total) || total <= 0) {
+  if (!Number.isFinite(total) || total < 0) {
     return 'Total inválido'
   }
 
   if (!Number.isFinite(desglose.unidades_sueltas) || desglose.unidades_sueltas < 0) {
     return 'La cantidad de unidades debe ser cero o mayor'
+  }
+
+  // Sin cajas para repartir solo queda el remanente suelto: no debe asignarse nada.
+  if (total === 0) {
+    return desglose.bultos.length > 0 || desglose.unidades_sueltas > 0
+      ? 'No hay cajas suficientes para armar ese desglose'
+      : null
   }
 
   if (desglose.bultos.length === 0 && desglose.unidades_sueltas === 0) {
@@ -703,29 +721,38 @@ export function reorganizeStockLine(
     throw new Error('Tipo de línea no reorganizable')
   }
 
-  const { botellasPorCaja } = getProductoDefaults(db, linea.producto_id)
-  const totalParaValidar =
-    linea.tipo_bulto === 'SUELTO'
-      ? linea.total_unidades
-      : lineaTotalEnCajas(linea, botellasPorCaja)
+  const { botellasPorCaja: botellasPorCajaDefault } = getProductoDefaults(db, linea.producto_id)
+  const botellasPorCaja = Number(desglose.botellas_por_caja ?? botellasPorCajaDefault)
+  if (!Number.isInteger(botellasPorCaja) || botellasPorCaja <= 0) {
+    throw new Error('Las unidades por caja deben ser un entero mayor a cero')
+  }
+
+  const lineaInput: LineaDesgloseInput = {
+    tipo_bulto: linea.tipo_bulto as TipoBulto,
+    cantidad_bultos: linea.cantidad_bultos,
+    unidades_por_bulto: linea.unidades_por_bulto,
+    cantidad_suelta: linea.cantidad_suelta
+  }
+
+  const totalCajas = lineaTotalEnCajas(linea, botellasPorCajaDefault)
+  const totalSuelto = totalSueltoLineaConteo(lineaInput)
+  const cajasArmadasDesdeSuelto = Math.floor(totalSuelto / botellasPorCaja)
+  const sueltoRestante = totalSuelto % botellasPorCaja
+  const totalParaValidar = totalCajas + cajasArmadasDesdeSuelto
 
   const validationError = validateReorganizarDesglose(totalParaValidar, desglose)
   if (validationError) throw new Error(validationError)
 
   const unidad = getProductoUnidad(db, linea.producto_id)
-  const etiqueta_resultante = formatReorganizarEtiqueta(desglose, unidad)
-  const totalAnteriorEtiqueta =
-    linea.tipo_bulto === 'SUELTO'
-      ? `${linea.total_unidades} u`
-      : formatEtiquetaLinea(
-          {
-            tipo_bulto: linea.tipo_bulto as 'PALLET' | 'CAJA' | 'SUELTO',
-            cantidad_bultos: linea.cantidad_bultos,
-            unidades_por_bulto: linea.unidades_por_bulto,
-            cantidad_suelta: linea.cantidad_suelta
-          },
+  const etiquetaCajas = formatReorganizarEtiqueta(desglose, unidad)
+  const etiqueta_resultante =
+    sueltoRestante > 0
+      ? `${etiquetaCajas === 'vacío' ? '' : `${etiquetaCajas} + `}${formatCantidadUnidad(
+          sueltoRestante,
           unidad
-        )
+        )}`
+      : etiquetaCajas
+  const totalAnteriorEtiqueta = formatEtiquetaLinea(lineaInput, unidad)
 
   const tx = db.transaction(() => {
     const maxOrden = db.prepare(`
@@ -741,8 +768,18 @@ export function reorganizeStockLine(
       ubicacion_id: linea.ubicacion_id,
       ubicacion: linea.ubicacion,
       startOrden: maxOrden.m,
-      sueltosModo: linea.tipo_bulto === 'SUELTO' ? 'botellas' : 'cajas'
+      sueltosModo: 'cajas',
+      botellasPorCaja
     })
+
+    addSueltoToStockSector(
+      db,
+      linea.stock_sector_id,
+      sueltoRestante,
+      linea.ubicacion_id,
+      linea.ubicacion
+    )
+    refreshStockSectorTotal(db, linea.stock_sector_id)
 
     db.prepare(`
       INSERT INTO movimientos (
@@ -816,17 +853,40 @@ export function reorganizeStockSector(
     }
   }
 
-  const { botellasPorCaja } = getProductoDefaults(db, sector.producto_id)
+  const { botellasPorCaja: botellasPorCajaDefault } = getProductoDefaults(db, sector.producto_id)
+  const botellasPorCaja = Number(desglose.botellas_por_caja ?? botellasPorCajaDefault)
+  if (!Number.isInteger(botellasPorCaja) || botellasPorCaja <= 0) {
+    throw new Error('Las unidades por caja deben ser un entero mayor a cero')
+  }
+
   const totalCajas = scoped.reduce(
-    (sum, row) => sum + lineaTotalEnCajas(row, botellasPorCaja),
+    (sum, row) => sum + lineaTotalEnCajas(row, botellasPorCajaDefault),
     0
   )
+  const totalSuelto = scoped.reduce(
+    (sum, row) =>
+      sum +
+      totalSueltoLineaConteo({
+        tipo_bulto: row.tipo_bulto as TipoBulto,
+        cantidad_bultos: row.cantidad_bultos,
+        unidades_por_bulto: row.unidades_por_bulto,
+        cantidad_suelta: row.cantidad_suelta
+      }),
+    0
+  )
+  const cajasArmadasDesdeSuelto = Math.floor(totalSuelto / botellasPorCaja)
+  const sueltoRestante = totalSuelto % botellasPorCaja
+  const totalCajasReorganizado = totalCajas + cajasArmadasDesdeSuelto
 
-  const validationError = validateReorganizarDesglose(totalCajas, desglose)
+  const validationError = validateReorganizarDesglose(totalCajasReorganizado, desglose)
   if (validationError) throw new Error(validationError)
 
   const unidad = getProductoUnidad(db, sector.producto_id)
-  const etiqueta_resultante = formatReorganizarEtiqueta(desglose, unidad)
+  const etiquetaCajas = formatReorganizarEtiqueta(desglose, unidad)
+  const etiqueta_resultante =
+    sueltoRestante > 0
+      ? `${etiquetaCajas} + ${formatCantidadUnidad(sueltoRestante, unidad)}`
+      : etiquetaCajas
   const etiquetasAnteriores = scoped
     .map((row) =>
       formatEtiquetaLinea(
@@ -873,9 +933,17 @@ export function reorganizeStockSector(
       ubicacion_id,
       ubicacion,
       startOrden: maxOrdenRow.m,
-      sueltosModo: 'cajas'
+      sueltosModo: 'cajas',
+      botellasPorCaja
     })
 
+    addSueltoToStockSector(
+      db,
+      stockSectorId,
+      sueltoRestante,
+      ubicacion_id,
+      ubicacion
+    )
     refreshStockSectorTotal(db, stockSectorId)
 
     const alcance =
@@ -1032,7 +1100,7 @@ export function applyIngresoLineToStock(
     params.linea.tipo_bulto,
     params.linea.tipo_bulto === 'SUELTO' ? null : params.linea.cantidad_bultos,
     params.linea.tipo_bulto === 'SUELTO' ? null : params.linea.unidades_por_bulto,
-    params.linea.tipo_bulto === 'SUELTO' ? params.linea.cantidad_suelta : null,
+    params.linea.cantidad_suelta || null,
     params.ubicacion_nombre,
     params.ubicacion_id,
     totalStock,

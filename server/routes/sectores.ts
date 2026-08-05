@@ -8,7 +8,8 @@ import {
   getProductoDefaults,
   getReorganizarSectorInfo,
   lineaTotalEnCajas,
-  STOCK_SECTOR_VISIBLE_SQL
+  STOCK_SECTOR_VISIBLE_SQL,
+  totalSueltoLineaConteo
 } from '../utils/stock'
 
 interface SectorBody {
@@ -103,6 +104,12 @@ function mapStockLinea(
 ) {
   const ubicacionLabel = row.ubicacion_nombre ?? row.ubicacion ?? row.ubicacion_codigo ?? null
   const total_cajas = lineaTotalEnCajas(row, botellasPorCaja)
+  const total_suelto = totalSueltoLineaConteo({
+    tipo_bulto: row.tipo_bulto as 'PALLET' | 'CAJA' | 'SUELTO',
+    cantidad_bultos: row.cantidad_bultos,
+    unidades_por_bulto: row.unidades_por_bulto,
+    cantidad_suelta: row.cantidad_suelta
+  })
   return {
     id: row.id,
     tipo_bulto: row.tipo_bulto,
@@ -112,6 +119,7 @@ function mapStockLinea(
     ubicacion: ubicacionLabel,
     ubicacion_id: row.ubicacion_id,
     total_unidades: total_cajas,
+    total_suelto,
     etiqueta: formatEtiquetaLinea(
       {
         tipo_bulto: row.tipo_bulto as 'PALLET' | 'CAJA' | 'SUELTO',
@@ -206,9 +214,15 @@ function getSectorStock(
         options?.sinUbicacion || options?.ubicacionId != null
           ? lineas.reduce((sum, l) => sum + lineaTotalEnCajas(l, botellasPorCaja), 0)
           : row.cantidad_total
+      const suelto_total = lineas.reduce((sum, l) => sum + l.total_suelto, 0)
 
       const scoped = options?.sinUbicacion || options?.ubicacionId != null
-      const baseReorg = getReorganizarSectorInfo(db, row.producto_id, cantidad_total)
+      const baseReorg = getReorganizarSectorInfo(
+        db,
+        row.producto_id,
+        cantidad_total,
+        suelto_total
+      )
       const reorganizar = scoped
         ? baseReorg
         : sector.usa_ubicaciones
@@ -227,6 +241,7 @@ function getSectorStock(
         imagen_path: row.imagen_path,
         unidad: row.unidad,
         cantidad_total,
+        suelto_total,
         reorganizar,
         lineas
       }
@@ -234,6 +249,7 @@ function getSectorStock(
     .filter((p) => p.lineas.length > 0)
 
   const total_stock = productos.reduce((sum, p) => sum + p.cantidad_total, 0)
+  const total_suelto = productos.reduce((sum, p) => sum + p.suelto_total, 0)
 
   return {
     sector: {
@@ -246,7 +262,8 @@ function getSectorStock(
     sin_ubicacion: !!options?.sinUbicacion,
     productos,
     total_productos: productos.length,
-    total_stock
+    total_stock,
+    total_suelto
   }
 }
 

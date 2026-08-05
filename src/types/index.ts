@@ -6,7 +6,9 @@ export interface ConsultaResumen {
   descripcion: string | null
   imagen_path: string | null
   activo: number
+  unidad: string
   stock_total: number
+  suelto_total: number
   sectores_con_stock: number
 }
 
@@ -19,6 +21,8 @@ export interface ReorganizarLineaInfo {
   puede: boolean
   motivo?: string
   total_unidades: number
+  total_suelto?: number
+  botellas_por_caja?: number
   referencias_bulto: ReferenciaBulto[]
 }
 
@@ -29,6 +33,7 @@ export interface ReorganizarDesglosePayload {
     unidades_por_bulto: number
   }>
   unidades_sueltas: number
+  botellas_por_caja?: number
 }
 
 export interface StockLineaConsulta {
@@ -39,6 +44,7 @@ export interface StockLineaConsulta {
   cantidad_suelta: number | null
   ubicacion: string | null
   total_unidades: number
+  total_suelto: number
   etiqueta: string
 }
 
@@ -48,6 +54,7 @@ export interface SectorStockConsulta {
   sector_codigo: string
   sector_nombre: string
   cantidad_total: number
+  suelto_total: number
   reorganizar: ReorganizarLineaInfo
   lineas: StockLineaConsulta[]
 }
@@ -64,6 +71,7 @@ export interface ConsultaDetalle {
     unidad: string
   }
   stock_total: number
+  suelto_total: number
   sectores: SectorStockConsulta[]
 }
 
@@ -110,6 +118,7 @@ export interface SectorStockLinea {
   ubicacion: string | null
   ubicacion_id: number | null
   total_unidades: number
+  total_suelto: number
   etiqueta: string
 }
 
@@ -121,6 +130,7 @@ export interface SectorStockProducto {
   imagen_path: string | null
   unidad: string
   cantidad_total: number
+  suelto_total: number
   reorganizar: ReorganizarLineaInfo
   lineas: SectorStockLinea[]
 }
@@ -137,6 +147,7 @@ export interface SectorStockDetalle {
   productos: SectorStockProducto[]
   total_productos: number
   total_stock: number
+  total_suelto: number
 }
 
 export interface Camionero {
@@ -225,6 +236,7 @@ export interface IngresoLineaDraft {
   producto_id: number
   codigo_interno: string
   nombre: string
+  unidad: string
   tipo_bulto: 'PALLET' | 'CAJA' | 'SUELTO'
   cantidad_bultos?: number
   unidades_por_bulto?: number

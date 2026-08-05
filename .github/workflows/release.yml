@@ -9,7 +9,7 @@ on:
       version:
         description: 'Versión sin v (ej. 0.1.0)'
         required: true
-        default: '0.3.24'
+        default: '0.3.25'
 
 permissions:
   contents: write
@@ -68,15 +68,16 @@ jobs:
           body: |
             ## ControlStock ${{ steps.tag.outputs.name }}
 
-            Fix real del instalador en Windows al actualizar.
+            Consultas e ingresos con cajas/botellas, reorganización por línea y reportes Excel.
 
-            ### Corregido
-            - Ya no debería aparecer “no se puede cerrar ControlStock” a mitad de la instalación
-            - El instalador fuerza el cierre y evita el desinstalador viejo que fallaba en silencio
+            ### Nuevo / mejorado
+            - Ingresos: suelto, pucherío en pallet/caja
+            - Consulta: botellas sueltas visibles; reorganizar por línea o por sector
+            - Excel de stock: columnas Cajas / Botellas; export por sectores
 
             ### Actualización
-            - Preferí el Setup de este release (o desinstalá la versión anterior y después instalá)
             - Desde **v0.2.7 o superior:** Configuración → Buscar actualizaciones
+            - O instalá el Setup / APK de este release manualmente
           files: |
             release/ControlStock-Setup-*.exe
             release/latest.yml

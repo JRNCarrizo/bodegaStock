@@ -28,6 +28,7 @@ import { Card, CardBody } from '@/components/ui/Card'
 import { ProductImage } from '@/components/ProductImage'
 import {
   botellasPorCajaDefault,
+  cajasPorPalletDefault,
   calcTotalEnCajas,
   formatCantidad,
   formatDayTabLabel,
@@ -548,11 +549,10 @@ export function MovimientosPage() {
     tipo: 'PALLET' | 'CAJA',
     p: MovimientoInternoProductoStock | null
   ): string {
-    if (!p) return tipo === 'PALLET' ? '112' : '6'
     if (tipo === 'PALLET') {
-      return String(p.unidades_por_pallet_default ?? 112)
+      return String(cajasPorPalletDefault(p?.unidades_por_pallet_default))
     }
-    return String(p.unidades_por_caja_default ?? 6)
+    return String(botellasPorCajaDefault(p?.unidades_por_caja_default))
   }
 
   function resetLineaForm(forProduct?: MovimientoInternoProductoStock | null) {

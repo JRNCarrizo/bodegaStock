@@ -356,7 +356,7 @@ export async function ingresosRoutes(app: FastifyInstance): Promise<void> {
             linea.tipo_bulto,
             linea.tipo_bulto === 'SUELTO' ? null : linea.cantidad_bultos,
             linea.tipo_bulto === 'SUELTO' ? null : linea.unidades_por_bulto,
-            linea.tipo_bulto === 'SUELTO' ? linea.cantidad_suelta : null,
+            linea.cantidad_suelta || null,
             totalCajas,
             index + 1
           )

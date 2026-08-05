@@ -82,13 +82,35 @@ export function ReorganizarStockForm({
   onConfirm: (desglose: ReorganizarDesglosePayload) => void
   onCancel: () => void
 }) {
-  const [rows, setRows] = useState<BultoRow[]>(() => buildInitialRows(info))
+  const sueltoOriginal = Number(info.total_suelto ?? 0)
+  const capacidadInicial = Number(info.botellas_por_caja ?? 6)
+  const totalInicial =
+    info.total_unidades +
+    Math.floor(sueltoOriginal / (capacidadInicial > 0 ? capacidadInicial : 6))
+  const [botellasPorCaja, setBotellasPorCaja] = useState(String(capacidadInicial))
+  const [rows, setRows] = useState<BultoRow[]>(() =>
+    buildInitialRows({ ...info, total_unidades: totalInicial })
+  )
   const [unidadesSueltas, setUnidadesSueltas] = useState(() =>
-    String(calcRestoUnidades(info.total_unidades, buildInitialRows(info)))
+    String(
+      calcRestoUnidades(
+        totalInicial,
+        buildInitialRows({ ...info, total_unidades: totalInicial })
+      )
+    )
   )
   const [unidadesManual, setUnidadesManual] = useState(false)
 
-  const total = info.total_unidades
+  const capacidadNum = Number(botellasPorCaja)
+  const capacidadValida =
+    Number.isInteger(capacidadNum) && capacidadNum > 0 ? capacidadNum : null
+  const cajasArmadasDesdeSuelto = capacidadValida
+    ? Math.floor(sueltoOriginal / capacidadValida)
+    : 0
+  const botellasRestantes = capacidadValida
+    ? sueltoOriginal % capacidadValida
+    : sueltoOriginal
+  const total = info.total_unidades + cajasArmadasDesdeSuelto
   const asignadoPallets = useMemo(
     () => rows.reduce((sum, row) => sum + rowSubtotal(row), 0),
     [rows]
@@ -122,6 +144,18 @@ export function ReorganizarStockForm({
 
   function recalcUnidades(nextRows: BultoRow[]) {
     setUnidadesSueltas(String(calcRestoUnidades(total, nextRows)))
+  }
+
+  function updateBotellasPorCaja(value: string) {
+    setBotellasPorCaja(value)
+    const capacidad = Number(value)
+    if (!Number.isInteger(capacidad) || capacidad <= 0) return
+
+    const nextTotal = info.total_unidades + Math.floor(sueltoOriginal / capacidad)
+    const nextRows = buildInitialRows({ ...info, total_unidades: nextTotal })
+    setRows(nextRows)
+    setUnidadesSueltas(String(calcRestoUnidades(nextTotal, nextRows)))
+    setUnidadesManual(false)
   }
 
   function updateRow(tempId: string, patch: Partial<BultoRow>) {
@@ -164,12 +198,14 @@ export function ReorganizarStockForm({
 
     onConfirm({
       bultos,
-      unidades_sueltas: Number.isFinite(unidadesNum) && unidadesNum >= 0 ? unidadesNum : 0
+      unidades_sueltas: Number.isFinite(unidadesNum) && unidadesNum >= 0 ? unidadesNum : 0,
+      botellas_por_caja: capacidadNum
     })
   }
 
   const canConfirm =
     diferencia === 0 &&
+    capacidadValida !== null &&
     (rows.some((r) => rowSubtotal(r) > 0) || unidadesNum > 0) &&
     !loading
 
@@ -179,8 +215,40 @@ export function ReorganizarStockForm({
         Reorganizar {titulo} — total fijo: {total} cajas
       </p>
       <p className="mt-1 text-[11px] text-amber-900/80">
-        Solo cambiás cómo están armados los pallets y las cajas sueltas; el total no se modifica.
+        Se agrupan las unidades sueltas, se arman cajas completas y solo queda visible el remanente.
       </p>
+
+      {sueltoOriginal > 0 && (
+        <div className="mt-3 rounded-md border border-amber-200/80 bg-white p-2">
+          <div className="flex flex-wrap items-end gap-3">
+            <div className="w-32">
+              <label className="mb-1 block text-[10px] font-medium text-slate-500">
+                Unidades por caja
+              </label>
+              <input
+                type="number"
+                min={1}
+                step={1}
+                value={botellasPorCaja}
+                onChange={(e) => updateBotellasPorCaja(e.target.value)}
+                className="w-full rounded-md border border-surface-border px-2 py-1.5 text-xs"
+              />
+            </div>
+            {capacidadValida && (
+              <p className="pb-1 text-[11px] text-slate-600">
+                {sueltoOriginal} sueltas → {cajasArmadasDesdeSuelto}{' '}
+                {cajasArmadasDesdeSuelto === 1 ? 'caja nueva' : 'cajas nuevas'}
+                {botellasRestantes > 0 ? ` + ${botellasRestantes} sueltas` : ''}
+              </p>
+            )}
+          </div>
+          {!capacidadValida && (
+            <p className="mt-1 text-[10px] text-red-600">
+              Indicá una cantidad entera mayor a cero.
+            </p>
+          )}
+        </div>
+      )}
 
       {info.referencias_bulto.some((ref) => ref.tipo_bulto === 'PALLET') && (
         <div className="mt-2 flex flex-wrap gap-1.5">

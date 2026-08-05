@@ -40,7 +40,7 @@ import {
   scrollFocusedFieldIntoSheet,
   useVisualViewportBottomInset
 } from '@/hooks/useVisualViewportBottomInset'
-import { formatValorLineaConteo, formatTotalesInventarioResumen } from '@/lib/desglose'
+import { botellasPorCajaDefault, cajasPorPalletDefault, formatValorLineaConteo, formatTotalesInventarioResumen } from '@/lib/desglose'
 import {
   addLineaOffline,
   buildMiSyncPayload,
@@ -627,11 +627,10 @@ export function InventarioOfflinePage() {
   }
 
   function defaultUnidadesPorBulto(tipo: 'PALLET' | 'CAJA', p: OfflineProducto | null): string {
-    if (!p) return tipo === 'PALLET' ? '112' : '6'
     if (tipo === 'PALLET') {
-      return String(p.unidades_por_pallet_default ?? 112)
+      return String(cajasPorPalletDefault(p?.unidades_por_pallet_default))
     }
-    return String(p.unidades_por_caja_default ?? 6)
+    return String(botellasPorCajaDefault(p?.unidades_por_caja_default))
   }
 
   function armKeyboardForCantidadModal() {

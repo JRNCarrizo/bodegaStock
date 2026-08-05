@@ -20,7 +20,7 @@ Toda la especificación del proyecto está en la carpeta [`docs/`](docs/):
 
 ## Estado del proyecto
 
-**v0.3.24** — Fix instalador Windows (evita cartel “no se puede cerrar ControlStock” al actualizar).
+**v0.3.25** — Consultas e ingresos con cajas/botellas, reorganización por línea y reportes Excel.
 
 ## Desarrollo local
 

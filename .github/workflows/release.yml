@@ -9,7 +9,7 @@ on:
       version:
         description: 'Versión sin v (ej. 0.1.0)'
         required: true
-        default: '0.3.25'
+        default: '0.3.26'
 
 permissions:
   contents: write
@@ -68,12 +68,11 @@ jobs:
           body: |
             ## ControlStock ${{ steps.tag.outputs.name }}
 
-            Consultas e ingresos con cajas/botellas, reorganización por línea y reportes Excel.
+            Inventario: Excel por sectores con botellas sueltas y sectores no inventariados.
 
             ### Nuevo / mejorado
-            - Ingresos: suelto, pucherío en pallet/caja
-            - Consulta: botellas sueltas visibles; reorganizar por línea o por sector
-            - Excel de stock: columnas Cajas / Botellas; export por sectores
+            - Export por sectores: columna de botellas solo si el sector tiene sueltas
+            - Tilde para incluir sectores no inventariados (stock actual del sistema)
 
             ### Actualización
             - Desde **v0.2.7 o superior:** Configuración → Buscar actualizaciones

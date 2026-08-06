@@ -20,7 +20,7 @@ Toda la especificación del proyecto está en la carpeta [`docs/`](docs/):
 
 ## Estado del proyecto
 
-**v0.3.25** — Consultas e ingresos con cajas/botellas, reorganización por línea y reportes Excel.
+**v0.3.26** — Inventario: Excel por sectores con botellas sueltas y opción de incluir sectores no inventariados.
 
 ## Desarrollo local
 

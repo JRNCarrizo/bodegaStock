@@ -43,7 +43,7 @@ import {
   type ImportarOfflineBody,
   type ModoConectividadInventario
 } from '../utils/inventario-offline'
-import { getProductoDefaults } from '../utils/stock'
+import { getProductoDefaults, STOCK_LINEA_SUELTO_SQL } from '../utils/stock'
 
 interface SectorAsignacion {
   sector_id: number
@@ -224,23 +224,31 @@ type StockPorSectorItem = {
   nombre: string
   sector_id: number
   sector_nombre: string
-  cantidad: number
+  cajas: number
+  botellas: number
+}
+
+type SectorExportCol = {
+  sector_id: number
+  sector_nombre: string
+  key: string
+  keyBotellas: string
+  conBotellas: boolean
 }
 
 /**
- * Matriz: Código | Producto | [cada sector] | Total.
- * Una fila por producto; celdas = cantidad (cajas) en ese sector.
+ * Matriz: Código | Producto | [cada sector (+ botellas solo si hay sueltas)] | Totales.
  */
 function stockPorSectoresInventarioExport(
   items: StockPorSectorItem[],
-  sectoresSesion: Array<{ sector_id: number; sector_nombre: string }>,
+  sectoresBase: Array<{ sector_id: number; sector_nombre: string }>,
   incluirCeros = false
 ): {
-  sectores: Array<{ sector_id: number; sector_nombre: string; key: string }>
+  sectores: SectorExportCol[]
   rows: Array<Record<string, unknown>>
 } {
   const sectoresMap = new Map<number, string>()
-  for (const s of sectoresSesion) {
+  for (const s of sectoresBase) {
     sectoresMap.set(Number(s.sector_id), String(s.sector_nombre))
   }
   for (const item of items) {
@@ -249,11 +257,18 @@ function stockPorSectoresInventarioExport(
     }
   }
 
-  const sectores = [...sectoresMap.entries()]
+  const sectoresConBotellas = new Set<number>()
+  for (const item of items) {
+    if (Number(item.botellas) > 0) sectoresConBotellas.add(item.sector_id)
+  }
+
+  const sectores: SectorExportCol[] = [...sectoresMap.entries()]
     .map(([sector_id, sector_nombre]) => ({
       sector_id,
       sector_nombre,
-      key: `s_${sector_id}`
+      key: `s_${sector_id}`,
+      keyBotellas: `b_${sector_id}`,
+      conBotellas: sectoresConBotellas.has(sector_id)
     }))
     .sort((a, b) =>
       a.sector_nombre.localeCompare(b.sector_nombre, 'es', { sensitivity: 'base' })
@@ -261,7 +276,12 @@ function stockPorSectoresInventarioExport(
 
   const productos = new Map<
     number,
-    { codigo_interno: string; nombre: string; porSector: Map<number, number> }
+    {
+      codigo_interno: string
+      nombre: string
+      cajasPorSector: Map<number, number>
+      botellasPorSector: Map<number, number>
+    }
   >()
 
   for (const item of items) {
@@ -272,12 +292,19 @@ function stockPorSectoresInventarioExport(
       row = {
         codigo_interno: item.codigo_interno,
         nombre: item.nombre,
-        porSector: new Map()
+        cajasPorSector: new Map(),
+        botellasPorSector: new Map()
       }
       productos.set(productoId, row)
     }
-    const prev = row.porSector.get(item.sector_id) ?? 0
-    row.porSector.set(item.sector_id, prev + (Number(item.cantidad) || 0))
+    row.cajasPorSector.set(
+      item.sector_id,
+      (row.cajasPorSector.get(item.sector_id) ?? 0) + (Number(item.cajas) || 0)
+    )
+    row.botellasPorSector.set(
+      item.sector_id,
+      (row.botellasPorSector.get(item.sector_id) ?? 0) + (Number(item.botellas) || 0)
+    )
   }
 
   const rows = [...productos.values()]
@@ -286,16 +313,24 @@ function stockPorSectoresInventarioExport(
         codigo_interno: p.codigo_interno,
         nombre: p.nombre
       }
-      let total = 0
+      let totalCajas = 0
+      let totalBotellas = 0
       for (const sec of sectores) {
-        const qty = p.porSector.get(sec.sector_id) ?? 0
-        out[sec.key] = qty
-        total += qty
+        const cajas = p.cajasPorSector.get(sec.sector_id) ?? 0
+        out[sec.key] = cajas
+        totalCajas += cajas
+
+        const botellas = p.botellasPorSector.get(sec.sector_id) ?? 0
+        if (sec.conBotellas) out[sec.keyBotellas] = botellas
+        totalBotellas += botellas
       }
-      out.total = total
+      out.total_cajas = totalCajas
+      out.total_botellas = totalBotellas
       return out
     })
-    .filter((r) => incluirCeros || Number(r.total) > 0)
+    .filter(
+      (r) => incluirCeros || Number(r.total_cajas) > 0 || Number(r.total_botellas) > 0
+    )
     .sort((a, b) =>
       String(a.codigo_interno).localeCompare(String(b.codigo_interno), 'es', {
         sensitivity: 'base'
@@ -307,6 +342,73 @@ function stockPorSectoresInventarioExport(
 
 function cantidadExportItem(item: Record<string, unknown>): number {
   return Number(item.total_aplicado != null ? item.total_aplicado : item.total_contado ?? 0)
+}
+
+function sueltoExportItem(item: Record<string, unknown>): number {
+  return Number(
+    item.total_suelto_aplicado != null
+      ? item.total_suelto_aplicado
+      : item.total_suelto_contado ?? 0
+  )
+}
+
+function stockSistemaSectoresNoInventariados(
+  db: ReturnType<typeof getDb>,
+  sectoresInventariadosIds: number[]
+): StockPorSectorItem[] {
+  const inventariados = [...new Set(sectoresInventariadosIds.filter((id) => id > 0))]
+  const notInClause =
+    inventariados.length > 0
+      ? `AND s.id NOT IN (${inventariados.map(() => '?').join(',')})`
+      : ''
+
+  const rows = db
+    .prepare(
+      `
+      SELECT
+        p.id AS producto_id,
+        p.codigo_interno,
+        p.nombre,
+        s.id AS sector_id,
+        s.nombre AS sector_nombre,
+        ss.cantidad_total AS cajas,
+        COALESCE((
+          SELECT SUM(${STOCK_LINEA_SUELTO_SQL})
+          FROM stock_lineas sl
+          WHERE sl.stock_sector_id = ss.id
+        ), 0) AS botellas
+      FROM stock_sector ss
+      JOIN productos p ON p.id = ss.producto_id
+      JOIN sectores s ON s.id = ss.sector_id
+      WHERE p.activo = 1
+        ${notInClause}
+        AND (
+          ss.cantidad_total > 0
+          OR EXISTS (
+            SELECT 1 FROM stock_lineas sl2 WHERE sl2.stock_sector_id = ss.id
+          )
+        )
+    `
+    )
+    .all(...inventariados) as Array<{
+    producto_id: number
+    codigo_interno: string
+    nombre: string
+    sector_id: number
+    sector_nombre: string
+    cajas: number
+    botellas: number
+  }>
+
+  return rows.map((r) => ({
+    producto_id: Number(r.producto_id),
+    codigo_interno: String(r.codigo_interno ?? ''),
+    nombre: String(r.nombre ?? ''),
+    sector_id: Number(r.sector_id),
+    sector_nombre: String(r.sector_nombre ?? ''),
+    cajas: Number(r.cajas) || 0,
+    botellas: Number(r.botellas) || 0
+  }))
 }
 
 export async function inventarioRoutes(app: FastifyInstance): Promise<void> {
@@ -587,14 +689,18 @@ export async function inventarioRoutes(app: FastifyInstance): Promise<void> {
     }
   )
 
-  /** Excel matriz: Código | Producto | columnas por sector | Total. */
-  app.get<{ Params: { id: string }; Querystring: { incluirCeros?: string } }>(
+  /** Excel matriz: Código | Producto | columnas por sector (+ botellas si hay sueltas) | Totales. */
+  app.get<{
+    Params: { id: string }
+    Querystring: { incluirCeros?: string; incluirSectoresNoContados?: string }
+  }>(
     '/api/inventario/sesiones/:id/export-por-sectores',
     { preHandler: requirePermiso('inventario.ver') },
     async (req, reply) => {
       const db = getDb()
       const sesionId = Number(req.params.id)
       const incluirCeros = req.query.incluirCeros === '1'
+      const incluirSectoresNoContados = req.query.incluirSectoresNoContados === '1'
       const sesion = getSesionOrThrow(db, sesionId)
       const sectoresSesion = getSectoresSesion(db, sesionId).map((s) => ({
         sector_id: Number(s.sector_id),
@@ -615,7 +721,8 @@ export async function inventarioRoutes(app: FastifyInstance): Promise<void> {
           nombre: String(item.nombre ?? ''),
           sector_id: Number(item.sector_id),
           sector_nombre: String(item.sector_nombre ?? ''),
-          cantidad: cantidadExportItem(item)
+          cajas: cantidadExportItem(item),
+          botellas: sueltoExportItem(item)
         }))
       } else {
         try {
@@ -626,7 +733,8 @@ export async function inventarioRoutes(app: FastifyInstance): Promise<void> {
             nombre: String(item.nombre ?? ''),
             sector_id: Number(item.sector_id),
             sector_nombre: String(item.sector_nombre ?? ''),
-            cantidad: Number(item.total_contado ?? 0)
+            cajas: Number(item.total_contado ?? 0),
+            botellas: Number(item.total_suelto_contado ?? 0)
           }))
         } catch (e) {
           return reply.status(400).send({
@@ -637,31 +745,67 @@ export async function inventarioRoutes(app: FastifyInstance): Promise<void> {
         }
       }
 
+      const sectoresBase = [...sectoresSesion]
+      if (incluirSectoresNoContados) {
+        const extras = stockSistemaSectoresNoInventariados(
+          db,
+          sectoresSesion.map((s) => s.sector_id)
+        )
+        rawItems = [...rawItems, ...extras]
+        const nombresExtras = new Map<number, string>()
+        for (const item of extras) {
+          nombresExtras.set(item.sector_id, item.sector_nombre)
+        }
+        for (const [sector_id, sector_nombre] of nombresExtras) {
+          if (!sectoresBase.some((s) => s.sector_id === sector_id)) {
+            sectoresBase.push({ sector_id, sector_nombre })
+          }
+        }
+      }
+
       const { sectores, rows } = stockPorSectoresInventarioExport(
         rawItems,
-        sectoresSesion,
+        sectoresBase,
         incluirCeros
       )
-      const totalGeneral = rows.reduce((s, r) => s + (Number(r.total) || 0), 0)
+      const totalCajas = rows.reduce((s, r) => s + (Number(r.total_cajas) || 0), 0)
+      const totalBotellas = rows.reduce((s, r) => s + (Number(r.total_botellas) || 0), 0)
 
       const columns = [
         { header: 'Codigo', key: 'codigo_interno', width: 18 },
         { header: 'Descripcion', key: 'nombre', width: 36 },
-        ...sectores.map((sec) => ({
-          header: sec.sector_nombre,
-          key: sec.key,
-          width: Math.min(22, Math.max(12, sec.sector_nombre.length + 2))
-        })),
-        { header: 'Total', key: 'total', width: 12 }
+        ...sectores.flatMap((sec) => {
+          const width = Math.min(22, Math.max(12, sec.sector_nombre.length + 2))
+          const base = [{ header: sec.sector_nombre, key: sec.key, width }]
+          return sec.conBotellas
+            ? [
+                ...base,
+                {
+                  header: `${sec.sector_nombre} (botellas)`,
+                  key: sec.keyBotellas,
+                  width
+                }
+              ]
+            : base
+        }),
+        { header: 'Total cajas', key: 'total_cajas', width: 14 },
+        { header: 'Total botellas', key: 'total_botellas', width: 15 }
       ]
 
       const totalRow: Record<string, unknown> = {
         codigo_interno: '',
         nombre: 'TOTAL',
-        total: totalGeneral
+        total_cajas: totalCajas,
+        total_botellas: totalBotellas
       }
       for (const sec of sectores) {
         totalRow[sec.key] = rows.reduce((s, r) => s + (Number(r[sec.key]) || 0), 0)
+        if (sec.conBotellas) {
+          totalRow[sec.keyBotellas] = rows.reduce(
+            (s, r) => s + (Number(r[sec.keyBotellas]) || 0),
+            0
+          )
+        }
       }
 
       const buffer = await buildMultiSheetExcel([
@@ -674,7 +818,12 @@ export async function inventarioRoutes(app: FastifyInstance): Promise<void> {
           ['Observación', sesion.observacion as string | null],
           ['Sectores', sectores.length],
           ['Productos', rows.length],
-          ['Cantidad total', totalGeneral]
+          ['Total cajas', totalCajas],
+          ['Total botellas', totalBotellas],
+          [
+            'Incluye sectores no inventariados',
+            incluirSectoresNoContados ? 'Sí' : 'No'
+          ]
         ]),
         {
           name: 'Por sectores',

@@ -724,7 +724,10 @@ function InventarioReporteCierre({
   reporte: NonNullable<InventarioSesionDetalle['reporte']>
   onExportReporte?: () => void
   onExportStock?: (incluirCeros: boolean) => void
-  onExportPorSectores?: (incluirCeros: boolean) => void
+  onExportPorSectores?: (opts: {
+    incluirCeros: boolean
+    incluirSectoresNoContados: boolean
+  }) => void
   onRepararCierre?: () => void
   reparandoCierre?: boolean
   exportingReporte?: boolean
@@ -739,6 +742,7 @@ function InventarioReporteCierre({
   const [listadoOpen, setListadoOpen] = useState(false)
   const [ajustesOpen, setAjustesOpen] = useState(false)
   const [incluirCerosExport, setIncluirCerosExport] = useState(false)
+  const [incluirSectoresNoContados, setIncluirSectoresNoContados] = useState(false)
   const todoOk = (resumen.con_ajuste ?? 0) === 0
   const exporting = Boolean(exportingReporte || exportingStock || exportingPorSectores)
   const hayAjustesAplicados = ajustes_aplicados.length > 0
@@ -865,8 +869,13 @@ function InventarioReporteCierre({
               size="sm"
               className="rounded-xl"
               disabled={exporting}
-              onClick={() => onExportPorSectores(incluirCerosExport)}
-              title="Excel: código, producto, columnas por sector y total"
+              onClick={() =>
+                onExportPorSectores({
+                  incluirCeros: incluirCerosExport,
+                  incluirSectoresNoContados
+                })
+              }
+              title="Excel: código, producto, columnas por sector y totales"
             >
               {exportingPorSectores ? (
                 <Loader2 className="h-4 w-4 animate-spin" />
@@ -886,6 +895,18 @@ function InventarioReporteCierre({
                 className="h-4 w-4 rounded border-surface-border text-brand-600 focus:ring-brand-500"
               />
               Incluir productos en cero
+            </label>
+          )}
+          {onExportPorSectores && (
+            <label className="flex cursor-pointer items-center gap-2 rounded-xl border border-surface-border bg-white px-3 py-1.5 text-xs font-medium text-slate-600">
+              <input
+                type="checkbox"
+                checked={incluirSectoresNoContados}
+                onChange={(e) => setIncluirSectoresNoContados(e.target.checked)}
+                disabled={exporting}
+                className="h-4 w-4 rounded border-surface-border text-brand-600 focus:ring-brand-500"
+              />
+              Incluir sectores no inventariados
             </label>
           )}
           {todoOk && (
@@ -2276,7 +2297,10 @@ function InventarioVistaPreviaCierre({
     lineas?: Array<Record<string, unknown>>
   }>) => void
   cerrando: boolean
-  onExportPorSectores?: (incluirCeros: boolean) => void
+  onExportPorSectores?: (opts: {
+    incluirCeros: boolean
+    incluirSectoresNoContados: boolean
+  }) => void
   exportingPorSectores?: boolean
 }) {
   const { items } = comparacion
@@ -2285,6 +2309,7 @@ function InventarioVistaPreviaCierre({
   const [decisiones, setDecisiones] = useState<Map<string, ItemDecisionState>>(() => new Map())
   const [showConteoCompleto, setShowConteoCompleto] = useState(false)
   const [incluirCerosExport, setIncluirCerosExport] = useState(false)
+  const [incluirSectoresNoContados, setIncluirSectoresNoContados] = useState(false)
 
   const resumen = useMemo(
     () => calcResumenConDecisiones(items, decisiones),
@@ -2404,8 +2429,13 @@ function InventarioVistaPreviaCierre({
                 size="sm"
                 className="rounded-xl"
                 disabled={cerrando || exportingPorSectores}
-                onClick={() => onExportPorSectores(incluirCerosExport)}
-                title="Excel: código, producto, columnas por sector y total"
+                onClick={() =>
+                  onExportPorSectores({
+                    incluirCeros: incluirCerosExport,
+                    incluirSectoresNoContados
+                  })
+                }
+                title="Excel: código, producto, columnas por sector y totales"
               >
                 {exportingPorSectores ? (
                   <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -2425,6 +2455,18 @@ function InventarioVistaPreviaCierre({
                   className="h-4 w-4 rounded border-surface-border text-brand-600 focus:ring-brand-500"
                 />
                 Incluir productos en cero
+              </label>
+            )}
+            {onExportPorSectores && (
+              <label className="flex cursor-pointer items-center gap-2 rounded-xl border border-surface-border bg-white px-3 py-1.5 text-xs font-medium text-slate-600">
+                <input
+                  type="checkbox"
+                  checked={incluirSectoresNoContados}
+                  onChange={(e) => setIncluirSectoresNoContados(e.target.checked)}
+                  disabled={cerrando || exportingPorSectores}
+                  className="h-4 w-4 rounded border-surface-border text-brand-600 focus:ring-brand-500"
+                />
+                Incluir sectores no inventariados
               </label>
             )}
             {!hayDiferencias && (
@@ -3106,14 +3148,20 @@ export function InventarioPage() {
     }
   }
 
-  async function exportarPorSectores(id: number, nombre: string, incluirCeros = false) {
+  async function exportarPorSectores(
+    id: number,
+    nombre: string,
+    opts: { incluirCeros?: boolean; incluirSectoresNoContados?: boolean } = {}
+  ) {
     setExportingPorSectores(true)
     setError('')
     try {
+      const params = new URLSearchParams()
+      if (opts.incluirCeros) params.set('incluirCeros', '1')
+      if (opts.incluirSectoresNoContados) params.set('incluirSectoresNoContados', '1')
+      const qs = params.toString()
       await downloadApiFile(
-        `/api/inventario/sesiones/${id}/export-por-sectores${
-          incluirCeros ? '?incluirCeros=1' : ''
-        }`,
+        `/api/inventario/sesiones/${id}/export-por-sectores${qs ? `?${qs}` : ''}`,
         `inventario-por-sectores-${nombre || id}.xlsx`
       )
     } catch (e) {
@@ -3436,8 +3484,8 @@ export function InventarioPage() {
             comparacion={comparacionSistema}
             onCerrar={(decisiones) => void cerrarSesion(s.id, decisiones)}
             cerrando={cerrando}
-            onExportPorSectores={(incluirCeros) =>
-              void exportarPorSectores(s.id, s.nombre, incluirCeros)
+            onExportPorSectores={(opts) =>
+              void exportarPorSectores(s.id, s.nombre, opts)
             }
             exportingPorSectores={exportingPorSectores}
           />
@@ -3459,8 +3507,8 @@ export function InventarioPage() {
             onExportStock={(incluirCeros) =>
               void exportarStockFinal(s.id, s.nombre, incluirCeros)
             }
-            onExportPorSectores={(incluirCeros) =>
-              void exportarPorSectores(s.id, s.nombre, incluirCeros)
+            onExportPorSectores={(opts) =>
+              void exportarPorSectores(s.id, s.nombre, opts)
             }
           />
         )}

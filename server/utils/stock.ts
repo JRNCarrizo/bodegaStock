@@ -213,6 +213,152 @@ export function getProductoDefaults(
   }
 }
 
+/**
+ * Recuerda botellas/caja del producto cuando se cuenta en tipo CAJA.
+ * Se usa en escritorio (conteo online, import offline y cierre de inventario).
+ */
+export function rememberUnidadesPorCajaDefault(
+  db: Database.Database,
+  productoId: number,
+  unidadesPorCaja: number | null | undefined
+): void {
+  const n = Number(unidadesPorCaja)
+  if (!Number.isFinite(n) || n <= 0 || !Number.isInteger(n)) return
+
+  const actual = db
+    .prepare(`SELECT unidades_por_caja_default FROM productos WHERE id = ?`)
+    .get(productoId) as { unidades_por_caja_default: number | null } | undefined
+  if (!actual) return
+  if (Number(actual.unidades_por_caja_default) === n) return
+
+  db.prepare(`UPDATE productos SET unidades_por_caja_default = ? WHERE id = ?`).run(n, productoId)
+}
+
+/** Persiste botellas/caja desde líneas CAJA (conteo o stock aplicado). */
+export function rememberUnidadesPorCajaFromLineas(
+  db: Database.Database,
+  productoId: number,
+  lineas: Array<{ tipo_bulto?: string | null; unidades_por_bulto?: number | null }>
+): void {
+  for (const l of lineas) {
+    if (String(l.tipo_bulto) === 'CAJA') {
+      rememberUnidadesPorCajaDefault(db, productoId, l.unidades_por_bulto)
+    }
+  }
+}
+
+/**
+ * Si hay líneas CAJA en stock, alinea el default del producto con ellas
+ * (el stock real manda sobre un 6 genérico del catálogo).
+ */
+export function ensureUnidadesPorCajaDefaultFromStock(
+  db: Database.Database,
+  productoId: number
+): number | null {
+  const actual = db
+    .prepare(`SELECT unidades_por_caja_default FROM productos WHERE id = ?`)
+    .get(productoId) as { unidades_por_caja_default: number | null } | undefined
+  if (!actual) return null
+
+  const inferred = db
+    .prepare(
+      `
+      SELECT sl.unidades_por_bulto AS n, COUNT(*) AS cnt
+      FROM stock_lineas sl
+      JOIN stock_sector ss ON ss.id = sl.stock_sector_id
+      WHERE ss.producto_id = ?
+        AND sl.tipo_bulto = 'CAJA'
+        AND sl.unidades_por_bulto IS NOT NULL
+        AND sl.unidades_por_bulto > 0
+      GROUP BY sl.unidades_por_bulto
+      ORDER BY cnt DESC, n ASC
+      LIMIT 1
+    `
+    )
+    .get(productoId) as { n: number; cnt: number } | undefined
+
+  if (inferred) {
+    rememberUnidadesPorCajaDefault(db, productoId, inferred.n)
+    return Number(inferred.n)
+  }
+
+  const current = Number(actual.unidades_por_caja_default)
+  return Number.isFinite(current) && current > 0 ? current : null
+}
+
+/** Corrige defaults de botellas/caja según el stock CAJA existente. */
+export function syncAllUnidadesPorCajaDefaultsFromStock(db: Database.Database): number {
+  const rows = db
+    .prepare(
+      `
+      SELECT DISTINCT ss.producto_id AS id
+      FROM stock_sector ss
+      JOIN stock_lineas sl ON sl.stock_sector_id = ss.id
+      WHERE sl.tipo_bulto = 'CAJA'
+        AND sl.unidades_por_bulto IS NOT NULL
+        AND sl.unidades_por_bulto > 0
+    `
+    )
+    .all() as Array<{ id: number }>
+
+  let updated = 0
+  for (const row of rows) {
+    const before = db
+      .prepare(`SELECT unidades_por_caja_default AS n FROM productos WHERE id = ?`)
+      .get(row.id) as { n: number | null } | undefined
+    const after = ensureUnidadesPorCajaDefaultFromStock(db, row.id)
+    if (after != null && Number(before?.n) !== after) updated += 1
+  }
+  return updated
+}
+
+/**
+ * Corrige líneas CAJA cuyo total_unidades quedó guardado en cajas (bug de cierre
+ * de inventario) en lugar de botellas.
+ */
+export function normalizeCajaStockLineaTotales(db: Database.Database): number {
+  const rows = db
+    .prepare(
+      `
+      SELECT id, cantidad_bultos, unidades_por_bulto, cantidad_suelta, total_unidades
+      FROM stock_lineas
+      WHERE tipo_bulto = 'CAJA'
+        AND cantidad_bultos IS NOT NULL
+        AND cantidad_bultos > 0
+        AND unidades_por_bulto IS NOT NULL
+        AND unidades_por_bulto > 1
+    `
+    )
+    .all() as Array<{
+    id: number
+    cantidad_bultos: number
+    unidades_por_bulto: number
+    cantidad_suelta: number | null
+    total_unidades: number
+  }>
+
+  let fixed = 0
+  const update = db.prepare(`UPDATE stock_lineas SET total_unidades = ? WHERE id = ?`)
+  for (const row of rows) {
+    const expected = calcTotalUnidades({
+      tipo_bulto: 'CAJA',
+      cantidad_bultos: row.cantidad_bultos,
+      unidades_por_bulto: row.unidades_por_bulto,
+      cantidad_suelta: row.cantidad_suelta
+    })
+    // Firma del bug: total == cantidad de cajas (sin multiplicar por botellas/caja).
+    if (
+      Number(row.total_unidades) === Number(row.cantidad_bultos) &&
+      expected !== Number(row.total_unidades)
+    ) {
+      update.run(expected, row.id)
+      fixed += 1
+    }
+  }
+  if (fixed > 0) recalcAllStockSectorTotals(db)
+  return fixed
+}
+
 export function formatCantidadUnidad(cantidad: number, unidad?: string | null): string {
   return `${cantidad} ${normalizarUnidadProducto(unidad)}`
 }
@@ -1281,7 +1427,16 @@ function lineaCajasDisponibles(linea: StockLineaRow, botellasPorCaja: number): n
 
 function lineaBotellasDisponibles(linea: StockLineaRow, botellasPorCaja: number): number {
   if (linea.tipo_bulto === 'PALLET') return linea.total_unidades * botellasPorCaja
-  if (linea.tipo_bulto === 'CAJA') return linea.total_unidades
+  if (linea.tipo_bulto === 'CAJA') {
+    // Siempre calcular desde el desglose: total_unidades a veces quedó en "cajas"
+    // (p. ej. tras inventario) y no en botellas.
+    return calcTotalUnidades({
+      tipo_bulto: 'CAJA',
+      cantidad_bultos: linea.cantidad_bultos,
+      unidades_por_bulto: linea.unidades_por_bulto,
+      cantidad_suelta: linea.cantidad_suelta
+    })
+  }
   if (linea.tipo_bulto === 'SUELTO') {
     return Number(linea.cantidad_suelta ?? linea.total_unidades ?? 0)
   }
@@ -2194,28 +2349,39 @@ function applyCajaLineDeductionBotellas(
   takeBotellas: number,
   botellasPorCaja: number
 ): void {
-  const newTotal = linea.total_unidades - takeBotellas
+  const porCaja =
+    Number(linea.unidades_por_bulto ?? 0) > 0
+      ? Number(linea.unidades_por_bulto)
+      : botellasPorCaja
+
+  const currentBotellas = calcTotalUnidades({
+    tipo_bulto: 'CAJA',
+    cantidad_bultos: linea.cantidad_bultos,
+    unidades_por_bulto: porCaja,
+    cantidad_suelta: linea.cantidad_suelta
+  })
+  const newTotal = currentBotellas - takeBotellas
 
   if (newTotal <= 0) {
     db.prepare('DELETE FROM stock_lineas WHERE id = ?').run(linea.id)
   } else {
-    const fullCajas = Math.floor(newTotal / botellasPorCaja)
-    const remainder = newTotal % botellasPorCaja
+    const fullCajas = Math.floor(newTotal / porCaja)
+    const remainder = newTotal % porCaja
 
     if (fullCajas > 0 && remainder === 0) {
       db.prepare(`
         UPDATE stock_lineas
-        SET cantidad_bultos = ?, unidades_por_bulto = ?, total_unidades = ?,
-            updated_at = datetime('now')
+        SET cantidad_bultos = ?, unidades_por_bulto = ?, cantidad_suelta = NULL,
+            total_unidades = ?, updated_at = datetime('now')
         WHERE id = ?
-      `).run(fullCajas, botellasPorCaja, fullCajas * botellasPorCaja, linea.id)
+      `).run(fullCajas, porCaja, fullCajas * porCaja, linea.id)
     } else if (fullCajas > 0 && remainder > 0) {
       db.prepare(`
         UPDATE stock_lineas
-        SET cantidad_bultos = ?, unidades_por_bulto = ?, total_unidades = ?,
-            updated_at = datetime('now')
+        SET cantidad_bultos = ?, unidades_por_bulto = ?, cantidad_suelta = NULL,
+            total_unidades = ?, updated_at = datetime('now')
         WHERE id = ?
-      `).run(fullCajas, botellasPorCaja, fullCajas * botellasPorCaja, linea.id)
+      `).run(fullCajas, porCaja, fullCajas * porCaja, linea.id)
       addPartialBultoToStockSector(
         db,
         linea.stock_sector_id,
@@ -2227,8 +2393,8 @@ function applyCajaLineDeductionBotellas(
     } else {
       db.prepare(`
         UPDATE stock_lineas
-        SET cantidad_bultos = 1, unidades_por_bulto = ?, total_unidades = ?,
-            updated_at = datetime('now')
+        SET cantidad_bultos = 1, unidades_por_bulto = ?, cantidad_suelta = NULL,
+            total_unidades = ?, updated_at = datetime('now')
         WHERE id = ?
       `).run(newTotal, newTotal, linea.id)
     }

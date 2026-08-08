@@ -39,7 +39,7 @@ const emptyForm = (): ProductoForm => ({
   descripcion: '',
   unidad: 'botella',
   unidades_por_pallet_default: 112,
-  unidades_por_caja_default: 6,
+  unidades_por_caja_default: '',
   activo: true
 })
 
@@ -87,6 +87,7 @@ export function ProductosPage() {
   const nombreRef = useRef<HTMLInputElement>(null)
   const descripcionRef = useRef<HTMLInputElement>(null)
   const codigoBarrasRef = useRef<HTMLInputElement>(null)
+  const botellasPorCajaRef = useRef<HTMLInputElement>(null)
   const activoRef = useRef<HTMLInputElement>(null)
   const imagenInputRef = useRef<HTMLInputElement>(null)
   const importInputRef = useRef<HTMLInputElement>(null)
@@ -254,7 +255,7 @@ export function ProductosPage() {
     setTimeout(() => focusField(codigoInternoRef), 50)
   }
 
-  function openEdit(p: Producto) {
+  async function openEdit(p: Producto) {
     setEditingId(p.id)
     setEditingHadImage(!!p.imagen_path)
     setForm({
@@ -264,7 +265,7 @@ export function ProductosPage() {
       descripcion: p.descripcion ?? '',
       unidad: p.unidad || 'botella',
       unidades_por_pallet_default: p.unidades_por_pallet_default ?? 112,
-      unidades_por_caja_default: p.unidades_por_caja_default ?? 6,
+      unidades_por_caja_default: p.unidades_por_caja_default ?? '',
       activo: !!p.activo
     })
     setImagenPreview(null)
@@ -274,6 +275,24 @@ export function ProductosPage() {
     setError('')
     setView('form')
     setTimeout(() => focusField(codigoInternoRef), 50)
+
+    // Recarga fresco: puede completar botellas/caja inferidas del stock post-inventario.
+    try {
+      const fresh = await api<Producto>(`/api/productos/${p.id}`)
+      setEditingHadImage(!!fresh.imagen_path)
+      setForm({
+        codigo_interno: fresh.codigo_interno,
+        codigo_barras: fresh.codigo_barras ?? '',
+        nombre: fresh.nombre,
+        descripcion: fresh.descripcion ?? '',
+        unidad: fresh.unidad || 'botella',
+        unidades_por_pallet_default: fresh.unidades_por_pallet_default ?? 112,
+        unidades_por_caja_default: fresh.unidades_por_caja_default ?? '',
+        activo: !!fresh.activo
+      })
+    } catch {
+      /* usa datos del listado */
+    }
   }
 
   const registroListKb = useRegistroListKeyboard({
@@ -283,7 +302,7 @@ export function ProductosPage() {
     canCreate: hasPermiso('productos.crear'),
     onCreate: abrirNuevoProducto,
     onOpenDetail: (p) => {
-      if (hasPermiso('productos.editar')) openEdit(p)
+      if (hasPermiso('productos.editar')) void openEdit(p)
     }
   })
 
@@ -336,7 +355,9 @@ export function ProductosPage() {
       unidades_por_pallet_default:
         form.unidades_por_pallet_default === '' ? 112 : Number(form.unidades_por_pallet_default),
       unidades_por_caja_default:
-        form.unidades_por_caja_default === '' ? 6 : Number(form.unidades_por_caja_default),
+        form.unidades_por_caja_default === '' || form.unidades_por_caja_default == null
+          ? null
+          : Number(form.unidades_por_caja_default),
       activo: form.activo
     }
 
@@ -493,7 +514,7 @@ export function ProductosPage() {
               label="Código de barras"
               value={form.codigo_barras}
               onChange={(e) => setForm({ ...form, codigo_barras: e.target.value })}
-              onKeyDown={(e) => handleFormKeyDown(e, activoRef)}
+              onKeyDown={(e) => handleFormKeyDown(e, botellasPorCajaRef)}
             />
             <div className="mt-3 flex flex-wrap gap-2">
               <Button
@@ -537,6 +558,31 @@ export function ProductosPage() {
                 </Button>
               )}
             </div>
+          </div>
+
+          <div className="rounded-xl border border-surface-border bg-surface-muted/20 p-4">
+            <p className="mb-3 text-xs font-semibold uppercase tracking-wider text-slate-400">
+              Empaque
+            </p>
+            <Input
+              ref={botellasPorCajaRef}
+              label="Botellas por caja (opc.)"
+              type="number"
+              inputMode="numeric"
+              min="1"
+              value={form.unidades_por_caja_default}
+              onChange={(e) =>
+                setForm({
+                  ...form,
+                  unidades_por_caja_default: e.target.value === '' ? '' : Number(e.target.value)
+                })
+              }
+              onKeyDown={(e) => handleFormKeyDown(e, activoRef)}
+              placeholder="Vacío hasta contar en Caja (ej. 4, 6, 12)"
+            />
+            <p className="mt-2 text-xs text-slate-500">
+              Si lo dejás vacío, al contar en tipo Caja (o al cerrar el inventario) se guarda solo.
+            </p>
           </div>
 
           <div className="flex items-center gap-3 rounded-xl border border-surface-border bg-white px-4 py-3">
@@ -630,7 +676,7 @@ export function ProductosPage() {
                     {editingId
                       ? 'Modificá código, nombre, barras o imagen'
                       : 'Enter avanza entre campos · Esc vuelve al listado'}
-                    {!editingId && ' · pallet 112 y caja 6 por defecto'}
+                    {!editingId && ' · botellas por caja opcional'}
                   </p>
                 </div>
               </div>
@@ -906,7 +952,7 @@ export function ProductosPage() {
                         variant="secondary"
                         size="sm"
                         className="rounded-lg"
-                        onClick={() => openEdit(p)}
+                        onClick={() => void openEdit(p)}
                       >
                         <Pencil className="h-4 w-4" />
                         Editar

@@ -472,25 +472,6 @@ export function LoginPage() {
               </form>
             </CardBody>
           </Card>
-
-          <div className="rounded-xl border border-dashed border-surface-border bg-white px-4 py-3 text-center shadow-sm">
-            <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">
-              Primera instalación
-            </p>
-            <p className="mt-1.5 text-sm text-slate-600">
-              Usuario{' '}
-              <span className="rounded-md bg-slate-100 px-1.5 py-0.5 font-mono text-xs font-semibold text-slate-700">
-                admin
-              </span>{' '}
-              · contraseña{' '}
-              <span className="rounded-md bg-slate-100 px-1.5 py-0.5 font-mono text-xs font-semibold text-slate-700">
-                admin123
-              </span>
-            </p>
-            <p className="mt-1.5 text-xs text-slate-400">
-              Cambiá la contraseña después del primer acceso.
-            </p>
-          </div>
         </div>
       </main>
 
@@ -500,6 +481,7 @@ export function LoginPage() {
           onClose={() => setShowServerQr(false)}
           onScan={handleServerQrScan}
           title="Escanear QR del PC servidor"
+          variant="qr"
         />
       )}
     </div>

@@ -20,7 +20,7 @@ Toda la especificación del proyecto está en la carpeta [`docs/`](docs/):
 
 ## Estado del proyecto
 
-**v0.3.26** — Inventario: Excel por sectores con botellas sueltas y opción de incluir sectores no inventariados.
+**v0.3.27** — Inventario (cuentas, botellas/caja, layout sticky), fix descuento por botellas en planillas y sync de empaque producto↔stock.
 
 ## Desarrollo local
 

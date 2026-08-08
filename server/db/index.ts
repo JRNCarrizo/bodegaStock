@@ -6,7 +6,7 @@ import { join } from 'path'
 import { SCHEMA_SQL } from './schema'
 import { runMigrations } from './migrate'
 import { ensureSystemRoles } from './roles-seed'
-import { recalcStockTotalsEnCajas } from '../utils/stock'
+import { recalcStockTotalsEnCajas, syncAllUnidadesPorCajaDefaultsFromStock, normalizeCajaStockLineaTotales } from '../utils/stock'
 
 let db: Database.Database | null = null
 
@@ -29,6 +29,8 @@ export function initDatabase(): Database.Database {
   seedIfEmpty(db)
 
   recalcStockTotalsEnCajas(db)
+  syncAllUnidadesPorCajaDefaultsFromStock(db)
+  normalizeCajaStockLineaTotales(db)
 
   return db
 }

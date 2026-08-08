@@ -43,7 +43,7 @@ import {
   type ImportarOfflineBody,
   type ModoConectividadInventario
 } from '../utils/inventario-offline'
-import { getProductoDefaults, STOCK_LINEA_SUELTO_SQL } from '../utils/stock'
+import { getProductoDefaults, rememberUnidadesPorCajaDefault, STOCK_LINEA_SUELTO_SQL } from '../utils/stock'
 
 interface SectorAsignacion {
   sector_id: number
@@ -1281,6 +1281,10 @@ export async function inventarioRoutes(app: FastifyInstance): Promise<void> {
             Number(maxOrden.m) + 1
           )
 
+          if (body.tipo_bulto === 'CAJA') {
+            rememberUnidadesPorCajaDefault(db, body.producto_id, body.unidades_por_bulto)
+          }
+
           if (String(sector.estado) === 'PENDIENTE') {
             db.prepare(`
               UPDATE inventario_sectores SET estado = 'EN_CONTEO' WHERE id = ?
@@ -1358,6 +1362,10 @@ export async function inventarioRoutes(app: FastifyInstance): Promise<void> {
           total,
           lineaId
         )
+
+        if (body.tipo_bulto === 'CAJA') {
+          rememberUnidadesPorCajaDefault(db, productoId, body.unidades_por_bulto)
+        }
 
         return { ok: true, total_unidades: total }
       } catch (e) {

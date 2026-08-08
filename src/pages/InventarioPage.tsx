@@ -7,6 +7,7 @@ import {
   BarChart3,
   Calendar,
   Camera,
+  Calculator,
   Check,
   ChevronDown,
   ChevronLeft,
@@ -59,6 +60,12 @@ import {
   type TipoBulto,
   type TotalesInventarioDesglose
 } from '@/lib/desglose'
+import {
+  cantidadExprEsCuenta,
+  conteoExprPendientes,
+  evalCantidadExpr,
+  resolveCantidadExprField
+} from '@/lib/cantidadExpr'
 import { downloadApiFile } from '@/lib/downloadFile'
 import { api, cn, formatDbDateTimeLocal } from '@/lib/utils'
 import type {
@@ -4663,7 +4670,6 @@ function ConteoSectorView({
   const productSearchRef = useRef<HTMLInputElement>(null)
   const productResultsListRef = useRef<HTMLUListElement>(null)
   const pendingScrollProductoIdRef = useRef<number | null>(null)
-  const tipoRef = useRef<HTMLSelectElement>(null)
   const cantidadBultosRef = useRef<HTMLInputElement>(null)
   const unidadesRef = useRef<HTMLInputElement>(null)
   const cantidadSueltaRef = useRef<HTMLInputElement>(null)
@@ -4686,6 +4692,9 @@ function ConteoSectorView({
       if (!el) return
       el.focus()
       el.scrollIntoView({ block: 'center', behavior: 'smooth' })
+      if (el instanceof HTMLInputElement) {
+        requestAnimationFrame(() => el.select())
+      }
     })
   }
 
@@ -4738,6 +4747,14 @@ function ConteoSectorView({
   }
 
   function handleTipoBultoChange(tipo: TipoBulto) {
+    const targetEl =
+      tipo === 'SUELTO' ? cantidadSueltaRef.current : cantidadBultosRef.current
+    // Si el input con foco se va a ocultar (Caja/Pallet → Suelto), mover el foco
+    // ANTES del setState. Si no, Android cierra y reabre el teclado (salto).
+    if (targetEl && document.activeElement !== targetEl) {
+      targetEl.focus({ preventScroll: true })
+    }
+
     setTipoBulto(tipo)
     if (tipo === 'SUELTO') {
       setCantidadBultos('')
@@ -4746,6 +4763,15 @@ function ConteoSectorView({
     } else {
       setUnidadesPorBulto(defaultUnidadesPorBulto(tipo, selectedProduct))
     }
+
+    requestAnimationFrame(() => {
+      const el =
+        tipo === 'SUELTO' ? cantidadSueltaRef.current : cantidadBultosRef.current
+      if (!el) return
+      if (document.activeElement !== el) el.focus({ preventScroll: true })
+      scrollFocusedFieldIntoSheet(el, 0)
+      el.select()
+    })
   }
 
   function selectProduct(p: Producto) {
@@ -5021,6 +5047,17 @@ function ConteoSectorView({
       return false
     }
 
+    if (
+      conteoExprPendientes({
+        tipo: tipoBulto,
+        cantidadBultos,
+        unidadesPorBulto,
+        cantidadSuelta
+      })
+    ) {
+      return aplicarCuentasConteo()
+    }
+
     const body: Record<string, unknown> = {
       producto_id: selectedProduct.id,
       tipo_bulto: tipoBulto
@@ -5034,21 +5071,54 @@ function ConteoSectorView({
       }
       body.cantidad_suelta = suelta
     } else {
-      const bultos = Number(cantidadBultos)
-      const porBulto = Number(unidadesPorBulto)
-      if (!Number.isFinite(bultos) || bultos <= 0) {
-        setError(`Indicá la cantidad de ${tipoBulto === 'PALLET' ? 'pallets' : 'cajas'}`)
-        return false
+      if (tipoBulto === 'CAJA') {
+        const cajas = resolveCantidadExprField(cantidadBultos, { min: 1 })
+        if (cajas.value == null) {
+          setError(cajas.error ?? 'Cantidad de cajas inválida')
+          return false
+        }
+        body.cantidad_bultos = cajas.value
+        setCantidadBultos(cajas.text)
+      } else {
+        const bultos = Number(cantidadBultos)
+        if (!Number.isFinite(bultos) || bultos <= 0) {
+          setError(`Indicá la cantidad de ${tipoBulto === 'PALLET' ? 'pallets' : 'cajas'}`)
+          return false
+        }
+        body.cantidad_bultos = bultos
       }
-      if (!Number.isFinite(porBulto) || porBulto <= 0) {
-        setError('Indicá las unidades por bulto')
-        return false
-      }
-      body.cantidad_bultos = bultos
-      body.unidades_por_bulto = porBulto
-      if (cantidadSuelta.trim()) {
-        const extra = Number(cantidadSuelta)
-        if (Number.isFinite(extra) && extra > 0) body.cantidad_suelta = extra
+
+      if (tipoBulto === 'PALLET') {
+        const porPallet = resolveCantidadExprField(unidadesPorBulto, { min: 1 })
+        if (porPallet.value == null) {
+          setError(porPallet.error ?? 'Cajas por pallet inválidas')
+          return false
+        }
+        body.unidades_por_bulto = porPallet.value
+        setUnidadesPorBulto(porPallet.text)
+
+        if (cantidadSuelta.trim()) {
+          const sueltas = resolveCantidadExprField(cantidadSuelta, { min: 0 })
+          if (sueltas.value == null) {
+            setError(sueltas.error ?? 'Cajas sueltas inválidas')
+            return false
+          }
+          if (sueltas.value > 0) {
+            body.cantidad_suelta = sueltas.value
+            setCantidadSuelta(sueltas.text)
+          }
+        }
+      } else {
+        const porBulto = Number(unidadesPorBulto)
+        if (!Number.isFinite(porBulto) || porBulto <= 0) {
+          setError('Indicá las unidades por bulto')
+          return false
+        }
+        body.unidades_por_bulto = porBulto
+        if (cantidadSuelta.trim()) {
+          const extra = Number(cantidadSuelta)
+          if (Number.isFinite(extra) && extra > 0) body.cantidad_suelta = extra
+        }
       }
     }
 
@@ -5073,6 +5143,7 @@ function ConteoSectorView({
         })
       }
       pendingScrollProductoIdRef.current = productoId
+      setExpandedProductos(new Set([productoId]))
       setEditingLineaId(null)
       setSelectedProduct(null)
       setProductSearch('')
@@ -5099,8 +5170,67 @@ function ConteoSectorView({
     }
   }
 
+  function aplicarCuentasConteo(): boolean {
+    const keepFocus =
+      document.activeElement instanceof HTMLInputElement ? document.activeElement : null
+
+    const restoreTeclado = () => {
+      requestAnimationFrame(() => {
+        const el =
+          keepFocus && document.contains(keepFocus)
+            ? keepFocus
+            : tipoBulto === 'CAJA'
+              ? cantidadBultosRef.current
+              : unidadesRef.current ?? cantidadSueltaRef.current
+        el?.focus({ preventScroll: true })
+      })
+    }
+
+    if (tipoBulto === 'CAJA') {
+      const cajas = resolveCantidadExprField(cantidadBultos, { min: 1 })
+      if (cajas.value == null) {
+        setError(cajas.error ?? 'Cantidad de cajas inválida')
+        restoreTeclado()
+        return false
+      }
+      setCantidadBultos(cajas.text)
+      setError('')
+      restoreTeclado()
+      return true
+    }
+
+    const porPallet = resolveCantidadExprField(unidadesPorBulto, { min: 1 })
+    if (porPallet.value == null) {
+      setError(porPallet.error ?? 'Cajas por pallet inválidas')
+      restoreTeclado()
+      return false
+    }
+    setUnidadesPorBulto(porPallet.text)
+
+    if (cantidadSuelta.trim()) {
+      const sueltas = resolveCantidadExprField(cantidadSuelta, { min: 0 })
+      if (sueltas.value == null) {
+        setError(sueltas.error ?? 'Cajas sueltas inválidas')
+        restoreTeclado()
+        return false
+      }
+      setCantidadSuelta(sueltas.text)
+    }
+    setError('')
+    restoreTeclado()
+    return true
+  }
+
+  const cuentasPendientes = conteoExprPendientes({
+    tipo: tipoBulto,
+    cantidadBultos,
+    unidadesPorBulto,
+    cantidadSuelta
+  })
+
   async function empezarEditarLinea(l: InventarioConteoLinea) {
     setEditingLineaId(l.id)
+    setExpandedProductos(new Set([l.producto_id]))
     setError('')
     try {
       const rows = await api<Producto[]>(
@@ -5143,7 +5273,7 @@ function ConteoSectorView({
     nombre: string
   }) {
     setEditingLineaId(null)
-    setExpandedProductos((prev) => new Set(prev).add(grupo.producto_id))
+    setExpandedProductos(new Set([grupo.producto_id]))
     setError('')
     try {
       const list = await api<Producto[]>(
@@ -5225,7 +5355,7 @@ function ConteoSectorView({
 
   if (loading) {
     return (
-      <div className="flex h-[calc(100vh-5rem)] items-center justify-center">
+      <div className="flex h-full min-h-0 flex-1 items-center justify-center">
         <Loader2 className="h-8 w-8 animate-spin text-slate-400" />
       </div>
     )
@@ -5375,7 +5505,7 @@ function ConteoSectorView({
     )
 
   return (
-    <div className="-m-4 flex h-[calc(100vh-5rem)] flex-col bg-surface-muted/30 lg:-m-6">
+    <div className="flex h-full min-h-0 flex-1 flex-col overflow-hidden bg-surface-muted/30">
       <div
         ref={cargaPanelRef}
         className="relative z-20 shrink-0 overflow-visible border-b border-surface-border bg-white shadow-sm"
@@ -5681,10 +5811,14 @@ function ConteoSectorView({
                 />
                 <div
                   ref={productLineFormRef}
-                  className="fixed inset-x-0 z-50 mx-auto max-h-[min(72dvh,34rem)] w-full max-w-3xl overflow-y-auto overscroll-contain rounded-t-2xl border-2 border-b-0 border-brand-400 bg-white p-4 shadow-[0_-12px_40px_rgba(15,23,42,0.25)] ring-4 ring-brand-500/15 transition-[bottom] duration-200 ease-out sm:rounded-2xl sm:border sm:p-5"
-                  style={{ bottom: keyboardInset }}
+                  className="fixed inset-x-0 z-50 mx-auto w-full max-w-3xl overflow-y-auto overscroll-contain rounded-t-2xl border-2 border-b-0 border-brand-400 bg-white p-4 shadow-[0_-12px_40px_rgba(15,23,42,0.25)] ring-4 ring-brand-500/15 transition-[bottom,max-height] duration-200 ease-out sm:rounded-2xl sm:border sm:p-5"
+                  style={{
+                    bottom: keyboardInset,
+                    // Usa casi todo el alto libre sobre el teclado para evitar scroll interno.
+                    maxHeight: `calc(100dvh - ${keyboardInset}px - env(safe-area-inset-top, 0px) - 0.5rem)`
+                  }}
                 >
-                <div className="mb-3 flex items-center gap-3 sm:mb-4">
+                <div className="mb-3 flex items-start gap-3 sm:mb-4">
                   <ProductImage
                     productoId={selectedProduct.id}
                     hasImage={!!selectedProduct.imagen_path}
@@ -5692,87 +5826,90 @@ function ConteoSectorView({
                     className="h-12 w-12 rounded-xl ring-1 ring-surface-border sm:h-11 sm:w-11"
                   />
                   <div className="min-w-0 flex-1">
-                    <p className="text-xs font-semibold uppercase tracking-wide text-brand-600">
-                      {editingLineaId ? 'Editar línea' : 'Nueva línea'}
-                    </p>
-                    <span className="inline-flex rounded-md bg-slate-50 px-2 py-0.5 font-mono text-sm font-semibold text-slate-700 ring-1 ring-surface-border">
-                      {selectedProduct.codigo_interno}
-                    </span>
+                    <div className="flex items-center gap-2">
+                      <span className="inline-flex min-w-0 rounded-md bg-slate-50 px-2 py-0.5 font-mono text-sm font-semibold text-slate-700 ring-1 ring-surface-border">
+                        {selectedProduct.codigo_interno}
+                      </span>
+                      <p className="ml-auto shrink-0 text-xs font-semibold uppercase tracking-wide text-brand-600">
+                        {editingLineaId ? 'Editar línea' : 'Nueva línea'}
+                      </p>
+                    </div>
                     <ScrollableProductName className="mt-1 text-base font-semibold text-slate-900">
                       {selectedProduct.nombre}
                     </ScrollableProductName>
                   </div>
-                  <button
-                    type="button"
-                    className="rounded-lg p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
-                    onClick={cancelarLineaForm}
-                  >
-                    <X className="h-5 w-5" />
-                  </button>
                 </div>
 
                 <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-6">
-                  <div>
+                  <div className="col-span-2 sm:col-span-2 lg:col-span-2">
                     <label className="mb-1 block text-sm font-medium text-slate-700">Tipo</label>
-                    <select
-                      ref={tipoRef}
-                      value={tipoBulto}
-                      onChange={(e) => handleTipoBultoChange(e.target.value as TipoBulto)}
-                      onFocus={() => scrollFocusedFieldIntoSheet(tipoRef.current)}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter') {
-                          e.preventDefault()
-                          if (tipoBulto === 'SUELTO') {
-                            focusField(cantidadSueltaRef)
-                          } else {
-                            focusField(cantidadBultosRef)
-                          }
-                        }
-                      }}
-                      className="w-full rounded-xl border border-surface-border px-3 py-2.5 text-base"
-                    >
-                      <option value="PALLET">Pallet</option>
-                      <option value="CAJA">Caja</option>
-                      <option value="SUELTO">Suelto</option>
-                    </select>
+                    <div className="flex rounded-xl border border-surface-border bg-slate-50 p-0.5">
+                      {(
+                        [
+                          { value: 'PALLET', label: 'Pallets' },
+                          { value: 'CAJA', label: 'Cajas' },
+                          { value: 'SUELTO', label: 'Botellas' }
+                        ] as const
+                      ).map((opt) => (
+                        <button
+                          key={opt.value}
+                          type="button"
+                          onPointerDown={(e) => e.preventDefault()}
+                          onClick={() => handleTipoBultoChange(opt.value)}
+                          className={cn(
+                            'flex-1 rounded-[10px] px-2 py-2 text-sm font-semibold transition-colors',
+                            tipoBulto === opt.value
+                              ? 'bg-brand-600 text-white shadow-md ring-2 ring-brand-600/30'
+                              : 'text-slate-500 hover:bg-white/70 hover:text-slate-700'
+                          )}
+                        >
+                          {opt.label}
+                        </button>
+                      ))}
+                    </div>
                   </div>
 
-                  {tipoBulto === 'SUELTO' ? (
-                    <div className="col-span-2">
-                      <Input
-                        ref={cantidadSueltaRef}
-                        label="Cantidad suelta"
-                        type="number"
-                        inputMode="numeric"
-                        min="1"
-                        value={cantidadSuelta}
-                        onChange={(e) => setCantidadSuelta(e.target.value)}
-                        onFocus={() => scrollFocusedFieldIntoSheet(cantidadSueltaRef.current)}
-                        onKeyDown={handleLineaEnter}
-                        placeholder="12"
-                        className="rounded-xl px-3 py-2.5 text-base"
-                      />
-                    </div>
-                  ) : (
-                    <>
+                  <div className="col-span-2 grid min-h-[12rem] grid-cols-2 content-start gap-3 sm:col-span-4 lg:col-span-4">
+                    <div className={cn(tipoBulto === 'SUELTO' && 'hidden')}>
                       <Input
                         ref={cantidadBultosRef}
                         label={tipoBulto === 'PALLET' ? 'Cant. pallets' : 'Cant. cajas'}
-                        type="number"
-                        inputMode="numeric"
-                        min="1"
+                        type="text"
+                        inputMode={tipoBulto === 'CAJA' ? 'text' : 'numeric'}
                         value={cantidadBultos}
                         onChange={(e) => setCantidadBultos(e.target.value)}
-                        onFocus={() => scrollFocusedFieldIntoSheet(cantidadBultosRef.current)}
+                        onFocus={() => {
+                          scrollFocusedFieldIntoSheet(cantidadBultosRef.current)
+                          const el = cantidadBultosRef.current
+                          if (el) requestAnimationFrame(() => el.select())
+                        }}
                         onKeyDown={(e) => {
                           if (e.key === 'Enter') {
                             e.preventDefault()
                             focusField(unidadesRef)
                           }
                         }}
-                        placeholder={tipoBulto === 'PALLET' ? '2' : '1'}
+                        placeholder={
+                          tipoBulto === 'PALLET' ? '2' : tipoBulto === 'CAJA' ? '1 o 28×4-4' : '1'
+                        }
                         className="rounded-xl px-3 py-2.5 text-base"
                       />
+                      {tipoBulto === 'CAJA' && cantidadExprEsCuenta(cantidadBultos) && (
+                        <p
+                          className={cn(
+                            'mt-1 text-[11px] font-medium',
+                            evalCantidadExpr(cantidadBultos) != null
+                              ? 'text-emerald-700'
+                              : 'text-amber-700'
+                          )}
+                        >
+                          {evalCantidadExpr(cantidadBultos) != null
+                            ? `= ${evalCantidadExpr(cantidadBultos)}`
+                            : 'Cuenta incompleta (ej. 28×4-4)'}
+                        </p>
+                      )}
+                    </div>
+                    <div className={cn(tipoBulto === 'SUELTO' && 'hidden')}>
                       <Input
                         ref={unidadesRef}
                         label={
@@ -5780,59 +5917,123 @@ function ConteoSectorView({
                             ? '× cajas por pallet'
                             : '× botellas por caja'
                         }
-                        type="number"
-                        inputMode="numeric"
-                        min="1"
+                        type="text"
+                        inputMode={tipoBulto === 'PALLET' ? 'text' : 'numeric'}
                         value={unidadesPorBulto}
                         onChange={(e) => setUnidadesPorBulto(e.target.value)}
-                        onFocus={() => scrollFocusedFieldIntoSheet(unidadesRef.current)}
+                        onFocus={() => {
+                          scrollFocusedFieldIntoSheet(unidadesRef.current)
+                          const el = unidadesRef.current
+                          if (el) requestAnimationFrame(() => el.select())
+                        }}
                         onKeyDown={(e) => {
                           if (e.key === 'Enter') {
                             e.preventDefault()
                             focusField(cantidadSueltaRef)
                           }
                         }}
-                        placeholder={tipoBulto === 'PALLET' ? '112' : '6'}
+                        placeholder={tipoBulto === 'PALLET' ? '112 o 112-6' : '6'}
                         className="rounded-xl px-3 py-2.5 text-base"
                       />
+                      {tipoBulto === 'PALLET' && cantidadExprEsCuenta(unidadesPorBulto) && (
+                        <p
+                          className={cn(
+                            'mt-1 text-[11px] font-medium',
+                            evalCantidadExpr(unidadesPorBulto) != null
+                              ? 'text-emerald-700'
+                              : 'text-amber-700'
+                          )}
+                        >
+                          {evalCantidadExpr(unidadesPorBulto) != null
+                            ? `= ${evalCantidadExpr(unidadesPorBulto)}`
+                            : 'Cuenta incompleta (ej. 112-6)'}
+                        </p>
+                      )}
+                    </div>
+                    <div className={cn(tipoBulto === 'SUELTO' && 'col-span-2')}>
                       <Input
                         ref={cantidadSueltaRef}
                         label={
-                          tipoBulto === 'PALLET'
-                            ? 'Cajas sueltas (opc.)'
-                            : 'Botellas sueltas (opc.)'
+                          tipoBulto === 'SUELTO'
+                            ? 'Cantidad suelta'
+                            : tipoBulto === 'PALLET'
+                              ? 'Cajas sueltas (opc.)'
+                              : 'Botellas sueltas (opc.)'
                         }
-                        type="number"
-                        inputMode="numeric"
-                        min="0"
+                        type="text"
+                        inputMode={tipoBulto === 'PALLET' ? 'text' : 'numeric'}
                         value={cantidadSuelta}
                         onChange={(e) => setCantidadSuelta(e.target.value)}
-                        onFocus={() => scrollFocusedFieldIntoSheet(cantidadSueltaRef.current)}
+                        onFocus={() => {
+                          scrollFocusedFieldIntoSheet(cantidadSueltaRef.current)
+                          const el = cantidadSueltaRef.current
+                          if (el) requestAnimationFrame(() => el.select())
+                        }}
                         onKeyDown={(e) => {
                           if (e.key === 'Enter') {
                             e.preventDefault()
                             void agregarLineaYContinuar()
                           }
                         }}
-                        placeholder="0"
+                        placeholder={
+                          tipoBulto === 'SUELTO' ? '12' : tipoBulto === 'PALLET' ? '0 o 8-2' : '0'
+                        }
                         className="rounded-xl px-3 py-2.5 text-base"
                       />
-                    </>
-                  )}
+                      {tipoBulto === 'PALLET' && cantidadExprEsCuenta(cantidadSuelta) && (
+                        <p
+                          className={cn(
+                            'mt-1 text-[11px] font-medium',
+                            evalCantidadExpr(cantidadSuelta) != null
+                              ? 'text-emerald-700'
+                              : 'text-amber-700'
+                          )}
+                        >
+                          {evalCantidadExpr(cantidadSuelta) != null
+                            ? `= ${evalCantidadExpr(cantidadSuelta)}`
+                            : 'Cuenta incompleta (ej. 8-2)'}
+                        </p>
+                      )}
+                    </div>
+                  </div>
 
-                  <div className="col-span-2 flex items-end sm:col-span-1 lg:col-span-1">
+                  <div className="col-span-2 flex items-end gap-2 sm:col-span-2 lg:col-span-2">
                     <Button
                       type="button"
-                      className="w-full rounded-xl py-2.5 text-base"
+                      variant="secondary"
+                      className="h-[2.875rem] w-11 shrink-0 rounded-xl px-0"
+                      disabled={saving}
+                      onClick={cancelarLineaForm}
+                      aria-label="Cerrar"
+                      title="Cerrar"
+                    >
+                      <X className="h-5 w-5" />
+                    </Button>
+                    <Button
+                      type="button"
+                      className={cn(
+                        'w-full rounded-xl py-2.5 text-base',
+                        cuentasPendientes && 'bg-amber-600 hover:bg-amber-700'
+                      )}
+                      onPointerDown={(e) => {
+                        // Evita que el botón robe el foco y cierre el teclado al calcular.
+                        if (cuentasPendientes) e.preventDefault()
+                      }}
                       onClick={() => void agregarLineaYContinuar()}
                       disabled={saving}
                     >
                       {saving ? (
                         <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : cuentasPendientes ? (
+                        <Calculator className="h-4 w-4" />
                       ) : (
                         <Plus className="h-4 w-4" />
                       )}
-                      {editingLineaId ? 'Guardar' : 'Agregar'}
+                      {cuentasPendientes
+                        ? 'Calcular'
+                        : editingLineaId
+                          ? 'Guardar'
+                          : 'Agregar'}
                     </Button>
                   </div>
                 </div>

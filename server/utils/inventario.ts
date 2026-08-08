@@ -6,6 +6,7 @@ import {
   formatTotalesInventarioResumen,
   getProductoDefaults,
   refreshStockSectorTotal,
+  rememberUnidadesPorCajaFromLineas,
   STOCK_SECTOR_VISIBLE_SQL,
   sumarTotalesInventarioLineas,
   totalesInventarioCoinciden,
@@ -1102,6 +1103,20 @@ function replaceStockFromConteo(
 
   let orden = 0
   for (const l of lineas) {
+    // En conteo, total_unidades de CAJA/PALLET está en cajas; en stock_lineas CAJA
+    // se guarda en botellas (igual que ingresos/planillas).
+    const totalStock =
+      l.tipo_bulto === 'SUELTO'
+        ? Number(l.cantidad_suelta ?? l.total_unidades ?? 0)
+        : l.tipo_bulto === 'CAJA'
+          ? calcTotalUnidades({
+              tipo_bulto: 'CAJA',
+              cantidad_bultos: l.cantidad_bultos,
+              unidades_por_bulto: l.unidades_por_bulto,
+              cantidad_suelta: l.cantidad_suelta
+            })
+          : Number(l.total_unidades ?? 0)
+
     insert.run(
       stockSectorId,
       l.tipo_bulto,
@@ -1110,11 +1125,12 @@ function replaceStockFromConteo(
       l.cantidad_suelta,
       l.ubicacion,
       l.ubicacion_id,
-      l.total_unidades,
+      totalStock,
       orden++
     )
   }
 
+  rememberUnidadesPorCajaFromLineas(db, productoId, lineas)
   refreshStockSectorTotal(db, stockSectorId)
 
   const despuesRow = db.prepare(`

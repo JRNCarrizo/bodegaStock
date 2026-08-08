@@ -454,6 +454,15 @@ export function IngresosPage() {
     resetLineaForm(p)
     setError('')
     setTimeout(() => focusField(cantidadBultosRef), 50)
+
+    // Refresca defaults (botellas/caja) alineados al stock real.
+    void api<Producto>(`/api/productos/${p.id}`)
+      .then((fresh) => {
+        setSelectedProduct((cur) => (cur?.id === fresh.id ? fresh : cur))
+      })
+      .catch(() => {
+        /* keep list product */
+      })
   }
 
   function validarRemito(): boolean {

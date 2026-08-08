@@ -101,8 +101,7 @@ export function formatTotalesInventarioResumen(
     parts.push(`${formatCantidad(t.cajas)}`)
   }
   if (t.suelto > 0) {
-    const u = normalizarUnidadProducto(unidadProducto)
-    parts.push(`${formatCantidad(t.suelto)} ${u}${t.suelto === 1 ? '' : 's'}`)
+    parts.push(`${formatCantidad(t.suelto)} ${abreviaturaUnidadSuelto(unidadProducto)}`)
   }
   return parts.length > 0 ? parts.join(' · ') : '0'
 }
@@ -112,6 +111,13 @@ export function totalesInventarioCoinciden(
   b: TotalesInventarioDesglose
 ): boolean {
   return Math.abs(a.cajas - b.cajas) < 0.0001 && Math.abs(a.suelto - b.suelto) < 0.0001
+}
+
+/** Etiqueta corta para sueltos en listados de conteo (ej. botellas → bot). */
+export function abreviaturaUnidadSuelto(unidadProducto?: string | null): string {
+  const u = normalizarUnidadProducto(unidadProducto)
+  if (u === 'botella') return 'bot'
+  return u
 }
 
 export function formatValorLineaConteo(
@@ -125,8 +131,7 @@ export function formatValorLineaConteo(
 ): string {
   if (linea.tipo_bulto === 'SUELTO') {
     const n = linea.total_suelto ?? linea.total_unidades ?? 0
-    const u = normalizarUnidadProducto(unidadProducto)
-    return `${formatCantidad(n)} ${u}${n === 1 ? '' : 's'}`
+    return `${formatCantidad(n)} ${abreviaturaUnidadSuelto(unidadProducto)}`
   }
   const n = linea.total_cajas ?? linea.total_unidades ?? 0
   return `${formatCantidad(n)}`

@@ -9,7 +9,7 @@ on:
       version:
         description: 'Versión sin v (ej. 0.1.0)'
         required: true
-        default: '0.3.26'
+        default: '0.3.27'
 
 permissions:
   contents: write
@@ -68,11 +68,13 @@ jobs:
           body: |
             ## ControlStock ${{ steps.tag.outputs.name }}
 
-            Inventario: Excel por sectores con botellas sueltas y sectores no inventariados.
+            Inventario más ágil, botellas/caja alineadas con el stock, y fix al descontar botellas en planillas.
 
             ### Nuevo / mejorado
-            - Export por sectores: columna de botellas solo si el sector tiene sueltas
-            - Tilde para incluir sectores no inventariados (stock actual del sistema)
+            - Cuentas rápidas en conteo (ej. 28×4-4) y botellas/caja opcionales en productos
+            - Layout sticky en conteo (header y totales fijos)
+            - Al inventariar/cerrar, se guarda botellas/caja en el producto (y se sincroniza desde el stock)
+            - Fix: descontar 1 botella ya no trata cajas como botellas (planillas)
 
             ### Actualización
             - Desde **v0.2.7 o superior:** Configuración → Buscar actualizaciones

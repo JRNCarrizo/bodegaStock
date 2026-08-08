@@ -15,18 +15,44 @@ const BARCODE_FORMATS = [
   Html5QrcodeSupportedFormats.ITF
 ]
 
+type ScanVariant = 'barcode' | 'qr'
+
+function qrboxSize(variant: ScanVariant) {
+  return (viewfinderWidth: number, viewfinderHeight: number) => {
+    const w = viewfinderWidth
+    const h = viewfinderHeight
+    if (variant === 'qr') {
+      const size = Math.floor(Math.min(w, h) * 0.86)
+      return {
+        width: Math.max(240, Math.min(size, w - 16)),
+        height: Math.max(240, Math.min(size, h - 16))
+      }
+    }
+    // Código de barras: ancho útil, más alto que el recorte viejo (120px)
+    const boxW = Math.floor(Math.min(w * 0.92, w - 12))
+    const boxH = Math.floor(Math.min(h * 0.42, 220))
+    return {
+      width: Math.max(260, boxW),
+      height: Math.max(160, boxH)
+    }
+  }
+}
+
 interface BarcodeScannerModalProps {
   open: boolean
   onClose: () => void
   onScan: (code: string) => void
   title?: string
+  /** `qr` = marco grande cuadrado (login / sync). `barcode` = producto. */
+  variant?: ScanVariant
 }
 
 export function BarcodeScannerModal({
   open,
   onClose,
   onScan,
-  title = 'Escanear código de barras'
+  title = 'Escanear código de barras',
+  variant = 'barcode'
 }: BarcodeScannerModalProps) {
   const regionId = useId().replace(/:/g, '')
   const scannerRef = useRef<Html5Qrcode | null>(null)
@@ -75,9 +101,10 @@ export function BarcodeScannerModal({
         await scanner.start(
           cameraId,
           {
-            fps: 10,
-            qrbox: { width: 320, height: 120 },
-            aspectRatio: 1.777,
+            fps: 12,
+            qrbox: qrboxSize(variant),
+            // Más “cuadrado” ayuda en QR vertical en el celular
+            aspectRatio: variant === 'qr' ? 1 : 1.333,
             formatsToSupport: BARCODE_FORMATS
           },
           (decoded) => {
@@ -108,14 +135,21 @@ export function BarcodeScannerModal({
       void stopScanner()
       scannerRef.current = null
     }
-  }, [open, regionId])
+  }, [open, regionId, variant])
 
   if (!open) return null
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+    <div className="fixed inset-0 z-50 flex items-end justify-center sm:items-center sm:p-4">
       <div className="absolute inset-0 bg-slate-900/60" onClick={onClose} />
-      <div className="relative w-full max-w-lg rounded-xl bg-white shadow-panel">
+      <div
+        className={cn(
+          'relative w-full bg-white shadow-panel',
+          variant === 'qr'
+            ? 'max-h-[96dvh] rounded-t-2xl sm:max-w-xl sm:rounded-xl'
+            : 'max-w-lg rounded-t-2xl sm:rounded-xl'
+        )}
+      >
         <div className="flex items-center justify-between border-b border-surface-border px-5 py-4">
           <div className="flex items-center gap-2">
             <Camera className="h-5 w-5 text-brand-600" />
@@ -130,18 +164,21 @@ export function BarcodeScannerModal({
           </button>
         </div>
 
-        <div className="p-5">
+        <div className="p-4 sm:p-5">
           <p className="mb-3 text-sm text-slate-500">
-            Apuntá la cámara al código de barras del producto.
+            {variant === 'qr'
+              ? 'Centrá el código QR dentro del marco grande.'
+              : 'Apuntá la cámara al código de barras del producto.'}
           </p>
 
           <div
             className={cn(
-              'overflow-hidden rounded-lg bg-slate-900',
+              'overflow-hidden rounded-xl bg-slate-900',
+              variant === 'qr' && 'min-h-[min(72dvh,560px)]',
               error && 'hidden'
             )}
           >
-            <div id={regionId} className="w-full" />
+            <div id={regionId} className="w-full [&_video]:object-cover" />
           </div>
 
           {starting && !error && (
@@ -152,7 +189,7 @@ export function BarcodeScannerModal({
             <div className="rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>
           )}
 
-          <div className="mt-4 flex justify-end">
+          <div className="mt-4 flex justify-end pb-[max(0.25rem,env(safe-area-inset-bottom))]">
             <Button type="button" variant="secondary" onClick={onClose}>
               Cancelar
             </Button>

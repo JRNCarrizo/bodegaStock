@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import {
+  Calculator,
   Check,
   Camera,
   ChevronDown,
@@ -41,6 +42,12 @@ import {
   useVisualViewportBottomInset
 } from '@/hooks/useVisualViewportBottomInset'
 import { botellasPorCajaDefault, cajasPorPalletDefault, formatValorLineaConteo, formatTotalesInventarioResumen } from '@/lib/desglose'
+import {
+  cantidadExprEsCuenta,
+  conteoExprPendientes,
+  evalCantidadExpr,
+  resolveCantidadExprField
+} from '@/lib/cantidadExpr'
 import {
   addLineaOffline,
   buildMiSyncPayload,
@@ -181,9 +188,9 @@ function DesgloseDiferenciaColapsable({
   )
 }
 
-/** Altura a pantalla: header h-14; -m-4/-m-6 cancelan el padding del main. */
+/** Pantalla completa del main (sin padding); solo la lista scrollea. */
 const PAGE_SHELL =
-  '-m-4 flex h-[calc(100dvh-3.5rem)] flex-col bg-surface-muted/30 lg:-m-6'
+  'flex h-full min-h-0 flex-1 flex-col overflow-hidden bg-surface-muted/30'
 
 export function InventarioOfflinePage() {
   const { sectorInvId: rawId } = useParams()
@@ -194,6 +201,7 @@ export function InventarioOfflinePage() {
   const listScrollRef = useRef<HTMLDivElement>(null)
   const productLineFormRef = useRef<HTMLDivElement>(null)
   const cantidadBultosRef = useRef<HTMLInputElement>(null)
+  const unidadesPorBultoRef = useRef<HTMLInputElement>(null)
   const cantidadSueltaRef = useRef<HTMLInputElement>(null)
   /** Input fantasma: abre el teclado en el mismo toque, antes de montar el modal. */
   const keyboardBridgeRef = useRef<HTMLInputElement>(null)
@@ -224,6 +232,8 @@ export function InventarioOfflinePage() {
   const [ultimaIpHost, setUltimaIpHost] = useState<{ localIp: string; port: number } | null>(null)
   const [hostQrDataUrl, setHostQrDataUrl] = useState('')
   const [clientHostInput, setClientHostInput] = useState('192.168.43.1')
+  /** true si hay IP persistida de una sync/host anterior (no el default genérico). */
+  const [tieneIpGuardada, setTieneIpGuardada] = useState(false)
   const [showP2PQrScanner, setShowP2PQrScanner] = useState(false)
   const [hostSyncedOk, setHostSyncedOk] = useState(false)
   const [hostReintentosOpen, setHostReintentosOpen] = useState(false)
@@ -232,6 +242,7 @@ export function InventarioOfflinePage() {
   const hostInfoRef = useRef<{ url: string; localIp: string; port: number } | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [expandedProductos, setExpandedProductos] = useState<Set<number>>(new Set())
+  const [revisadosProductos, setRevisadosProductos] = useState<Set<number>>(new Set())
   const [expandedDesgloseRef, setExpandedDesgloseRef] = useState<Set<number>>(new Set())
   const [swipeOpenLineId, setSwipeOpenLineId] = useState<string | null>(null)
   const [showVistaPrevia, setShowVistaPrevia] = useState(false)
@@ -299,8 +310,11 @@ export function InventarioOfflinePage() {
   useEffect(() => {
     void (async () => {
       const saved = await loadLastHostIp()
-      if (saved) setUltimaIpHost(saved)
-      else {
+      if (saved) {
+        setUltimaIpHost(saved)
+        setTieneIpGuardada(true)
+        setClientHostInput(`${saved.localIp}:${saved.port}`)
+      } else {
         // Mostrar algo útil de inmediato; luego se actualiza al abrir el menú.
         setUltimaIpHost({ localIp: HOTSPOT_IP_TIPICA, port: P2P_PORT })
       }
@@ -408,7 +422,7 @@ export function InventarioOfflinePage() {
     const text = `${ip}:${port}`
     try {
       await navigator.clipboard.writeText(text)
-      setMsg(`IP copiada: ${text} — el compañero la pega en «Me conecto»`)
+      setMsg(`IP copiada: ${text} — el compañero la pega en «Unirme a la conexión»`)
     } catch {
       setMsg(`IP de este celular: ${text}`)
     }
@@ -608,13 +622,27 @@ export function InventarioOfflinePage() {
     [paquete, ubicacionId]
   )
 
+  useEffect(() => {
+    setRevisadosProductos(new Set())
+  }, [sectorInvId, estado?.ronda_actual])
+
+  function markProductoRevisado(productoId: number) {
+    if (!enReconteo) return
+    setRevisadosProductos((prev) => {
+      if (prev.has(productoId)) return prev
+      return new Set(prev).add(productoId)
+    })
+  }
+
   function toggleProductoExpand(productoId: number) {
+    const opening = !expandedProductos.has(productoId)
     setExpandedProductos((prev) => {
       const next = new Set(prev)
       if (next.has(productoId)) next.delete(productoId)
       else next.add(productoId)
       return next
     })
+    if (opening) markProductoRevisado(productoId)
   }
 
   function toggleDesgloseRef(productoId: number) {
@@ -642,7 +670,10 @@ export function InventarioOfflinePage() {
   function focusCantidadEnModal(tipo: TipoBultoOffline = 'PALLET') {
     const el = tipo === 'SUELTO' ? cantidadSueltaRef.current : cantidadBultosRef.current
     el?.focus({ preventScroll: true })
-    if (el) scrollFocusedFieldIntoSheet(el, 0)
+    if (el) {
+      scrollFocusedFieldIntoSheet(el, 0)
+      requestAnimationFrame(() => el.select())
+    }
   }
 
   function selectProduct(p: OfflineProducto) {
@@ -665,6 +696,14 @@ export function InventarioOfflinePage() {
   }, [selected, editingLocalId, tipoBulto])
 
   function handleTipoBultoChange(tipo: TipoBultoOffline) {
+    const targetEl =
+      tipo === 'SUELTO' ? cantidadSueltaRef.current : cantidadBultosRef.current
+    // Si el input con foco se va a ocultar (Caja/Pallet → Suelto), mover el foco
+    // ANTES del setState. Si no, Android cierra y reabre el teclado (salto).
+    if (targetEl && document.activeElement !== targetEl) {
+      targetEl.focus({ preventScroll: true })
+    }
+
     setTipoBulto(tipo)
     if (tipo === 'SUELTO') {
       setUnidadesPorBulto('')
@@ -672,6 +711,15 @@ export function InventarioOfflinePage() {
     } else {
       setUnidadesPorBulto(defaultUnidadesPorBulto(tipo, selected))
     }
+
+    requestAnimationFrame(() => {
+      const el =
+        tipo === 'SUELTO' ? cantidadSueltaRef.current : cantidadBultosRef.current
+      if (!el) return
+      if (document.activeElement !== el) el.focus({ preventScroll: true })
+      scrollFocusedFieldIntoSheet(el, 0)
+      el.select()
+    })
   }
 
   function empezarEditarLinea(l: OfflineLinea) {
@@ -700,7 +748,8 @@ export function InventarioOfflinePage() {
       setUnidadesPorBulto(String(l.unidades_por_bulto ?? ''))
       setCantidadSuelta(l.cantidad_suelta != null ? String(l.cantidad_suelta) : '')
     }
-    setExpandedProductos((prev) => new Set(prev).add(l.producto_id))
+    setExpandedProductos((prev) => new Set([l.producto_id]))
+    markProductoRevisado(l.producto_id)
     armKeyboardForCantidadModal()
     // selected ya se setea arriba; el effect mueve el foco al campo de cantidad
   }
@@ -714,7 +763,8 @@ export function InventarioOfflinePage() {
     }
     setError('')
     setEditingLocalId(null)
-    setExpandedProductos((prev) => new Set(prev).add(productoId))
+    setExpandedProductos(new Set([productoId]))
+    markProductoRevisado(productoId)
     selectProduct(prod)
   }
 
@@ -753,18 +803,70 @@ export function InventarioOfflinePage() {
       ubicacionSelectRef.current?.focus()
       return
     }
+
+    if (
+      conteoExprPendientes({
+        tipo: tipoBulto,
+        cantidadBultos,
+        unidadesPorBulto,
+        cantidadSuelta
+      })
+    ) {
+      aplicarCuentasConteo()
+      return
+    }
+
     setBusy(true)
     setError('')
     try {
+      let unidadesValor =
+        tipoBulto === 'SUELTO' ? null : Number(unidadesPorBulto) || 0
+      let sueltaValor: number | null =
+        tipoBulto === 'SUELTO'
+          ? Number(cantidadSuelta) || 0
+          : Number(cantidadSuelta) || null
+      let bultosValor: number | null =
+        tipoBulto === 'SUELTO' ? null : Number(cantidadBultos) || 0
+
+      if (tipoBulto === 'PALLET') {
+        const porPallet = resolveCantidadExprField(unidadesPorBulto, { min: 1 })
+        if (porPallet.value == null) {
+          setError(porPallet.error ?? 'Cajas por pallet inválidas')
+          setBusy(false)
+          return
+        }
+        unidadesValor = porPallet.value
+        setUnidadesPorBulto(porPallet.text)
+
+        if (cantidadSuelta.trim()) {
+          const sueltas = resolveCantidadExprField(cantidadSuelta, { min: 0 })
+          if (sueltas.value == null) {
+            setError(sueltas.error ?? 'Cajas sueltas inválidas')
+            setBusy(false)
+            return
+          }
+          sueltaValor = sueltas.value
+          setCantidadSuelta(sueltas.text)
+        } else {
+          sueltaValor = null
+        }
+      } else if (tipoBulto === 'CAJA') {
+        const cajas = resolveCantidadExprField(cantidadBultos, { min: 1 })
+        if (cajas.value == null) {
+          setError(cajas.error ?? 'Cantidad de cajas inválida')
+          setBusy(false)
+          return
+        }
+        bultosValor = cajas.value
+        setCantidadBultos(cajas.text)
+      }
+
       const input = {
         producto_id: selected.id,
         tipo_bulto: tipoBulto,
-        cantidad_bultos: tipoBulto === 'SUELTO' ? null : Number(cantidadBultos) || 0,
-        unidades_por_bulto: tipoBulto === 'SUELTO' ? null : Number(unidadesPorBulto) || 0,
-        cantidad_suelta:
-          tipoBulto === 'SUELTO'
-            ? Number(cantidadSuelta) || 0
-            : Number(cantidadSuelta) || null,
+        cantidad_bultos: bultosValor,
+        unidades_por_bulto: unidadesValor,
+        cantidad_suelta: sueltaValor,
         ubicacion: ubicacionSeleccionada?.nombre ?? null,
         ubicacion_id: ubicacionSeleccionada?.id ?? null
       }
@@ -772,6 +874,7 @@ export function InventarioOfflinePage() {
         ? await updateLineaOffline(sectorInvId, editingLocalId, input)
         : await addLineaOffline(sectorInvId, input)
       pendingScrollProductoIdRef.current = linea.producto_id
+      setExpandedProductos(new Set([linea.producto_id]))
       cancelarLineaForm()
       await reload()
       const id = pendingScrollProductoIdRef.current
@@ -788,8 +891,76 @@ export function InventarioOfflinePage() {
     }
   }
 
+  function aplicarCuentasConteo(): boolean {
+    const keepFocus =
+      document.activeElement instanceof HTMLInputElement ? document.activeElement : null
+
+    const restoreTeclado = () => {
+      requestAnimationFrame(() => {
+        const el =
+          keepFocus && document.contains(keepFocus)
+            ? keepFocus
+            : tipoBulto === 'CAJA'
+              ? cantidadBultosRef.current
+              : unidadesPorBultoRef.current ?? cantidadSueltaRef.current
+        el?.focus({ preventScroll: true })
+      })
+    }
+
+    if (tipoBulto === 'CAJA') {
+      const cajas = resolveCantidadExprField(cantidadBultos, { min: 1 })
+      if (cajas.value == null) {
+        setError(cajas.error ?? 'Cantidad de cajas inválida')
+        restoreTeclado()
+        return false
+      }
+      setCantidadBultos(cajas.text)
+      setError('')
+      restoreTeclado()
+      return true
+    }
+
+    const porPallet = resolveCantidadExprField(unidadesPorBulto, { min: 1 })
+    if (porPallet.value == null) {
+      setError(porPallet.error ?? 'Cajas por pallet inválidas')
+      restoreTeclado()
+      return false
+    }
+    setUnidadesPorBulto(porPallet.text)
+
+    if (cantidadSuelta.trim()) {
+      const sueltas = resolveCantidadExprField(cantidadSuelta, { min: 0 })
+      if (sueltas.value == null) {
+        setError(sueltas.error ?? 'Cajas sueltas inválidas')
+        restoreTeclado()
+        return false
+      }
+      setCantidadSuelta(sueltas.text)
+    }
+    setError('')
+    restoreTeclado()
+    return true
+  }
+
+  const cuentasPendientes = conteoExprPendientes({
+    tipo: tipoBulto,
+    cantidadBultos,
+    unidadesPorBulto,
+    cantidadSuelta
+  })
+
   async function handleFinalizar() {
-    if (!confirm('¿Finalizaste el conteo de este sector?')) return
+    if (enReconteo && misLineasRonda.length === 0) {
+      if (
+        !confirm(
+          'No cargaste líneas en esta ronda: los productos del reconteo quedan en 0. ¿Finalizar así?'
+        )
+      ) {
+        return
+      }
+    } else if (!confirm('¿Finalizaste el conteo de este sector?')) {
+      return
+    }
     setBusy(true)
     setError('')
     try {
@@ -945,6 +1116,21 @@ export function InventarioOfflinePage() {
     setMsg('')
     try {
       await syncConHost(sectorInvId, clientHostInput)
+      try {
+        let raw = clientHostInput.trim()
+        if (!/^https?:\/\//i.test(raw)) raw = `http://${raw}`
+        const url = new URL(raw)
+        const localIp = url.hostname
+        const port = Number(url.port) || P2P_PORT
+        if (localIp) {
+          await saveLastHostIp({ localIp, port })
+          setUltimaIpHost({ localIp, port })
+          setTieneIpGuardada(true)
+          setClientHostInput(`${localIp}:${port}`)
+        }
+      } catch {
+        /* ignore parse errors */
+      }
       setP2pMode('idle')
       await reload()
       setMsg('Sincronizado.')
@@ -956,6 +1142,13 @@ export function InventarioOfflinePage() {
       )
     } finally {
       setBusy(false)
+    }
+  }
+
+  function abrirModoCliente() {
+    setP2pMode('client')
+    if (ultimaIpHost) {
+      setClientHostInput(`${ultimaIpHost.localIp}:${ultimaIpHost.port}`)
     }
   }
 
@@ -972,7 +1165,12 @@ export function InventarioOfflinePage() {
       const url = new URL(withProtocol)
       if (!url.hostname) throw new Error('sin host')
       setClientHostInput(trimmed)
-      setMsg('QR leído.')
+      const localIp = url.hostname
+      const port = Number(url.port) || P2P_PORT
+      setUltimaIpHost({ localIp, port })
+      setTieneIpGuardada(true)
+      void saveLastHostIp({ localIp, port })
+      setMsg('QR leído. IP guardada para la próxima vez.')
     } catch {
       setError('El QR no contiene una IP/URL válida del compañero')
     }
@@ -1126,7 +1324,7 @@ export function InventarioOfflinePage() {
 
   if (loading) {
     return (
-      <div className="flex h-[calc(100dvh-3.5rem)] items-center justify-center">
+      <div className="flex h-full min-h-0 flex-1 items-center justify-center">
         <Loader2 className="h-8 w-8 animate-spin text-slate-400" />
       </div>
     )
@@ -1235,17 +1433,24 @@ export function InventarioOfflinePage() {
     ) : (
       grupos.map((grupo) => {
         const isExpanded = expandedProductos.has(grupo.producto_id)
+        const isRevisado = enReconteo && revisadosProductos.has(grupo.producto_id)
         const ref = grupo.referencia
         return (
           <div
             key={grupo.producto_id}
             data-producto-id={grupo.producto_id}
-            className="border-b border-surface-border last:border-0"
+            className={cn(
+              'border-b border-surface-border last:border-0',
+              isRevisado &&
+                'border-l-[5px] border-l-emerald-600 bg-emerald-100 shadow-[inset_0_0_0_1px_rgba(5,150,105,0.45)]'
+            )}
           >
             <div
               className={cn(
                 'flex items-center gap-3 px-4 py-3 transition-colors sm:px-5',
-                isExpanded ? 'bg-brand-50/50' : 'hover:bg-slate-50/80'
+                isExpanded && !isRevisado && 'bg-brand-50/50',
+                isRevisado && 'bg-emerald-100',
+                !isExpanded && !isRevisado && 'hover:bg-slate-50/80'
               )}
             >
               <button
@@ -1280,7 +1485,14 @@ export function InventarioOfflinePage() {
               </span>
             </div>
             {isExpanded && (
-              <div className="space-y-2 border-t border-brand-100/80 bg-gradient-to-b from-surface-muted/40 to-white px-4 py-3 sm:px-5">
+              <div
+                className={cn(
+                  'space-y-2 border-t px-4 py-3 sm:px-5',
+                  isRevisado
+                    ? 'border-emerald-200/80 bg-gradient-to-b from-emerald-100 to-emerald-50/90'
+                    : 'border-brand-100/80 bg-gradient-to-b from-surface-muted/40 to-white'
+                )}
+              >
                 {ref && miRol && enReconteo && (
                   <div className="space-y-2 border-b border-slate-200/90 pb-2">
                     <button
@@ -1474,7 +1686,7 @@ export function InventarioOfflinePage() {
                             : `${HOTSPOT_IP_TIPICA}:${P2P_PORT}`}
                         </span>
                         <span className="mt-0.5 block text-[11px] leading-snug text-slate-500">
-                          Tocá para copiar · el otro celu la pega en «Me conecto»
+                          Tocá para copiar · el otro celu la pega en «Unirme a la conexión»
                         </span>
                       </span>
                     </button>
@@ -1579,6 +1791,9 @@ export function InventarioOfflinePage() {
           !comparacion && (
           <div className="border-b border-sky-100 bg-sky-50 px-4 py-3 sm:px-5">
             <p className="text-sm font-medium text-sky-950">Sincronizar con el compañero</p>
+            <p className="mt-1 text-xs leading-snug text-sky-900/75">
+              Uno crea la red (hotspot) y el otro se une. Después sincronizan el conteo.
+            </p>
 
             {p2pMode === 'idle' && (
               <div className="mt-3 grid gap-2.5 sm:grid-cols-2">
@@ -1592,16 +1807,16 @@ export function InventarioOfflinePage() {
                     <Radio className="h-5 w-5" />
                   </div>
                   <span className="min-w-0">
-                    <span className="block text-sm font-semibold tracking-tight">Yo espero</span>
+                    <span className="block text-sm font-semibold tracking-tight">Crear conexión</span>
                     <span className="mt-0.5 block text-[11px] leading-snug text-sky-100">
-                      Activá tu hotspot y mostrá el QR
+                      Activá tu hotspot y esperá al compañero
                     </span>
                   </span>
                 </button>
                 <button
                   type="button"
                   disabled={busy}
-                  onClick={() => setP2pMode('client')}
+                  onClick={() => abrirModoCliente()}
                   className="flex w-full items-center gap-3 rounded-2xl border border-violet-200 bg-gradient-to-br from-white to-violet-50 px-3.5 py-3.5 text-left shadow-sm ring-1 ring-violet-100 transition hover:border-violet-300 hover:from-violet-50 hover:to-violet-100/80 active:scale-[0.99] disabled:pointer-events-none disabled:opacity-50"
                 >
                   <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-violet-600 text-white shadow-sm">
@@ -1609,10 +1824,10 @@ export function InventarioOfflinePage() {
                   </div>
                   <span className="min-w-0">
                     <span className="block text-sm font-semibold tracking-tight text-slate-900">
-                      Me conecto
+                      Unirme a la conexión
                     </span>
                     <span className="mt-0.5 block text-[11px] leading-snug text-slate-500">
-                      Unite al hotspot del compañero
+                      Conectate a su hotspot y sincronizá
                     </span>
                   </span>
                 </button>
@@ -1652,7 +1867,22 @@ export function InventarioOfflinePage() {
             )}
 
             {p2pMode === 'client' && (
-              <div className="mt-3 space-y-2 rounded-xl border border-sky-200 bg-white p-3">
+              <div className="mt-3 space-y-3 rounded-2xl border border-violet-200 bg-white p-3.5 shadow-sm">
+                {tieneIpGuardada && (
+                  <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2.5">
+                    <p className="text-xs font-semibold text-emerald-900">IP guardada de antes</p>
+                    <p className="mt-0.5 font-mono text-sm font-bold text-emerald-800">
+                      {clientHostInput.trim() ||
+                        (ultimaIpHost
+                          ? `${ultimaIpHost.localIp}:${ultimaIpHost.port}`
+                          : '—')}
+                    </p>
+                    <p className="mt-1 text-[11px] leading-snug text-emerald-800/80">
+                      Si el compañero usa el mismo hotspot, podés sincronizar directo. Si cambió,
+                      escaneá el QR de nuevo.
+                    </p>
+                  </div>
+                )}
                 <Button
                   type="button"
                   size="sm"
@@ -1662,28 +1892,47 @@ export function InventarioOfflinePage() {
                   onClick={() => setShowP2PQrScanner(true)}
                 >
                   <Camera className="h-3.5 w-3.5" />
-                  Escanear QR
+                  Escanear QR del compañero
                 </Button>
-                <Input
-                  value={clientHostInput}
-                  onChange={(e) => setClientHostInput(e.target.value)}
-                  placeholder={`IP o http://IP:${P2P_PORT}`}
-                  className="font-mono text-sm"
-                />
-                <div className="flex flex-wrap gap-2">
-                  <Button
-                    size="sm"
-                    className="rounded-xl"
-                    disabled={busy || !clientHostInput.trim()}
-                    onClick={() => void handleConnectClient()}
-                  >
-                    {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Wifi className="h-3.5 w-3.5" />}
-                    {error ? 'Reintentar sync' : 'Sincronizar'}
-                  </Button>
-                  <Button size="sm" variant="ghost" disabled={busy} onClick={() => setP2pMode('idle')}>
-                    Volver
-                  </Button>
+                <div>
+                  <label className="mb-1 block text-xs font-medium text-slate-600">
+                    IP del compañero
+                  </label>
+                  <Input
+                    value={clientHostInput}
+                    onChange={(e) => setClientHostInput(e.target.value)}
+                    placeholder={`IP o http://IP:${P2P_PORT}`}
+                    className="font-mono text-sm"
+                  />
                 </div>
+                <button
+                  type="button"
+                  disabled={busy || !clientHostInput.trim()}
+                  onClick={() => void handleConnectClient()}
+                  className="flex w-full items-center gap-3 rounded-2xl border border-violet-400/80 bg-gradient-to-r from-violet-600 to-violet-700 px-4 py-3.5 text-left text-white shadow-md shadow-violet-600/25 transition hover:from-violet-500 hover:to-violet-600 active:scale-[0.99] disabled:pointer-events-none disabled:opacity-50"
+                >
+                  <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-white/15 ring-1 ring-white/25">
+                    {busy ? (
+                      <Loader2 className="h-5 w-5 animate-spin" />
+                    ) : (
+                      <Wifi className="h-5 w-5" />
+                    )}
+                  </div>
+                  <span className="min-w-0 flex-1">
+                    <span className="block text-sm font-semibold tracking-tight">
+                      {error ? 'Reintentar sincronización' : 'Sincronizar ahora'}
+                    </span>
+                    <span className="mt-0.5 block text-[11px] leading-snug text-violet-100">
+                      {tieneIpGuardada
+                        ? 'Usando la IP guardada · conectate a su hotspot primero'
+                        : 'Conectate a su hotspot y tocá acá'}
+                    </span>
+                  </span>
+                  <ChevronRight className="h-5 w-5 shrink-0 text-violet-100" />
+                </button>
+                <Button size="sm" variant="ghost" disabled={busy} onClick={() => setP2pMode('idle')}>
+                  Volver
+                </Button>
               </div>
             )}
 
@@ -1774,16 +2023,22 @@ export function InventarioOfflinePage() {
                   className="flex w-full items-center gap-2.5 rounded-xl border border-sky-300 bg-sky-600 px-3 py-2.5 text-left text-white shadow-sm transition hover:bg-sky-500 disabled:opacity-50"
                 >
                   <Radio className="h-4 w-4 shrink-0" />
-                  <span className="text-sm font-semibold">Yo espero</span>
+                  <span className="min-w-0">
+                    <span className="block text-sm font-semibold">Crear conexión</span>
+                    <span className="block text-[10px] text-sky-100">Tu hotspot</span>
+                  </span>
                 </button>
                 <button
                   type="button"
                   disabled={busy}
-                  onClick={() => setP2pMode('client')}
+                  onClick={() => abrirModoCliente()}
                   className="flex w-full items-center gap-2.5 rounded-xl border border-violet-200 bg-white px-3 py-2.5 text-left shadow-sm transition hover:bg-violet-50 disabled:opacity-50"
                 >
                   <Wifi className="h-4 w-4 shrink-0 text-violet-600" />
-                  <span className="text-sm font-semibold text-slate-900">Me conecto</span>
+                  <span className="min-w-0">
+                    <span className="block text-sm font-semibold text-slate-900">Unirme a la conexión</span>
+                    <span className="block text-[10px] text-slate-500">Su hotspot</span>
+                  </span>
                 </button>
               </div>
             )}
@@ -2015,121 +2270,202 @@ export function InventarioOfflinePage() {
                 />
                 <div
                   ref={productLineFormRef}
-                  className="fixed inset-x-0 z-50 mx-auto max-h-[min(72dvh,34rem)] w-full max-w-3xl overflow-y-auto overscroll-contain rounded-t-2xl border-2 border-b-0 border-brand-400 bg-white p-4 shadow-[0_-12px_40px_rgba(15,23,42,0.25)] ring-4 ring-brand-500/15 transition-[bottom] duration-200 ease-out sm:rounded-2xl sm:border sm:p-5"
-                  style={{ bottom: keyboardInset }}
+                  className="fixed inset-x-0 z-50 mx-auto w-full max-w-3xl overflow-y-auto overscroll-contain rounded-t-2xl border-2 border-b-0 border-brand-400 bg-white p-4 shadow-[0_-12px_40px_rgba(15,23,42,0.25)] ring-4 ring-brand-500/15 transition-[bottom,max-height] duration-200 ease-out sm:rounded-2xl sm:border sm:p-5"
+                  style={{
+                    bottom: keyboardInset,
+                    // Usa casi todo el alto libre sobre el teclado para evitar scroll interno.
+                    maxHeight: `calc(100dvh - ${keyboardInset}px - env(safe-area-inset-top, 0px) - 0.5rem)`
+                  }}
                 >
-                <div className="mb-3 flex items-center gap-3 sm:mb-4">
-                  <div className="min-w-0 flex-1">
-                    <p className="text-xs font-semibold uppercase tracking-wide text-brand-600">
-                      {editingLocalId ? 'Editar línea' : 'Nueva línea'}
-                    </p>
-                    <span className="inline-flex rounded-md bg-slate-50 px-2 py-0.5 font-mono text-sm font-semibold text-slate-700 ring-1 ring-surface-border">
+                <div className="mb-3 sm:mb-4">
+                  <div className="flex items-center gap-2">
+                    <span className="inline-flex min-w-0 rounded-md bg-slate-50 px-2 py-0.5 font-mono text-sm font-semibold text-slate-700 ring-1 ring-surface-border">
                       {selected.codigo_interno}
                     </span>
-                    <ScrollableProductName className="mt-1 text-base font-semibold text-slate-900">
-                      {selected.nombre}
-                    </ScrollableProductName>
+                    <p className="ml-auto shrink-0 text-xs font-semibold uppercase tracking-wide text-brand-600">
+                      {editingLocalId ? 'Editar línea' : 'Nueva línea'}
+                    </p>
                   </div>
-                  <button
-                    type="button"
-                    className="rounded-lg p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
-                    onClick={cancelarLineaForm}
-                  >
-                    <X className="h-5 w-5" />
-                  </button>
+                  <ScrollableProductName className="mt-1 text-base font-semibold text-slate-900">
+                    {selected.nombre}
+                  </ScrollableProductName>
                 </div>
 
                 <form
                   onSubmit={(e) => void handleAddLinea(e)}
                   className="grid grid-cols-2 gap-3 sm:grid-cols-4"
                 >
-                  <div>
+                  <div className="col-span-2">
                     <label className="mb-1 block text-sm font-medium text-slate-700">Tipo</label>
-                    <select
-                      value={tipoBulto}
-                      onChange={(e) => handleTipoBultoChange(e.target.value as TipoBultoOffline)}
-                      onFocus={(e) => scrollFocusedFieldIntoSheet(e.currentTarget)}
-                      className="w-full rounded-xl border border-surface-border px-3 py-2.5 text-base"
-                    >
-                      <option value="PALLET">Pallet</option>
-                      <option value="CAJA">Caja</option>
-                      <option value="SUELTO">Suelto</option>
-                    </select>
-                  </div>
-                  {tipoBulto === 'SUELTO' ? (
-                    <div className="col-span-2">
-                      <Input
-                        ref={cantidadSueltaRef}
-                        label="Cantidad suelta"
-                        type="number"
-                        inputMode="numeric"
-                        min="1"
-                        value={cantidadSuelta}
-                        onChange={(e) => setCantidadSuelta(e.target.value)}
-                        onFocus={(e) => scrollFocusedFieldIntoSheet(e.currentTarget)}
-                        className="rounded-xl px-3 py-2.5 text-base"
-                        required
-                      />
+                    <div className="flex rounded-xl border border-surface-border bg-slate-50 p-0.5">
+                      {(
+                        [
+                          { value: 'PALLET', label: 'Pallets' },
+                          { value: 'CAJA', label: 'Cajas' },
+                          { value: 'SUELTO', label: 'Botellas' }
+                        ] as const
+                      ).map((opt) => (
+                        <button
+                          key={opt.value}
+                          type="button"
+                          onPointerDown={(e) => e.preventDefault()}
+                          onClick={() => handleTipoBultoChange(opt.value)}
+                          className={cn(
+                            'flex-1 rounded-[10px] px-2 py-2 text-sm font-semibold transition-colors',
+                            tipoBulto === opt.value
+                              ? 'bg-brand-600 text-white shadow-md ring-2 ring-brand-600/30'
+                              : 'text-slate-500 hover:bg-white/70 hover:text-slate-700'
+                          )}
+                        >
+                          {opt.label}
+                        </button>
+                      ))}
                     </div>
-                  ) : (
-                    <>
+                  </div>
+                  <div className="col-span-2 grid min-h-[12rem] grid-cols-2 content-start gap-3 sm:col-span-4 sm:grid-cols-4">
+                    <div className={cn(tipoBulto === 'SUELTO' && 'hidden')}>
                       <Input
                         ref={cantidadBultosRef}
                         label={tipoBulto === 'PALLET' ? 'Cant. pallets' : 'Cant. cajas'}
-                        type="number"
-                        inputMode="numeric"
-                        min="1"
+                        type="text"
+                        inputMode={tipoBulto === 'CAJA' ? 'text' : 'numeric'}
                         value={cantidadBultos}
                         onChange={(e) => setCantidadBultos(e.target.value)}
-                        onFocus={(e) => scrollFocusedFieldIntoSheet(e.currentTarget)}
+                        onFocus={(e) => {
+                          scrollFocusedFieldIntoSheet(e.currentTarget)
+                          const el = e.currentTarget
+                          requestAnimationFrame(() => el.select())
+                        }}
                         className="rounded-xl px-3 py-2.5 text-base"
-                        required
+                        placeholder={tipoBulto === 'CAJA' ? '1 o 28×4-4' : '1'}
+                        required={tipoBulto !== 'SUELTO'}
                       />
+                      {tipoBulto === 'CAJA' && cantidadExprEsCuenta(cantidadBultos) && (
+                        <p
+                          className={cn(
+                            'mt-1 text-[11px] font-medium',
+                            evalCantidadExpr(cantidadBultos) != null
+                              ? 'text-emerald-700'
+                              : 'text-amber-700'
+                          )}
+                        >
+                          {evalCantidadExpr(cantidadBultos) != null
+                            ? `= ${evalCantidadExpr(cantidadBultos)}`
+                            : 'Cuenta incompleta (ej. 28×4-4)'}
+                        </p>
+                      )}
+                    </div>
+                    <div className={cn(tipoBulto === 'SUELTO' && 'hidden')}>
                       <Input
+                        ref={unidadesPorBultoRef}
                         label={
                           tipoBulto === 'PALLET' ? '× cajas por pallet' : '× botellas por caja'
                         }
-                        type="number"
-                        inputMode="numeric"
-                        min="1"
+                        type="text"
+                        inputMode={tipoBulto === 'PALLET' ? 'text' : 'numeric'}
                         value={unidadesPorBulto}
                         onChange={(e) => setUnidadesPorBulto(e.target.value)}
-                        onFocus={(e) => scrollFocusedFieldIntoSheet(e.currentTarget)}
+                        onFocus={(e) => {
+                          scrollFocusedFieldIntoSheet(e.currentTarget)
+                          const el = e.currentTarget
+                          requestAnimationFrame(() => el.select())
+                        }}
                         className="rounded-xl px-3 py-2.5 text-base"
-                        placeholder={tipoBulto === 'PALLET' ? '112' : '6'}
-                        required
+                        placeholder={tipoBulto === 'PALLET' ? '112 o 112-6' : '6'}
+                        required={tipoBulto !== 'SUELTO'}
                       />
+                      {tipoBulto === 'PALLET' && cantidadExprEsCuenta(unidadesPorBulto) && (
+                        <p
+                          className={cn(
+                            'mt-1 text-[11px] font-medium',
+                            evalCantidadExpr(unidadesPorBulto) != null
+                              ? 'text-emerald-700'
+                              : 'text-amber-700'
+                          )}
+                        >
+                          {evalCantidadExpr(unidadesPorBulto) != null
+                            ? `= ${evalCantidadExpr(unidadesPorBulto)}`
+                            : 'Cuenta incompleta (ej. 112-6)'}
+                        </p>
+                      )}
+                    </div>
+                    <div className={cn(tipoBulto === 'SUELTO' && 'col-span-2')}>
                       <Input
+                        ref={cantidadSueltaRef}
                         label={
-                          tipoBulto === 'PALLET'
-                            ? 'Cajas sueltas (opc.)'
-                            : 'Botellas sueltas (opc.)'
+                          tipoBulto === 'SUELTO'
+                            ? 'Cantidad suelta'
+                            : tipoBulto === 'PALLET'
+                              ? 'Cajas sueltas (opc.)'
+                              : 'Botellas sueltas (opc.)'
                         }
-                        type="number"
-                        inputMode="numeric"
-                        min="0"
+                        type="text"
+                        inputMode={tipoBulto === 'PALLET' ? 'text' : 'numeric'}
                         value={cantidadSuelta}
                         onChange={(e) => setCantidadSuelta(e.target.value)}
-                        onFocus={(e) => scrollFocusedFieldIntoSheet(e.currentTarget)}
+                        onFocus={(e) => {
+                          scrollFocusedFieldIntoSheet(e.currentTarget)
+                          const el = e.currentTarget
+                          requestAnimationFrame(() => el.select())
+                        }}
                         className="rounded-xl px-3 py-2.5 text-base"
+                        placeholder={
+                          tipoBulto === 'SUELTO' ? '12' : tipoBulto === 'PALLET' ? '0 o 8-2' : '0'
+                        }
+                        required={tipoBulto === 'SUELTO'}
                       />
-                    </>
-                  )}
+                      {tipoBulto === 'PALLET' && cantidadExprEsCuenta(cantidadSuelta) && (
+                        <p
+                          className={cn(
+                            'mt-1 text-[11px] font-medium',
+                            evalCantidadExpr(cantidadSuelta) != null
+                              ? 'text-emerald-700'
+                              : 'text-amber-700'
+                          )}
+                        >
+                          {evalCantidadExpr(cantidadSuelta) != null
+                            ? `= ${evalCantidadExpr(cantidadSuelta)}`
+                            : 'Cuenta incompleta (ej. 8-2)'}
+                        </p>
+                      )}
+                    </div>
+                  </div>
                   <div className="col-span-2 flex items-end gap-2 sm:col-span-4">
-                    {editingLocalId && (
-                      <Button
-                        type="button"
-                        variant="secondary"
-                        className="rounded-xl py-2.5 text-base"
-                        disabled={busy}
-                        onClick={cancelarLineaForm}
-                      >
-                        Cancelar
-                      </Button>
-                    )}
-                    <Button type="submit" className="w-full rounded-xl py-2.5 text-base" disabled={busy}>
-                      {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
-                      {editingLocalId ? 'Guardar' : 'Agregar línea'}
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      className="h-[2.875rem] w-11 shrink-0 rounded-xl px-0"
+                      disabled={busy}
+                      onClick={cancelarLineaForm}
+                      aria-label="Cerrar"
+                      title="Cerrar"
+                    >
+                      <X className="h-5 w-5" />
+                    </Button>
+                    <Button
+                      type="submit"
+                      className={cn(
+                        'w-full rounded-xl py-2.5 text-base',
+                        cuentasPendientes && 'bg-amber-600 hover:bg-amber-700'
+                      )}
+                      disabled={busy}
+                      onPointerDown={(e) => {
+                        // Evita que el botón robe el foco y cierre el teclado al calcular.
+                        if (cuentasPendientes) e.preventDefault()
+                      }}
+                    >
+                      {busy ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : cuentasPendientes ? (
+                        <Calculator className="h-4 w-4" />
+                      ) : (
+                        <Check className="h-4 w-4" />
+                      )}
+                      {cuentasPendientes
+                        ? 'Calcular'
+                        : editingLocalId
+                          ? 'Guardar'
+                          : 'Agregar línea'}
                     </Button>
                   </div>
                 </form>
@@ -2182,7 +2518,7 @@ export function InventarioOfflinePage() {
                 Iniciar reconteo
               </Button>
             )}
-            {puedeEditar && misLineasRonda.length > 0 && (
+            {puedeEditar && (misLineasRonda.length > 0 || enReconteo) && (
               <Button className="rounded-xl" disabled={busy} onClick={() => void handleFinalizar()}>
                 <Check className="h-4 w-4" />
                 Finalicé este sector
@@ -2237,6 +2573,7 @@ export function InventarioOfflinePage() {
         onClose={() => setShowP2PQrScanner(false)}
         onScan={handleP2PQrScan}
         title="Escanear QR del compañero"
+        variant="qr"
       />
     </div>
   )

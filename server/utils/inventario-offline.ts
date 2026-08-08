@@ -12,7 +12,7 @@ import {
   type ConteoLineaInput,
   type InventarioSectorEstado
 } from './inventario'
-import { getProductoDefaults } from './stock'
+import { getProductoDefaults, rememberUnidadesPorCajaDefault } from './stock'
 
 export type ModoConectividadInventario = 'ONLINE' | 'OFFLINE'
 
@@ -392,6 +392,9 @@ export function importarConteoOffline(
         total,
         raw.orden ?? ordenAuto
       )
+      if (raw.tipo_bulto === 'CAJA') {
+        rememberUnidadesPorCajaDefault(db, raw.producto_id, raw.unidades_por_bulto)
+      }
     }
 
     const c1Finalizo = body.contador_1_finalizo !== false ? 1 : 0

@@ -15,6 +15,7 @@ import {
   sendExcelFile
 } from '../utils/excel-export'
 import { sqlProductoSearchClause } from '../utils/productoSearch'
+import { ensureUnidadesPorCajaDefaultFromStock } from '../utils/stock'
 
 interface ProductoBody {
   codigo_interno?: string
@@ -290,6 +291,8 @@ export async function productosRoutes(app: FastifyInstance): Promise<void> {
   }, async (request, reply) => {
     const id = Number((request.params as { id: string }).id)
     const db = getDb()
+    // Completa botellas/caja desde el stock si el inventario ya las usó y el maestro quedó vacío.
+    ensureUnidadesPorCajaDefaultFromStock(db, id)
     const producto = db.prepare(`
       SELECT id, codigo_interno, codigo_barras, nombre, descripcion, imagen_path,
              unidad, unidades_por_pallet_default, unidades_por_caja_default,

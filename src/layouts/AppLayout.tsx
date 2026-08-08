@@ -1,4 +1,4 @@
-import { NavLink } from 'react-router-dom'
+import { NavLink, useLocation } from 'react-router-dom'
 import { Boxes, LogOut, Menu, PanelLeft, PanelLeftClose, X } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { SidebarNavProvider, useSidebarNav } from '@/context/SidebarNavContext'
@@ -107,9 +107,14 @@ function AppLayoutShell({
   children: React.ReactNode
 }) {
   const { user, logout, offlineSession } = useAuth()
+  const { pathname } = useLocation()
   const [mobileOpen, setMobileOpen] = useState(false)
   const [showOfflineBanner, setShowOfflineBanner] = useState(false)
   const { sidebarActive } = useSidebarNav()
+
+  // Conteo de inventario: sin scroll del main (header + totales fijos; solo la lista scrollea).
+  const isInventarioConteo =
+    pathname.startsWith('/inventario/contar/') || pathname.startsWith('/inventario/offline/')
 
   useEffect(() => {
     if (!offlineSession) {
@@ -299,8 +304,8 @@ function AppLayoutShell({
         </div>
       )}
 
-      <div className="flex min-w-0 flex-1 flex-col">
-        <header className="flex h-14 items-center gap-3 border-b border-surface-border bg-white px-4 lg:px-6">
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+        <header className="flex h-14 shrink-0 items-center gap-3 border-b border-surface-border bg-white px-4 lg:px-6">
           <button
             type="button"
             className="rounded-lg p-2 hover:bg-slate-100 lg:hidden"
@@ -327,12 +332,21 @@ function AppLayoutShell({
 
         <InventarioActivoBanner />
         {offlineSession && showOfflineBanner && (
-          <div className="border-b border-sky-200 bg-sky-50 px-4 py-2 text-center text-xs font-medium text-sky-900 sm:text-sm">
+          <div className="shrink-0 border-b border-sky-200 bg-sky-50 px-4 py-2 text-center text-xs font-medium text-sky-900 sm:text-sm">
             Sin conexión al PC — sesión offline activa (conteo local)
           </div>
         )}
 
-        <main className="flex-1 overflow-y-auto p-4 outline-none lg:p-6">{children}</main>
+        <main
+          className={cn(
+            'min-h-0 flex-1 outline-none',
+            isInventarioConteo
+              ? 'flex flex-col overflow-hidden p-0'
+              : 'overflow-y-auto p-4 lg:p-6'
+          )}
+        >
+          {children}
+        </main>
       </div>
     </div>
   )

@@ -21,6 +21,7 @@ export function ProductQuickCreateModal({
   const [codigoInterno, setCodigoInterno] = useState('')
   const [codigoBarras, setCodigoBarras] = useState('')
   const [nombre, setNombre] = useState('')
+  const [botellasPorCaja, setBotellasPorCaja] = useState('')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const [showScanner, setShowScanner] = useState(false)
@@ -32,6 +33,7 @@ export function ProductQuickCreateModal({
     setCodigoInterno('')
     setCodigoBarras('')
     setNombre('')
+    setBotellasPorCaja('')
     setError('')
   }
 
@@ -57,12 +59,19 @@ export function ProductQuickCreateModal({
     setSaving(true)
     setError('')
     try {
+      const cajaNum = botellasPorCaja.trim() === '' ? null : Number(botellasPorCaja)
+      if (cajaNum != null && (!Number.isFinite(cajaNum) || cajaNum <= 0)) {
+        setError('Botellas por caja inválidas')
+        setSaving(false)
+        return
+      }
       const result = await api<{ id: number }>('/api/productos', {
         method: 'POST',
         body: JSON.stringify({
           codigo_interno: codigoInterno,
           codigo_barras: codigoBarras || null,
           nombre,
+          unidades_por_caja_default: cajaNum,
           activo: true
         })
       })
@@ -137,6 +146,16 @@ export function ProductQuickCreateModal({
                 )}
               </div>
             </div>
+
+            <Input
+              label="Botellas por caja (opc.)"
+              type="number"
+              inputMode="numeric"
+              min="1"
+              value={botellasPorCaja}
+              onChange={(e) => setBotellasPorCaja(e.target.value)}
+              placeholder="Ej. 6 — o lo completa el inventario"
+            />
 
             <div className="flex gap-2 pt-2">
               <Button type="submit" disabled={saving}>

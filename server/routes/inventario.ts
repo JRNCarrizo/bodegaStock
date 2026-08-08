@@ -16,10 +16,12 @@ import {
   assertContadorEnSector,
   assertSectorEditable,
   assertSectorFinalizable,
+  cerrarSectorSinComparacionPares,
   compararContadores,
   compararVsSistema,
   crearSnapshotInventario,
   ejecutarComparacionSector,
+  esVerificacionSimple,
   getSesionOrThrow,
   getInventarioSector,
   getConteoFinalSector,
@@ -29,7 +31,8 @@ import {
   repararStockInventarioCerrado,
   validarYCalcularLinea,
   type ConteoLineaInput,
-  type CierreDecisionInput
+  type CierreDecisionInput,
+  type ModoVerificacionInventario
 } from '../utils/inventario'
 import {
   assertNoConteoOnlineEnOffline,
@@ -48,8 +51,9 @@ import { getProductoDefaults, rememberUnidadesPorCajaDefault, STOCK_LINEA_SUELTO
 interface SectorAsignacion {
   sector_id: number
   contador_1_id: number
-  contador_2_id: number
+  contador_2_id?: number | null
   modo_conectividad?: ModoConectividadInventario
+  modo_verificacion?: ModoVerificacionInventario
 }
 
 interface CrearSesionBody {
@@ -107,7 +111,7 @@ function getSectoresSesion(db: ReturnType<typeof getDb>, sesionId: number) {
     FROM inventario_sectores isec
     JOIN sectores s ON s.id = isec.sector_id
     JOIN usuarios u1 ON u1.id = isec.contador_1_id
-    JOIN usuarios u2 ON u2.id = isec.contador_2_id
+    LEFT JOIN usuarios u2 ON u2.id = isec.contador_2_id
     WHERE isec.sesion_id = ?
     ORDER BY s.nombre
   `).all(sesionId) as Array<Record<string, unknown>>
@@ -497,14 +501,15 @@ export async function inventarioRoutes(app: FastifyInstance): Promise<void> {
           sector_nombre: String(s.sector_nombre),
           sector_codigo: String(s.sector_codigo),
           contador_1_id: Number(s.contador_1_id),
-          contador_2_id: Number(s.contador_2_id),
+          contador_2_id: s.contador_2_id == null ? null : Number(s.contador_2_id),
           contador_1_nombre: String(s.contador_1_nombre),
-          contador_2_nombre: String(s.contador_2_nombre),
+          contador_2_nombre: s.contador_2_nombre == null ? null : String(s.contador_2_nombre),
           estado: String(s.estado),
           ronda_actual: Number(s.ronda_actual),
           contador_1_finalizo: Boolean(s.contador_1_finalizo),
           contador_2_finalizo: Boolean(s.contador_2_finalizo),
           modo_conectividad: String(s.modo_conectividad ?? 'ONLINE') === 'OFFLINE' ? 'OFFLINE' : 'ONLINE',
+          modo_verificacion: String(s.modo_verificacion ?? 'DOBLE') === 'SIMPLE' ? 'SIMPLE' : 'DOBLE',
           paquete_descargado_at: (s.paquete_descargado_at as string | null) ?? null,
           importado_at: (s.importado_at as string | null) ?? null,
           importacion_offline: getImportacionOfflineActiva(Number(s.id))
@@ -859,14 +864,27 @@ export async function inventarioRoutes(app: FastifyInstance): Promise<void> {
       if (sectores.length === 0) return reply.status(400).send({ error: 'Seleccioná al menos un sector' })
 
       for (const s of sectores) {
-        if (!s.sector_id || !s.contador_1_id || !s.contador_2_id) {
-          return reply.status(400).send({ error: 'Cada sector requiere dos contadores' })
+        const modoVerif = s.modo_verificacion === 'SIMPLE' ? 'SIMPLE' : 'DOBLE'
+        if (!s.sector_id || !s.contador_1_id) {
+          return reply.status(400).send({ error: 'Cada sector requiere al menos un contador' })
         }
-        if (s.contador_1_id === s.contador_2_id) {
-          return reply.status(400).send({ error: 'Los dos contadores deben ser distintos' })
+        if (modoVerif === 'DOBLE') {
+          if (!s.contador_2_id) {
+            return reply.status(400).send({ error: 'Verificación doble: cada sector requiere dos contadores' })
+          }
+          if (s.contador_1_id === s.contador_2_id) {
+            return reply.status(400).send({ error: 'Los dos contadores deben ser distintos' })
+          }
+        } else if (s.contador_2_id) {
+          return reply.status(400).send({
+            error: 'Verificación simple: no asignes un segundo contador'
+          })
         }
         if (s.modo_conectividad && !['ONLINE', 'OFFLINE'].includes(s.modo_conectividad)) {
           return reply.status(400).send({ error: 'modo_conectividad inválido' })
+        }
+        if (s.modo_verificacion && !['DOBLE', 'SIMPLE'].includes(s.modo_verificacion)) {
+          return reply.status(400).send({ error: 'modo_verificacion inválido' })
         }
         const sector = db.prepare('SELECT id FROM sectores WHERE id = ? AND activo = 1').get(s.sector_id)
         if (!sector) return reply.status(400).send({ error: `Sector ${s.sector_id} no válido` })
@@ -881,16 +899,20 @@ export async function inventarioRoutes(app: FastifyInstance): Promise<void> {
         const sesionId = Number(result.lastInsertRowid)
 
         const insertSec = db.prepare(`
-          INSERT INTO inventario_sectores (sesion_id, sector_id, contador_1_id, contador_2_id, modo_conectividad)
-          VALUES (?, ?, ?, ?, ?)
+          INSERT INTO inventario_sectores (
+            sesion_id, sector_id, contador_1_id, contador_2_id, modo_conectividad, modo_verificacion
+          )
+          VALUES (?, ?, ?, ?, ?, ?)
         `)
         for (const s of sectores) {
+          const modoVerif = s.modo_verificacion === 'SIMPLE' ? 'SIMPLE' : 'DOBLE'
           insertSec.run(
             sesionId,
             s.sector_id,
             s.contador_1_id,
-            s.contador_2_id,
-            s.modo_conectividad === 'OFFLINE' ? 'OFFLINE' : 'ONLINE'
+            modoVerif === 'SIMPLE' ? null : s.contador_2_id,
+            s.modo_conectividad === 'OFFLINE' ? 'OFFLINE' : 'ONLINE',
+            modoVerif
           )
         }
         return sesionId
@@ -1055,7 +1077,7 @@ export async function inventarioRoutes(app: FastifyInstance): Promise<void> {
         JOIN inventario_sesiones ses ON ses.id = isec.sesion_id
         JOIN sectores s ON s.id = isec.sector_id
         JOIN usuarios u1 ON u1.id = isec.contador_1_id
-        JOIN usuarios u2 ON u2.id = isec.contador_2_id
+        LEFT JOIN usuarios u2 ON u2.id = isec.contador_2_id
         WHERE ses.estado = 'EN_PROGRESO'
           AND (isec.contador_1_id = ? OR isec.contador_2_id = ?)
         ORDER BY s.nombre
@@ -1072,13 +1094,14 @@ export async function inventarioRoutes(app: FastifyInstance): Promise<void> {
           estado: String(s.estado),
           ronda_actual: Number(s.ronda_actual),
           contador_1_id: Number(s.contador_1_id),
-          contador_2_id: Number(s.contador_2_id),
+          contador_2_id: s.contador_2_id == null ? null : Number(s.contador_2_id),
           contador_1_nombre: String(s.contador_1_nombre),
-          contador_2_nombre: String(s.contador_2_nombre),
+          contador_2_nombre: s.contador_2_nombre == null ? null : String(s.contador_2_nombre),
           contador_1_finalizo: Boolean(s.contador_1_finalizo),
           contador_2_finalizo: Boolean(s.contador_2_finalizo),
           soy_contador_1: Number(s.contador_1_id) === userId,
           modo_conectividad: String(s.modo_conectividad ?? 'ONLINE') === 'OFFLINE' ? 'OFFLINE' : 'ONLINE',
+          modo_verificacion: String(s.modo_verificacion ?? 'DOBLE') === 'SIMPLE' ? 'SIMPLE' : 'DOBLE',
           paquete_descargado_at: (s.paquete_descargado_at as string | null) ?? null,
           importado_at: (s.importado_at as string | null) ?? null
         }))
@@ -1122,7 +1145,8 @@ export async function inventarioRoutes(app: FastifyInstance): Promise<void> {
 
       const ronda = Number(sector.ronda_actual)
       const c1 = Number(sector.contador_1_id)
-      const c2 = Number(sector.contador_2_id)
+      const c2 = sector.contador_2_id == null ? null : Number(sector.contador_2_id)
+      const simple = esVerificacionSimple(sector)
 
       asegurarPrecargaReconteo(db, inventarioSectorId)
       sector = getInventarioSector(db, inventarioSectorId)
@@ -1146,15 +1170,16 @@ export async function inventarioRoutes(app: FastifyInstance): Promise<void> {
       }
 
       const mostrarComparacion =
-        canSupervise ||
-        (Boolean(sector.contador_1_finalizo) &&
-          Boolean(sector.contador_2_finalizo) &&
-          ['CON_DIFERENCIAS', 'CERRADO_OK'].includes(String(sector.estado)))
+        !simple &&
+        (canSupervise ||
+          (Boolean(sector.contador_1_finalizo) &&
+            Boolean(sector.contador_2_finalizo) &&
+            ['CON_DIFERENCIAS', 'CERRADO_OK'].includes(String(sector.estado))))
 
       const mostrarLineasCompanero =
-        canSupervise ||
-        (Boolean(sector.contador_1_finalizo) &&
-          Boolean(sector.contador_2_finalizo))
+        !simple &&
+        (canSupervise ||
+          (Boolean(sector.contador_1_finalizo) && Boolean(sector.contador_2_finalizo)))
 
       let comparacion = null
       if (mostrarComparacion) {
@@ -1162,7 +1187,7 @@ export async function inventarioRoutes(app: FastifyInstance): Promise<void> {
       }
 
       const referencia_reconteo =
-        ronda > 1 ? compararContadores(db, inventarioSectorId, ronda - 1) : null
+        !simple && ronda > 1 ? compararContadores(db, inventarioSectorId, ronda - 1) : null
 
       const sectorId = Number(sector.sector_id)
       const sectorMeta = db.prepare(`
@@ -1196,20 +1221,22 @@ export async function inventarioRoutes(app: FastifyInstance): Promise<void> {
           ronda_actual: ronda,
           contador_1_id: c1,
           contador_2_id: c2,
-          contador_1_nombre: String(sector.contador_1_nombre),
-          contador_2_nombre: String(sector.contador_2_nombre),
+          contador_1_nombre: String(sector.contador_1_nombre ?? ''),
+          contador_2_nombre: sector.contador_2_nombre == null ? null : String(sector.contador_2_nombre),
           contador_1_finalizo: Boolean(sector.contador_1_finalizo),
           contador_2_finalizo: Boolean(sector.contador_2_finalizo),
           usa_ubicaciones,
           modo_conectividad: String(sector.modo_conectividad ?? 'ONLINE') === 'OFFLINE' ? 'OFFLINE' : 'ONLINE',
+          modo_verificacion: simple ? 'SIMPLE' : 'DOBLE',
           paquete_descargado_at: (sector.paquete_descargado_at as string | null) ?? null,
           importado_at: (sector.importado_at as string | null) ?? null
         },
         ubicaciones,
         mi_rol: rol,
-        mis_lineas: rol ? mapLineas(rol === 1 ? c1 : c2) : [],
+        mis_lineas: rol ? mapLineas(rol === 1 ? c1 : (c2 as number)) : [],
         lineas_contador_1: mostrarLineasCompanero || canSupervise ? mapLineas(c1) : undefined,
-        lineas_contador_2: mostrarLineasCompanero || canSupervise ? mapLineas(c2) : undefined,
+        lineas_contador_2:
+          c2 != null && (mostrarLineasCompanero || canSupervise) ? mapLineas(c2) : undefined,
         comparacion,
         referencia_reconteo
       }
@@ -1419,6 +1446,14 @@ export async function inventarioRoutes(app: FastifyInstance): Promise<void> {
         const { rol, sector } = assertContadorEnSector(db, inventarioSectorId, userId)
         assertNoConteoOnlineEnOffline(sector)
         assertSectorFinalizable(sector, rol)
+
+        if (esVerificacionSimple(sector)) {
+          if (rol !== 1) {
+            return reply.status(403).send({ error: 'Solo el contador asignado puede finalizar' })
+          }
+          cerrarSectorSinComparacionPares(db, inventarioSectorId)
+          return { ok: true, comparacion: null, modo_verificacion: 'SIMPLE' }
+        }
 
         const col = rol === 1 ? 'contador_1_finalizo' : 'contador_2_finalizo'
         db.prepare(`UPDATE inventario_sectores SET ${col} = 1 WHERE id = ?`).run(inventarioSectorId)

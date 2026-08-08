@@ -24,6 +24,25 @@ export type InventarioSectorEstado =
   | 'ESPERANDO_COMPANERO'
   | 'CON_DIFERENCIAS'
   | 'CERRADO_OK'
+export type ModoVerificacionInventario = 'DOBLE' | 'SIMPLE'
+
+export function esVerificacionSimple(sector: Record<string, unknown>): boolean {
+  return String(sector.modo_verificacion ?? 'DOBLE') === 'SIMPLE'
+}
+
+/** Cierra el sector sin Comparación A (modo SIMPLE: un solo contador). */
+export function cerrarSectorSinComparacionPares(
+  db: Database.Database,
+  inventarioSectorId: number
+): void {
+  db.prepare(`
+    UPDATE inventario_sectores SET
+      contador_1_finalizo = 1,
+      contador_2_finalizo = 1,
+      estado = 'CERRADO_OK'
+    WHERE id = ?
+  `).run(inventarioSectorId)
+}
 
 export interface ConteoLineaInput extends LineaDesgloseInput {
   producto_id: number
@@ -153,7 +172,7 @@ export function getInventarioSector(
     FROM inventario_sectores isec
     JOIN sectores s ON s.id = isec.sector_id
     JOIN usuarios u1 ON u1.id = isec.contador_1_id
-    JOIN usuarios u2 ON u2.id = isec.contador_2_id
+    LEFT JOIN usuarios u2 ON u2.id = isec.contador_2_id
     WHERE isec.id = ?
   `).get(inventarioSectorId) as Record<string, unknown> | undefined
   if (!row) throw new Error('Sector de inventario no encontrado')
@@ -178,9 +197,10 @@ export function assertContadorEnSector(
 ): { rol: 1 | 2; sector: ReturnType<typeof getInventarioSector> } {
   const sector = getInventarioSector(db, inventarioSectorId)
   const c1 = Number(sector.contador_1_id)
-  const c2 = Number(sector.contador_2_id)
+  const c2Raw = sector.contador_2_id
+  const c2 = c2Raw == null || c2Raw === '' ? null : Number(c2Raw)
   if (userId === c1) return { rol: 1, sector }
-  if (userId === c2) return { rol: 2, sector }
+  if (c2 != null && userId === c2) return { rol: 2, sector }
   throw new Error('No estás asignado como contador en este sector')
 }
 
@@ -923,8 +943,10 @@ export function getConteoFinalSector(db: Database.Database, inventarioSectorId: 
       usa_ubicaciones,
       modo_conectividad:
         String(sector.modo_conectividad ?? 'ONLINE') === 'OFFLINE' ? 'OFFLINE' : 'ONLINE',
-      contador_1_nombre: String(sector.contador_1_nombre),
-      contador_2_nombre: String(sector.contador_2_nombre),
+      modo_verificacion: esVerificacionSimple(sector) ? ('SIMPLE' as const) : ('DOBLE' as const),
+      contador_1_nombre: String(sector.contador_1_nombre ?? ''),
+      contador_2_nombre:
+        sector.contador_2_nombre == null ? null : String(sector.contador_2_nombre),
       importado_at: (sector.importado_at as string | null) ?? null
     },
     resumen: {

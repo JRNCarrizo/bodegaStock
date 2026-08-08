@@ -20,7 +20,7 @@ Toda la especificación del proyecto está en la carpeta [`docs/`](docs/):
 
 ## Estado del proyecto
 
-**v0.3.27** — Inventario (cuentas, botellas/caja, layout sticky), fix descuento por botellas en planillas y sync de empaque producto↔stock.
+**v0.3.28** — Inventario con verificación Simple o Doble por sector (sin sync/P2P en Simple).
 
 ## Desarrollo local
 

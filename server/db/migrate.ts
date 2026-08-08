@@ -485,12 +485,13 @@ export function runMigrations(db: Database.Database): void {
         sesion_id INTEGER NOT NULL REFERENCES inventario_sesiones(id) ON DELETE CASCADE,
         sector_id INTEGER NOT NULL REFERENCES sectores(id),
         contador_1_id INTEGER NOT NULL REFERENCES usuarios(id),
-        contador_2_id INTEGER NOT NULL REFERENCES usuarios(id),
+        contador_2_id INTEGER REFERENCES usuarios(id),
         estado TEXT NOT NULL DEFAULT 'PENDIENTE' CHECK (estado IN ('PENDIENTE', 'EN_CONTEO', 'ESPERANDO_COMPANERO', 'CON_DIFERENCIAS', 'CERRADO_OK')),
         ronda_actual INTEGER NOT NULL DEFAULT 1,
         contador_1_finalizo INTEGER NOT NULL DEFAULT 0,
         contador_2_finalizo INTEGER NOT NULL DEFAULT 0,
         modo_conectividad TEXT NOT NULL DEFAULT 'ONLINE',
+        modo_verificacion TEXT NOT NULL DEFAULT 'DOBLE',
         paquete_descargado_at TEXT,
         importado_at TEXT,
         UNIQUE(sesion_id, sector_id)
@@ -658,6 +659,55 @@ export function runMigrations(db: Database.Database): void {
     }
     if (!columnExists(db, 'inventario_sectores', 'importado_at')) {
       db.exec(`ALTER TABLE inventario_sectores ADD COLUMN importado_at TEXT`)
+    }
+    if (!columnExists(db, 'inventario_sectores', 'modo_verificacion')) {
+      db.exec(`
+        ALTER TABLE inventario_sectores
+        ADD COLUMN modo_verificacion TEXT NOT NULL DEFAULT 'DOBLE'
+      `)
+    }
+    // Contador 2 opcional (verificación SIMPLE)
+    if (columnNotNull(db, 'inventario_sectores', 'contador_2_id')) {
+      db.pragma('foreign_keys = OFF')
+      try {
+      db.exec(`
+        CREATE TABLE inventario_sectores_flexible (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          sesion_id INTEGER NOT NULL REFERENCES inventario_sesiones(id) ON DELETE CASCADE,
+          sector_id INTEGER NOT NULL REFERENCES sectores(id),
+          contador_1_id INTEGER NOT NULL REFERENCES usuarios(id),
+          contador_2_id INTEGER REFERENCES usuarios(id),
+          estado TEXT NOT NULL DEFAULT 'PENDIENTE'
+            CHECK (estado IN ('PENDIENTE', 'EN_CONTEO', 'ESPERANDO_COMPANERO', 'CON_DIFERENCIAS', 'CERRADO_OK')),
+          ronda_actual INTEGER NOT NULL DEFAULT 1,
+          contador_1_finalizo INTEGER NOT NULL DEFAULT 0,
+          contador_2_finalizo INTEGER NOT NULL DEFAULT 0,
+          modo_conectividad TEXT NOT NULL DEFAULT 'ONLINE',
+          modo_verificacion TEXT NOT NULL DEFAULT 'DOBLE',
+          paquete_descargado_at TEXT,
+          importado_at TEXT,
+          UNIQUE(sesion_id, sector_id)
+        )
+      `)
+      db.exec(`
+        INSERT INTO inventario_sectores_flexible (
+          id, sesion_id, sector_id, contador_1_id, contador_2_id, estado, ronda_actual,
+          contador_1_finalizo, contador_2_finalizo, modo_conectividad, modo_verificacion,
+          paquete_descargado_at, importado_at
+        )
+        SELECT
+          id, sesion_id, sector_id, contador_1_id, contador_2_id, estado, ronda_actual,
+          contador_1_finalizo, contador_2_finalizo,
+          COALESCE(modo_conectividad, 'ONLINE'),
+          COALESCE(modo_verificacion, 'DOBLE'),
+          paquete_descargado_at, importado_at
+        FROM inventario_sectores
+      `)
+      db.exec('DROP TABLE inventario_sectores')
+      db.exec('ALTER TABLE inventario_sectores_flexible RENAME TO inventario_sectores')
+      } finally {
+        db.pragma('foreign_keys = ON')
+      }
     }
   }
 

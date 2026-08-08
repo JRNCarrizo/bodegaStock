@@ -1,5 +1,5 @@
 param(
-  [string]$Version = "0.3.27"
+  [string]$Version = "0.3.28"
 )
 
 $ErrorActionPreference = "Stop"
@@ -56,13 +56,13 @@ if (Test-Path $ymlPath) { $assets += (Resolve-Path $ymlPath).Path }
 $notes = @"
 ## ControlStock v$Version
 
-Inventario más ágil, botellas/caja alineadas con el stock, y fix al descontar botellas en planillas.
+Inventario con verificación **Simple** o **Doble** por sector.
 
 ### Nuevo / mejorado
-- Cuentas rápidas en conteo (ej. 28×4-4) y botellas/caja opcionales en productos
-- Layout sticky en conteo (header y totales fijos)
-- Al inventariar/cerrar, se guarda botellas/caja en el producto (y se sincroniza desde el stock)
-- Fix: descontar 1 botella ya no trata cajas como botellas (planillas)
+- Al crear inventario: por sector elegís Simple (1 contador) o Doble (2 contadores)
+- Simple: cuenta una persona, importa al PC y se compara contra el sistema (sin sync P2P ni reconteo)
+- Doble: mismo flujo de siempre entre pares + comparación vs sistema
+- Badges Simple/Doble en supervisión y en la APK
 
 ### Actualización
 - Desde **v0.2.7 o superior:** Configuración → Buscar actualizaciones

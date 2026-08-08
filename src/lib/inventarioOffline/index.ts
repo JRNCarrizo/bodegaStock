@@ -421,6 +421,10 @@ export async function iniciarReconteoLocal(sectorInvId: number): Promise<Offline
   return estado
 }
 
+function esVerificacionSimplePaquete(paquete: Awaited<ReturnType<typeof loadPaquete>>): boolean {
+  return String(paquete?.inventario_sector.modo_verificacion ?? 'DOBLE') === 'SIMPLE'
+}
+
 /** Paquete final de contingencia para llevar manualmente a la PC. */
 export async function crearPaqueteImportacionPc(
   sectorInvId: number
@@ -428,20 +432,30 @@ export async function crearPaqueteImportacionPc(
   const paquete = await loadPaquete(sectorInvId)
   const estado = await loadEstado(sectorInvId)
   if (!paquete || !estado) throw new Error('No hay datos offline')
-  if (!estado.mi_finalizo || !estado.companero_finalizo) {
-    throw new Error('Ambos deben finalizar y sincronizar antes de generar el archivo para la PC')
+  const simple = esVerificacionSimplePaquete(paquete)
+  if (!estado.mi_finalizo) {
+    throw new Error('Finalizá el conteo antes de generar el archivo para la PC')
   }
-  if (isSyncCompaneroIncompleto(estado)) {
-    throw new Error('La sincronización con el compañero está incompleta')
-  }
-  const comparacion = getComparacionActual(paquete, estado)
-  if (!comparacion?.coincide) {
-    throw new Error('Todavía hay diferencias; completen el reconteo antes de generar el archivo')
+  if (!simple) {
+    if (!estado.companero_finalizo) {
+      throw new Error('Ambos deben finalizar y sincronizar antes de generar el archivo para la PC')
+    }
+    if (isSyncCompaneroIncompleto(estado)) {
+      throw new Error('La sincronización con el compañero está incompleta')
+    }
+    const comparacion = getComparacionActual(paquete, estado)
+    if (!comparacion?.coincide) {
+      throw new Error('Todavía hay diferencias; completen el reconteo antes de generar el archivo')
+    }
   }
 
   const misSonC1 = paquete.inventario_sector.mi_rol === 1
   const lineas1 = misSonC1 ? estado.mis_lineas : estado.lineas_companero
-  const lineas2 = misSonC1 ? estado.lineas_companero : estado.mis_lineas
+  const lineas2 = simple
+    ? []
+    : misSonC1
+      ? estado.lineas_companero
+      : estado.mis_lineas
   const contenido = {
     sesion_id: paquete.sesion.id,
     inventario_sector_id: sectorInvId,
@@ -449,6 +463,7 @@ export async function crearPaqueteImportacionPc(
     ronda_actual: estado.ronda_actual,
     contador_1_id: paquete.inventario_sector.contador_1_id,
     contador_2_id: paquete.inventario_sector.contador_2_id,
+    modo_verificacion: simple ? ('SIMPLE' as const) : ('DOBLE' as const),
     generado_at: new Date().toISOString(),
     productos_reconteo: mergeProductosReconteo(estado.productos_reconteo),
     lineas: [...lineas1, ...lineas2].map((linea) => ({
@@ -477,20 +492,30 @@ export async function importarAlPc(sectorInvId: number) {
   const paquete = await loadPaquete(sectorInvId)
   const estado = await loadEstado(sectorInvId)
   if (!paquete || !estado) throw new Error('No hay datos offline')
-  if (!estado.mi_finalizo || !estado.companero_finalizo) {
-    throw new Error('Ambos deben haber finalizado y sincronizado antes de importar')
+  const simple = esVerificacionSimplePaquete(paquete)
+  if (!estado.mi_finalizo) {
+    throw new Error('Finalizá el conteo antes de importar')
   }
-  if (isSyncCompaneroIncompleto(estado)) {
-    throw new Error('Sync incompleto con el compañero. Sincronizá de nuevo antes de importar')
-  }
-  const comp = getComparacionActual(paquete, estado)
-  if (!comp?.coincide) {
-    throw new Error('Todavía hay diferencias entre contadores; hagan reconteo primero')
+  if (!simple) {
+    if (!estado.companero_finalizo) {
+      throw new Error('Ambos deben haber finalizado y sincronizado antes de importar')
+    }
+    if (isSyncCompaneroIncompleto(estado)) {
+      throw new Error('Sync incompleto con el compañero. Sincronizá de nuevo antes de importar')
+    }
+    const comp = getComparacionActual(paquete, estado)
+    if (!comp?.coincide) {
+      throw new Error('Todavía hay diferencias entre contadores; hagan reconteo primero')
+    }
   }
 
   const misSonC1 = paquete.inventario_sector.mi_rol === 1
   const lineas1 = misSonC1 ? estado.mis_lineas : estado.lineas_companero
-  const lineas2 = misSonC1 ? estado.lineas_companero : estado.mis_lineas
+  const lineas2 = simple
+    ? []
+    : misSonC1
+      ? estado.lineas_companero
+      : estado.mis_lineas
   const todas = [...lineas1, ...lineas2]
 
   // 1) Avisar a la PC para que su vista muestre "Recibiendo conteo…".
@@ -569,13 +594,14 @@ export async function listLocalMisSectores(usuarioId?: number): Promise<
     estado: string
     ronda_actual: number
     contador_1_id: number
-    contador_2_id: number
+    contador_2_id: number | null
     contador_1_nombre: string
-    contador_2_nombre: string
+    contador_2_nombre: string | null
     contador_1_finalizo: boolean
     contador_2_finalizo: boolean
     soy_contador_1: boolean
     modo_conectividad: 'OFFLINE'
+    modo_verificacion: 'DOBLE' | 'SIMPLE'
     paquete_descargado_at: string | null
     importado_at: string | null
   }>
@@ -590,13 +616,14 @@ export async function listLocalMisSectores(usuarioId?: number): Promise<
     estado: string
     ronda_actual: number
     contador_1_id: number
-    contador_2_id: number
+    contador_2_id: number | null
     contador_1_nombre: string
-    contador_2_nombre: string
+    contador_2_nombre: string | null
     contador_1_finalizo: boolean
     contador_2_finalizo: boolean
     soy_contador_1: boolean
     modo_conectividad: 'OFFLINE'
+    modo_verificacion: 'DOBLE' | 'SIMPLE'
     paquete_descargado_at: string | null
     importado_at: string | null
   }> = []
@@ -616,6 +643,7 @@ export async function listLocalMisSectores(usuarioId?: number): Promise<
     const soyC1 = inv.mi_rol === 1
     const miFin = Boolean(estado?.mi_finalizo)
     const compFin = Boolean(estado?.companero_finalizo)
+    const simple = esVerificacionSimplePaquete(paquete)
     out.push({
       id: inv.id,
       sesion_id: paquete.sesion.id,
@@ -629,9 +657,10 @@ export async function listLocalMisSectores(usuarioId?: number): Promise<
       contador_1_nombre: inv.contador_1_nombre,
       contador_2_nombre: inv.contador_2_nombre,
       contador_1_finalizo: soyC1 ? miFin : compFin,
-      contador_2_finalizo: soyC1 ? compFin : miFin,
+      contador_2_finalizo: simple ? true : soyC1 ? compFin : miFin,
       soy_contador_1: soyC1,
       modo_conectividad: 'OFFLINE',
+      modo_verificacion: simple ? 'SIMPLE' : 'DOBLE',
       paquete_descargado_at: paquete.descargado_at,
       importado_at: null
     })

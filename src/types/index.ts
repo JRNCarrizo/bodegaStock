@@ -694,6 +694,7 @@ export interface InventarioSesionListItem {
 }
 
 export type ModoConectividadInventario = 'ONLINE' | 'OFFLINE'
+export type ModoVerificacionInventario = 'DOBLE' | 'SIMPLE'
 
 export interface InventarioSectorResumen {
   id: number
@@ -701,14 +702,15 @@ export interface InventarioSectorResumen {
   sector_nombre: string
   sector_codigo: string
   contador_1_id: number
-  contador_2_id: number
+  contador_2_id: number | null
   contador_1_nombre: string
-  contador_2_nombre: string
+  contador_2_nombre: string | null
   estado: InventarioSectorEstado
   ronda_actual: number
   contador_1_finalizo: boolean
   contador_2_finalizo: boolean
   modo_conectividad?: ModoConectividadInventario
+  modo_verificacion?: ModoVerificacionInventario
   paquete_descargado_at?: string | null
   importado_at?: string | null
   importacion_offline?: {
@@ -766,13 +768,14 @@ export interface InventarioMisSector {
   estado: InventarioSectorEstado
   ronda_actual: number
   contador_1_id: number
-  contador_2_id: number
+  contador_2_id: number | null
   contador_1_nombre: string
-  contador_2_nombre: string
+  contador_2_nombre: string | null
   contador_1_finalizo: boolean
   contador_2_finalizo: boolean
   soy_contador_1: boolean
   modo_conectividad?: ModoConectividadInventario
+  modo_verificacion?: ModoVerificacionInventario
   paquete_descargado_at?: string | null
   importado_at?: string | null
 }

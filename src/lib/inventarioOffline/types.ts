@@ -35,12 +35,13 @@ export interface OfflinePaquete {
     sector_nombre: string
     sector_codigo: string
     modo_conectividad: 'OFFLINE'
+    modo_verificacion?: 'DOBLE' | 'SIMPLE'
     estado: string
     ronda_actual: number
     contador_1_id: number
-    contador_2_id: number
+    contador_2_id: number | null
     contador_1_nombre: string
-    contador_2_nombre: string
+    contador_2_nombre: string | null
     mi_rol: 1 | 2
     usa_ubicaciones: boolean
   }
@@ -120,7 +121,8 @@ export interface OfflinePcImportContent {
   sector_id: number
   ronda_actual: number
   contador_1_id: number
-  contador_2_id: number
+  contador_2_id: number | null
+  modo_verificacion?: 'DOBLE' | 'SIMPLE'
   generado_at: string
   productos_reconteo?: OfflineProductosReconteoRonda[]
   lineas: Array<{

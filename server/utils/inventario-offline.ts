@@ -2,8 +2,10 @@ import type Database from 'better-sqlite3'
 import { createHash } from 'node:crypto'
 import {
   assertContadorEnSector,
+  cerrarSectorSinComparacionPares,
   compararContadores,
   ejecutarComparacionSector,
+  esVerificacionSimple,
   getInventarioSector,
   getSesionOrThrow,
   mapConteoLinea,
@@ -85,7 +87,8 @@ export interface ImportarOfflineArchivoBody {
     sector_id: number
     ronda_actual: number
     contador_1_id: number
-    contador_2_id: number
+    contador_2_id: number | null
+    modo_verificacion?: 'DOBLE' | 'SIMPLE'
     generado_at: string
     productos_reconteo?: Array<{ ronda: number; producto_ids: number[] }>
     lineas: OfflineLineaInput[]
@@ -141,20 +144,23 @@ export function validarPaqueteImportacionPc(
   ) {
     throw new Error('El archivo no corresponde a esta sesión y sector')
   }
-  if (
-    contenido.contador_1_id !== Number(sector.contador_1_id) ||
-    contenido.contador_2_id !== Number(sector.contador_2_id)
-  ) {
+  const simple = esVerificacionSimple(sector)
+  const c2Sector = sector.contador_2_id == null ? null : Number(sector.contador_2_id)
+  const c2Archivo = contenido.contador_2_id == null ? null : Number(contenido.contador_2_id)
+  if (contenido.contador_1_id !== Number(sector.contador_1_id) || c2Archivo !== c2Sector) {
     throw new Error('Los contadores del archivo no coinciden con los asignados al sector')
   }
-  if (!Array.isArray(contenido.lineas) || contenido.lineas.length === 0) {
+  if (!Array.isArray(contenido.lineas)) {
+    throw new Error('El archivo no contiene líneas de conteo')
+  }
+  if (!simple && contenido.lineas.length === 0) {
     throw new Error('El archivo no contiene líneas de conteo')
   }
 
   return {
     ronda_actual: contenido.ronda_actual,
     contador_1_finalizo: true,
-    contador_2_finalizo: true,
+    contador_2_finalizo: simple ? true : true,
     productos_reconteo: contenido.productos_reconteo,
     lineas: contenido.lineas
   }
@@ -176,7 +182,9 @@ export function buildPaqueteOffline(
 
   if (sector.importado_at || String(sector.estado) === 'CERRADO_OK') {
     throw new Error(
-      'Este sector ya fue importado al PC y está cerrado entre contadores. No hace falta volver a descargar el paquete.'
+      esVerificacionSimple(sector)
+        ? 'Este sector ya fue importado al PC y está cerrado. No hace falta volver a descargar el paquete.'
+        : 'Este sector ya fue importado al PC y está cerrado entre contadores. No hace falta volver a descargar el paquete.'
     )
   }
 
@@ -286,12 +294,19 @@ export function buildPaqueteOffline(
       sector_nombre: String(sectorActualizado.sector_nombre),
       sector_codigo: String(sectorActualizado.sector_codigo),
       modo_conectividad: 'OFFLINE' as const,
+      modo_verificacion: esVerificacionSimple(sectorActualizado) ? ('SIMPLE' as const) : ('DOBLE' as const),
       estado: String(sectorActualizado.estado),
       ronda_actual: Number(sectorActualizado.ronda_actual),
       contador_1_id: Number(sectorActualizado.contador_1_id),
-      contador_2_id: Number(sectorActualizado.contador_2_id),
-      contador_1_nombre: String(sectorActualizado.contador_1_nombre),
-      contador_2_nombre: String(sectorActualizado.contador_2_nombre),
+      contador_2_id:
+        sectorActualizado.contador_2_id == null
+          ? null
+          : Number(sectorActualizado.contador_2_id),
+      contador_1_nombre: String(sectorActualizado.contador_1_nombre ?? ''),
+      contador_2_nombre:
+        sectorActualizado.contador_2_nombre == null
+          ? null
+          : String(sectorActualizado.contador_2_nombre),
       mi_rol: miRol,
       usa_ubicaciones: Number(sectorMeta?.usa_ubicaciones ?? 0) === 1
     },
@@ -327,7 +342,11 @@ export function importarConteoOffline(
   assertModoOffline(sector)
 
   if (sector.importado_at && String(sector.estado) === 'CERRADO_OK') {
-    throw new Error('Este sector offline ya fue importado y cerrado entre contadores')
+    throw new Error(
+      esVerificacionSimple(sector)
+        ? 'Este sector offline ya fue importado y cerrado'
+        : 'Este sector offline ya fue importado y cerrado entre contadores'
+    )
   }
 
   const rondaActual = Number(body.ronda_actual)
@@ -335,16 +354,17 @@ export function importarConteoOffline(
     throw new Error('ronda_actual inválida')
   }
 
+  const simple = esVerificacionSimple(sector)
   const lineas = body.lineas ?? []
-  if (lineas.length === 0) {
+  if (!simple && lineas.length === 0) {
     throw new Error('El import no incluye líneas de conteo')
   }
 
   const c1 = Number(sector.contador_1_id)
-  const c2 = Number(sector.contador_2_id)
+  const c2 = sector.contador_2_id == null ? null : Number(sector.contador_2_id)
 
   for (const l of lineas) {
-    if (l.contador_id !== c1 && l.contador_id !== c2) {
+    if (l.contador_id !== c1 && (c2 == null || l.contador_id !== c2)) {
       throw new Error(`contador_id ${l.contador_id} no corresponde a este sector`)
     }
     if (!l.producto_id || l.ronda < 1) {
@@ -397,10 +417,22 @@ export function importarConteoOffline(
       }
     }
 
+    reemplazarProductosReconteo(db, inventarioSectorId, body.productos_reconteo ?? [])
+
+    if (simple) {
+      db.prepare(
+        `
+        UPDATE inventario_sectores
+        SET ronda_actual = ?, importado_at = datetime('now')
+        WHERE id = ?
+      `
+      ).run(rondaActual, inventarioSectorId)
+      cerrarSectorSinComparacionPares(db, inventarioSectorId)
+      return null
+    }
+
     const c1Finalizo = body.contador_1_finalizo !== false ? 1 : 0
     const c2Finalizo = body.contador_2_finalizo !== false ? 1 : 0
-
-    reemplazarProductosReconteo(db, inventarioSectorId, body.productos_reconteo ?? [])
 
     db.prepare(
       `

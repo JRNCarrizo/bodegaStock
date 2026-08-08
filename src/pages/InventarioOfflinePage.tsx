@@ -604,6 +604,8 @@ export function InventarioOfflinePage() {
     [totalGeneral]
   )
 
+  const verificacionSimple =
+    String(paquete?.inventario_sector.modo_verificacion ?? 'DOBLE') === 'SIMPLE'
   const puedeEditar = Boolean(paquete && estado && !estado.mi_finalizo)
   const postConteo = Boolean(estado?.mi_finalizo)
   const enReconteo = (estado?.ronda_actual ?? 1) > 1
@@ -966,7 +968,11 @@ export function InventarioOfflinePage() {
     try {
       await finalizarMiRonda(sectorInvId)
       await reload()
-      setMsg('Finalizaste. Sincronizá con el compañero.')
+      setMsg(
+        verificacionSimple
+          ? 'Finalizaste. Ya podés importar el resultado al PC.'
+          : 'Finalizaste. Sincronizá con el compañero.'
+      )
       setP2pMode('idle')
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Error al finalizar')
@@ -978,7 +984,9 @@ export function InventarioOfflinePage() {
   async function handleReabrirConteo() {
     if (
       !confirm(
-        '¿Volver a editar el conteo? Se desmarca tu finalización. Solo antes de sincronizar con el compañero.'
+        verificacionSimple
+          ? '¿Volver a editar el conteo? Se desmarca tu finalización.'
+          : '¿Volver a editar el conteo? Se desmarca tu finalización. Solo antes de sincronizar con el compañero.'
       )
     ) {
       return
@@ -1622,6 +1630,11 @@ export function InventarioOfflinePage() {
                 <span className="shrink-0 rounded-full bg-amber-50 px-2.5 py-1 font-medium text-amber-900 ring-1 ring-amber-100">
                   Offline
                 </span>
+                {verificacionSimple && (
+                  <span className="shrink-0 rounded-full bg-sky-50 px-2.5 py-1 font-medium text-sky-800 ring-1 ring-sky-100">
+                    Simple
+                  </span>
+                )}
                 {estado?.mi_finalizo && (
                   <span className="shrink-0 rounded-full bg-emerald-50 px-2.5 py-1 font-medium text-emerald-800 ring-1 ring-emerald-100">
                     Finalizado
@@ -1672,6 +1685,7 @@ export function InventarioOfflinePage() {
                         </span>
                       </span>
                     </button>
+                    {!verificacionSimple && (
                     <button
                       type="button"
                       className="flex w-full items-start gap-2 px-3 py-2.5 text-left text-sm text-slate-700 hover:bg-slate-50"
@@ -1690,6 +1704,7 @@ export function InventarioOfflinePage() {
                         </span>
                       </span>
                     </button>
+                    )}
                     <button
                       type="button"
                       className="flex w-full items-start gap-2 px-3 py-2.5 text-left text-sm text-slate-700 hover:bg-slate-50 disabled:opacity-50"
@@ -1703,7 +1718,9 @@ export function InventarioOfflinePage() {
                       <span>
                         <span className="block font-medium">Reiniciar en este celular</span>
                         <span className="mt-0.5 block text-[11px] leading-snug text-slate-500">
-                          Borra el paquete local. No afecta al compañero ni al PC.
+                          {verificacionSimple
+                            ? 'Borra el paquete local. No afecta al PC.'
+                            : 'Borra el paquete local. No afecta al compañero ni al PC.'}
                         </span>
                       </span>
                     </button>
@@ -1726,7 +1743,7 @@ export function InventarioOfflinePage() {
         )}
 
         <div className={cn(postConteo && 'min-h-0 flex-1 overflow-y-auto')}>
-        {puedeRecuperarComparacion && !comparacion && (
+        {puedeRecuperarComparacion && !comparacion && !verificacionSimple && (
           <div className="border-b border-amber-200 bg-amber-50 px-4 py-3 sm:px-5">
             <p className="text-sm font-medium text-amber-950">Datos del compañero ya están acá</p>
             <Button
@@ -1786,6 +1803,7 @@ export function InventarioOfflinePage() {
         )}
 
         {estado?.mi_finalizo &&
+          !verificacionSimple &&
           (!estado.companero_finalizo || p2pMode !== 'idle') &&
           !puedeRecuperarComparacion &&
           !comparacion && (
@@ -2008,7 +2026,7 @@ export function InventarioOfflinePage() {
           </div>
         )}
 
-        {syncIncompleto && resumenSync && (
+        {syncIncompleto && resumenSync && !verificacionSimple && (
           <div className="border-b border-red-200 bg-red-50 px-4 py-3 sm:px-5">
             <p className="text-sm font-medium text-red-900">Sync incompleto</p>
             <p className="mt-1 text-xs text-red-800">
@@ -2045,7 +2063,7 @@ export function InventarioOfflinePage() {
           </div>
         )}
 
-        {resumenSync && !syncIncompleto && (
+        {resumenSync && !syncIncompleto && !verificacionSimple && (
           <div className="border-b border-slate-200 bg-slate-50 px-4 py-2 text-xs text-slate-600 sm:px-5">
             Vos {resumenSync.mis_productos} · Compañero {resumenSync.companero_productos}
             {comparacion && !comparacion.coincide
@@ -2054,7 +2072,64 @@ export function InventarioOfflinePage() {
           </div>
         )}
 
-        {comparacion && (
+        {verificacionSimple && estado?.mi_finalizo && (
+          <div className="border-b border-emerald-200 bg-gradient-to-b from-emerald-50 via-emerald-50/90 to-white px-4 py-3 sm:px-5">
+            <div className="space-y-3">
+              <div className="flex items-start gap-3 rounded-2xl border border-emerald-300/80 bg-white/90 p-4 shadow-sm ring-1 ring-emerald-100">
+                <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-emerald-600 text-white shadow-md shadow-emerald-600/30">
+                  <Check className="h-7 w-7 stroke-[2.5]" />
+                </div>
+                <div className="min-w-0 flex-1 pt-0.5">
+                  <p className="text-lg font-bold tracking-tight text-emerald-900">Conteo listo</p>
+                  <p className="mt-1 text-sm leading-snug text-emerald-800/90">
+                    Verificación simple: ya podés llevar el resultado al PC. Después se compara
+                    contra el sistema.
+                  </p>
+                </div>
+              </div>
+              <div className="flex flex-col gap-2.5">
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => void handleImportPc()}
+                  className="flex w-full items-center gap-3 rounded-2xl border border-emerald-400/80 bg-gradient-to-r from-emerald-600 to-emerald-700 px-4 py-3.5 text-left text-white shadow-md shadow-emerald-600/25 transition hover:from-emerald-500 hover:to-emerald-600 active:scale-[0.99] disabled:pointer-events-none disabled:opacity-50"
+                >
+                  <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-white/15 ring-1 ring-white/25">
+                    <Upload className="h-5 w-5" />
+                  </div>
+                  <span className="min-w-0 flex-1">
+                    <span className="block text-sm font-semibold tracking-tight">Importar al PC</span>
+                    <span className="mt-0.5 block text-[11px] leading-snug text-emerald-100">
+                      Enviá el resultado por red al servidor
+                    </span>
+                  </span>
+                  <ChevronRight className="h-5 w-5 shrink-0 text-emerald-100" />
+                </button>
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => void handleGuardarArchivoParaPc()}
+                  className="flex w-full items-center gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-3.5 text-left shadow-sm ring-1 ring-slate-100 transition hover:border-slate-300 hover:bg-slate-50 active:scale-[0.99] disabled:pointer-events-none disabled:opacity-50"
+                >
+                  <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-slate-800 text-white shadow-sm">
+                    <Download className="h-5 w-5" />
+                  </div>
+                  <span className="min-w-0 flex-1">
+                    <span className="block text-sm font-semibold tracking-tight text-slate-900">
+                      Guardar archivo para PC
+                    </span>
+                    <span className="mt-0.5 block text-[11px] leading-snug text-slate-500">
+                      Plan B si la importación por red falla
+                    </span>
+                  </span>
+                  <ChevronRight className="h-5 w-5 shrink-0 text-slate-400" />
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {comparacion && !verificacionSimple && (
           <div
             className={cn(
               'border-b px-4 py-3 sm:px-5',
@@ -2513,18 +2588,29 @@ export function InventarioOfflinePage() {
             )}
           </div>
           <div className="flex shrink-0 flex-col items-stretch gap-2 sm:flex-row sm:items-center">
-            {comparacion && !comparacion.coincide && (
+            {comparacion && !comparacion.coincide && !verificacionSimple && (
               <Button className="rounded-xl" disabled={busy} onClick={() => void handleReconteo()}>
                 Iniciar reconteo
               </Button>
             )}
-            {puedeEditar && (misLineasRonda.length > 0 || enReconteo) && (
+            {puedeEditar && (misLineasRonda.length > 0 || enReconteo || verificacionSimple) && (
               <Button className="rounded-xl" disabled={busy} onClick={() => void handleFinalizar()}>
                 <Check className="h-4 w-4" />
                 Finalicé este sector
               </Button>
             )}
-            {estado?.mi_finalizo && !estado.companero_finalizo && (
+            {estado?.mi_finalizo && !estado.companero_finalizo && !verificacionSimple && (
+              <Button
+                variant="secondary"
+                className="rounded-xl"
+                disabled={busy}
+                onClick={() => void handleReabrirConteo()}
+              >
+                <Pencil className="h-4 w-4" />
+                Seguir editando
+              </Button>
+            )}
+            {estado?.mi_finalizo && verificacionSimple && (
               <Button
                 variant="secondary"
                 className="rounded-xl"

@@ -3403,9 +3403,17 @@ export function InventarioPage() {
                 <div className="min-w-0">
                   <p className="font-medium text-slate-900">{sec.sector_nombre}</p>
                   <p className="mt-0.5 text-xs text-slate-500">
-                    {sec.contador_1_nombre} + {sec.contador_2_nombre}
+                    {sec.modo_verificacion === 'SIMPLE'
+                      ? sec.contador_1_nombre
+                      : `${sec.contador_1_nombre} + ${sec.contador_2_nombre}`}
                     <span className="text-slate-300"> · </span>
                     Ronda {sec.ronda_actual}
+                    {sec.modo_verificacion === 'SIMPLE' ? (
+                      <>
+                        <span className="text-slate-300"> · </span>
+                        Simple
+                      </>
+                    ) : null}
                     {sec.modo_conectividad === 'OFFLINE' ? (
                       <>
                         <span className="text-slate-300"> · </span>
@@ -3464,6 +3472,11 @@ export function InventarioPage() {
                     <span className="inline-flex items-center gap-1.5 rounded-full bg-sky-100 px-2.5 py-0.5 text-xs font-semibold text-sky-800 ring-1 ring-sky-200">
                       <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-sky-600" />
                       Recibiendo
+                    </span>
+                  )}
+                  {sec.modo_verificacion === 'SIMPLE' && (
+                    <span className="rounded-full bg-sky-50 px-2.5 py-0.5 text-xs font-medium text-sky-800 ring-1 ring-sky-100">
+                      Simple
                     </span>
                   )}
                   {sec.modo_conectividad === 'OFFLINE' && (
@@ -3692,6 +3705,7 @@ export function InventarioPage() {
                 sec.modo_conectividad === 'OFFLINE' &&
                 (sec.estado === 'CERRADO_OK' || Boolean(sec.importado_at))
               const esOffline = sec.modo_conectividad === 'OFFLINE'
+              const esSimple = sec.modo_verificacion === 'SIMPLE'
               const companero = sec.soy_contador_1 ? sec.contador_2_nombre : sec.contador_1_nombre
               const enCurso =
                 sec.estado === 'EN_CONTEO' ||
@@ -3748,10 +3762,17 @@ export function InventarioPage() {
                         )}
                     </div>
                     <p className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-slate-500">
-                      <span className="inline-flex items-center gap-1">
-                        <User className="h-3 w-3 shrink-0 text-slate-400" />
-                        Con {companero}
-                      </span>
+                      {esSimple ? (
+                        <span className="inline-flex items-center gap-1">
+                          <User className="h-3 w-3 shrink-0 text-slate-400" />
+                          Solo vos
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1">
+                          <User className="h-3 w-3 shrink-0 text-slate-400" />
+                          Con {companero}
+                        </span>
+                      )}
                       <span className="text-slate-300">·</span>
                       <span>Ronda {sec.ronda_actual}</span>
                     </p>
@@ -3764,6 +3785,11 @@ export function InventarioPage() {
                       >
                         {ESTADO_SECTOR_LABEL[sec.estado]}
                       </span>
+                      {esSimple && (
+                        <span className="rounded-full bg-sky-50 px-2 py-0.5 text-[11px] font-medium text-sky-800 ring-1 ring-sky-100">
+                          Simple
+                        </span>
+                      )}
                       {esOffline && !offlineListo && (
                         <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-900 ring-1 ring-amber-100">
                           <WifiOff className="h-3 w-3" />
@@ -3976,8 +4002,9 @@ type InventarioConteoFinalData = {
     ronda_actual: number
     usa_ubicaciones: boolean
     modo_conectividad: string
+    modo_verificacion?: 'DOBLE' | 'SIMPLE'
     contador_1_nombre: string
-    contador_2_nombre: string
+    contador_2_nombre: string | null
     importado_at: string | null
   }
   resumen: {
@@ -4062,8 +4089,15 @@ function InventarioConteoFinalVista({
 
       <div className="flex flex-wrap items-center gap-1.5 text-xs">
         <RegistroDetalleMetaChip icon={<Users className="h-3.5 w-3.5 shrink-0 text-slate-400" />}>
-          {sector.contador_1_nombre} + {sector.contador_2_nombre}
+          {sector.modo_verificacion === 'SIMPLE'
+            ? sector.contador_1_nombre
+            : `${sector.contador_1_nombre} + ${sector.contador_2_nombre}`}
         </RegistroDetalleMetaChip>
+        {sector.modo_verificacion === 'SIMPLE' && (
+          <RegistroDetalleMetaChip icon={<ClipboardList className="h-3.5 w-3.5 shrink-0 text-sky-600" />}>
+            Simple
+          </RegistroDetalleMetaChip>
+        )}
         <RegistroDetalleMetaChip icon={<ClipboardList className="h-3.5 w-3.5 shrink-0 text-slate-400" />}>
           Ronda {sector.ronda_actual}
         </RegistroDetalleMetaChip>
@@ -4213,11 +4247,52 @@ function CrearSesionForm({
   const [usuarios, setUsuarios] = useState<InventarioUsuarioOption[]>([])
   const [selectedSectorIds, setSelectedSectorIds] = useState<Set<number>>(new Set())
   const [asignaciones, setAsignaciones] = useState<
-    Record<number, { c1: number; c2: number; modo: 'ONLINE' | 'OFFLINE' }>
+    Record<
+      number,
+      {
+        c1: number
+        c2: number
+        modo: 'ONLINE' | 'OFFLINE'
+        verificacion: 'DOBLE' | 'SIMPLE'
+      }
+    >
   >({})
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const nombreInputRef = useRef<HTMLInputElement>(null)
+
+  function asigOf(sectorId: number) {
+    return (
+      asignaciones[sectorId] ?? {
+        c1: 0,
+        c2: 0,
+        modo: 'OFFLINE' as const,
+        verificacion: 'DOBLE' as const
+      }
+    )
+  }
+
+  function patchAsig(
+    sectorId: number,
+    patch: Partial<{
+      c1: number
+      c2: number
+      modo: 'ONLINE' | 'OFFLINE'
+      verificacion: 'DOBLE' | 'SIMPLE'
+    }>
+  ) {
+    setAsignaciones((prev) => {
+      const base = prev[sectorId] ?? {
+        c1: 0,
+        c2: 0,
+        modo: 'OFFLINE' as const,
+        verificacion: 'DOBLE' as const
+      }
+      const next = { ...base, ...patch }
+      if (next.verificacion === 'SIMPLE') next.c2 = 0
+      return { ...prev, [sectorId]: next }
+    })
+  }
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -4267,12 +4342,14 @@ function CrearSesionForm({
       return
     }
     const sectoresBody = [...selectedSectorIds].map((sector_id) => {
-      const a = asignaciones[sector_id]
+      const a = asigOf(sector_id)
+      const simple = a.verificacion === 'SIMPLE'
       return {
         sector_id,
-        contador_1_id: a?.c1 ?? 0,
-        contador_2_id: a?.c2 ?? 0,
-        modo_conectividad: (a?.modo ?? 'OFFLINE') as 'ONLINE' | 'OFFLINE'
+        contador_1_id: a.c1,
+        contador_2_id: simple ? null : a.c2,
+        modo_conectividad: a.modo,
+        modo_verificacion: a.verificacion
       }
     })
     if (sectoresBody.length === 0) {
@@ -4280,13 +4357,19 @@ function CrearSesionForm({
       return
     }
     for (const s of sectoresBody) {
-      if (!s.contador_1_id || !s.contador_2_id) {
-        setError('Asigná dos contadores por cada sector')
+      if (!s.contador_1_id) {
+        setError('Asigná el contador de cada sector')
         return
       }
-      if (s.contador_1_id === s.contador_2_id) {
-        setError('Los contadores deben ser distintos')
-        return
+      if (s.modo_verificacion === 'DOBLE') {
+        if (!s.contador_2_id) {
+          setError('Verificación doble: asigná dos contadores por sector')
+          return
+        }
+        if (s.contador_1_id === s.contador_2_id) {
+          setError('Los contadores deben ser distintos')
+          return
+        }
       }
     }
     setSaving(true)
@@ -4321,7 +4404,7 @@ function CrearSesionForm({
         <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">Alta</p>
         <h1 className="mt-1 text-2xl font-bold tracking-tight text-slate-900">Nuevo inventario</h1>
         <p className="mt-1 text-sm text-slate-500">
-          Definí el nombre, los sectores y los dos contadores de cada uno
+          Definí el nombre, los sectores y la verificación (simple o doble) de cada uno
         </p>
       </section>
 
@@ -4356,7 +4439,7 @@ function CrearSesionForm({
                 <p className="text-sm font-semibold text-slate-900">Sectores y contadores</p>
               </div>
               <p className="mt-0.5 text-xs text-slate-600">
-                Cada sector necesita dos contadores distintos
+                Por sector: verificación doble (2 contadores) o simple (1 contador)
               </p>
             </div>
             <span className="rounded-full bg-white px-2.5 py-0.5 text-xs font-medium text-slate-700 ring-1 ring-slate-200">
@@ -4405,8 +4488,10 @@ function CrearSesionForm({
               <ul className="space-y-3">
                 {sectores.map((sec, index) => {
                   const selected = selectedSectorIds.has(sec.id)
-                  const asig = asignaciones[sec.id]
-                  const modo = asig?.modo ?? 'OFFLINE'
+                  const asig = asigOf(sec.id)
+                  const modo = asig.modo
+                  const verificacion = asig.verificacion
+                  const simple = verificacion === 'SIMPLE'
                   return (
                     <li
                       key={sec.id}
@@ -4449,46 +4534,84 @@ function CrearSesionForm({
                             )}
                         </div>
                         {selected && (
-                          <span className="inline-flex items-center gap-1 rounded-full bg-white px-2 py-0.5 text-[11px] font-medium text-slate-600 ring-1 ring-surface-border">
-                            {modo === 'OFFLINE' ? (
-                              <>
-                                <WifiOff className="h-3 w-3 text-amber-600" />
-                                Offline
-                              </>
-                            ) : (
-                              <>
-                                <Wifi className="h-3 w-3 text-brand-600" />
-                                Con red
-                              </>
-                            )}
+                          <span className="inline-flex flex-wrap items-center justify-end gap-1">
+                            <span
+                              className={cn(
+                                'rounded-full px-2 py-0.5 text-[11px] font-medium ring-1',
+                                simple
+                                  ? 'bg-sky-50 text-sky-800 ring-sky-100'
+                                  : 'bg-violet-50 text-violet-800 ring-violet-100'
+                              )}
+                            >
+                              {simple ? 'Simple' : 'Doble'}
+                            </span>
+                            <span className="inline-flex items-center gap-1 rounded-full bg-white px-2 py-0.5 text-[11px] font-medium text-slate-600 ring-1 ring-surface-border">
+                              {modo === 'OFFLINE' ? (
+                                <>
+                                  <WifiOff className="h-3 w-3 text-amber-600" />
+                                  Offline
+                                </>
+                              ) : (
+                                <>
+                                  <Wifi className="h-3 w-3 text-brand-600" />
+                                  Con red
+                                </>
+                              )}
+                            </span>
                           </span>
                         )}
                       </button>
 
                       {selected && (
                         <div className="space-y-3 border-l-4 border-l-brand-500 bg-white px-3.5 py-3.5 sm:px-4">
+                          <div>
+                            <p className="mb-1.5 text-xs font-medium text-slate-600">Verificación</p>
+                            <div className="flex flex-wrap gap-2">
+                              <button
+                                type="button"
+                                className={cn(
+                                  'inline-flex items-center rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors',
+                                  !simple
+                                    ? 'border-violet-500 bg-violet-50 text-violet-900'
+                                    : 'border-surface-border bg-white text-slate-600 hover:bg-slate-50'
+                                )}
+                                onClick={() => patchAsig(sec.id, { verificacion: 'DOBLE' })}
+                              >
+                                Doble (2 contadores)
+                              </button>
+                              <button
+                                type="button"
+                                className={cn(
+                                  'inline-flex items-center rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors',
+                                  simple
+                                    ? 'border-sky-500 bg-sky-50 text-sky-900'
+                                    : 'border-surface-border bg-white text-slate-600 hover:bg-slate-50'
+                                )}
+                                onClick={() => patchAsig(sec.id, { verificacion: 'SIMPLE' })}
+                              >
+                                Simple (1 contador)
+                              </button>
+                            </div>
+                            <p className="mt-2 text-xs text-slate-500">
+                              {simple
+                                ? 'Cuenta una persona, importa al PC y se compara contra el sistema.'
+                                : 'Dos personas cuentan; se cruzan entre sí y después contra el sistema.'}
+                            </p>
+                          </div>
+
                           <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">
-                            Contadores · {sec.nombre}
+                            Contador{simple ? '' : 'es'} · {sec.nombre}
                           </p>
-                          <div className="grid gap-3 sm:grid-cols-2">
+                          <div className={cn('grid gap-3', !simple && 'sm:grid-cols-2')}>
                             <label className="block space-y-1.5">
                               <span className="flex items-center gap-1.5 text-xs font-medium text-slate-600">
                                 <Users className="h-3.5 w-3.5 text-slate-400" />
-                                Contador 1
+                                {simple ? 'Contador' : 'Contador 1'}
                               </span>
                               <select
                                 className="w-full rounded-lg border border-surface-border bg-white px-3 py-2 text-sm text-slate-800 outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20"
-                                value={asig?.c1 ?? ''}
-                                onChange={(e) =>
-                                  setAsignaciones((prev) => ({
-                                    ...prev,
-                                    [sec.id]: {
-                                      c1: Number(e.target.value),
-                                      c2: prev[sec.id]?.c2 ?? 0,
-                                      modo: prev[sec.id]?.modo ?? 'OFFLINE'
-                                    }
-                                  }))
-                                }
+                                value={asig.c1 || ''}
+                                onChange={(e) => patchAsig(sec.id, { c1: Number(e.target.value) })}
                               >
                                 <option value="">Seleccionar…</option>
                                 {usuarios.map((u) => (
@@ -4498,33 +4621,26 @@ function CrearSesionForm({
                                 ))}
                               </select>
                             </label>
-                            <label className="block space-y-1.5">
-                              <span className="flex items-center gap-1.5 text-xs font-medium text-slate-600">
-                                <Users className="h-3.5 w-3.5 text-slate-400" />
-                                Contador 2
-                              </span>
-                              <select
-                                className="w-full rounded-lg border border-surface-border bg-white px-3 py-2 text-sm text-slate-800 outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20"
-                                value={asig?.c2 ?? ''}
-                                onChange={(e) =>
-                                  setAsignaciones((prev) => ({
-                                    ...prev,
-                                    [sec.id]: {
-                                      c1: prev[sec.id]?.c1 ?? 0,
-                                      c2: Number(e.target.value),
-                                      modo: prev[sec.id]?.modo ?? 'OFFLINE'
-                                    }
-                                  }))
-                                }
-                              >
-                                <option value="">Seleccionar…</option>
-                                {usuarios.map((u) => (
-                                  <option key={u.id} value={u.id}>
-                                    {u.nombre}
-                                  </option>
-                                ))}
-                              </select>
-                            </label>
+                            {!simple && (
+                              <label className="block space-y-1.5">
+                                <span className="flex items-center gap-1.5 text-xs font-medium text-slate-600">
+                                  <Users className="h-3.5 w-3.5 text-slate-400" />
+                                  Contador 2
+                                </span>
+                                <select
+                                  className="w-full rounded-lg border border-surface-border bg-white px-3 py-2 text-sm text-slate-800 outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20"
+                                  value={asig.c2 || ''}
+                                  onChange={(e) => patchAsig(sec.id, { c2: Number(e.target.value) })}
+                                >
+                                  <option value="">Seleccionar…</option>
+                                  {usuarios.map((u) => (
+                                    <option key={u.id} value={u.id}>
+                                      {u.nombre}
+                                    </option>
+                                  ))}
+                                </select>
+                              </label>
+                            )}
                           </div>
 
                           <div>
@@ -4538,16 +4654,7 @@ function CrearSesionForm({
                                     ? 'border-brand-500 bg-brand-50 text-brand-800'
                                     : 'border-surface-border bg-white text-slate-600 hover:bg-slate-50'
                                 )}
-                                onClick={() =>
-                                  setAsignaciones((prev) => ({
-                                    ...prev,
-                                    [sec.id]: {
-                                      c1: prev[sec.id]?.c1 ?? 0,
-                                      c2: prev[sec.id]?.c2 ?? 0,
-                                      modo: 'ONLINE'
-                                    }
-                                  }))
-                                }
+                                onClick={() => patchAsig(sec.id, { modo: 'ONLINE' })}
                               >
                                 <Wifi className="h-3.5 w-3.5" />
                                 Con red
@@ -4560,16 +4667,7 @@ function CrearSesionForm({
                                     ? 'border-amber-500 bg-amber-50 text-amber-900'
                                     : 'border-surface-border bg-white text-slate-600 hover:bg-slate-50'
                                 )}
-                                onClick={() =>
-                                  setAsignaciones((prev) => ({
-                                    ...prev,
-                                    [sec.id]: {
-                                      c1: prev[sec.id]?.c1 ?? 0,
-                                      c2: prev[sec.id]?.c2 ?? 0,
-                                      modo: 'OFFLINE'
-                                    }
-                                  }))
-                                }
+                                onClick={() => patchAsig(sec.id, { modo: 'OFFLINE' })}
                               >
                                 <WifiOff className="h-3.5 w-3.5" />
                                 Offline (APK)
@@ -4577,8 +4675,9 @@ function CrearSesionForm({
                             </div>
                             {modo === 'OFFLINE' && (
                               <p className="mt-2 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-900 ring-1 ring-amber-100">
-                                Bajan paquete en oficina → cuentan sin WiFi al PC → sincronizan entre
-                                celulares → importan al PC.
+                                {simple
+                                  ? 'Baja paquete → cuenta sin WiFi al PC → importa al PC (sin sync entre celulares).'
+                                  : 'Bajan paquete → cuentan sin WiFi al PC → sincronizan entre celulares → importan al PC.'}
                               </p>
                             )}
                           </div>
@@ -5031,7 +5130,9 @@ function ConteoSectorView({
     estado !== 'CON_DIFERENCIAS' &&
     !yoFinalice
   const puedeFinalizar = miRol != null && estado !== 'CERRADO_OK' && !yoFinalice
-  const esperandoCompanero = estado === 'ESPERANDO_COMPANERO' && yoFinalice
+  const verificacionSimple = String(sectorInfo?.modo_verificacion ?? 'DOBLE') === 'SIMPLE'
+  const esperandoCompanero =
+    !verificacionSimple && estado === 'ESPERANDO_COMPANERO' && yoFinalice
 
   const puedeEditarRef = useRef(puedeEditar)
   puedeEditarRef.current = puedeEditar
@@ -5529,6 +5630,11 @@ function ConteoSectorView({
                 <span className="rounded-full bg-white px-2.5 py-1 font-medium text-slate-700 ring-1 ring-surface-border">
                   Ronda {ronda}
                 </span>
+                {verificacionSimple && (
+                  <span className="rounded-full bg-sky-50 px-2.5 py-1 font-medium text-sky-800 ring-1 ring-sky-100">
+                    Simple
+                  </span>
+                )}
                 <span className="inline-flex items-center gap-1 rounded-full bg-brand-50 px-2.5 py-1 font-medium text-brand-800 ring-1 ring-brand-100">
                   <Warehouse className="h-3 w-3" />
                   {ESTADO_SECTOR_LABEL[estado] ?? estado}
@@ -5608,13 +5714,24 @@ function ConteoSectorView({
           </div>
         )}
 
-        {estado === 'ESPERANDO_COMPANERO' && !yoFinalice && miRol != null && (
+        {verificacionSimple && estado === 'CERRADO_OK' && (
+          <div className="border-b border-emerald-100 bg-emerald-50 px-4 py-3 text-sm text-emerald-900 sm:px-5">
+            <p className="font-medium">Sector cerrado (verificación simple)</p>
+            <p className="mt-1 text-emerald-800/90">
+              El conteo ya está en el PC. La comparación contra el sistema se hace en supervisión.
+            </p>
+          </div>
+        )}
+
+        {estado === 'ESPERANDO_COMPANERO' && !yoFinalice && miRol != null && !verificacionSimple && (
           <div className="border-b border-blue-100 bg-blue-50 px-4 py-2 text-sm text-blue-800 sm:px-5">
             Tu compañero ya finalizó. Revisá tus líneas y tocá «Finalicé este sector» cuando estés listo.
           </div>
         )}
 
-        {comparacion && (estado === 'CON_DIFERENCIAS' || estado === 'CERRADO_OK') && (
+        {comparacion &&
+          !verificacionSimple &&
+          (estado === 'CON_DIFERENCIAS' || estado === 'CERRADO_OK') && (
           <div className="border-b border-amber-100 bg-amber-50/80 px-4 py-3 text-sm sm:px-5">
             <h2 className="font-medium text-slate-800">Comparación con compañero</h2>
             {comparacion.coincide ? (

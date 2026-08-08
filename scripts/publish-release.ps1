@@ -1,5 +1,5 @@
 param(
-  [string]$Version = "0.3.28"
+  [string]$Version = "0.3.29"
 )
 
 $ErrorActionPreference = "Stop"
@@ -56,13 +56,10 @@ if (Test-Path $ymlPath) { $assets += (Resolve-Path $ymlPath).Path }
 $notes = @"
 ## ControlStock v$Version
 
-Inventario con verificación **Simple** o **Doble** por sector.
+Sync offline: carga manual con puerto fijo.
 
 ### Nuevo / mejorado
-- Al crear inventario: por sector elegís Simple (1 contador) o Doble (2 contadores)
-- Simple: cuenta una persona, importa al PC y se compara contra el sistema (sin sync P2P ni reconteo)
-- Doble: mismo flujo de siempre entre pares + comparación vs sistema
-- Badges Simple/Doble en supervisión y en la APK
+- Al unirse por IP al sync entre celulares: solo se edita la IP; el puerto queda fijo en 3850
 
 ### Actualización
 - Desde **v0.2.7 o superior:** Configuración → Buscar actualizaciones

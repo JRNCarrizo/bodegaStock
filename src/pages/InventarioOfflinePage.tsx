@@ -231,7 +231,7 @@ export function InventarioOfflinePage() {
   /** Última IP del host (queda en el menú ⋮ aunque se cierre el panel). */
   const [ultimaIpHost, setUltimaIpHost] = useState<{ localIp: string; port: number } | null>(null)
   const [hostQrDataUrl, setHostQrDataUrl] = useState('')
-  const [clientHostInput, setClientHostInput] = useState('192.168.43.1')
+  const [clientHostInput, setClientHostInput] = useState(HOTSPOT_IP_TIPICA)
   /** true si hay IP persistida de una sync/host anterior (no el default genérico). */
   const [tieneIpGuardada, setTieneIpGuardada] = useState(false)
   const [showP2PQrScanner, setShowP2PQrScanner] = useState(false)
@@ -313,7 +313,7 @@ export function InventarioOfflinePage() {
       if (saved) {
         setUltimaIpHost(saved)
         setTieneIpGuardada(true)
-        setClientHostInput(`${saved.localIp}:${saved.port}`)
+        setClientHostInput(saved.localIp)
       } else {
         // Mostrar algo útil de inmediato; luego se actualiza al abrir el menú.
         setUltimaIpHost({ localIp: HOTSPOT_IP_TIPICA, port: P2P_PORT })
@@ -492,7 +492,7 @@ export function InventarioOfflinePage() {
       await resetOfflineLocal(sectorInvId)
       setP2pMode('idle')
       setHostSyncedOk(false)
-      setClientHostInput('192.168.43.1')
+      setClientHostInput(HOTSPOT_IP_TIPICA)
       await reload()
       setMsg(
         'Listo en este celular. Cerrá sesión, entrá con la cuenta del contador que te corresponde y descargá el paquete.'
@@ -1118,27 +1118,29 @@ export function InventarioOfflinePage() {
     }
   }
 
+  function extractHostIp(raw: string): string {
+    const v = raw.trim()
+    if (!v) return ''
+    try {
+      const withProtocol = /^https?:\/\//i.test(v) ? v : `http://${v}`
+      return new URL(withProtocol).hostname
+    } catch {
+      return v.split('/')[0]?.split(':')[0] ?? v
+    }
+  }
+
   async function handleConnectClient() {
     setBusy(true)
     setError('')
     setMsg('')
     try {
-      await syncConHost(sectorInvId, clientHostInput)
-      try {
-        let raw = clientHostInput.trim()
-        if (!/^https?:\/\//i.test(raw)) raw = `http://${raw}`
-        const url = new URL(raw)
-        const localIp = url.hostname
-        const port = Number(url.port) || P2P_PORT
-        if (localIp) {
-          await saveLastHostIp({ localIp, port })
-          setUltimaIpHost({ localIp, port })
-          setTieneIpGuardada(true)
-          setClientHostInput(`${localIp}:${port}`)
-        }
-      } catch {
-        /* ignore parse errors */
-      }
+      const localIp = extractHostIp(clientHostInput)
+      if (!localIp) throw new Error('Ingresá la IP del compañero')
+      await syncConHost(sectorInvId, `${localIp}:${P2P_PORT}`)
+      await saveLastHostIp({ localIp, port: P2P_PORT })
+      setUltimaIpHost({ localIp, port: P2P_PORT })
+      setTieneIpGuardada(true)
+      setClientHostInput(localIp)
       setP2pMode('idle')
       await reload()
       setMsg('Sincronizado.')
@@ -1156,7 +1158,7 @@ export function InventarioOfflinePage() {
   function abrirModoCliente() {
     setP2pMode('client')
     if (ultimaIpHost) {
-      setClientHostInput(`${ultimaIpHost.localIp}:${ultimaIpHost.port}`)
+      setClientHostInput(ultimaIpHost.localIp)
     }
   }
 
@@ -1172,12 +1174,11 @@ export function InventarioOfflinePage() {
       const withProtocol = /^https?:\/\//i.test(trimmed) ? trimmed : `http://${trimmed}`
       const url = new URL(withProtocol)
       if (!url.hostname) throw new Error('sin host')
-      setClientHostInput(trimmed)
       const localIp = url.hostname
-      const port = Number(url.port) || P2P_PORT
-      setUltimaIpHost({ localIp, port })
+      setClientHostInput(localIp)
+      setUltimaIpHost({ localIp, port: P2P_PORT })
       setTieneIpGuardada(true)
-      void saveLastHostIp({ localIp, port })
+      void saveLastHostIp({ localIp, port: P2P_PORT })
       setMsg('QR leído. IP guardada para la próxima vez.')
     } catch {
       setError('El QR no contiene una IP/URL válida del compañero')
@@ -1890,10 +1891,9 @@ export function InventarioOfflinePage() {
                   <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2.5">
                     <p className="text-xs font-semibold text-emerald-900">IP guardada de antes</p>
                     <p className="mt-0.5 font-mono text-sm font-bold text-emerald-800">
-                      {clientHostInput.trim() ||
-                        (ultimaIpHost
-                          ? `${ultimaIpHost.localIp}:${ultimaIpHost.port}`
-                          : '—')}
+                      {ultimaIpHost
+                        ? `${ultimaIpHost.localIp}:${P2P_PORT}`
+                        : clientHostInput.trim() || '—'}
                     </p>
                     <p className="mt-1 text-[11px] leading-snug text-emerald-800/80">
                       Si el compañero usa el mismo hotspot, podés sincronizar directo. Si cambió,
@@ -1912,17 +1912,33 @@ export function InventarioOfflinePage() {
                   <Camera className="h-3.5 w-3.5" />
                   Escanear QR del compañero
                 </Button>
-                <div>
-                  <label className="mb-1 block text-xs font-medium text-slate-600">
-                    IP del compañero
-                  </label>
-                  <Input
-                    value={clientHostInput}
-                    onChange={(e) => setClientHostInput(e.target.value)}
-                    placeholder={`IP o http://IP:${P2P_PORT}`}
-                    className="font-mono text-sm"
-                  />
+                <div className="flex items-end gap-2">
+                  <div className="min-w-0 flex-1">
+                    <label className="mb-1 block text-xs font-medium text-slate-600">
+                      IP del compañero
+                    </label>
+                    <Input
+                      value={clientHostInput}
+                      onChange={(e) => setClientHostInput(e.target.value)}
+                      placeholder={HOTSPOT_IP_TIPICA}
+                      inputMode="decimal"
+                      className="font-mono text-sm"
+                    />
+                  </div>
+                  <div className="w-[4.75rem] shrink-0">
+                    <label className="mb-1 block text-xs font-medium text-slate-600">Puerto</label>
+                    <Input
+                      value={String(P2P_PORT)}
+                      readOnly
+                      tabIndex={-1}
+                      className="bg-slate-50 font-mono text-sm text-slate-600"
+                      title={`El puerto de sync es siempre ${P2P_PORT}`}
+                    />
+                  </div>
                 </div>
+                <p className="text-[11px] leading-snug text-slate-500">
+                  Solo cambiá la IP si hace falta. El puerto es siempre {P2P_PORT}.
+                </p>
                 <button
                   type="button"
                   disabled={busy || !clientHostInput.trim()}

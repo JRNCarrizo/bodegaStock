@@ -20,7 +20,7 @@ Toda la especificación del proyecto está en la carpeta [`docs/`](docs/):
 
 ## Estado del proyecto
 
-**v0.3.28** — Inventario con verificación Simple o Doble por sector (sin sync/P2P en Simple).
+**v0.3.29** — Sync offline: en carga manual solo se edita la IP; el puerto queda fijo en 3850.
 
 ## Desarrollo local
 

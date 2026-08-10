@@ -73,11 +73,17 @@ Login inicial: **admin** / **admin123**
 
 Write-Host "Publicando release $tag..." -ForegroundColor Green
 
-$existing = gh release view $tag 2>$null
-if ($LASTEXITCODE -eq 0) {
+$existing = $null
+try {
+  $existing = gh release view $tag 2>$null
+} catch {
+  $existing = $null
+}
+if ($LASTEXITCODE -eq 0 -and $existing) {
   Write-Host "El release $tag ya existe. Subiendo assets..." -ForegroundColor Yellow
   gh release upload $tag @assets --clobber
 } else {
+  $global:LASTEXITCODE = 0
   gh release create $tag @assets --title "ControlStock v$Version" --notes $notes
 }
 

@@ -243,6 +243,8 @@ export interface IngresoLineaDraft {
   cantidad_suelta?: number
   total_unidades: number
   etiqueta: string
+  sector_id: number
+  sector_nombre: string
   ubicacion_id?: number | null
   ubicacion_nombre?: string | null
 }
@@ -547,8 +549,8 @@ export interface ReporteDetalle {
   items: ReporteDetalleItem[]
 }
 
-export type MovimientoInternoTipo = 'ENVIAR' | 'RECIBIR'
-export type MovimientoInternoEstado = 'PENDIENTE' | 'COMPLETADO' | 'CANCELADO'
+export type MovimientoInternoTipo = 'ENVIAR' | 'RECIBIR' | 'LISTA'
+export type MovimientoInternoEstado = 'ABIERTA' | 'PENDIENTE' | 'COMPLETADO' | 'CANCELADO'
 
 export interface MovimientoInternoProductoStock {
   id: number
@@ -560,6 +562,7 @@ export interface MovimientoInternoProductoStock {
   unidades_por_pallet_default: number | null
   unidades_por_caja_default: number | null
   stock_cajas: number
+  stock_botellas_sueltas?: number
 }
 
 export interface MovimientoInternoSectorStock {
@@ -614,6 +617,7 @@ export interface MovimientoInternoDetalleLinea {
   tipo_bulto: 'PALLET' | 'CAJA' | 'SUELTO' | null
   cantidad_bultos: number | null
   unidades_por_bulto: number | null
+  cantidad_suelta?: number | null
   etiqueta: string | null
   sector_origen_id: number
   sector_origen_nombre: string
@@ -624,6 +628,7 @@ export interface MovimientoInternoDetalleLinea {
   ubicacion_origen_id: number | null
   ubicacion_origen_nombre: string | null
   cancelada: boolean
+  verificada: boolean
   orden: number
 }
 

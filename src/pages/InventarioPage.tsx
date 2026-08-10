@@ -4107,7 +4107,7 @@ function InventarioConteoFinalVista({
             {sector.importado_at ? ' · importado' : ''}
           </RegistroDetalleMetaChip>
         )}
-        {sector.usa_ubicaciones && (
+        {!!sector.usa_ubicaciones && (
           <RegistroDetalleMetaChip icon={<MapPin className="h-3.5 w-3.5 shrink-0 text-violet-500" />}>
             Con ubicaciones
           </RegistroDetalleMetaChip>

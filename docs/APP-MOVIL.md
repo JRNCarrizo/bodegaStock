@@ -129,7 +129,7 @@ Pensado para **usar con las manos en el depósito**, escaneando códigos con la 
 | **Consulta** | Buscar producto y ver stock con desglose por sector/ubicación | Tres modos: por producto, por sector, ver todos. Export Excel (`consulta.ver`). Escaneo con cámara. |
 | **Retornos** | Cargar devoluciones **y** verificar las de otro usuario | Respeta config del servidor: doble verificación solo si `retornos_doble_verificacion` está on. |
 | **Roturas** | Registrar baja de stock con motivo | Descuento por reglas de sectores (prioridad + menor stock). |
-| **Movimientos internos** | Traslado entre sectores | Mismo modelo de líneas que en PC. Si `movimientos_doble_verificacion` está on, aplica verificación dual según config. |
+| **Movimientos internos** | Traslado entre sectores | Lista abierta compartida (origen/destino + tilde + Finalizar). Ver [MOVIMIENTOS-LISTA-ABIERTA-FUTURO.md](MOVIMIENTOS-LISTA-ABIERTA-FUTURO.md). |
 | **Inventario** | Conteo físico por sector, **dos personas en paralelo** | Ver [INVENTARIO.md](INVENTARIO.md). Supervisor opera desde PC. |
 
 ### También previsto en móvil (fase posterior)
@@ -206,9 +206,8 @@ Si en el futuro hiciera falta cargar ingresos en el pasillo, la API ya existe; s
 - Aplica regla de sectores de descuento.
 
 ### Movimientos internos
-- Origen, destino, producto, desglose, observación.
-- Misma lógica de sectores y ubicaciones que en PC.
-- Respeta `movimientos_doble_verificacion` del servidor si está activada.
+- **Lista abierta:** origen/destino, producto, desglose; tilde por línea; Finalizar aplica stock.
+- **Futuro acordado:** lista abierta compartida, origen/destino arriba del buscador, tilde por línea y Finalizar — [MOVIMIENTOS-LISTA-ABIERTA-FUTURO.md](MOVIMIENTOS-LISTA-ABIERTA-FUTURO.md).
 
 ### Planillas
 - Camionero, vehículo, líneas de salida con desglose.
@@ -279,7 +278,7 @@ Durante el conteo **no** se emiten las líneas del otro contador (independencia)
 | Tiempo real | WebSocket opcional (fase posterior); v1 con polling |
 | Auth | JWT (igual que PC) |
 | Escaneo | Cámara del dispositivo (código de barras / QR conexión) |
-| Offline | **Inventario offline implementado** (paquete + conteo local + sync P2P/hotspot + import por red + archivo final Plan B). Consulta/cola genérica offline: pendiente. Online requiere LAN al servidor. |
+| Offline | **Inventario offline implementado** (paquete + conteo local + sync P2P/hotspot puerto **3850** + Simple/Doble + import + Plan B). Consulta/cola genérica offline: pendiente. Online requiere LAN al servidor. |
 | Iconos | Fuente: `build/icon.svg` → `npm run icons` genera desktop (`icon.png`/`icon.ico`) y mipmaps Android. `npm run cap:sync` = icons + `build:mobile` + `cap sync`. |
 | Desarrollo local | Live reload en celular/emulador sin regenerar APK: ver [ANDROID-DEV.md](ANDROID-DEV.md) (`npm run dev:android`). |
 | Imágenes productos | Servidas por API (`GET /api/productos/:id/imagen`) |
@@ -312,9 +311,11 @@ Orden sugerido para ir sumando valor en bodega. **Sujeto a priorización** con e
 | **2** | **Consulta** (3 modos + export Excel) | Hecho |
 | **3** | **Roturas** | Hecho / en uso |
 | **4** | **Retornos** (según config doble verificación) | Hecho / en uso |
-| **5** | **Movimientos internos + planillas** | Movimientos en uso; planillas móvil a confirmar |
-| **6** | **Inventario** online + **offline** (paquete, P2P, import) | Flujo principal hecho; probar en 2 físicos |
-| **7** | WebSocket, pulido de escaneo, reportes móviles limitados | Pendiente / opcional |
+| **5** | **Movimientos internos + planillas** | En uso; planillas aún sin escáner en pantalla |
+| **6** | **Inventario** online + offline + Simple/Doble | Hecho (v0.3.28/29); seguir probando en campo |
+| **7** | WebSocket, pulido de escaneo, reportes móviles | Pendiente / opcional |
+| **8** | **OCR / foto de planilla** → borrador de líneas | Futuro — [PLANILLAS-OCR-FUTURO.md](PLANILLAS-OCR-FUTURO.md) |
+| **9** | **Movimientos: lista abierta** | Futuro — [MOVIMIENTOS-LISTA-ABIERTA-FUTURO.md](MOVIMIENTOS-LISTA-ABIERTA-FUTURO.md) |
 | *—* | *Ingresos en APK* | *Fuera de v1; cargar en PC con remito* |
 
 ### Alternativa histórica: “solo web antes de APK”
@@ -340,27 +341,30 @@ Eso ya está **superado**:
 ### Pendientes
 
 - [x] **Stack APK:** **Capacitor** (julio 2026). Misma UI React; Android primero; iOS después.
-- [ ] **Planillas en móvil:** ¿en la primera versión de APK o después de retornos?
-- [ ] **WebSocket:** ¿en la misma entrega que inventario móvil o después?
+- [x] **Planillas en móvil:** en uso (carga manual); falta escáner en pantalla y OCR futuro.
+- [ ] **WebSocket:** opcional / después.
 - [ ] **Ingresos en APK** (fase futura): ¿hace falta algún día cargar en el pasillo?
-- [x] **Inventario offline (APK):** flujo principal listo (paquete, conteo local, sync P2P/hotspot, Comparación A, import PC, limpieza). Ver [INVENTARIO-OFFLINE-ESTADO.md](INVENTARIO-OFFLINE-ESTADO.md). Queda **probar en 2 físicos y pulir**.
-- [ ] **Cache offline mínimo** (consulta / cola corta si corta WiFi) — aparte del modo inventario offline.
+- [x] **Inventario offline (APK):** Doble + Simple, P2P 3850, import, Plan B. Ver [INVENTARIO-OFFLINE-ESTADO.md](INVENTARIO-OFFLINE-ESTADO.md).
+- [ ] **OCR planillas** — [PLANILLAS-OCR-FUTURO.md](PLANILLAS-OCR-FUTURO.md).
+- [ ] **Movimientos lista abierta** — [MOVIMIENTOS-LISTA-ABIERTA-FUTURO.md](MOVIMIENTOS-LISTA-ABIERTA-FUTURO.md).
+- [ ] **Cache offline mínimo** (consulta / cola corta) — aparte del inventario offline.
 - [ ] **Versión mínima de Android** soportada.
-- [ ] **Distribución y actualización** de la APK (fuera de Play Store vs cuenta interna).
-- [ ] **iOS:** agregar cuando haga falta (`npx cap add ios` + Apple Developer).
-- [x] **Repo:** monorepo en la raíz del proyecto (`android/` + Capacitor).
+- [ ] **Distribución y actualización** de la APK; firma de código Windows en desktop (Defender).
+- [ ] **iOS:** cuando haga falta.
+- [x] **Repo:** monorepo (`android/` + Capacitor).
 
 ---
 
 ## 14. Resumen
 
-**Terminales de bodega:** celular por **navegador (web siempre disponible)** y **APK Android** (Capacitor). Online contra el PC por WiFi; **inventario** además admite **modo offline** (APK, sync entre contadores, import) cuando no hay WiFi en depósito — ver [INVENTARIO.md](INVENTARIO.md) §3.1 y [INVENTARIO-OFFLINE-ESTADO.md](INVENTARIO-OFFLINE-ESTADO.md). Mismos módulos según permisos. **Ingresos solo en PC**. Web y APK **no se excluyen**.
+**Terminales de bodega:** web `:3847` + **APK Android**. Inventario: Online/Offline y Simple/Doble — [INVENTARIO.md](INVENTARIO.md), [INVENTARIO-OFFLINE-ESTADO.md](INVENTARIO-OFFLINE-ESTADO.md). **Ingresos solo en PC**. Web y APK conviven.
 
 ---
 
 ## 15. Próximo paso (para decidir con el equipo)
 
-1. **Probar inventario offline en dos celulares** (hotspot → Comparación A → import → Comparación B en PC).
-2. Pulir UX/errores de red (IP, notificaciones del servidor local).
-3. Confirmar **orden de módulos** APK restantes (tabla fase 12).
-4. Seguir puliendo la **experiencia web en celular** (modo con red) en paralelo.
+1. Seguir usando inventario Simple/Doble + offline en campo.
+2. Cuando haya planillas físicas de prueba: evaluar OCR ([PLANILLAS-OCR-FUTURO.md](PLANILLAS-OCR-FUTURO.md)) o primero escáner de barras en Planillas.
+3. Rediseño de movimientos (lista abierta): [MOVIMIENTOS-LISTA-ABIERTA-FUTURO.md](MOVIMIENTOS-LISTA-ABIERTA-FUTURO.md).
+4. Firma de código / exclusiones Defender en updates del escritorio.
+5. Pulir UX restante según prioridad del depósito.

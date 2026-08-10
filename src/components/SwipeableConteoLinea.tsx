@@ -15,6 +15,8 @@ type SwipeableConteoLineaProps = {
   onEdit: () => void
   onDelete: () => void
   className?: string
+  /** Fondo del panel deslizable (por defecto blanco). */
+  contentClassName?: string
 }
 
 /**
@@ -29,7 +31,8 @@ export function SwipeableConteoLinea({
   onOpenChange,
   onEdit,
   onDelete,
-  className
+  className,
+  contentClassName
 }: SwipeableConteoLineaProps) {
   const [offset, setOffset] = useState(0)
   const [dragging, setDragging] = useState(false)
@@ -163,7 +166,8 @@ export function SwipeableConteoLinea({
       <li
         className={cn(
           'flex items-center justify-between gap-3 rounded-lg border border-surface-border bg-white px-3 py-2.5 text-sm',
-          className
+          className,
+          contentClassName
         )}
       >
         {children}
@@ -221,7 +225,8 @@ export function SwipeableConteoLinea({
         className={cn(
           'relative z-10 flex items-center justify-between gap-3 bg-white px-3 py-2.5',
           'select-none',
-          !dragging && 'transition-transform duration-200 ease-out'
+          !dragging && 'transition-transform duration-200 ease-out',
+          contentClassName
         )}
         style={{ transform: `translateX(${offset}px)`, touchAction: 'pan-y' }}
         onPointerDown={onPointerDown}

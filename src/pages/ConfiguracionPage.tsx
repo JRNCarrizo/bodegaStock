@@ -771,8 +771,8 @@ export function ConfiguracionPage() {
                   </span>
                   <span className="mt-1 block text-sm leading-relaxed text-slate-500">
                     {dobleVerificacionMovimientos
-                      ? 'Queda pendiente y se completa al autorizar (el mismo usuario que creó también puede completar).'
-                      : 'Al confirmar el envío/recepción ya mueve stock (ingreso directo).'}
+                      ? 'En la lista abierta hay que tildar cada línea antes de finalizar (mueve stock al confirmar).'
+                      : 'Al finalizar la lista mueve stock sin tildar líneas (ingreso directo / control en hoja).'}
                   </span>
                 </span>
               </label>

@@ -1425,6 +1425,17 @@ function lineaCajasDisponibles(linea: StockLineaRow, botellasPorCaja: number): n
   return 0
 }
 
+/** Solo botellas sueltas (SUELTO o extra de CAJA). No convierte cajas/pallets a botellas. */
+function lineaSueltasDisponibles(linea: StockLineaRow): number {
+  if (linea.tipo_bulto === 'SUELTO') {
+    return Number(linea.cantidad_suelta ?? linea.total_unidades ?? 0)
+  }
+  if (linea.tipo_bulto === 'CAJA') {
+    return Number(linea.cantidad_suelta ?? 0)
+  }
+  return 0
+}
+
 function lineaBotellasDisponibles(linea: StockLineaRow, botellasPorCaja: number): number {
   if (linea.tipo_bulto === 'PALLET') return linea.total_unidades * botellasPorCaja
   if (linea.tipo_bulto === 'CAJA') {
@@ -1536,6 +1547,118 @@ function simulateSectorDeduction(
   }
 
   return { descuentos, remaining }
+}
+
+function simulateSectorDeductionSueltas(
+  db: Database.Database,
+  stock_sector_id: number,
+  sector_nombre: string,
+  sector_id: number,
+  amount: number,
+  unidadProducto: string,
+  ubicacionFilter?: { ubicacion_id: number | null } | null
+): { descuentos: DescuentoAplicado[]; remaining: number } {
+  const lineasRaw = db.prepare(`
+    SELECT id, tipo_bulto, cantidad_bultos, unidades_por_bulto, cantidad_suelta, total_unidades, ubicacion_id
+    FROM stock_lineas
+    WHERE stock_sector_id = ?
+  `).all(stock_sector_id) as Array<StockLineaRow & { ubicacion_id: number | null }>
+
+  const lineas =
+    ubicacionFilter == null
+      ? lineasRaw
+      : lineasRaw.filter((l) => (l.ubicacion_id ?? null) === (ubicacionFilter.ubicacion_id ?? null))
+
+  const ordered = [...lineas]
+    .filter((l) => lineaSueltasDisponibles(l) > 0)
+    .sort((a, b) => lineaSueltasDisponibles(a) - lineaSueltasDisponibles(b))
+
+  let remaining = amount
+  const descuentos: DescuentoAplicado[] = []
+
+  for (const linea of ordered) {
+    if (remaining <= 0) break
+    const disponible = lineaSueltasDisponibles(linea)
+    if (disponible <= 0) continue
+    const take = Math.min(disponible, remaining)
+    descuentos.push({
+      sector_id,
+      sector_nombre,
+      stock_linea_id: linea.id,
+      unidades: take,
+      modo_salida: 'BOTELLA',
+      tipo_linea: linea.tipo_bulto,
+      etiqueta: formatEtiquetaLinea(
+        {
+          tipo_bulto: linea.tipo_bulto,
+          cantidad_bultos: linea.cantidad_bultos,
+          unidades_por_bulto: linea.unidades_por_bulto,
+          cantidad_suelta: linea.cantidad_suelta
+        },
+        unidadProducto
+      )
+    })
+    remaining -= take
+  }
+
+  return { descuentos, remaining }
+}
+
+function applySueltoDeductionFromLine(
+  db: Database.Database,
+  lineaId: number,
+  take: number
+): void {
+  if (take <= 0) return
+  const linea = db.prepare(`
+    SELECT
+      id, tipo_bulto, cantidad_bultos, unidades_por_bulto, cantidad_suelta,
+      total_unidades, stock_sector_id
+    FROM stock_lineas WHERE id = ?
+  `).get(lineaId) as
+    | (StockLineaRow & { stock_sector_id: number })
+    | undefined
+
+  if (!linea) throw new Error('Línea de stock no encontrada')
+
+  const disponible = lineaSueltasDisponibles(linea)
+  if (take > disponible + 1e-9) {
+    throw new Error('Stock suelto insuficiente en la línea')
+  }
+
+  if (linea.tipo_bulto === 'SUELTO') {
+    const newTotal = Number(linea.total_unidades) - take
+    if (newTotal <= 0) {
+      db.prepare('DELETE FROM stock_lineas WHERE id = ?').run(lineaId)
+    } else {
+      db.prepare(`
+        UPDATE stock_lineas
+        SET cantidad_suelta = ?, total_unidades = ?, updated_at = datetime('now')
+        WHERE id = ?
+      `).run(newTotal, newTotal, lineaId)
+    }
+    refreshStockSectorTotal(db, linea.stock_sector_id)
+    return
+  }
+
+  if (linea.tipo_bulto === 'CAJA') {
+    const newSuelta = Number(linea.cantidad_suelta ?? 0) - take
+    const newTotal = calcTotalUnidades({
+      tipo_bulto: 'CAJA',
+      cantidad_bultos: linea.cantidad_bultos,
+      unidades_por_bulto: linea.unidades_por_bulto,
+      cantidad_suelta: newSuelta > 0 ? newSuelta : 0
+    })
+    db.prepare(`
+      UPDATE stock_lineas
+      SET cantidad_suelta = ?, total_unidades = ?, updated_at = datetime('now')
+      WHERE id = ?
+    `).run(newSuelta > 0 ? newSuelta : null, newTotal, lineaId)
+    refreshStockSectorTotal(db, linea.stock_sector_id)
+    return
+  }
+
+  throw new Error('La línea no tiene botellas sueltas')
 }
 
 function deductCajasFromCajaLines(
@@ -2616,6 +2739,63 @@ export function getStockDisponibleCajasEnSector(
   return lineas.reduce((sum, l) => sum + lineaCajasDisponibles(l, botellasPorCaja), 0)
 }
 
+export function getStockDisponibleBotellasEnSector(
+  db: Database.Database,
+  producto_id: number,
+  sector_id: number,
+  ubicacionFilter?: { ubicacion_id: number | null } | null
+): number {
+  const { botellasPorCaja } = getProductoDefaults(db, producto_id)
+  // Incluir sectores con solo sueltos (cantidad_total puede ser 0).
+  const stockSector = db.prepare(`
+    SELECT ss.id FROM stock_sector ss
+    WHERE ss.producto_id = ? AND ss.sector_id = ?
+      AND ${STOCK_SECTOR_VISIBLE_SQL}
+  `).get(producto_id, sector_id) as { id: number } | undefined
+
+  if (!stockSector) return 0
+
+  const lineasRaw = db.prepare(`
+    SELECT tipo_bulto, cantidad_bultos, unidades_por_bulto, cantidad_suelta, total_unidades, ubicacion_id
+    FROM stock_lineas WHERE stock_sector_id = ?
+  `).all(stockSector.id) as Array<StockLineaRow & { ubicacion_id: number | null }>
+
+  const lineas =
+    ubicacionFilter == null
+      ? lineasRaw
+      : lineasRaw.filter((l) => (l.ubicacion_id ?? null) === (ubicacionFilter.ubicacion_id ?? null))
+
+  return lineas.reduce((sum, l) => sum + lineaBotellasDisponibles(l, botellasPorCaja), 0)
+}
+
+/** Botellas sueltas disponibles (no convierte cajas/pallets a botellas). */
+export function getStockDisponibleSueltasEnSector(
+  db: Database.Database,
+  producto_id: number,
+  sector_id: number,
+  ubicacionFilter?: { ubicacion_id: number | null } | null
+): number {
+  const stockSector = db.prepare(`
+    SELECT ss.id FROM stock_sector ss
+    WHERE ss.producto_id = ? AND ss.sector_id = ?
+      AND ${STOCK_SECTOR_VISIBLE_SQL}
+  `).get(producto_id, sector_id) as { id: number } | undefined
+
+  if (!stockSector) return 0
+
+  const lineasRaw = db.prepare(`
+    SELECT tipo_bulto, cantidad_bultos, unidades_por_bulto, cantidad_suelta, total_unidades, ubicacion_id
+    FROM stock_lineas WHERE stock_sector_id = ?
+  `).all(stockSector.id) as Array<StockLineaRow & { ubicacion_id: number | null }>
+
+  const lineas =
+    ubicacionFilter == null
+      ? lineasRaw
+      : lineasRaw.filter((l) => (l.ubicacion_id ?? null) === (ubicacionFilter.ubicacion_id ?? null))
+
+  return lineas.reduce((sum, l) => sum + lineaSueltasDisponibles(l), 0)
+}
+
 export function computeSectorProductDeduction(
   db: Database.Database,
   producto_id: number,
@@ -2761,6 +2941,8 @@ export function applyMovimientoInternoDespachoLine(
     producto_id: number
     sector_origen_id: number
     cantidad_cajas: number
+    cantidad_suelta?: number | null
+    tipo_bulto?: string | null
     movimiento_id: number
     movimiento_linea_id: number
     usuario_id: number
@@ -2770,56 +2952,185 @@ export function applyMovimientoInternoDespachoLine(
     filtrar_ubicacion_origen?: boolean
   }
 ): DescuentoAplicado[] {
-  const { botellasPorCaja } = getProductoDefaults(db, params.producto_id)
+  const { unidad, botellasPorCaja } = getProductoDefaults(db, params.producto_id)
   const ubicacionFilter = params.filtrar_ubicacion_origen
     ? { ubicacion_id: params.ubicacion_origen_id ?? null }
     : null
-  const descuentos = computeSectorProductDeduction(
-    db,
-    params.producto_id,
-    params.sector_origen_id,
-    params.cantidad_cajas,
-    ubicacionFilter
-  )
 
-  for (const d of descuentos) {
-    db.prepare(`
-      INSERT INTO movimiento_interno_descuentos (
-        movimiento_interno_id, movimiento_interno_linea_id, producto_id,
-        sector_id, stock_linea_id, unidades, etiqueta
-      ) VALUES (?, ?, ?, ?, ?, ?, ?)
-    `).run(
-      params.movimiento_id,
-      params.movimiento_linea_id,
-      params.producto_id,
-      d.sector_id,
-      d.stock_linea_id,
-      d.unidades,
-      d.etiqueta
-    )
+  const esSuelto = params.tipo_bulto === 'SUELTO'
+  const cantidadCajas = Number(params.cantidad_cajas)
+  const cantidadSuelta = Number(params.cantidad_suelta ?? 0)
+  const cantidadPrincipal = esSuelto ? cantidadSuelta : cantidadCajas
+  if (cantidadPrincipal <= 0) throw new Error('Cantidad inválida')
 
-    db.prepare(`
-      INSERT INTO movimientos (
-        tipo, producto_id, cantidad, sector_origen_id, sector_destino_id,
-        documento_tipo, documento_id, usuario_id, observacion
-      ) VALUES ('MOVIMIENTO_INTERNO', ?, ?, ?, NULL, 'movimiento_interno', ?, ?, ?)
-    `).run(
-      params.producto_id,
-      d.unidades,
-      params.sector_origen_id,
-      params.movimiento_id,
-      params.usuario_id,
-      params.observacion
-    )
+  const stockSector = db.prepare(`
+    SELECT ss.id, s.nombre AS sector_nombre
+    FROM stock_sector ss
+    JOIN sectores s ON s.id = ss.sector_id
+    WHERE ss.producto_id = ? AND ss.sector_id = ?
+  `).get(params.producto_id, params.sector_origen_id) as
+    | { id: number; sector_nombre: string }
+    | undefined
+
+  if (!stockSector) {
+    throw new Error('Sin stock en el sector seleccionado')
   }
 
-  for (const d of descuentos) {
-    if (d.stock_linea_id) {
-      applyLineDeduction(db, d.stock_linea_id, d.unidades, 'CAJA', botellasPorCaja)
+  const alcance =
+    ubicacionFilter == null
+      ? 'en el sector'
+      : ubicacionFilter.ubicacion_id == null
+        ? 'sin ubicación'
+        : 'en la ubicación origen'
+
+  const allDescuentos: DescuentoAplicado[] = []
+
+  function deductCajas(cantidad: number) {
+    const disponible = getStockDisponibleCajasEnSector(
+      db,
+      params.producto_id,
+      params.sector_origen_id,
+      ubicacionFilter
+    )
+    if (disponible + 1e-9 < cantidad) {
+      throw new Error(
+        `Stock insuficiente ${alcance} (disponible: ${disponible} cajas, solicitado: ${cantidad} cajas)`
+      )
+    }
+
+    const { descuentos, remaining } = simulateSectorDeduction(
+      db,
+      stockSector!.id,
+      stockSector!.sector_nombre,
+      params.sector_origen_id,
+      cantidad,
+      'CAJA',
+      unidad,
+      botellasPorCaja,
+      ubicacionFilter
+    )
+    if (remaining > 0) {
+      throw new Error(`Stock insuficiente ${alcance} para completar el descuento`)
+    }
+
+    for (const d of descuentos) {
+      db.prepare(`
+        INSERT INTO movimiento_interno_descuentos (
+          movimiento_interno_id, movimiento_interno_linea_id, producto_id,
+          sector_id, stock_linea_id, unidades, etiqueta
+        ) VALUES (?, ?, ?, ?, ?, ?, ?)
+      `).run(
+        params.movimiento_id,
+        params.movimiento_linea_id,
+        params.producto_id,
+        d.sector_id,
+        d.stock_linea_id,
+        d.unidades,
+        d.etiqueta
+      )
+
+      db.prepare(`
+        INSERT INTO movimientos (
+          tipo, producto_id, cantidad, sector_origen_id, sector_destino_id,
+          documento_tipo, documento_id, usuario_id, observacion
+        ) VALUES ('MOVIMIENTO_INTERNO', ?, ?, ?, NULL, 'movimiento_interno', ?, ?, ?)
+      `).run(
+        params.producto_id,
+        d.unidades,
+        params.sector_origen_id,
+        params.movimiento_id,
+        params.usuario_id,
+        params.observacion
+      )
+    }
+
+    for (const d of descuentos) {
+      if (d.stock_linea_id) {
+        applyLineDeduction(db, d.stock_linea_id, d.unidades, 'CAJA', botellasPorCaja)
+      }
+    }
+
+    allDescuentos.push(...descuentos)
+  }
+
+  function deductSueltas(cantidad: number) {
+    const disponible = getStockDisponibleSueltasEnSector(
+      db,
+      params.producto_id,
+      params.sector_origen_id,
+      ubicacionFilter
+    )
+    const unidadLabel = `${normalizarUnidadProducto(unidad)}s`
+    if (disponible + 1e-9 < cantidad) {
+      throw new Error(
+        `Stock insuficiente ${alcance} (disponible: ${disponible} ${unidadLabel} sueltas, solicitado: ${cantidad} ${unidadLabel})`
+      )
+    }
+
+    const { descuentos, remaining } = simulateSectorDeductionSueltas(
+      db,
+      stockSector!.id,
+      stockSector!.sector_nombre,
+      params.sector_origen_id,
+      cantidad,
+      unidad,
+      ubicacionFilter
+    )
+    if (remaining > 0) {
+      throw new Error(`Stock insuficiente ${alcance} para completar el descuento de sueltas`)
+    }
+
+    for (const d of descuentos) {
+      db.prepare(`
+        INSERT INTO movimiento_interno_descuentos (
+          movimiento_interno_id, movimiento_interno_linea_id, producto_id,
+          sector_id, stock_linea_id, unidades, etiqueta
+        ) VALUES (?, ?, ?, ?, ?, ?, ?)
+      `).run(
+        params.movimiento_id,
+        params.movimiento_linea_id,
+        params.producto_id,
+        d.sector_id,
+        d.stock_linea_id,
+        d.unidades,
+        d.etiqueta
+      )
+
+      db.prepare(`
+        INSERT INTO movimientos (
+          tipo, producto_id, cantidad, sector_origen_id, sector_destino_id,
+          documento_tipo, documento_id, usuario_id, observacion
+        ) VALUES ('MOVIMIENTO_INTERNO', ?, ?, ?, NULL, 'movimiento_interno', ?, ?, ?)
+      `).run(
+        params.producto_id,
+        d.unidades,
+        params.sector_origen_id,
+        params.movimiento_id,
+        params.usuario_id,
+        params.observacion
+      )
+    }
+
+    for (const d of descuentos) {
+      if (d.stock_linea_id) {
+        applySueltoDeductionFromLine(db, d.stock_linea_id, d.unidades)
+      }
+    }
+
+    allDescuentos.push(...descuentos)
+  }
+
+  if (esSuelto) {
+    deductSueltas(cantidadSuelta)
+  } else {
+    deductCajas(cantidadCajas)
+    // CAJA + botellas sueltas opcionales (misma semántica que inventario)
+    if (params.tipo_bulto === 'CAJA' && cantidadSuelta > 0) {
+      deductSueltas(cantidadSuelta)
     }
   }
 
-  return descuentos
+  return allDescuentos
 }
 
 export function applyMovimientoInternoRecepcionLine(
@@ -2828,6 +3139,7 @@ export function applyMovimientoInternoRecepcionLine(
     producto_id: number
     sector_destino_id: number
     cantidad_cajas: number
+    cantidad_suelta?: number | null
     movimiento_id: number
     usuario_id: number
     observacion: string | null
@@ -2838,7 +3150,13 @@ export function applyMovimientoInternoRecepcionLine(
   }
 ): void {
   const { botellasPorCaja } = getProductoDefaults(db, params.producto_id)
-  if (params.cantidad_cajas <= 0) throw new Error('Cantidad inválida')
+  const esSuelto = params.tipo_bulto === 'SUELTO'
+  const cantidadSuelta = Number(params.cantidad_suelta ?? 0)
+  if (esSuelto) {
+    if (cantidadSuelta <= 0) throw new Error('Cantidad inválida')
+  } else if (params.cantidad_cajas <= 0) {
+    throw new Error('Cantidad inválida')
+  }
 
   let ubicacionId: number | null = params.ubicacion_destino_id ?? null
   let ubicacionNombre: string | null = null
@@ -2858,33 +3176,17 @@ export function applyMovimientoInternoRecepcionLine(
   const tipo = params.tipo_bulto
   const bultos = Number(params.cantidad_bultos ?? 0)
   const unidades = Number(params.unidades_por_bulto ?? 0)
+  const cantidadLedger = esSuelto ? cantidadSuelta : params.cantidad_cajas
 
-  if (tipo === 'PALLET' && bultos > 0 && unidades > 0) {
-    // Conservar desglose: insertar pallet (no aplanar a cajas)
-    // Solo mergea con pallets “llenos” sin sueltas inventariadas
-    const existing = db.prepare(`
-      SELECT id, cantidad_bultos, total_unidades
-      FROM stock_lineas
-      WHERE stock_sector_id = ? AND tipo_bulto = 'PALLET' AND unidades_por_bulto = ?
-        AND (cantidad_suelta IS NULL OR cantidad_suelta = 0)
-        AND total_unidades = COALESCE(cantidad_bultos, 0) * unidades_por_bulto
-        AND (
-          (ubicacion_id IS NULL AND ? IS NULL)
-          OR ubicacion_id = ?
-        )
-    `).get(stockSector.id, unidades, ubicacionId, ubicacionId) as
-      | { id: number; cantidad_bultos: number | null; total_unidades: number }
-      | undefined
+  if (esSuelto) {
+    addSueltoToStockSector(db, stockSector.id, cantidadSuelta, ubicacionId, ubicacionNombre)
+  } else if (tipo === 'PALLET' && bultos > 0 && unidades > 0) {
+    // Conservar desglose: insertar pallet (no aplanar a cajas).
+    // cantidad_suelta en PALLET = cajas del pallet incompleto (como inventario).
+    const extraCajas = cantidadSuelta > 0 ? cantidadSuelta : 0
+    const totalUnidades = bultos * unidades + extraCajas
 
-    if (existing) {
-      const newBultos = Number(existing.cantidad_bultos ?? 0) + bultos
-      db.prepare(`
-        UPDATE stock_lineas SET
-          cantidad_bultos = ?, cantidad_suelta = NULL, total_unidades = ?,
-          updated_at = datetime('now')
-        WHERE id = ?
-      `).run(newBultos, newBultos * unidades, existing.id)
-    } else {
+    if (extraCajas > 0) {
       const maxOrden = db.prepare(`
         SELECT COALESCE(MAX(orden), 0) AS m FROM stock_lineas WHERE stock_sector_id = ?
       `).get(stockSector.id) as { m: number }
@@ -2893,16 +3195,61 @@ export function applyMovimientoInternoRecepcionLine(
         INSERT INTO stock_lineas (
           stock_sector_id, tipo_bulto, cantidad_bultos, unidades_por_bulto,
           cantidad_suelta, ubicacion, ubicacion_id, total_unidades, orden
-        ) VALUES (?, 'PALLET', ?, ?, NULL, ?, ?, ?, ?)
+        ) VALUES (?, 'PALLET', ?, ?, ?, ?, ?, ?, ?)
       `).run(
         stockSector.id,
         bultos,
         unidades,
+        extraCajas,
         ubicacionNombre,
         ubicacionId,
-        bultos * unidades,
+        totalUnidades,
         maxOrden.m + 1
       )
+    } else {
+      // Solo mergea con pallets “llenos” sin sueltas inventariadas
+      const existing = db.prepare(`
+        SELECT id, cantidad_bultos, total_unidades
+        FROM stock_lineas
+        WHERE stock_sector_id = ? AND tipo_bulto = 'PALLET' AND unidades_por_bulto = ?
+          AND (cantidad_suelta IS NULL OR cantidad_suelta = 0)
+          AND total_unidades = COALESCE(cantidad_bultos, 0) * unidades_por_bulto
+          AND (
+            (ubicacion_id IS NULL AND ? IS NULL)
+            OR ubicacion_id = ?
+          )
+      `).get(stockSector.id, unidades, ubicacionId, ubicacionId) as
+        | { id: number; cantidad_bultos: number | null; total_unidades: number }
+        | undefined
+
+      if (existing) {
+        const newBultos = Number(existing.cantidad_bultos ?? 0) + bultos
+        db.prepare(`
+          UPDATE stock_lineas SET
+            cantidad_bultos = ?, cantidad_suelta = NULL, total_unidades = ?,
+            updated_at = datetime('now')
+          WHERE id = ?
+        `).run(newBultos, newBultos * unidades, existing.id)
+      } else {
+        const maxOrden = db.prepare(`
+          SELECT COALESCE(MAX(orden), 0) AS m FROM stock_lineas WHERE stock_sector_id = ?
+        `).get(stockSector.id) as { m: number }
+
+        db.prepare(`
+          INSERT INTO stock_lineas (
+            stock_sector_id, tipo_bulto, cantidad_bultos, unidades_por_bulto,
+            cantidad_suelta, ubicacion, ubicacion_id, total_unidades, orden
+          ) VALUES (?, 'PALLET', ?, ?, NULL, ?, ?, ?, ?)
+        `).run(
+          stockSector.id,
+          bultos,
+          unidades,
+          ubicacionNombre,
+          ubicacionId,
+          bultos * unidades,
+          maxOrden.m + 1
+        )
+      }
     }
   } else if (tipo === 'CAJA' && bultos > 0) {
     addCajasFullToStockSector(
@@ -2913,6 +3260,9 @@ export function applyMovimientoInternoRecepcionLine(
       ubicacionId,
       ubicacionNombre
     )
+    if (cantidadSuelta > 0) {
+      addSueltoToStockSector(db, stockSector.id, cantidadSuelta, ubicacionId, ubicacionNombre)
+    }
   } else {
     addCajasFullToStockSector(
       db,
@@ -2933,7 +3283,7 @@ export function applyMovimientoInternoRecepcionLine(
     ) VALUES ('MOVIMIENTO_INTERNO', ?, ?, NULL, ?, 'movimiento_interno', ?, ?, ?)
   `).run(
     params.producto_id,
-    params.cantidad_cajas,
+    cantidadLedger,
     params.sector_destino_id,
     params.movimiento_id,
     params.usuario_id,

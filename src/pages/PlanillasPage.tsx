@@ -52,6 +52,60 @@ function newTempId(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
 }
 
+const PLANILLA_DRAFT_KEY = 'bodegaStock:planillaDraft:v1'
+
+type PlanillaDraftStored = {
+  fecha: string
+  numero: string
+  observacion: string
+  camioneroId: string
+  vehiculoId: string
+  createPhase: 'datos' | 'carga'
+  lineas: PlanillaLineaDraft[]
+}
+
+function readPlanillaDraft(): PlanillaDraftStored | null {
+  try {
+    const raw = localStorage.getItem(PLANILLA_DRAFT_KEY)
+    if (!raw) return null
+    const parsed = JSON.parse(raw) as PlanillaDraftStored
+    if (!parsed || !Array.isArray(parsed.lineas)) return null
+    return parsed
+  } catch {
+    return null
+  }
+}
+
+function writePlanillaDraft(draft: PlanillaDraftStored): void {
+  try {
+    localStorage.setItem(PLANILLA_DRAFT_KEY, JSON.stringify(draft))
+  } catch {
+    /* quota / private mode */
+  }
+}
+
+function clearPlanillaDraft(): void {
+  try {
+    localStorage.removeItem(PLANILLA_DRAFT_KEY)
+  } catch {
+    /* ignore */
+  }
+}
+
+function planillaDraftTieneContenido(d: {
+  numero: string
+  observacion: string
+  camioneroId: string
+  lineas: PlanillaLineaDraft[]
+}): boolean {
+  return (
+    d.lineas.length > 0 ||
+    !!d.numero.trim() ||
+    !!d.observacion.trim() ||
+    !!d.camioneroId
+  )
+}
+
 export function PlanillasPage() {
   const { hasPermiso } = useAuth()
   const [view, setView] = useState<'list' | 'create' | 'detail'>('list')
@@ -96,6 +150,8 @@ export function PlanillasPage() {
   const [loadingPreview, setLoadingPreview] = useState(false)
   const [createPhase, setCreatePhase] = useState<'datos' | 'carga'>('datos')
   const [expandedProductos, setExpandedProductos] = useState<Set<number>>(new Set())
+  const [tieneBorrador, setTieneBorrador] = useState(false)
+  const draftHydratedRef = useRef(false)
 
   const fechaRef = useRef<HTMLInputElement>(null)
   const numeroRef = useRef<HTMLInputElement>(null)
@@ -131,9 +187,85 @@ export function PlanillasPage() {
   }
 
   function abrirNuevaPlanilla() {
+    if (tieneBorrador && planillaDraftTieneContenido({ numero, observacion, camioneroId, lineas })) {
+      if (!confirm('Hay una planilla en curso. ¿Descartarla y empezar una nueva?')) return
+    }
+    clearPlanillaDraft()
+    setTieneBorrador(false)
     resetCreateForm()
     setView('create')
   }
+
+  function continuarBorrador() {
+    const draft = readPlanillaDraft()
+    if (draft) {
+      setFecha(draft.fecha || todayIsoDate())
+      setNumero(draft.numero || '')
+      setObservacion(draft.observacion || '')
+      setCamioneroId(draft.camioneroId || '')
+      setVehiculoId(draft.vehiculoId || '')
+      setLineas(draft.lineas || [])
+      setCreatePhase(
+        draft.lineas?.length > 0 || draft.createPhase === 'carga' ? 'carga' : draft.createPhase || 'datos'
+      )
+      setTieneBorrador(true)
+    }
+    setSelectedProduct(null)
+    setProductSearch('')
+    setProductResults([])
+    setProductoRefs(null)
+    setShowPreview(false)
+    setError('')
+    setView('create')
+  }
+
+  function cancelarPlanillaEnCurso() {
+    if (lineas.length > 0 || numero.trim() || camioneroId) {
+      if (!confirm('¿Cancelar la planilla en curso? Se perderán las líneas cargadas.')) return
+    }
+    clearPlanillaDraft()
+    setTieneBorrador(false)
+    resetCreateForm()
+    volverAlListadoPlanilla()
+  }
+
+  useEffect(() => {
+    if (draftHydratedRef.current) return
+    draftHydratedRef.current = true
+    const draft = readPlanillaDraft()
+    if (!draft || !planillaDraftTieneContenido(draft)) {
+      setTieneBorrador(false)
+      return
+    }
+    setFecha(draft.fecha || todayIsoDate())
+    setNumero(draft.numero || '')
+    setObservacion(draft.observacion || '')
+    setCamioneroId(draft.camioneroId || '')
+    setVehiculoId(draft.vehiculoId || '')
+    setLineas(draft.lineas || [])
+    setCreatePhase(draft.createPhase || (draft.lineas?.length ? 'carga' : 'datos'))
+    setTieneBorrador(true)
+  }, [])
+
+  useEffect(() => {
+    if (!draftHydratedRef.current) return
+    const payload = {
+      fecha,
+      numero,
+      observacion,
+      camioneroId,
+      vehiculoId,
+      createPhase,
+      lineas
+    }
+    if (!planillaDraftTieneContenido(payload)) {
+      clearPlanillaDraft()
+      setTieneBorrador(false)
+      return
+    }
+    writePlanillaDraft(payload)
+    setTieneBorrador(true)
+  }, [fecha, numero, observacion, camioneroId, vehiculoId, createPhase, lineas])
 
   useEffect(() => {
     if (view !== 'list') return
@@ -315,8 +447,12 @@ export function PlanillasPage() {
   }
 
   function volverAlListadoPlanilla() {
-    resetCreateForm()
+    setSelectedProduct(null)
+    setProductSearch('')
+    setProductResults([])
+    setProductoRefs(null)
     setShowPreview(false)
+    setError('')
     setView('list')
   }
 
@@ -627,6 +763,8 @@ export function PlanillasPage() {
       setDetalle(data)
       setSelectedDay(fecha)
       setView('detail')
+      clearPlanillaDraft()
+      setTieneBorrador(false)
       resetCreateForm()
       await loadPlanillas()
     } catch (err) {
@@ -664,7 +802,10 @@ export function PlanillasPage() {
     items: planillasDelDia,
     listSearchRef,
     canCreate: hasPermiso('planillas.crear'),
-    onCreate: abrirNuevaPlanilla,
+    onCreate: () => {
+      if (tieneBorrador) continuarBorrador()
+      else abrirNuevaPlanilla()
+    },
     onOpenDetail: (p) => {
       void verDetalle(p.id)
     }
@@ -1118,6 +1259,14 @@ export function PlanillasPage() {
                 <Button
                   variant="secondary"
                   className="rounded-xl"
+                  onClick={cancelarPlanillaEnCurso}
+                  disabled={saving || loadingPreview}
+                >
+                  Cancelar planilla
+                </Button>
+                <Button
+                  variant="secondary"
+                  className="rounded-xl"
                   onClick={abrirPreview}
                   disabled={lineas.length === 0 || loadingPreview || saving}
                 >
@@ -1257,13 +1406,30 @@ export function PlanillasPage() {
           </p>
         </div>
         {hasPermiso('planillas.crear') && (
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="hidden rounded-full border border-surface-border bg-white px-2.5 py-1 text-[11px] font-medium text-slate-500 shadow-card sm:inline-flex">
-              Enter = nueva planilla
-            </span>
-            <Button className="rounded-xl px-4" onClick={abrirNuevaPlanilla}>
-              <Plus className="h-4 w-4" />
-              Nueva planilla
+          <div className="flex flex-col items-stretch gap-2 sm:items-end">
+            <p className="text-xs text-slate-400 sm:text-right">
+              {tieneBorrador
+                ? 'Enter → continuar planilla en curso'
+                : 'Enter → nueva planilla'}
+            </p>
+            <Button
+              className="rounded-xl px-4"
+              onClick={() => {
+                if (tieneBorrador) continuarBorrador()
+                else abrirNuevaPlanilla()
+              }}
+            >
+              {tieneBorrador ? (
+                <>
+                  <ClipboardList className="h-4 w-4" />
+                  Continuar planilla
+                </>
+              ) : (
+                <>
+                  <Plus className="h-4 w-4" />
+                  Nueva planilla
+                </>
+              )}
             </Button>
           </div>
         )}
@@ -1377,9 +1543,25 @@ export function PlanillasPage() {
               </p>
               {!(listSearch || listFechaDesde || listFechaHasta) &&
                 hasPermiso('planillas.crear') && (
-                  <Button className="mt-4 rounded-xl" size="sm" onClick={abrirNuevaPlanilla}>
-                    <Plus className="h-4 w-4" />
-                    Nueva planilla
+                  <Button
+                    className="mt-4 rounded-xl"
+                    size="sm"
+                    onClick={() => {
+                      if (tieneBorrador) continuarBorrador()
+                      else abrirNuevaPlanilla()
+                    }}
+                  >
+                    {tieneBorrador ? (
+                      <>
+                        <ClipboardList className="h-4 w-4" />
+                        Continuar planilla
+                      </>
+                    ) : (
+                      <>
+                        <Plus className="h-4 w-4" />
+                        Nueva planilla
+                      </>
+                    )}
                   </Button>
                 )}
             </div>

@@ -1,19 +1,19 @@
 # BodegaStock — Especificación del proyecto
 
-> Documento vivo, alineado a la versión implementada **v0.3.13** (Electron + Fastify + SQLite + React + Capacitor Android).
+> Documento vivo, alineado a la versión implementada **v0.3.30** (Electron + Fastify + SQLite + React + Capacitor Android).
 
 ---
 
 ## 1. Visión general
 
-**BodegaStock** (nombre comercial **ControlStock**) es un sistema de gestión de inventario para bodega/depósito. Permite controlar productos, stock por sectores, movimientos diarios (ingresos, salidas, retornos, roturas) e inventarios físicos realizados por dos personas en paralelo desde celulares.
+**BodegaStock** (nombre comercial **ControlStock**) es un sistema de gestión de inventario para bodega/depósito. Permite controlar productos, stock por sectores, movimientos diarios (ingresos, salidas, retornos, roturas) e inventarios físicos desde celulares (verificación **Simple** o **Doble** por sector).
 
 ### Objetivos principales
 
 - Tener trazabilidad completa de cada cambio de stock.
 - Operar en **red local (LAN)** sin depender de internet.
 - Permitir trabajo simultáneo desde **PC (administración)** y **celulares (operaciones en bodega)**.
-- Soportar **doble verificación configurable** en retornos y movimientos internos (además del inventario dual).
+- Soportar **doble verificación configurable** en retornos y movimientos internos; en inventario, **Simple (1 contador)** o **Doble (2 contadores)** por sector.
 - Generar **reportes y estadísticas** del día y por rangos de fecha.
 
 ### Usuarios típicos
@@ -189,7 +189,15 @@ Registro de pedidos/planillas que **descuentan** stock (salida de mercadería).
 - Hoja **Productos:** Código interno, Nombre, Descripción, Cantidad + fila **TOTAL**
 - Hoja **Resumen:** sin sector ni usuario creador
 
-**Posible extensión futura:** importación desde Excel/CSV.
+**Flujo actual de carga:** formulario en 2 pasos (datos del documento → líneas producto/cantidad CAJA o BOTELLA) → vista previa de descuento → confirmar. Escáner de barras existe en otros módulos pero **aún no** en Planillas.
+
+**Extensiones futuras (no implementadas):**
+
+| Idea | Doc / notas |
+|------|-------------|
+| **Foto/OCR de planilla impresa** (“Informe de Planillas de Carga A Despachar”) → borrador de líneas por código + cantidad | [PLANILLAS-OCR-FUTURO.md](PLANILLAS-OCR-FUTURO.md) |
+| Import Excel/CSV | Alternativa si administración exporta archivo |
+| Escáner de barras en pantalla Planillas | Mejora rápida de carga manual, sin OCR |
 
 ---
 
@@ -280,18 +288,12 @@ Producto "Tornillo M8"
 
 Transferencia de productos de un sector a otro.
 
-La **doble verificación** es **configurable** (`movimientos_doble_verificacion`), con el mismo patrón que retornos:
+**Comportamiento actual (implementado):**
 
-- **Desactivada:** el movimiento se completa como `ingreso_directo` y aplica stock al crear.
-- **Activada:** un usuario carga y otro distinto confirma (carga ≠ verificación) antes de completar.
-
-**Campos:**
-- Producto + cantidad
-- Sector origen
-- Sector destino
-- Observación (opcional)
-
-**Efecto:** descuenta origen, suma destino. Genera movimiento tipo `MOVIMIENTO_INTERNO`.
+- **Lista abierta compartida** (`tipo=LISTA`, `estado=ABIERTA`): historial de cerrados + botón crear/continuar; origen/destino arriba del buscador; buscador filtrado por stock del origen; tilde (`verificada`) obligatoria por línea; **Finalizar** aplica stock (−origen / +destino) y deja `COMPLETADO`. Detalle: [MOVIMIENTOS-LISTA-ABIERTA-FUTURO.md](MOVIMIENTOS-LISTA-ABIERTA-FUTURO.md).
+- Ledger `MOVIMIENTO_INTERNO` al finalizar.
+- Mientras hay inventario `EN_PROGRESO`, no se crean/finalizan movimientos.
+- El setting `movimientos_doble_verificacion` y el flujo Enviar/Recibir + `PENDIENTE` quedan solo por compatibilidad con registros legados.
 
 ---
 
@@ -344,31 +346,29 @@ Estadísticas y reportes basados en el ledger de movimientos.
 
 ### 3.11 Inventario (módulo principal)
 
-Conteo físico realizado por **dos personas** desde celulares (**navegador web** y **APK** — canales en **paralelo**; ver [APP-MOVIL.md](APP-MOVIL.md)). Cada uno registra **líneas independientes** con desglose (pallet × unidades, sueltos). Ver documentos:
+Conteo físico desde celulares (**navegador web** y **APK** — canales en **paralelo**; ver [APP-MOVIL.md](APP-MOVIL.md)). Por sector se elige **verificación Simple o Doble** y **conectividad Online u Offline**. Líneas independientes con desglose (pallet × unidades, sueltos). Ver:
 
-- [INVENTARIO.md](INVENTARIO.md) — flujo completo (online + offline)
-- [INVENTARIO-OFFLINE-ESTADO.md](INVENTARIO-OFFLINE-ESTADO.md) — estado del modo offline / P2P
+- [INVENTARIO.md](INVENTARIO.md) — flujo completo
+- [INVENTARIO-OFFLINE-ESTADO.md](INVENTARIO-OFFLINE-ESTADO.md) — modo offline / P2P
 - [DESGLOSE-DE-CANTIDADES.md](DESGLOSE-DE-CANTIDADES.md) — formato de cantidades
 
 **Resumen:**
-1. Sesión con sectores (todos o parcial) y dos contadores por sector.
+1. Sesión con sectores (todos o parcial). Por sector: **Doble** (2 contadores, default) o **Simple** (1 contador); y **Offline** (default) u **Online**.
 2. Al iniciar: snapshot del stock + bloqueo global de movimientos.
-3. **Modo elegible por sector:** **offline por defecto** (bajar catálogo en oficina → contar en depósito → sync P2P entre celulares al final → import al PC) o **con red** (celulares → PC). El import principal es por red y sector por sector; existe archivo final validado como Plan B. Documentado en [INVENTARIO.md](INVENTARIO.md) y [INVENTARIO-OFFLINE-ESTADO.md](INVENTARIO-OFFLINE-ESTADO.md).
-4. Buscador dinámico o escaneo; líneas independientes (no se fusionan). Si el sector tiene ubicaciones configuradas, el contador debe seleccionar una antes de guardar cada línea, tanto online como offline.
-5. Comparación A: contador vs contador al finalizar cada sector (en PC si online; entre celulares si offline); reconteo con referencia del desglose anterior.
-6. Comparación B: total contado vs sistema al cerrar (siempre en PC); detecta cantidad y reorganización entre sectores.
-7. Supervisor confirma → `stock_lineas` se alinea con lo contado + reporte antes/después.
+3. **Doble + Offline:** bajar paquete → contar → sync P2P (puerto **3850**) → Comparación A → import PC. **Doble + Online:** Comparación A en el servidor. **Simple:** un contador cuenta → finaliza/importa → sector `CERRADO_OK` **sin** Comparación A ni P2P; sigue Comparación B vs sistema en PC.
+4. Buscador dinámico o escaneo; líneas independientes. Ubicaciones obligatorias si el sector las tiene.
+5. Comparación B (siempre en PC tras sectores OK): contado vs sistema; ajustes / reorganización.
+6. Supervisor confirma → `stock_lineas` alineado + reporte.
 
-**Export Excel de sesión:** reporte con diferencias (`…/export`) y stock final limpio (`…/export-stock`) tras el cierre.
+**Export Excel de sesión:** diferencias (`…/export`) y stock final (`…/export-stock`) tras el cierre; export por sectores con botellas cuando aplica.
 
-**UX y robustez:**
-- Listado móvil con actualización automática/al recuperar foco y botón manual.
-- Navegación por teclado en PC: foco inicial en “Nuevo inventario”, flechas entre registros y apertura con Enter.
-- Panel de cantidades adaptado al teclado; tipografía y áreas táctiles ampliadas.
-- “Seguir editando” antes del sync y alta directa de líneas en cero durante reconteo.
-- Hotspot con actualización automática/manual de IP y QR.
-- La PC muestra “Recibiendo conteo…” durante el import; un sector importado no puede reabrirse.
-- Plan B: celular genera paquete JSON final con checksum; supervisor lo importa manualmente en la fila del sector.
+**UX y robustez (implementado):**
+- Layout sticky en conteo (header/totales fijos).
+- Cuentas rápidas en cantidades; botellas/caja recordadas/sincronizadas con el producto/stock.
+- Sync P2P: IP/QR autorrefrescable; en carga manual **solo se edita la IP**, puerto fijo **3850**.
+- “Seguir editando” antes del sync; reconteo con líneas en cero.
+- PC: “Recibiendo conteo…”; Plan B archivo JSON con checksum.
+- Badges Simple/Doble/Offline en supervisión.
 
 ---
 
@@ -392,7 +392,7 @@ Administración de cuentas y permisos. Ver documento: [USUARIOS-Y-PERMISOS.md](U
 | R2 | Cada movimiento registra: usuario, fecha/hora, tipo, producto, cantidad, sector(es) |
 | R3 | Un producto puede tener stock en múltiples sectores simultáneamente |
 | R4 | Retornos: quien carga ≠ quien verifica **solo cuando la doble verificación de retornos está activa** |
-| R5 | Inventario: dos contadores distintos por sector; vistas independientes; comparación A al finalizar ambos (PC online o sync entre celulares offline); reconteo solo con diferencia; comparación B vs sistema al cerrar; reorganización del depósito; modo con red u offline elegible |
+| R5 | Inventario: por sector, verificación **DOBLE** (2 contadores, Comparación A + reconteo) o **SIMPLE** (1 contador, sin Comparación A); conectividad ONLINE u OFFLINE; Comparación B vs sistema al cerrar; reorganización del depósito |
 | R6 | Planillas y retornos deben asociar camionero |
 | R7 | Ingresos deben registrar número de remito |
 | R8 | Permisos por sección determinan acceso a cada módulo |
@@ -467,21 +467,27 @@ Ver [APP-MOVIL.md](APP-MOVIL.md).
 - [x] **APK Android** (Capacitor)
 - [x] **Inventario dual** (prioridad móvil; online + offline)
 
-### Fase 6 — Inventario dual
+### Fase 6 — Inventario
 - [x] Sesiones de inventario
 - [x] Comunicación en tiempo real / polling
-- [x] Comparación y reconteo
+- [x] Comparación A + reconteo (modo Doble)
 - [x] Cierre y reporte de diferencias
 - [x] Modo offline P2P + import al PC
-- [x] Import offline con estado de recepción en PC + archivo final validado como Plan B
+- [x] Import offline con estado de recepción en PC + archivo final Plan B
+- [x] Verificación **Simple / Doble** por sector (v0.3.28+)
+- [x] Sync manual: IP editable, puerto fijo 3850 (v0.3.30)
 
-### Fase 7 — Pulido
+### Fase 7 — Pulido / futuro
 - [x] Export Excel por módulo (consulta, ingresos, planillas, retornos, roturas día, inventario sesión, plantilla/import productos)
 - [ ] Export PDF
-- [ ] Import planillas (Excel/CSV)
+- [ ] Import planillas Excel/CSV
+- [ ] **OCR / foto de planilla impresa** → borrador de líneas ([PLANILLAS-OCR-FUTURO.md](PLANILLAS-OCR-FUTURO.md))
+- [ ] Escáner de barras en pantalla Planillas
+- [ ] **Movimientos: lista abierta** (origen/destino + buscador, tilde, finalizar) — [MOVIMIENTOS-LISTA-ABIERTA-FUTURO.md](MOVIMIENTOS-LISTA-ABIERTA-FUTURO.md)
 - [ ] Backup automático
 - [x] QR para conexión móvil
 - [x] Toggles de doble verificación (retornos / movimientos) en Configuración
+- [ ] Firma de código Windows (evitar falsos positivos de Defender al actualizar)
 
 ---
 
@@ -491,14 +497,16 @@ Items a definir o ya definidos:
 
 - [ ] ¿Planilla requiere camionero obligatorio siempre o solo recomendado?
 - [ ] ¿Número de remito único global o por proveedor/fecha?
-- [ ] ¿Importación de planillas desde Excel en v1 o fase posterior?
+- [ ] ¿Importación / OCR de planillas: cuándo priorizar? (doc: [PLANILLAS-OCR-FUTURO.md](PLANILLAS-OCR-FUTURO.md))
+- [ ] ¿Rediseño de movimientos (lista abierta): cuándo priorizar? ([MOVIMIENTOS-LISTA-ABIERTA-FUTURO.md](MOVIMIENTOS-LISTA-ABIERTA-FUTURO.md))
 - [x] APK: **Capacitor** (React), no Flutter ni React Native
 - [x] Base de datos: **SQLite** en producción; PostgreSQL opcional a futuro
 - [x] Importación Excel de productos: plantilla propia o formato logístico con encabezados previos (`Código de producto` + `Descripción`); omite duplicados
-- [x] Detalle completo del flujo de inventario (ver [INVENTARIO.md](INVENTARIO.md)) — *definido e implementado (online + offline)*
+- [x] Inventario online + offline + Simple/Doble (ver [INVENTARIO.md](INVENTARIO.md))
 - [x] Ajustes de stock post-inventario: híbrido con confirmación del supervisor; reorganización entre sectores
 - [x] Estrategia de descuento: sectores marcados + fallback por menor stock ([DESGLOSE-DE-CANTIDADES.md](DESGLOSE-DE-CANTIDADES.md))
 - [x] Reconteo: mostrar desglose anterior del producto con diferencia ([INVENTARIO.md](INVENTARIO.md))
+- [x] Sectores chicos / poco movidos: verificación **Simple** (1 contador) sin Comparación A
 
 ---
 
@@ -508,6 +516,8 @@ Items a definir o ya definidos:
 |---------|-------------|
 | **Sector** | Ubicación física o lógica dentro de la bodega (estantería, depósito, camión) |
 | **Planilla** | Documento de pedido/salida que descuenta stock |
+| **Verificación Simple** | Inventario de sector con 1 contador; sin sync entre pares; Comparación B vs sistema en PC |
+| **Verificación Doble** | Inventario de sector con 2 contadores; Comparación A + reconteo; luego Comparación B |
 | **Remito** | Documento de ingreso de mercadería |
 | **Retorno** | Devolución de productos al stock (tras verificación, o ingreso directo si la doble verificación está off) |
 | **Ingreso directo** | Retorno o movimiento que aplica stock al crear, sin segundo verificador |

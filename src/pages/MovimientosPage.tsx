@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+﻿import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import {
   ArrowLeftRight,
   Camera,
@@ -6,12 +6,12 @@ import {
   ChevronDown,
   ChevronLeft,
   ChevronRight,
+  ClipboardList,
   Eye,
   Loader2,
   Plus,
   Search,
   Send,
-  Trash2,
   User,
   X
 } from 'lucide-react'
@@ -22,19 +22,21 @@ import {
   RegistroDetalleObsChip,
   RegistroDetallePanel
 } from '@/components/RegistroDetallePanel'
+import { SwipeableConteoLinea } from '@/components/SwipeableConteoLinea'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { Card, CardBody } from '@/components/ui/Card'
-import { ProductImage } from '@/components/ProductImage'
 import {
   botellasPorCajaDefault,
   cajasPorPalletDefault,
   calcTotalEnCajas,
   formatCantidad,
+  formatCantidadUnidad,
   formatDayTabLabel,
   formatEtiqueta,
   formatTotalCajas,
-  todayIsoDate
+  todayIsoDate,
+  totalSueltoLineaConteo
 } from '@/lib/desglose'
 import { api, cn } from '@/lib/utils'
 import { codigoProductoExacto } from '@/lib/productoSearch'
@@ -42,10 +44,8 @@ import type {
   MovimientoInternoDetalle,
   MovimientoInternoDetalleLinea,
   MovimientoInternoEstado,
-  MovimientoInternoLineaDraft,
   MovimientoInternoListItem,
   MovimientoInternoProductoStock,
-  MovimientoInternoSectorStock,
   MovimientoInternoTipo,
   Sector,
   SectorUbicacion
@@ -54,16 +54,20 @@ import { useAuth } from '@/context/AuthContext'
 import { useEscHandler } from '@/hooks/useEscHandler'
 import { useRegistroListKeyboard } from '@/hooks/useRegistroListKeyboard'
 
-function newTempId(): string {
-  return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
-}
-
 function badgeTipo(tipo: MovimientoInternoTipo) {
   if (tipo === 'ENVIAR') {
     return (
       <span className="inline-flex items-center gap-1 rounded-full bg-brand-50 px-2.5 py-0.5 text-xs font-medium text-brand-800 ring-1 ring-brand-100">
         <Send className="h-3 w-3" />
         Enviar
+      </span>
+    )
+  }
+  if (tipo === 'LISTA') {
+    return (
+      <span className="inline-flex items-center gap-1 rounded-full bg-sky-50 px-2.5 py-0.5 text-xs font-medium text-sky-800 ring-1 ring-sky-100">
+        <ClipboardList className="h-3 w-3" />
+        Lista
       </span>
     )
   }
@@ -77,6 +81,12 @@ function badgeTipo(tipo: MovimientoInternoTipo) {
 
 function badgeEstado(estado: MovimientoInternoEstado, ingresoDirecto = false) {
   switch (estado) {
+    case 'ABIERTA':
+      return (
+        <span className="inline-flex items-center rounded-full bg-sky-50 px-2.5 py-0.5 text-xs font-medium text-sky-800 ring-1 ring-sky-100">
+          Abierta
+        </span>
+      )
     case 'PENDIENTE':
       return (
         <span className="inline-flex items-center rounded-full bg-amber-50 px-2.5 py-0.5 text-xs font-medium text-amber-800 ring-1 ring-amber-100">
@@ -98,12 +108,36 @@ function badgeEstado(estado: MovimientoInternoEstado, ingresoDirecto = false) {
   }
 }
 
+function etiquetaLinea(l: MovimientoInternoDetalleLinea): string {
+  if (l.etiqueta) return l.etiqueta
+  if (l.tipo_bulto === 'SUELTO') {
+    return formatEtiqueta(
+      { tipo_bulto: 'SUELTO', cantidad_suelta: l.cantidad_suelta ?? 0 },
+      l.unidad
+    )
+  }
+  if (l.tipo_bulto && l.cantidad_bultos != null && l.unidades_por_bulto != null) {
+    return formatEtiqueta(
+      {
+        tipo_bulto: l.tipo_bulto,
+        cantidad_bultos: l.cantidad_bultos,
+        unidades_por_bulto: l.unidades_por_bulto,
+        cantidad_suelta: l.cantidad_suelta ?? 0
+      },
+      l.unidad
+    )
+  }
+  return formatTotalCajas(l.cantidad_cajas)
+}
+
 export function MovimientosPage() {
   const { hasPermiso, user } = useAuth()
-  const [view, setView] = useState<'list' | 'create' | 'detail'>('list')
+  const [view, setView] = useState<'list' | 'editor' | 'detail'>('list')
   const [movimientos, setMovimientos] = useState<MovimientoInternoListItem[]>([])
   const [detalle, setDetalle] = useState<MovimientoInternoDetalle | null>(null)
+  const [tieneListaAbierta, setTieneListaAbierta] = useState(false)
   const [loadingList, setLoadingList] = useState(true)
+  const [loadingEditor, setLoadingEditor] = useState(false)
   const [error, setError] = useState('')
   const [saving, setSaving] = useState(false)
 
@@ -111,100 +145,108 @@ export function MovimientosPage() {
   const [listFechaDesde, setListFechaDesde] = useState('')
   const [listFechaHasta, setListFechaHasta] = useState('')
   const [selectedDay, setSelectedDay] = useState(() => todayIsoDate())
-  const [filtroEstado, setFiltroEstado] = useState<'TODOS' | MovimientoInternoEstado>('TODOS')
-  const [filtroTipo, setFiltroTipo] = useState<'TODOS' | MovimientoInternoTipo>('TODOS')
-  const [listTipoPickerActive, setListTipoPickerActive] = useState(false)
-  const [listTipoHighlight, setListTipoHighlight] = useState<MovimientoInternoTipo>('ENVIAR')
 
-  const [createTipo, setCreateTipo] = useState<MovimientoInternoTipo>('ENVIAR')
-  const [createPhase, setCreatePhase] = useState<'datos' | 'carga'>('datos')
-  const [fecha, setFecha] = useState(todayIsoDate())
-  const [sectorContextoId, setSectorContextoId] = useState('')
-  const [sectorDestinoDefaultId, setSectorDestinoDefaultId] = useState('')
-  const [defaultUbicacionDestinoId, setDefaultUbicacionDestinoId] = useState('')
-  const [defaultUbicacionOrigenId, setDefaultUbicacionOrigenId] = useState('')
-  const [observacion, setObservacion] = useState('')
   const [sectores, setSectores] = useState<Sector[]>([])
-  const [ubicacionesDestino, setUbicacionesDestino] = useState<SectorUbicacion[]>([])
-  const [ubicacionesOrigen, setUbicacionesOrigen] = useState<SectorUbicacion[]>([])
-  const [ubicacionesCache, setUbicacionesCache] = useState<Record<number, SectorUbicacion[]>>({})
+  const [origenId, setOrigenId] = useState('')
+  const [destinoId, setDestinoId] = useState('')
+  const [ubicacionOrigenId, setUbicacionOrigenId] = useState('')
+  const [ubicacionDestinoId, setUbicacionDestinoId] = useState('')
 
   const [productSearch, setProductSearch] = useState('')
   const [productResults, setProductResults] = useState<MovimientoInternoProductoStock[]>([])
   const [productHighlightIndex, setProductHighlightIndex] = useState(-1)
   const [searchingProducts, setSearchingProducts] = useState(false)
   const [selectedProduct, setSelectedProduct] = useState<MovimientoInternoProductoStock | null>(null)
-  const [origenesDisponibles, setOrigenesDisponibles] = useState<MovimientoInternoSectorStock[]>([])
-  const [lineOrigenId, setLineOrigenId] = useState('')
-  const [tipoBulto, setTipoBulto] = useState<'PALLET' | 'CAJA'>('PALLET')
+  const [tipoBulto, setTipoBulto] = useState<'PALLET' | 'CAJA' | 'SUELTO'>('PALLET')
   const [cantidadBultos, setCantidadBultos] = useState('')
   const [unidadesPorBulto, setUnidadesPorBulto] = useState('')
-  const [lineUbicacionDestinoId, setLineUbicacionDestinoId] = useState('')
-  const [lineUbicacionOrigenId, setLineUbicacionOrigenId] = useState('')
+  const [cantidadSuelta, setCantidadSuelta] = useState('')
   const [stockDisponible, setStockDisponible] = useState<number | null>(null)
-  const [lineas, setLineas] = useState<MovimientoInternoLineaDraft[]>([])
+  const [stockDisponibleBotellas, setStockDisponibleBotellas] = useState<number | null>(null)
   const [expandedProductos, setExpandedProductos] = useState<Set<number>>(() => new Set())
   const [showScanner, setShowScanner] = useState(false)
+  const [editingLineaId, setEditingLineaId] = useState<number | null>(null)
+  const [swipeOpenLineId, setSwipeOpenLineId] = useState<number | null>(null)
+  const [formOrigenId, setFormOrigenId] = useState('')
+  const [formDestinoId, setFormDestinoId] = useState('')
+  const [formUbicacionOrigenId, setFormUbicacionOrigenId] = useState('')
+  const [formUbicacionDestinoId, setFormUbicacionDestinoId] = useState('')
 
-  const [editLineas, setEditLineas] = useState<MovimientoInternoDetalle['lineas']>([])
+  const [editLineas, setEditLineas] = useState<MovimientoInternoDetalleLinea[]>([])
   const [lineasConfirmadas, setLineasConfirmadas] = useState<Set<number>>(() => new Set())
   const [expandedProductosDetalle, setExpandedProductosDetalle] = useState<Set<number>>(() => new Set())
   const [dobleVerificacion, setDobleVerificacion] = useState(true)
 
-  const fechaRef = useRef<HTMLInputElement>(null)
-  const sectorContextoRef = useRef<HTMLSelectElement>(null)
-  const sectorDestinoRef = useRef<HTMLSelectElement>(null)
-  const defaultUbicacionRef = useRef<HTMLSelectElement>(null)
-  const defaultUbicacionOrigenRef = useRef<HTMLSelectElement>(null)
-  const observacionRef = useRef<HTMLInputElement>(null)
   const productSearchRef = useRef<HTMLInputElement>(null)
-  const cargaPanelRef = useRef<HTMLDivElement>(null)
   const listScrollRef = useRef<HTMLDivElement>(null)
   const productLineFormRef = useRef<HTMLDivElement>(null)
-  const tipoBultoRef = useRef<HTMLSelectElement>(null)
   const cantidadBultosRef = useRef<HTMLInputElement>(null)
   const unidadesPorBultoRef = useRef<HTMLInputElement>(null)
-  const lineOrigenRef = useRef<HTMLSelectElement>(null)
-  const lineUbicacionDestinoRef = useRef<HTMLSelectElement>(null)
-  const lineUbicacionOrigenRef = useRef<HTMLSelectElement>(null)
+  const cantidadSueltaRef = useRef<HTMLInputElement>(null)
   const listSearchRef = useRef<HTMLInputElement>(null)
-  const enviarBtnRef = useRef<HTMLButtonElement>(null)
-  const recibirBtnRef = useRef<HTMLButtonElement>(null)
   const productResultsListRef = useRef<HTMLUListElement>(null)
+  const origenRef = useRef<HTMLSelectElement>(null)
+  const destinoRef = useRef<HTMLSelectElement>(null)
 
-  const totalGeneral = useMemo(
-    () => lineas.reduce((s, l) => s + l.cantidad_cajas, 0),
-    [lineas]
+  const lineasEditor = detalle?.lineas ?? []
+  const lineasActivasEditor = useMemo(
+    () => lineasEditor.filter((l) => !l.cancelada),
+    [lineasEditor]
   )
 
-  useEffect(() => {
-    void (async () => {
-      try {
-        const cfg = await api<{ doble_verificacion: boolean }>('/api/configuracion/movimientos')
-        setDobleVerificacion(cfg.doble_verificacion)
-      } catch {
-        setDobleVerificacion(true)
-      }
-    })()
-  }, [])
-
-  const lineasPorProducto = useMemo(() => {
-    const map = new Map<number, { producto: MovimientoInternoLineaDraft; lineas: MovimientoInternoLineaDraft[] }>()
-    for (const l of lineas) {
+  const lineasPorProductoEditor = useMemo(() => {
+    const map = new Map<
+      number,
+      { producto: MovimientoInternoDetalleLinea; lineas: MovimientoInternoDetalleLinea[] }
+    >()
+    for (const l of lineasEditor) {
+      if (l.cancelada) continue
       const existing = map.get(l.producto_id)
       if (existing) existing.lineas.push(l)
       else map.set(l.producto_id, { producto: l, lineas: [l] })
     }
     return [...map.values()].map((g) => ({
       ...g,
-      total: g.lineas.reduce((s, l) => s + l.cantidad_cajas, 0)
+      total: g.lineas.reduce((s, l) => s + l.cantidad_cajas, 0),
+      totalSuelto: g.lineas.reduce(
+        (s, l) =>
+          s +
+          totalSueltoLineaConteo({
+            tipo_bulto: (l.tipo_bulto ?? 'CAJA') as 'PALLET' | 'CAJA' | 'SUELTO',
+            cantidad_bultos: l.cantidad_bultos,
+            unidades_por_bulto: l.unidades_por_bulto,
+            cantidad_suelta: l.cantidad_suelta
+          }),
+        0
+      )
     }))
-  }, [lineas])
+  }, [lineasEditor])
+
+  const totalGeneral = useMemo(
+    () => lineasActivasEditor.reduce((s, l) => s + l.cantidad_cajas, 0),
+    [lineasActivasEditor]
+  )
+
+  const totalSueltoGeneral = useMemo(
+    () =>
+      lineasActivasEditor.reduce(
+        (s, l) =>
+          s +
+          totalSueltoLineaConteo({
+            tipo_bulto: (l.tipo_bulto ?? 'CAJA') as 'PALLET' | 'CAJA' | 'SUELTO',
+            cantidad_bultos: l.cantidad_bultos,
+            unidades_por_bulto: l.unidades_por_bulto,
+            cantidad_suelta: l.cantidad_suelta
+          }),
+        0
+      ),
+    [lineasActivasEditor]
+  )
 
   const lineasPorProductoDetalle = useMemo(() => {
     const map = new Map<
       number,
-      { producto: MovimientoInternoDetalle['lineas'][number]; lineas: MovimientoInternoDetalle['lineas'] }
+      { producto: MovimientoInternoDetalleLinea; lineas: MovimientoInternoDetalleLinea[] }
     >()
     for (const l of editLineas) {
       const existing = map.get(l.producto_id)
@@ -256,18 +298,38 @@ export function MovimientosPage() {
     return editLineas.every((l) => l.cancelada || lineasConfirmadas.has(l.id))
   }, [editLineas, lineasActivasDetalle, lineasConfirmadas])
 
-  function resumenSectorLineas(campo: 'origen' | 'destino'): string {
-    const names = [
-      ...new Set(
-        lineasActivasDetalle
-          .map((l) => (campo === 'origen' ? l.sector_origen_nombre : l.sector_destino_nombre))
-          .filter(Boolean)
-      )
-    ]
-    if (names.length === 0) return '—'
-    if (names.length === 1) return names[0]
-    return campo === 'origen' ? 'Varios orígenes' : 'Varios destinos'
+  function sectorUsaUbicaciones(sectorId: number): boolean {
+    return !!sectores.find((s) => s.id === sectorId)?.usa_ubicaciones
   }
+
+  function sectorNombre(id: number): string {
+    return sectores.find((s) => s.id === id)?.nombre ?? '—'
+  }
+
+  function formatRutaLinea(l: MovimientoInternoDetalleLinea): string {
+    const origen = l.ubicacion_origen_nombre
+      ? `${l.sector_origen_nombre} (${l.ubicacion_origen_nombre})`
+      : l.sector_origen_nombre
+    const destino = l.ubicacion_destino_nombre
+      ? `${l.sector_destino_nombre} (${l.ubicacion_destino_nombre})`
+      : l.sector_destino_nombre
+    return `${origen || '—'} → ${destino || '—'}`
+  }
+
+  function rutaExtra(l: MovimientoInternoDetalleLinea) {
+    return <span className="text-xs text-slate-500">{formatRutaLinea(l)}</span>
+  }
+
+  const loadAbiertoFlag = useCallback(async () => {
+    try {
+      const data = await api<{ abierto: MovimientoInternoDetalle | null }>(
+        '/api/movimientos-internos/abierto'
+      )
+      setTieneListaAbierta(!!data.abierto)
+    } catch {
+      setTieneListaAbierta(false)
+    }
+  }, [])
 
   const loadMovimientos = useCallback(async () => {
     setLoadingList(true)
@@ -280,8 +342,6 @@ export function MovimientosPage() {
       if (desde && hasta && desde > hasta) [desde, hasta] = [hasta, desde]
       if (desde) params.set('fecha_desde', desde)
       if (hasta) params.set('fecha_hasta', hasta)
-      if (filtroEstado !== 'TODOS') params.set('estado', filtroEstado)
-      if (filtroTipo !== 'TODOS') params.set('tipo', filtroTipo)
       const data = await api<MovimientoInternoListItem[]>(`/api/movimientos-internos?${params}`)
       setMovimientos(data)
       if (data.length > 0 && !data.some((m) => m.fecha === selectedDay)) {
@@ -292,11 +352,21 @@ export function MovimientosPage() {
     } finally {
       setLoadingList(false)
     }
-  }, [listSearch, listFechaDesde, listFechaHasta, filtroEstado, filtroTipo, selectedDay])
+  }, [listSearch, listFechaDesde, listFechaHasta, selectedDay])
 
   useEffect(() => {
     void loadMovimientos()
   }, [loadMovimientos])
+
+  useEffect(() => {
+    if (!error) return
+    const t = window.setTimeout(() => setError(''), 4000)
+    return () => window.clearTimeout(t)
+  }, [error])
+
+  useEffect(() => {
+    if (view === 'list') void loadAbiertoFlag()
+  }, [view, loadAbiertoFlag])
 
   useEffect(() => {
     if (listFechaDesde && !listFechaHasta) {
@@ -313,73 +383,36 @@ export function MovimientosPage() {
   }, [])
 
   useEffect(() => {
-    if (view !== 'create') return
-    const destId = destinoSectorIdCreate()
-    if (!destId || !sectorUsaUbicaciones(destId)) {
-      setUbicacionesDestino([])
+    void api<{ doble_verificacion: boolean }>('/api/configuracion/movimientos')
+      .then((cfg) => setDobleVerificacion(cfg.doble_verificacion))
+      .catch(() => setDobleVerificacion(true))
+  }, [])
+
+  useEffect(() => {
+    setUbicacionOrigenId('')
+  }, [origenId])
+
+  useEffect(() => {
+    setUbicacionDestinoId('')
+  }, [destinoId])
+
+  useEffect(() => {
+    if (view !== 'editor' || !origenId || !productSearch.trim() || !detalle) {
+      if (!productSearch.trim()) {
+        setProductResults([])
+        setProductHighlightIndex(-1)
+      }
       return
     }
-    void loadUbicacionesSector(destId).then(setUbicacionesDestino)
-  }, [view, createPhase, createTipo, sectorContextoId, sectorDestinoDefaultId, sectores])
-
-  useEffect(() => {
-    if (view !== 'create') return
-    const origenId =
-      createTipo === 'ENVIAR'
-        ? Number(sectorContextoId) || 0
-        : Number(lineOrigenId) || 0
-    if (!origenId || !sectorUsaUbicaciones(origenId)) {
-      setUbicacionesOrigen([])
-      return
-    }
-    void loadUbicacionesSector(origenId).then(setUbicacionesOrigen)
-  }, [
-    view,
-    createPhase,
-    createTipo,
-    sectorContextoId,
-    lineOrigenId,
-    sectores
-  ])
-
-  useEffect(() => {
-    setDefaultUbicacionDestinoId('')
-    setLineUbicacionDestinoId('')
-  }, [sectorDestinoDefaultId, sectorContextoId, createTipo])
-
-  useEffect(() => {
-    setDefaultUbicacionOrigenId('')
-    setLineUbicacionOrigenId('')
-  }, [sectorContextoId, createTipo])
-
-  useEffect(() => {
-    if (!detalle) return
-    const sectorIds = [
-      ...new Set([
-        ...editLineas.map((l) => l.sector_destino_id),
-        ...editLineas.map((l) => l.sector_origen_id)
-      ])
-    ]
-    for (const id of sectorIds) {
-      if (sectorUsaUbicaciones(id)) void loadUbicacionesSector(id)
-    }
-  }, [detalle?.movimiento.id, editLineas])
-
-  useEffect(() => {
-    if (view !== 'create' || createPhase !== 'carga' || !sectorContextoId) {
-      setProductResults([])
-      return
-    }
-    if (!productSearch.trim()) {
-      setProductResults([])
-      setProductHighlightIndex(-1)
-      return
-    }
-    const modo = createTipo === 'ENVIAR' ? 'enviar' : 'recibir'
     const t = setTimeout(async () => {
       setSearchingProducts(true)
       try {
-        const params = new URLSearchParams({ modo, sector_id: sectorContextoId, q: productSearch.trim() })
+        const params = new URLSearchParams({
+          modo: 'origen',
+          sector_id: origenId,
+          q: productSearch.trim(),
+          movimiento_id: String(detalle.movimiento.id)
+        })
         const data = await api<MovimientoInternoProductoStock[]>(
           `/api/movimientos-internos/productos?${params}`
         )
@@ -391,48 +424,42 @@ export function MovimientosPage() {
       }
     }, 300)
     return () => clearTimeout(t)
-  }, [view, createPhase, createTipo, sectorContextoId, productSearch])
+  }, [view, origenId, productSearch, detalle?.movimiento.id, detalle?.lineas])
 
   useEffect(() => {
-    if (!selectedProduct || createTipo !== 'RECIBIR') {
-      setOrigenesDisponibles([])
-      return
-    }
-    void api<MovimientoInternoSectorStock[]>(
-      `/api/movimientos-internos/producto/${selectedProduct.id}/sectores-stock?excluir_sector_id=${sectorContextoId}`
-    )
-      .then((rows) => {
-        setOrigenesDisponibles(rows)
-        if (rows.length > 0) setLineOrigenId(String(rows[0].sector_id))
-      })
-      .catch(() => setOrigenesDisponibles([]))
-  }, [selectedProduct, createTipo, sectorContextoId])
-
-  useEffect(() => {
-    const sectorStockId =
-      createTipo === 'ENVIAR' ? sectorContextoId : lineOrigenId
-    if (!selectedProduct || !sectorStockId) {
+    if (!selectedProduct || !formOrigenId || !detalle) {
       setStockDisponible(null)
+      setStockDisponibleBotellas(null)
       return
     }
-    const filterPorUbicacion = sectorUsaUbicaciones(Number(sectorStockId))
-    const qs = filterPorUbicacion
-      ? lineUbicacionOrigenId
-        ? `?ubicacion_id=${lineUbicacionOrigenId}`
-        : '?sin_ubicacion=1'
-      : ''
-    void api<{ stock_disponible_cajas: number }>(
-      `/api/movimientos-internos/producto/${selectedProduct.id}/stock-sector/${sectorStockId}${qs}`
+    const filterPorUbicacion = sectorUsaUbicaciones(Number(formOrigenId))
+    const params = new URLSearchParams()
+    if (filterPorUbicacion) {
+      if (formUbicacionOrigenId) params.set('ubicacion_id', formUbicacionOrigenId)
+      else params.set('sin_ubicacion', '1')
+    }
+    params.set('movimiento_id', String(detalle.movimiento.id))
+    if (editingLineaId != null) params.set('excluir_linea_id', String(editingLineaId))
+    const qs = params.toString() ? `?${params}` : ''
+    void api<{ stock_disponible_cajas: number; stock_disponible_botellas: number }>(
+      `/api/movimientos-internos/producto/${selectedProduct.id}/stock-sector/${formOrigenId}${qs}`
     )
-      .then((r) => setStockDisponible(r.stock_disponible_cajas))
-      .catch(() => setStockDisponible(null))
+      .then((r) => {
+        setStockDisponible(r.stock_disponible_cajas)
+        setStockDisponibleBotellas(r.stock_disponible_botellas)
+      })
+      .catch(() => {
+        setStockDisponible(null)
+        setStockDisponibleBotellas(null)
+      })
   }, [
     selectedProduct,
-    createTipo,
-    sectorContextoId,
-    lineOrigenId,
-    lineUbicacionOrigenId,
-    sectores
+    formOrigenId,
+    formUbicacionOrigenId,
+    sectores,
+    detalle?.movimiento.id,
+    detalle?.lineas,
+    editingLineaId
   ])
 
   useLayoutEffect(() => {
@@ -444,105 +471,102 @@ export function MovimientosPage() {
   }, [productHighlightIndex])
 
   useEffect(() => {
-    if (detalle) {
+    if (detalle && view === 'detail') {
       setEditLineas(detalle.lineas.map((l) => ({ ...l })))
       setLineasConfirmadas(new Set())
       setExpandedProductosDetalle(new Set())
     }
-  }, [detalle])
+  }, [detalle, view])
 
-  useEscHandler(view !== 'list' || createPhase === 'carga', () => {
+  useEscHandler(view !== 'list', () => {
     if (showScanner) {
       setShowScanner(false)
       return true
     }
-    if (view === 'create' && createPhase === 'carga') {
-      setCreatePhase('datos')
+    if (selectedProduct || editingLineaId != null) {
+      cancelarLineaForm()
       return true
     }
     if (view !== 'list') {
-      setView('list')
-      setDetalle(null)
-      setError('')
+      volverAlListado()
       return true
     }
     return false
   })
 
+  function focusField(ref: React.RefObject<HTMLElement | null>) {
+    requestAnimationFrame(() => ref.current?.focus({ preventScroll: true }))
+  }
+
+  function focusProductSearch() {
+    productSearchRef.current?.focus({ preventScroll: true })
+  }
+
+  function focusListSearch() {
+    listSearchRef.current?.focus({ preventScroll: true })
+  }
+
+  useEffect(() => {
+    if (view !== 'list') return
+    const timer = setTimeout(focusListSearch, 0)
+    return () => clearTimeout(timer)
+  }, [view])
+
+  useEffect(() => {
+    if (view !== 'editor') return
+    const timer = setTimeout(focusProductSearch, 0)
+    return () => clearTimeout(timer)
+  }, [view, detalle?.movimiento.id])
+
   function volverAlListado() {
     setView('list')
     setDetalle(null)
-    setCreatePhase('datos')
-    setListTipoPickerActive(false)
-    setLineas([])
-    setExpandedProductos(new Set())
     setSelectedProduct(null)
     setProductSearch('')
     setProductResults([])
-    setDefaultUbicacionDestinoId('')
-    setLineUbicacionDestinoId('')
+    setExpandedProductos(new Set())
     setError('')
+    void loadAbiertoFlag()
+    void loadMovimientos()
   }
 
-  function iniciarCreacion(tipo: MovimientoInternoTipo) {
-    void (async () => {
-      try {
-        const cfg = await api<{ doble_verificacion: boolean }>('/api/configuracion/movimientos')
-        setDobleVerificacion(cfg.doble_verificacion)
-      } catch {
-        /* keep previous */
-      }
-    })()
-    setListTipoPickerActive(false)
-    setCreateTipo(tipo)
-    setView('create')
-    setCreatePhase('datos')
-    setFecha(todayIsoDate())
-    setSectorContextoId('')
-    setSectorDestinoDefaultId('')
-    setDefaultUbicacionDestinoId('')
-    setDefaultUbicacionOrigenId('')
-    setLineUbicacionDestinoId('')
-    setLineUbicacionOrigenId('')
-    setObservacion('')
-    setLineas([])
+  async function abrirListaEditor() {
+    if (!hasPermiso('movimientos_internos.crear')) return
+    setLoadingEditor(true)
     setError('')
+    try {
+      const data = await api<MovimientoInternoDetalle>('/api/movimientos-internos/abierto', {
+        method: 'POST'
+      })
+      setDetalle(data)
+      setTieneListaAbierta(true)
+      setExpandedProductos(new Set())
+      setSelectedProduct(null)
+      setProductSearch('')
+      setProductResults([])
+      setView('editor')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Error al abrir lista')
+    } finally {
+      setLoadingEditor(false)
+    }
   }
 
   async function abrirDetalle(id: number) {
     setError('')
     try {
       const data = await api<MovimientoInternoDetalle>(`/api/movimientos-internos/${id}`)
+      if (data.movimiento.estado === 'ABIERTA' && data.movimiento.tipo === 'LISTA') {
+        setDetalle(data)
+        setTieneListaAbierta(true)
+        setView('editor')
+        return
+      }
       setDetalle(data)
       setView('detail')
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error al cargar detalle')
     }
-  }
-
-  function avanzarACarga() {
-    if (!fecha.trim()) {
-      setError('Fecha requerida')
-      return
-    }
-    if (!sectorContextoId) {
-      setError(createTipo === 'ENVIAR' ? 'Sector origen requerido' : 'Sector destino requerido')
-      return
-    }
-    if (createTipo === 'ENVIAR' && !sectorDestinoDefaultId) {
-      setError('Sector destino requerido')
-      return
-    }
-    if (createTipo === 'ENVIAR' && sectorContextoId === sectorDestinoDefaultId) {
-      if (!sectorUsaUbicaciones(Number(sectorContextoId))) {
-        setError('Origen y destino deben ser distintos')
-        return
-      }
-    }
-    setError('')
-    setCreatePhase('carga')
-    setProductSearch('')
-    setSelectedProduct(null)
   }
 
   function defaultUnidadesPorBulto(
@@ -559,24 +583,103 @@ export function MovimientosPage() {
     const p = forProduct ?? selectedProduct
     setTipoBulto('PALLET')
     setCantidadBultos('')
+    setCantidadSuelta('')
     setUnidadesPorBulto(defaultUnidadesPorBulto('PALLET', p))
-    setLineUbicacionDestinoId(defaultUbicacionDestinoId)
-    setLineUbicacionOrigenId(defaultUbicacionOrigenId)
   }
 
-  function handleTipoBultoChange(tipo: 'PALLET' | 'CAJA') {
+  function handleTipoBultoChange(tipo: 'PALLET' | 'CAJA' | 'SUELTO') {
     setTipoBulto(tipo)
-    setUnidadesPorBulto(defaultUnidadesPorBulto(tipo, selectedProduct))
+    if (tipo === 'SUELTO') {
+      setCantidadBultos('')
+      setUnidadesPorBulto('')
+      setTimeout(() => focusField(cantidadSueltaRef), 50)
+    } else {
+      // Mantener sueltas opcionales al cambiar PALLET ↔ CAJA; limpiar al salir de SUELTO.
+      if (tipoBulto === 'SUELTO') setCantidadSuelta('')
+      setUnidadesPorBulto(defaultUnidadesPorBulto(tipo, selectedProduct))
+      setTimeout(() => focusField(cantidadBultosRef), 50)
+    }
+  }
+
+  function cancelarLineaForm() {
+    setEditingLineaId(null)
+    setSelectedProduct(null)
+    setProductSearch('')
+    setProductResults([])
+    setStockDisponible(null)
+    setStockDisponibleBotellas(null)
+    setError('')
+    resetLineaForm(null)
+    setTimeout(() => productSearchRef.current?.focus(), 50)
   }
 
   function selectProduct(p: MovimientoInternoProductoStock) {
+    setEditingLineaId(null)
     setSelectedProduct(p)
     setProductSearch(p.codigo_interno)
     setProductResults([])
     setProductHighlightIndex(-1)
+    setFormOrigenId(origenId)
+    setFormDestinoId(destinoId)
+    setFormUbicacionOrigenId(ubicacionOrigenId)
+    setFormUbicacionDestinoId(ubicacionDestinoId)
     resetLineaForm(p)
     setError('')
-    setTimeout(() => focusFirstLineaField(), 50)
+    setTimeout(() => focusField(cantidadBultosRef), 50)
+  }
+
+  function empezarEditarLinea(l: MovimientoInternoDetalleLinea) {
+    setSwipeOpenLineId(null)
+    setEditingLineaId(l.id)
+    setSelectedProduct({
+      id: l.producto_id,
+      codigo_interno: l.codigo_interno,
+      codigo_barras: null,
+      nombre: l.nombre,
+      imagen_path: null,
+      unidad: l.unidad,
+      unidades_por_pallet_default: null,
+      unidades_por_caja_default: null,
+      stock_cajas: 0
+    })
+    setProductSearch(l.codigo_interno)
+    setProductResults([])
+    setFormOrigenId(String(l.sector_origen_id))
+    setFormDestinoId(String(l.sector_destino_id))
+    setFormUbicacionOrigenId(l.ubicacion_origen_id != null ? String(l.ubicacion_origen_id) : '')
+    setFormUbicacionDestinoId(l.ubicacion_destino_id != null ? String(l.ubicacion_destino_id) : '')
+    if (l.tipo_bulto === 'SUELTO') {
+      setTipoBulto('SUELTO')
+      setCantidadBultos('')
+      setUnidadesPorBulto('')
+      setCantidadSuelta(l.cantidad_suelta != null ? String(l.cantidad_suelta) : '')
+      setTimeout(() => focusField(cantidadSueltaRef), 50)
+    } else {
+      setTipoBulto(l.tipo_bulto === 'CAJA' ? 'CAJA' : 'PALLET')
+      setCantidadBultos(l.cantidad_bultos != null ? String(l.cantidad_bultos) : '')
+      setUnidadesPorBulto(l.unidades_por_bulto != null ? String(l.unidades_por_bulto) : '')
+      setCantidadSuelta(
+        l.cantidad_suelta != null && Number(l.cantidad_suelta) > 0 ? String(l.cantidad_suelta) : ''
+      )
+      setTimeout(() => focusField(cantidadBultosRef), 50)
+    }
+    setExpandedProductos((prev) => new Set(prev).add(l.producto_id))
+    setError('')
+  }
+
+  function pickProductFromSearch() {
+    if (!productSearch.trim()) return
+    const term = productSearch.trim()
+    const exact = productResults.find((p) =>
+      codigoProductoExacto(p.codigo_interno, p.codigo_barras, term)
+    )
+    if (exact) {
+      selectProduct(exact)
+      return
+    }
+    if (productResults.length === 1) {
+      selectProduct(productResults[0])
+    }
   }
 
   function toggleProductoExpand(productoId: number) {
@@ -597,230 +700,284 @@ export function MovimientosPage() {
     })
   }
 
-  function etiquetaLineaDetalle(l: MovimientoInternoDetalleLinea): string {
-    if (l.etiqueta) return l.etiqueta
-    if (l.tipo_bulto && l.cantidad_bultos != null && l.unidades_por_bulto != null) {
-      return formatEtiqueta(
-        {
-          tipo_bulto: l.tipo_bulto,
-          cantidad_bultos: l.cantidad_bultos,
-          unidades_por_bulto: l.unidades_por_bulto
-        },
-        l.unidad
-      )
-    }
-    return formatTotalCajas(l.cantidad_cajas)
-  }
-
-  function quitarLinea(tempId: string) {
-    setLineas((prev) => prev.filter((l) => l.tempId !== tempId))
-  }
-
-  function pickProductFromSearch() {
-    if (!productSearch.trim()) return
-    const term = productSearch.trim()
-    const exact = productResults.find((p) =>
-      codigoProductoExacto(p.codigo_interno, p.codigo_barras, term)
-    )
-    if (exact) {
-      selectProduct(exact)
-      return
-    }
-    if (productResults.length === 1) {
-      selectProduct(productResults[0])
-    }
-  }
-
-  function sectorNombre(id: number): string {
-    return sectores.find((s) => s.id === id)?.nombre ?? '—'
-  }
-
-  function destinoSectorIdCreate(): number {
-    return createTipo === 'ENVIAR' ? Number(sectorDestinoDefaultId) : Number(sectorContextoId)
-  }
-
-  function sectorUsaUbicaciones(sectorId: number): boolean {
-    return !!sectores.find((s) => s.id === sectorId)?.usa_ubicaciones
-  }
-
-  const loadUbicacionesSector = useCallback(async (sectorId: number) => {
-    if (!sectorId || !sectorUsaUbicaciones(sectorId)) {
-      return [] as SectorUbicacion[]
-    }
-    if (ubicacionesCache[sectorId]) return ubicacionesCache[sectorId]
-    try {
-      const data = await api<SectorUbicacion[]>(`/api/sectores/${sectorId}/ubicaciones`)
-      const activas = data.filter((u) => u.activo)
-      setUbicacionesCache((prev) => ({ ...prev, [sectorId]: activas }))
-      return activas
-    } catch {
-      return [] as SectorUbicacion[]
-    }
-  }, [ubicacionesCache, sectores])
-
-  function ubicacionNombre(sectorId: number, ubicacionId: number | null): string | null {
-    if (!ubicacionId) return null
-    const list =
-      ubicacionesCache[sectorId] ??
-      (Number(sectorContextoId) === sectorId || Number(lineOrigenId) === sectorId
-        ? ubicacionesOrigen
-        : ubicacionesDestino)
-    return list.find((u) => u.id === ubicacionId)?.nombre ?? null
-  }
-
-  function origenSectorIdCreate(): number {
-    return createTipo === 'ENVIAR' ? Number(sectorContextoId) : Number(lineOrigenId)
-  }
-
-  function agregarLinea(): boolean {
+  async function guardarLineaForm() {
+    if (!detalle) return
     if (!selectedProduct) {
       setError('Seleccioná un producto primero')
-      return false
+      return
+    }
+    if (!formOrigenId || !formDestinoId) {
+      setError('Elegí sector origen y destino')
+      return
     }
 
-    const lineaInput = {
-      tipo_bulto: tipoBulto,
-      cantidad_bultos: Number(cantidadBultos),
-      unidades_por_bulto: Number(unidadesPorBulto)
-    }
+    const esSuelto = tipoBulto === 'SUELTO'
+    let qty = 0
+    let qtySuelta: number | null = null
+    let etiqueta = ''
+    let payloadCantidadBultos: number | null = null
+    let payloadUnidadesPorBulto: number | null = null
 
-    if (!Number.isFinite(lineaInput.cantidad_bultos) || lineaInput.cantidad_bultos <= 0) {
-      setError(`Indicá la cantidad de ${tipoBulto === 'PALLET' ? 'pallets' : 'cajas'}`)
-      return false
-    }
-    if (!Number.isFinite(lineaInput.unidades_por_bulto) || lineaInput.unidades_por_bulto <= 0) {
-      setError('Indicá las unidades por bulto')
-      return false
-    }
-
-    const qty = calcTotalEnCajas(
-      lineaInput,
-      botellasPorCajaDefault(selectedProduct.unidades_por_caja_default)
-    )
-    if (qty <= 0) {
-      setError('La cantidad debe ser mayor a cero')
-      return false
-    }
-    if (stockDisponible !== null && qty > stockDisponible) {
-      setError(`Stock insuficiente (disponible: ${formatCantidad(stockDisponible)})`)
-      return false
-    }
-
-    let origenId: number
-    let destinoId: number
-
-    if (createTipo === 'ENVIAR') {
-      origenId = Number(sectorContextoId)
-      destinoId = Number(sectorDestinoDefaultId)
-    } else {
-      if (!lineOrigenId) {
-        setError('Elegí sector de origen')
-        return false
+    if (esSuelto) {
+      const suelta = Number(cantidadSuelta)
+      if (!Number.isFinite(suelta) || suelta <= 0) {
+        setError('Indicá la cantidad de botellas')
+        return
       }
-      origenId = Number(lineOrigenId)
-      destinoId = Number(sectorContextoId)
+      if (stockDisponibleBotellas !== null && suelta > stockDisponibleBotellas) {
+        setError(
+          `Stock insuficiente (disponible: ${formatCantidadUnidad(stockDisponibleBotellas, selectedProduct.unidad)})`
+        )
+        return
+      }
+      qtySuelta = suelta
+      etiqueta = formatEtiqueta(
+        { tipo_bulto: 'SUELTO', cantidad_suelta: suelta },
+        selectedProduct.unidad
+      )
+    } else {
+      const bultos = Number(cantidadBultos)
+      const porBulto = Number(unidadesPorBulto)
+      if (!Number.isFinite(bultos) || bultos <= 0) {
+        setError(`Indicá la cantidad de ${tipoBulto === 'PALLET' ? 'pallets' : 'cajas'}`)
+        return
+      }
+      if (!Number.isFinite(porBulto) || porBulto <= 0) {
+        setError('Indicá las unidades por bulto')
+        return
+      }
+
+      let extra = 0
+      if (cantidadSuelta.trim()) {
+        extra = Number(cantidadSuelta)
+        if (!Number.isFinite(extra) || extra < 0) {
+          setError(
+            tipoBulto === 'PALLET' ? 'Cajas sueltas inválidas' : 'Botellas sueltas inválidas'
+          )
+          return
+        }
+      }
+
+      const lineaInput = {
+        tipo_bulto: tipoBulto,
+        cantidad_bultos: bultos,
+        unidades_por_bulto: porBulto,
+        cantidad_suelta: extra > 0 ? extra : null
+      }
+
+      qty = calcTotalEnCajas(
+        lineaInput,
+        botellasPorCajaDefault(selectedProduct.unidades_por_caja_default)
+      )
+      if (qty <= 0) {
+        setError('La cantidad debe ser mayor a cero')
+        return
+      }
+      if (stockDisponible !== null && qty > stockDisponible) {
+        setError(`Stock insuficiente (disponible: ${formatCantidad(stockDisponible)})`)
+        return
+      }
+      if (
+        tipoBulto === 'CAJA' &&
+        extra > 0 &&
+        stockDisponibleBotellas !== null &&
+        extra > stockDisponibleBotellas
+      ) {
+        setError(
+          `Stock insuficiente de botellas (disponible: ${formatCantidadUnidad(stockDisponibleBotellas, selectedProduct.unidad)})`
+        )
+        return
+      }
+      qtySuelta = extra > 0 ? extra : null
+      payloadCantidadBultos = bultos
+      payloadUnidadesPorBulto = porBulto
+      etiqueta = formatEtiqueta(
+        {
+          tipo_bulto: tipoBulto,
+          cantidad_bultos: bultos,
+          unidades_por_bulto: porBulto,
+          cantidad_suelta: extra
+        },
+        selectedProduct.unidad
+      )
     }
 
-    const origenUbId = lineUbicacionOrigenId ? Number(lineUbicacionOrigenId) : null
-    const destinoUbId = lineUbicacionDestinoId ? Number(lineUbicacionDestinoId) : null
-    const origenTieneUbicaciones = sectorUsaUbicaciones(origenId)
+    const oId = Number(formOrigenId)
+    const dId = Number(formDestinoId)
+    const origenUbId = formUbicacionOrigenId ? Number(formUbicacionOrigenId) : null
+    const destinoUbId = formUbicacionDestinoId ? Number(formUbicacionDestinoId) : null
+    const origenTieneUbicaciones = sectorUsaUbicaciones(oId)
 
-    if (origenId === destinoId) {
+    if (oId === dId) {
       if (!origenTieneUbicaciones) {
         setError('Origen y destino deben ser distintos')
-        return false
+        return
       }
       if (origenUbId === destinoUbId) {
         setError('En el mismo sector, elegí una ubicación destino distinta a la origen')
-        return false
+        return
       }
       if (destinoUbId == null && origenUbId == null) {
         setError('Elegí una ubicación destino para reubicar')
-        return false
+        return
       }
     }
 
-    setLineas((prev) => [
-      ...prev,
-      {
-        tempId: newTempId(),
-        producto_id: selectedProduct.id,
-        codigo_interno: selectedProduct.codigo_interno,
-        nombre: selectedProduct.nombre,
-        cantidad_cajas: qty,
-        tipo_bulto: tipoBulto,
-        cantidad_bultos: lineaInput.cantidad_bultos,
-        unidades_por_bulto: lineaInput.unidades_por_bulto,
-        etiqueta: formatEtiqueta(lineaInput, selectedProduct.unidad),
-        sector_origen_id: origenId,
-        sector_origen_nombre: sectorNombre(origenId),
-        sector_destino_id: destinoId,
-        sector_destino_nombre: sectorNombre(destinoId),
-        ubicacion_destino_id: destinoUbId,
-        ubicacion_destino_nombre: ubicacionNombre(destinoId, destinoUbId),
-        ubicacion_origen_id: origenTieneUbicaciones ? origenUbId : null,
-        ubicacion_origen_nombre: origenTieneUbicaciones
-          ? origenUbId
-            ? ubicacionNombre(origenId, origenUbId)
-            : 'Sin ubicación'
-          : null
-      }
-    ])
-    resetLineaForm()
-    setError('')
-    return true
-  }
+    const bodyBase = {
+      cantidad_cajas: qty,
+      cantidad_suelta: qtySuelta,
+      sector_origen_id: oId,
+      sector_destino_id: dId,
+      ubicacion_destino_id: destinoUbId,
+      ubicacion_origen_id: origenTieneUbicaciones ? origenUbId : null,
+      tipo_bulto: tipoBulto,
+      cantidad_bultos: payloadCantidadBultos,
+      unidades_por_bulto: payloadUnidadesPorBulto,
+      etiqueta
+    }
 
-  function agregarLineaYContinuar() {
-    if (!agregarLinea()) return
-    setSelectedProduct(null)
-    setProductSearch('')
-    setProductResults([])
-    setStockDisponible(null)
-    setTimeout(() => productSearchRef.current?.focus(), 50)
+    setSaving(true)
+    setError('')
+    try {
+      if (editingLineaId != null) {
+        const data = await api<MovimientoInternoDetalle>(
+          `/api/movimientos-internos/${detalle.movimiento.id}/lineas`,
+          {
+            method: 'PATCH',
+            body: JSON.stringify({
+              lineas: [{ id: editingLineaId, ...bodyBase }]
+            })
+          }
+        )
+        setDetalle(data)
+      } else {
+        const data = await api<MovimientoInternoDetalle>(
+          `/api/movimientos-internos/${detalle.movimiento.id}/lineas`,
+          {
+            method: 'POST',
+            body: JSON.stringify({
+              producto_id: selectedProduct.id,
+              ...bodyBase
+            })
+          }
+        )
+        setDetalle(data)
+        setExpandedProductos((prev) => new Set(prev).add(selectedProduct.id))
+      }
+      cancelarLineaForm()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Error al guardar línea')
+    } finally {
+      setSaving(false)
+    }
   }
 
   function handleLineaEnter(e: React.KeyboardEvent) {
     if (e.key !== 'Enter') return
     e.preventDefault()
-    agregarLineaYContinuar()
+    void guardarLineaForm()
   }
 
-  async function guardarMovimiento() {
-    if (lineas.length === 0) {
-      setError('Agregá al menos un producto')
+  async function patchLineas(
+    updates: Array<{
+      id: number
+      sector_origen_id?: number
+      sector_destino_id?: number
+      ubicacion_destino_id?: number | null
+      ubicacion_origen_id?: number | null
+      verificada?: boolean
+      cancelada?: boolean
+    }>
+  ) {
+    if (!detalle || updates.length === 0) return
+    setSaving(true)
+    setError('')
+    try {
+      const data = await api<MovimientoInternoDetalle>(
+        `/api/movimientos-internos/${detalle.movimiento.id}/lineas`,
+        {
+          method: 'PATCH',
+          body: JSON.stringify({ lineas: updates })
+        }
+      )
+      setDetalle(data)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Error al actualizar línea')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function toggleVerificada(linea: MovimientoInternoDetalleLinea) {
+    await patchLineas([{ id: linea.id, verificada: !linea.verificada }])
+  }
+
+  async function eliminarLinea(lineaId: number) {
+    if (!detalle) return
+    setSwipeOpenLineId(null)
+    setSaving(true)
+    setError('')
+    try {
+      const data = await api<MovimientoInternoDetalle>(
+        `/api/movimientos-internos/${detalle.movimiento.id}/lineas/${lineaId}`,
+        { method: 'DELETE' }
+      )
+      setDetalle(data)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Error al eliminar línea')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function finalizarLista() {
+    if (!detalle) return
+    if (lineasActivasEditor.length === 0) {
+      setError('Agregá al menos una línea')
+      return
+    }
+    if (dobleVerificacion) {
+      const sinTilde = lineasActivasEditor.filter((l) => !l.verificada)
+      if (sinTilde.length > 0) {
+        setError(
+          `Hay ${sinTilde.length} línea(s) sin tilde. Tildalas o eliminalas antes de finalizar.`
+        )
+        return
+      }
+    }
+    setSaving(true)
+    setError('')
+    try {
+      await api(`/api/movimientos-internos/${detalle.movimiento.id}/finalizar`, {
+        method: 'POST'
+      })
+      setTieneListaAbierta(false)
+      volverAlListado()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Error al finalizar')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function cancelarListaAbierta() {
+    if (!detalle) return
+    const activas = lineasActivasEditor.length
+    if (activas > 0) {
+      if (!confirm(`La lista tiene ${activas} línea(s). ¿Cancelar la lista abierta?`)) return
+    } else if (!confirm('¿Cancelar la lista abierta?')) {
       return
     }
     setSaving(true)
     setError('')
     try {
-      await api('/api/movimientos-internos', {
-        method: 'POST',
-        body: JSON.stringify({
-          tipo: createTipo,
-          fecha,
-          sector_contexto_id: Number(sectorContextoId),
-          sector_destino_default_id:
-            createTipo === 'ENVIAR' ? Number(sectorDestinoDefaultId) : undefined,
-          observacion: observacion.trim() || null,
-          lineas: lineas.map((l) => ({
-            producto_id: l.producto_id,
-            cantidad_cajas: l.cantidad_cajas,
-            tipo_bulto: l.tipo_bulto,
-            cantidad_bultos: l.cantidad_bultos,
-            unidades_por_bulto: l.unidades_por_bulto,
-            etiqueta: l.etiqueta,
-            sector_origen_id: l.sector_origen_id,
-            sector_destino_id: l.sector_destino_id,
-            ubicacion_destino_id: l.ubicacion_destino_id,
-            ubicacion_origen_id: l.ubicacion_origen_id
-          }))
-        })
+      await api(`/api/movimientos-internos/${detalle.movimiento.id}/cancelar`, {
+        method: 'POST'
       })
+      setTieneListaAbierta(false)
       volverAlListado()
-      void loadMovimientos()
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Error al guardar')
+      setError(err instanceof Error ? err.message : 'Error al cancelar')
     } finally {
       setSaving(false)
     }
@@ -860,21 +1017,6 @@ export function MovimientosPage() {
             next.ubicacion_destino_id = null
             next.ubicacion_destino_nombre = null
           }
-        }
-        if (patch.ubicacion_destino_id !== undefined) {
-          next.ubicacion_destino_id = patch.ubicacion_destino_id
-          next.ubicacion_destino_nombre = ubicacionNombre(
-            next.sector_destino_id,
-            patch.ubicacion_destino_id
-          )
-        }
-        if (patch.ubicacion_origen_id !== undefined) {
-          next.ubicacion_origen_id = patch.ubicacion_origen_id
-          next.ubicacion_origen_nombre = patch.ubicacion_origen_id
-            ? ubicacionNombre(next.sector_origen_id, patch.ubicacion_origen_id)
-            : sectorUsaUbicaciones(next.sector_origen_id)
-              ? 'Sin ubicación'
-              : null
         }
         if (patch.cancelada !== undefined) next.cancelada = patch.cancelada
         return next
@@ -935,7 +1077,7 @@ export function MovimientosPage() {
     }
   }
 
-  async function completar() {
+  async function completarPendiente() {
     if (!detalle) return
     setSaving(true)
     setError('')
@@ -968,7 +1110,7 @@ export function MovimientosPage() {
     }
   }
 
-  async function cancelarDoc() {
+  async function cancelarDocPendiente() {
     if (!detalle || !confirm('¿Cancelar este movimiento?')) return
     setSaving(true)
     setError('')
@@ -985,141 +1127,6 @@ export function MovimientosPage() {
       setSaving(false)
     }
   }
-
-  function focusField(ref: React.RefObject<HTMLElement | null>) {
-    requestAnimationFrame(() => ref.current?.focus({ preventScroll: true }))
-  }
-
-  function focusFirstLineaField() {
-    if (createTipo === 'RECIBIR' && origenesDisponibles.length > 0) {
-      focusField(lineOrigenRef)
-      return
-    }
-    if (sectorUsaUbicaciones(origenSectorIdCreate())) {
-      focusField(lineUbicacionOrigenRef)
-      return
-    }
-    if (sectorUsaUbicaciones(destinoSectorIdCreate())) {
-      focusField(lineUbicacionDestinoRef)
-      return
-    }
-    focusField(tipoBultoRef)
-  }
-
-  function nextDatosAfterSectorContexto(): React.RefObject<HTMLElement | null> {
-    if (createTipo === 'ENVIAR') {
-      if (sectorUsaUbicaciones(Number(sectorContextoId))) return defaultUbicacionOrigenRef
-      return sectorDestinoRef
-    }
-    const destId = destinoSectorIdCreate()
-    if (destId && sectorUsaUbicaciones(destId)) return defaultUbicacionRef
-    return observacionRef
-  }
-
-  function nextDatosAfterSectorDestino(): React.RefObject<HTMLElement | null> {
-    const destId = destinoSectorIdCreate()
-    if (destId && sectorUsaUbicaciones(destId)) return defaultUbicacionRef
-    return observacionRef
-  }
-
-  function handleDatosKeyDown(
-    e: React.KeyboardEvent,
-    next?: React.RefObject<HTMLElement | null>
-  ) {
-    if (e.key !== 'Enter') return
-    e.preventDefault()
-    if (next?.current) {
-      focusField(next)
-    } else {
-      avanzarACarga()
-    }
-  }
-
-  function focusProductSearch() {
-    productSearchRef.current?.focus({ preventScroll: true })
-  }
-
-  function focusListSearch() {
-    listSearchRef.current?.focus({ preventScroll: true })
-  }
-
-  useEffect(() => {
-    if (view !== 'list') return
-    const timer = setTimeout(focusListSearch, 0)
-    return () => clearTimeout(timer)
-  }, [view])
-
-  useEffect(() => {
-    if (view !== 'create' || createPhase !== 'datos') return
-    const timer = setTimeout(() => focusField(fechaRef), 0)
-    return () => clearTimeout(timer)
-  }, [view, createPhase])
-
-  useEffect(() => {
-    if (view !== 'create' || createPhase !== 'carga') return
-    const timer = setTimeout(focusProductSearch, 0)
-    return () => clearTimeout(timer)
-  }, [view, createPhase])
-
-  function activarSelectorTipo(tipo: MovimientoInternoTipo = 'ENVIAR') {
-    setListTipoPickerActive(true)
-    setListTipoHighlight(tipo)
-  }
-
-  const registroListKb = useRegistroListKeyboard({
-    enabled: view === 'list' && !listTipoPickerActive,
-    items: movimientosDelDia,
-    listSearchRef,
-    enterPrioritizesListNavigation: true,
-    onEnterFromSearch: () => {
-      listSearchRef.current?.blur()
-      activarSelectorTipo('ENVIAR')
-    },
-    onOpenDetail: (m) => {
-      void abrirDetalle(m.id)
-    }
-  })
-
-  function focusTipoButton(tipo: MovimientoInternoTipo) {
-    const ref = tipo === 'ENVIAR' ? enviarBtnRef : recibirBtnRef
-    requestAnimationFrame(() => ref.current?.focus({ preventScroll: true }))
-  }
-
-  useEffect(() => {
-    if (view !== 'list' || !listTipoPickerActive) return
-    focusTipoButton(listTipoHighlight)
-  }, [view, listTipoPickerActive, listTipoHighlight])
-
-  useEffect(() => {
-    if (view !== 'list' || !hasPermiso('movimientos_internos.crear') || !listTipoPickerActive) return
-
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
-        e.preventDefault()
-        setListTipoHighlight('ENVIAR')
-        return
-      }
-      if (e.key === 'ArrowRight' || e.key === 'ArrowDown') {
-        e.preventDefault()
-        setListTipoHighlight('RECIBIR')
-        return
-      }
-      if (e.key === 'Enter') {
-        e.preventDefault()
-        iniciarCreacion(listTipoHighlight)
-        return
-      }
-      if (e.key === 'Escape') {
-        e.preventDefault()
-        setListTipoPickerActive(false)
-        focusListSearch()
-        return
-      }
-    }
-
-    window.addEventListener('keydown', onKeyDown, true)
-    return () => window.removeEventListener('keydown', onKeyDown, true)
-  }, [view, listTipoPickerActive, listTipoHighlight, hasPermiso])
 
   function handleProductSearchKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
     if (selectedProduct) return
@@ -1156,26 +1163,116 @@ export function MovimientosPage() {
       }
       if (productSearch.trim()) {
         pickProductFromSearch()
-        return
-      }
-      if (lineas.length > 0 && !saving) {
-        void guardarMovimiento()
       }
     }
   }
 
+  const registroListKb = useRegistroListKeyboard({
+    enabled: view === 'list',
+    items: movimientosDelDia,
+    listSearchRef,
+    enterPrioritizesListNavigation: true,
+    onEnterFromSearch: () => {
+      listSearchRef.current?.blur()
+      if (hasPermiso('movimientos_internos.crear')) void abrirListaEditor()
+    },
+    onOpenDetail: (m) => {
+      void abrirDetalle(m.id)
+    }
+  })
+
   if (view === 'detail' && detalle) {
     const m = detalle.movimiento
+    const pendienteEditable = m.estado === 'PENDIENTE' && puedeAutorizar
+
+    const metaDetalle = (
+      <>
+        <RegistroDetalleMetaChip icon={<User className="h-3.5 w-3.5 shrink-0 text-slate-400" />}>
+          {m.creado_por_nombre}
+        </RegistroDetalleMetaChip>
+        {m.recibido_por_nombre && (
+          <RegistroDetalleMetaChip>
+            <span className="font-medium text-slate-500">Finalizado </span>
+            {m.recibido_por_nombre}
+          </RegistroDetalleMetaChip>
+        )}
+        {m.observacion && <RegistroDetalleObsChip>{m.observacion}</RegistroDetalleObsChip>}
+      </>
+    )
+
+    const antesProductosDetalle = (
+      <>
+        {error && (
+          <div className="rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>
+        )}
+        {m.estado === 'PENDIENTE' && (
+          <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950">
+            <p className="font-medium">Pendiente de autorización</p>
+            <p className="mt-1 text-amber-900/80">
+              Creado por {m.creado_por_nombre}.
+              {puedeAutorizar
+                ? user?.id === m.creado_por_id
+                  ? ' Podés revisar y completar vos mismo: tildá cada producto; cuando todos estén confirmados, completá el movimiento.'
+                  : ' Tildá cada producto revisado; cuando todos estén confirmados podés completar.'
+                : ' Se necesita permiso de crear movimientos para autorizarlo.'}
+            </p>
+          </div>
+        )}
+        {m.estado === 'COMPLETADO' && m.ingreso_directo && (
+          <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-950">
+            <p className="font-medium">Ingreso directo</p>
+            <p className="mt-1 text-emerald-900/80">
+              Se registró sin doble verificación digital (stock aplicado al crear).
+            </p>
+          </div>
+        )}
+      </>
+    )
+
+    if (!pendienteEditable) {
+      return (
+        <RegistroDetallePanel
+          onVolver={volverAlListado}
+          titulo={`Movimiento #${m.id}`}
+          fecha={m.fecha}
+          totalEtiqueta="Total"
+          total={detalle.total_cajas}
+          encabezadoExtra={
+            <>
+              {badgeTipo(m.tipo)}
+              {badgeEstado(m.estado, !!m.ingreso_directo)}
+            </>
+          }
+          meta={metaDetalle}
+          antesProductos={antesProductosDetalle}
+          lineas={detalle.lineas
+            .filter((l) => !l.cancelada)
+            .map((l) => ({
+              id: l.id,
+              producto_id: l.producto_id,
+              codigo_interno: l.codigo_interno,
+              nombre: l.nombre,
+              etiqueta: etiquetaLinea(l),
+              cantidad: l.cantidad_cajas,
+              extra: (
+                <span className="text-xs text-slate-500">{formatRutaLinea(l)}</span>
+              ),
+              extraKey: formatRutaLinea(l),
+              extraSoloDesglose: true
+            }))}
+        />
+      )
+    }
 
     const productosContent = (
-      <Card className="overflow-hidden">
-        <div className="flex items-center justify-between border-b border-surface-border bg-slate-50/80 px-4 py-2">
+      <Card className="overflow-hidden shadow-panel">
+        <div className="flex items-center justify-between border-b border-surface-border bg-slate-50/80 px-4 py-3 sm:px-5">
           <div className="flex items-center gap-2">
             <ArrowLeftRight className="h-4 w-4 text-slate-400" />
-            <h2 className="text-sm font-semibold text-slate-700">Productos</h2>
+            <h2 className="text-sm font-semibold text-slate-800">Productos</h2>
           </div>
-          <span className="text-xs text-slate-400">
-            {formatCantidad(detalle.total_cajas)} · {lineasActivasDetalle.length} activo(s)
+          <span className="text-xs text-slate-500">
+            {lineasActivasDetalle.length} línea{lineasActivasDetalle.length === 1 ? '' : 's'}
           </span>
         </div>
         <div className="divide-y divide-surface-border">
@@ -1184,16 +1281,7 @@ export function MovimientosPage() {
             const confirmada = grupoEstaConfirmado(grupo.lineas)
             const cancelada = grupoEstaCancelado(grupo.lineas)
             const lineaControl = lineasActivasGrupo(grupo.lineas)[0]
-            const puedeEditarGrupo =
-              m.estado === 'PENDIENTE' && puedeAutorizar && lineaControl != null
-
             const lineaRef = lineasActivasGrupo(grupo.lineas)[0] ?? grupo.lineas[0]
-            const sectorId =
-              lineaRef != null
-                ? m.tipo === 'RECIBIR'
-                  ? lineaRef.sector_origen_id
-                  : lineaRef.sector_destino_id
-                : null
 
             return (
               <div key={grupo.producto.producto_id}>
@@ -1211,7 +1299,6 @@ export function MovimientosPage() {
                     onClick={() => toggleProductoExpandDetalle(grupo.producto.producto_id)}
                     className="shrink-0 rounded p-1 text-slate-400 hover:bg-slate-200 hover:text-slate-700"
                     aria-expanded={isExpanded}
-                    aria-label={isExpanded ? 'Ocultar desglose' : 'Ver desglose'}
                   >
                     {isExpanded ? (
                       <ChevronDown className="h-4 w-4" />
@@ -1232,132 +1319,70 @@ export function MovimientosPage() {
                       <p className="text-xs text-slate-400">{grupo.lineas.length} líneas</p>
                     )}
                   </div>
-                  {sectorId != null && !cancelada && (
-                    puedeEditarGrupo && !confirmada ? (
-                      <div
-                        className="flex shrink-0 items-center gap-1.5"
-                        onClick={(e) => e.stopPropagation()}
-                        onMouseDown={(e) => e.stopPropagation()}
-                        onKeyDown={(e) => e.stopPropagation()}
+                  {lineaRef && !cancelada && (
+                    <div
+                      className="flex shrink-0 flex-wrap items-center gap-1.5"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <select
+                        value={lineaRef.sector_origen_id}
+                        onChange={(e) =>
+                          updateSectorLineasGrupo(grupo.lineas, {
+                            sector_origen_id: Number(e.target.value),
+                            ubicacion_origen_id: null
+                          })
+                        }
+                        className="h-7 w-[100px] shrink-0 rounded border border-surface-border px-1 py-0 text-xs sm:w-[130px]"
                       >
-                        <span className="text-xs text-slate-500">
-                          {m.tipo === 'RECIBIR' ? 'Origen' : 'Destino'}
-                        </span>
-                        {m.tipo === 'RECIBIR' ? (
-                          <SectorOrigenSelect
-                            productoId={lineaRef.producto_id}
-                            excluirSectorId={lineaRef.sector_destino_id}
-                            value={lineaRef.sector_origen_id}
-                            className="h-7 w-[100px] shrink-0 py-0 text-xs sm:w-[130px]"
-                            onChange={(id) =>
-                              updateSectorLineasGrupo(grupo.lineas, {
-                                sector_origen_id: id,
-                                ubicacion_origen_id: null
-                              })
-                            }
-                          />
-                        ) : (
-                          <select
-                            value={lineaRef.sector_destino_id}
-                            onChange={(e) =>
-                              updateSectorLineasGrupo(grupo.lineas, {
-                                sector_destino_id: Number(e.target.value),
-                                ubicacion_destino_id: null
-                              })
-                            }
-                            className="h-7 w-[100px] shrink-0 rounded border border-surface-border px-1 py-0 text-xs sm:w-[130px]"
-                          >
-                            {sectores
-                              .filter(
-                                (s) =>
-                                  s.id !== lineaRef.sector_origen_id ||
-                                  !!s.usa_ubicaciones
-                              )
-                              .map((s) => (
-                                <option key={s.id} value={s.id}>
-                                  {s.nombre}
-                                  {s.id === lineaRef.sector_origen_id ? ' (reubicar)' : ''}
-                                </option>
-                              ))}
-                          </select>
-                        )}
-                        {m.tipo === 'RECIBIR' &&
-                          sectorUsaUbicaciones(lineaRef.sector_origen_id) && (
-                            <>
-                              <span className="text-xs text-slate-500">Ubic.</span>
-                              <UbicacionDestinoSelect
-                                sectorId={lineaRef.sector_origen_id}
-                                value={lineaRef.ubicacion_origen_id}
-                                className="h-7 w-[90px] shrink-0 rounded border border-surface-border px-1 py-0 text-xs sm:w-[110px]"
-                                onChange={(id) =>
-                                  updateSectorLineasGrupo(grupo.lineas, {
-                                    ubicacion_origen_id: id
-                                  })
-                                }
-                              />
-                            </>
-                          )}
-                        {m.tipo === 'ENVIAR' &&
-                          sectorUsaUbicaciones(lineaRef.sector_origen_id) && (
-                            <>
-                              <span className="text-xs text-slate-500">Desde</span>
-                              <UbicacionDestinoSelect
-                                sectorId={lineaRef.sector_origen_id}
-                                value={lineaRef.ubicacion_origen_id}
-                                className="h-7 w-[90px] shrink-0 rounded border border-surface-border px-1 py-0 text-xs sm:w-[110px]"
-                                onChange={(id) =>
-                                  updateSectorLineasGrupo(grupo.lineas, {
-                                    ubicacion_origen_id: id
-                                  })
-                                }
-                              />
-                            </>
-                          )}
-                        {sectorUsaUbicaciones(lineaRef.sector_destino_id) && (
-                          <>
-                            <span className="text-xs text-slate-500">
-                              {m.tipo === 'ENVIAR' ? 'A ubic.' : 'Ubic.'}
-                            </span>
-                            <UbicacionDestinoSelect
-                              sectorId={lineaRef.sector_destino_id}
-                              value={lineaRef.ubicacion_destino_id}
-                              className="h-7 w-[90px] shrink-0 rounded border border-surface-border px-1 py-0 text-xs sm:w-[110px]"
-                              onChange={(id) =>
-                                updateSectorLineasGrupo(grupo.lineas, { ubicacion_destino_id: id })
-                              }
-                            />
-                          </>
-                        )}
-                      </div>
-                    ) : (
-                      <span className="flex shrink-0 items-center gap-1.5 text-xs">
-                        <span className="text-slate-500">
-                          {m.tipo === 'RECIBIR' ? 'Origen' : 'Destino'}
-                        </span>
-                        <span
-                          className="max-w-[80px] truncate text-slate-600 sm:max-w-[120px]"
-                          title={sectorNombre(sectorId)}
-                        >
-                          {sectorNombre(sectorId)}
-                        </span>
-                        {lineaRef.ubicacion_origen_nombre && (
-                          <span
-                            className="max-w-[72px] truncate text-slate-500"
-                            title={lineaRef.ubicacion_origen_nombre}
-                          >
-                            · {lineaRef.ubicacion_origen_nombre}
-                          </span>
-                        )}
-                        {lineaRef.ubicacion_destino_nombre && (
-                          <span
-                            className="max-w-[72px] truncate text-slate-500"
-                            title={lineaRef.ubicacion_destino_nombre}
-                          >
-                            → {lineaRef.ubicacion_destino_nombre}
-                          </span>
-                        )}
-                      </span>
-                    )
+                        {sectores.map((s) => (
+                          <option key={s.id} value={s.id}>
+                            {s.nombre}
+                          </option>
+                        ))}
+                      </select>
+                      <span className="text-xs text-slate-400">→</span>
+                      <select
+                        value={lineaRef.sector_destino_id}
+                        onChange={(e) =>
+                          updateSectorLineasGrupo(grupo.lineas, {
+                            sector_destino_id: Number(e.target.value),
+                            ubicacion_destino_id: null
+                          })
+                        }
+                        className="h-7 w-[100px] shrink-0 rounded border border-surface-border px-1 py-0 text-xs sm:w-[130px]"
+                      >
+                        {sectores
+                          .filter(
+                            (s) => s.id !== lineaRef.sector_origen_id || !!s.usa_ubicaciones
+                          )
+                          .map((s) => (
+                            <option key={s.id} value={s.id}>
+                              {s.nombre}
+                              {s.id === lineaRef.sector_origen_id ? ' (reubicar)' : ''}
+                            </option>
+                          ))}
+                      </select>
+                      {sectorUsaUbicaciones(lineaRef.sector_origen_id) && (
+                        <UbicacionOrigenSelect
+                          sectorId={lineaRef.sector_origen_id}
+                          value={lineaRef.ubicacion_origen_id}
+                          className="h-7 w-[90px] shrink-0 rounded border border-surface-border px-1 py-0 text-xs sm:w-[110px]"
+                          onChange={(id) =>
+                            updateSectorLineasGrupo(grupo.lineas, { ubicacion_origen_id: id })
+                          }
+                        />
+                      )}
+                      {sectorUsaUbicaciones(lineaRef.sector_destino_id) && (
+                        <UbicacionDestinoSelect
+                          sectorId={lineaRef.sector_destino_id}
+                          value={lineaRef.ubicacion_destino_id}
+                          className="h-7 w-[90px] shrink-0 rounded border border-surface-border px-1 py-0 text-xs sm:w-[110px]"
+                          onChange={(id) =>
+                            updateSectorLineasGrupo(grupo.lineas, { ubicacion_destino_id: id })
+                          }
+                        />
+                      )}
+                    </div>
                   )}
                   <div className="flex shrink-0 items-center gap-2">
                     {cancelada && (
@@ -1366,7 +1391,7 @@ export function MovimientosPage() {
                     <span className="inline-flex shrink-0 items-center rounded-lg bg-brand-50 px-2.5 py-1.5 text-sm font-bold tabular-nums text-brand-700 ring-1 ring-brand-100">
                       {formatCantidad(grupo.total)}
                     </span>
-                    {m.estado === 'PENDIENTE' && puedeAutorizar && cancelada && (
+                    {cancelada ? (
                       <button
                         type="button"
                         className="shrink-0 text-xs text-brand-600 hover:underline"
@@ -1374,8 +1399,7 @@ export function MovimientosPage() {
                       >
                         Restaurar
                       </button>
-                    )}
-                    {puedeEditarGrupo && (
+                    ) : (
                       <div className="flex shrink-0 items-center gap-0.5">
                         <Button
                           type="button"
@@ -1410,19 +1434,15 @@ export function MovimientosPage() {
                     {grupo.lineas.map((l) => (
                       <li
                         key={l.id}
-                        className={`flex items-center justify-between gap-2 py-2.5 pl-11 pr-4 text-sm ${
-                          l.cancelada ? 'opacity-50' : ''
-                        }`}
+                        className={cn(
+                          'flex items-center justify-between gap-2 py-2.5 pl-11 pr-4 text-sm',
+                          l.cancelada && 'opacity-50'
+                        )}
                       >
-                        <span className="text-slate-700">
-                          {etiquetaLineaDetalle(l)}
-                          {l.ubicacion_origen_nombre && (
-                            <span className="ml-1 text-slate-400">{l.ubicacion_origen_nombre}</span>
-                          )}
-                          {l.ubicacion_destino_nombre && (
-                            <span className="ml-1 text-slate-400">→ {l.ubicacion_destino_nombre}</span>
-                          )}
-                        </span>
+                        <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
+                          <span className="text-slate-700">{etiquetaLinea(l)}</span>
+                          {rutaExtra(l)}
+                        </div>
                         <span className="shrink-0 font-semibold tabular-nums text-slate-900">
                           {formatCantidad(l.cantidad_cajas)}
                         </span>
@@ -1450,78 +1470,32 @@ export function MovimientosPage() {
             {badgeEstado(m.estado, !!m.ingreso_directo)}
           </>
         }
-        meta={
-          <>
-            <RegistroDetalleMetaChip>
-              <span className="font-medium text-slate-500">Origen </span>
-              {resumenSectorLineas('origen')}
-            </RegistroDetalleMetaChip>
-            <span className="text-slate-400">→</span>
-            <RegistroDetalleMetaChip>
-              <span className="font-medium text-slate-500">Destino </span>
-              {resumenSectorLineas('destino')}
-            </RegistroDetalleMetaChip>
-            <RegistroDetalleMetaChip icon={<User className="h-3.5 w-3.5 shrink-0 text-slate-400" />}>
-              {m.creado_por_nombre}
-            </RegistroDetalleMetaChip>
-            {m.recibido_por_nombre && (
-              <RegistroDetalleMetaChip>
-                <span className="font-medium text-slate-500">Completado </span>
-                {m.recibido_por_nombre}
-              </RegistroDetalleMetaChip>
-            )}
-            {m.observacion && <RegistroDetalleObsChip>{m.observacion}</RegistroDetalleObsChip>}
-          </>
-        }
-        antesProductos={
-          <>
-            {error && (
-              <div className="rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>
-            )}
-            {m.estado === 'PENDIENTE' && (
-              <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950">
-                <p className="font-medium">Pendiente de autorización</p>
-                <p className="mt-1 text-amber-900/80">
-                  Creado por {m.creado_por_nombre}.
-                  {puedeAutorizar
-                    ? user?.id === m.creado_por_id
-                      ? ' Podés revisar y completar vos mismo: tildá cada producto; cuando todos estén confirmados, completá el movimiento.'
-                      : ' Tildá cada producto revisado; cuando todos estén confirmados podés completar.'
-                    : ' Se necesita permiso de crear movimientos para autorizarlo.'}
-                </p>
-              </div>
-            )}
-            {m.estado === 'COMPLETADO' && m.ingreso_directo && (
-              <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-950">
-                <p className="font-medium">Ingreso directo</p>
-                <p className="mt-1 text-emerald-900/80">
-                  Se registró sin doble verificación digital (stock aplicado al crear).
-                </p>
-              </div>
-            )}
-          </>
-        }
+        meta={metaDetalle}
+        antesProductos={antesProductosDetalle}
         productosContent={productosContent}
         productosCount={lineasPorProductoDetalle.length}
         accionesTotal={
           <>
-            {puedeAutorizar && (
-              <Button
-                className="rounded-xl"
-                disabled={saving || !listoParaCompletar}
-                onClick={() => void completar()}
-                title={
-                  listoParaCompletar
-                    ? undefined
-                    : 'Tildá cada producto activo o quitá los que no van'
-                }
-              >
-                <Check className="h-4 w-4" />
-                Completar movimiento
-              </Button>
-            )}
+            <Button
+              className="rounded-xl"
+              disabled={saving || !listoParaCompletar}
+              onClick={() => void completarPendiente()}
+              title={
+                listoParaCompletar
+                  ? undefined
+                  : 'Tildá cada producto activo o quitá los que no van'
+              }
+            >
+              <Check className="h-4 w-4" />
+              Completar movimiento
+            </Button>
             {puedeCancelarDoc && (
-              <Button variant="secondary" className="rounded-xl" disabled={saving} onClick={() => void cancelarDoc()}>
+              <Button
+                variant="secondary"
+                className="rounded-xl"
+                disabled={saving}
+                onClick={() => void cancelarDocPendiente()}
+              >
                 Cancelar
               </Button>
             )}
@@ -1531,216 +1505,41 @@ export function MovimientosPage() {
     )
   }
 
-  if (view === 'create' && createPhase === 'datos') {
-    return (
-      <div className="-m-4 h-[calc(100vh-5rem)] overflow-y-auto lg:-m-6">
-        <div className="mx-auto flex max-w-lg flex-col gap-5 px-4 py-6 pb-16 lg:px-6">
-          <Button variant="ghost" size="sm" className="-ml-2 h-9 self-start rounded-xl px-3" onClick={volverAlListado}>
-            <ChevronLeft className="h-4 w-4" />
-            Volver al listado
-          </Button>
-
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">Alta</p>
-            <h1 className="mt-1 text-2xl font-bold tracking-tight text-slate-900">
-              {createTipo === 'ENVIAR' ? 'Enviar mercadería' : 'Recibir mercadería'}
-            </h1>
-            <p className="mt-1 text-sm text-slate-500">
-              {createTipo === 'ENVIAR'
-                ? 'Mandás productos desde un sector hacia otro'
-                : 'Pedís productos que están en otros sectores'}
-              {' · '}
-              Enter avanza entre campos
-            </p>
-          </div>
-
-          {error && (
-            <div className="rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700 ring-1 ring-red-100">{error}</div>
-          )}
-
-          <Card className="overflow-hidden shadow-panel">
-            <div className="border-b border-brand-100 bg-gradient-to-r from-brand-50/80 via-white to-white px-5 py-4">
-              <div className="flex items-center gap-3">
-                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-brand-600 text-white shadow-sm">
-                  {createTipo === 'ENVIAR' ? (
-                    <Send className="h-5 w-5" />
-                  ) : (
-                    <ArrowLeftRight className="h-5 w-5" />
-                  )}
-                </div>
-                <div>
-                  <p className="text-sm font-semibold text-slate-900">Datos del movimiento</p>
-                  <p className="text-xs text-slate-500">Fecha, sectores y observación</p>
-                </div>
-              </div>
-            </div>
-            <CardBody className="space-y-4">
-              <Input
-                ref={fechaRef}
-                label="Fecha *"
-                type="date"
-                value={fecha}
-                onChange={(e) => setFecha(e.target.value)}
-                onKeyDown={(e) => handleDatosKeyDown(e, sectorContextoRef)}
-              />
-              <div>
-                <label className="mb-1 block text-sm font-medium text-slate-700">
-                  {createTipo === 'ENVIAR' ? 'Sector origen *' : 'Sector destino (donde lo necesitás) *'}
-                </label>
-                <select
-                  ref={sectorContextoRef}
-                  value={sectorContextoId}
-                  onChange={(e) => setSectorContextoId(e.target.value)}
-                  onKeyDown={(e) => handleDatosKeyDown(e, nextDatosAfterSectorContexto())}
-                  className="w-full rounded-xl border border-surface-border px-3 py-2.5 text-sm shadow-sm focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20"
-                >
-                  <option value="">Seleccionar...</option>
-                  {sectores.map((s) => (
-                    <option key={s.id} value={s.id}>{s.nombre}</option>
-                  ))}
-                </select>
-              </div>
-              {createTipo === 'ENVIAR' &&
-                !!sectorContextoId &&
-                sectorUsaUbicaciones(Number(sectorContextoId)) && (
-                  <div>
-                    <label className="mb-1 block text-sm font-medium text-slate-700">
-                      Ubicación origen
-                    </label>
-                    <select
-                      ref={defaultUbicacionOrigenRef}
-                      value={defaultUbicacionOrigenId}
-                      onChange={(e) => {
-                        setDefaultUbicacionOrigenId(e.target.value)
-                        setLineUbicacionOrigenId(e.target.value)
-                      }}
-                      onKeyDown={(e) => handleDatosKeyDown(e, sectorDestinoRef)}
-                      className="w-full rounded-xl border border-surface-border px-3 py-2.5 text-sm shadow-sm focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20"
-                    >
-                      <option value="">Sin ubicación</option>
-                      {ubicacionesOrigen.map((u) => (
-                        <option key={u.id} value={u.id}>{u.nombre}</option>
-                      ))}
-                    </select>
-                    <p className="mt-1 text-xs text-slate-500">
-                      Desde dónde se descuenta el stock · podés cambiarla en cada línea
-                    </p>
-                  </div>
-                )}
-              {createTipo === 'ENVIAR' && (
-                <div>
-                  <label className="mb-1 block text-sm font-medium text-slate-700">Sector destino *</label>
-                  <select
-                    ref={sectorDestinoRef}
-                    value={sectorDestinoDefaultId}
-                    onChange={(e) => {
-                      setSectorDestinoDefaultId(e.target.value)
-                      setDefaultUbicacionDestinoId('')
-                      setLineUbicacionDestinoId('')
-                    }}
-                    onKeyDown={(e) => handleDatosKeyDown(e, nextDatosAfterSectorDestino())}
-                    className="w-full rounded-xl border border-surface-border px-3 py-2.5 text-sm shadow-sm focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20"
-                  >
-                    <option value="">Seleccionar...</option>
-                    {sectores
-                      .filter(
-                        (s) =>
-                          String(s.id) !== sectorContextoId ||
-                          !!s.usa_ubicaciones
-                      )
-                      .map((s) => (
-                        <option key={s.id} value={s.id}>
-                          {s.nombre}
-                          {String(s.id) === sectorContextoId ? ' (reubicar)' : ''}
-                        </option>
-                      ))}
-                  </select>
-                  {sectorContextoId &&
-                    sectorContextoId === sectorDestinoDefaultId && (
-                      <p className="mt-1 text-xs text-amber-700">
-                        Reubicación en el mismo sector: sacás de una ubicación (o sin ubicación) y
-                        lo pasás a otra.
-                      </p>
-                    )}
-                </div>
-              )}
-              {(() => {
-                const destinoId = destinoSectorIdCreate()
-                if (!destinoId || !sectorUsaUbicaciones(destinoId)) return null
-                const sameSector =
-                  createTipo === 'ENVIAR' &&
-                  sectorContextoId !== '' &&
-                  Number(sectorContextoId) === destinoId
-                return (
-                  <div>
-                    <label className="mb-1 block text-sm font-medium text-slate-700">
-                      Ubicación destino
-                    </label>
-                    <select
-                      ref={defaultUbicacionRef}
-                      value={defaultUbicacionDestinoId}
-                      onChange={(e) => {
-                        setDefaultUbicacionDestinoId(e.target.value)
-                        setLineUbicacionDestinoId(e.target.value)
-                      }}
-                      onKeyDown={(e) => handleDatosKeyDown(e, observacionRef)}
-                      className="w-full rounded-xl border border-surface-border px-3 py-2.5 text-sm shadow-sm focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20"
-                    >
-                      <option value="">Sin ubicación</option>
-                      {ubicacionesDestino.map((u) => (
-                        <option key={u.id} value={u.id}>{u.nombre}</option>
-                      ))}
-                    </select>
-                    <p className="mt-1 text-xs text-slate-500">
-                      {sameSector
-                        ? 'Tiene que diferir de la ubicación de donde sacás el stock'
-                        : 'Por defecto al cargar productos · podés cambiarla en cada línea'}
-                    </p>
-                  </div>
-                )
-              })()}
-              <Input
-                ref={observacionRef}
-                label="Observación"
-                value={observacion}
-                onChange={(e) => setObservacion(e.target.value)}
-                onKeyDown={(e) => handleDatosKeyDown(e)}
-                placeholder="Opcional"
-              />
-              <p className="text-xs text-slate-400">Enter en observación → carga de productos</p>
-              <Button type="button" className="w-full rounded-xl" onClick={avanzarACarga}>
-                Continuar a productos
-              </Button>
-            </CardBody>
-          </Card>
-        </div>
-      </div>
-    )
-  }
-
-  if (view === 'create' && createPhase === 'carga') {
-    const contextoNombre = sectorNombre(Number(sectorContextoId))
-    const destinoNombre =
-      createTipo === 'ENVIAR' ? sectorNombre(Number(sectorDestinoDefaultId)) : contextoNombre
+  if (view === 'editor' && detalle) {
+    const m = detalle.movimiento
+    const origenUsaUb = origenId ? sectorUsaUbicaciones(Number(origenId)) : false
+    const destinoUsaUb = destinoId ? sectorUsaUbicaciones(Number(destinoId)) : false
+    const formOrigenUsaUb = formOrigenId ? sectorUsaUbicaciones(Number(formOrigenId)) : false
+    const formDestinoUsaUb = formDestinoId ? sectorUsaUbicaciones(Number(formDestinoId)) : false
 
     const lineasListContent =
-      lineas.length === 0 ? (
+      lineasActivasEditor.length === 0 ? (
         <div className="flex h-full min-h-[140px] flex-col items-center justify-center px-6 py-12 text-center">
           <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-100 text-slate-400">
-            <ArrowLeftRight className="h-6 w-6" />
+            <ClipboardList className="h-6 w-6" />
           </div>
           <p className="mt-3 text-sm font-medium text-slate-600">Sin líneas cargadas</p>
-          <p className="mt-1 text-xs text-slate-500">Los productos que agregues aparecen acá</p>
+          <p className="mt-1 text-xs text-slate-500">
+            Elegí origen y destino, buscá productos y agregalos
+          </p>
         </div>
       ) : (
-        lineasPorProducto.map((grupo) => {
+        lineasPorProductoEditor.map((grupo) => {
           const isExpanded = expandedProductos.has(grupo.producto.producto_id)
+          const grupoVerificado =
+            dobleVerificacion &&
+            grupo.lineas.length > 0 &&
+            grupo.lineas.every((l) => l.verificada)
           return (
             <div key={grupo.producto.producto_id} className="border-b border-surface-border last:border-0">
               <div
                 className={cn(
                   'flex items-center gap-3 px-4 py-2.5 transition-colors sm:px-5',
-                  isExpanded ? 'bg-brand-50/50' : 'hover:bg-slate-50/80'
+                  grupoVerificado
+                    ? 'border-l-2 border-green-500 bg-green-50/90'
+                    : isExpanded
+                      ? 'bg-brand-50/50'
+                      : 'hover:bg-slate-50/80'
                 )}
               >
                 <button
@@ -1748,9 +1547,11 @@ export function MovimientosPage() {
                   onClick={() => toggleProductoExpand(grupo.producto.producto_id)}
                   className={cn(
                     'shrink-0 rounded-lg p-1.5 transition-colors',
-                    isExpanded
-                      ? 'bg-brand-100 text-brand-700'
-                      : 'text-slate-400 hover:bg-slate-200 hover:text-slate-700'
+                    grupoVerificado
+                      ? 'bg-green-100 text-green-700'
+                      : isExpanded
+                        ? 'bg-brand-100 text-brand-700'
+                        : 'text-slate-400 hover:bg-slate-200 hover:text-slate-700'
                   )}
                   aria-expanded={isExpanded}
                 >
@@ -1761,7 +1562,14 @@ export function MovimientosPage() {
                   onClick={() => toggleProductoExpand(grupo.producto.producto_id)}
                   className="flex min-w-0 flex-1 items-center gap-2 text-left"
                 >
-                  <span className="shrink-0 rounded-md bg-slate-100 px-2 py-0.5 font-mono text-xs font-semibold text-slate-700">
+                  <span
+                    className={cn(
+                      'shrink-0 rounded-md px-2 py-0.5 font-mono text-xs font-semibold',
+                      grupoVerificado
+                        ? 'bg-green-100 text-green-800'
+                        : 'bg-slate-100 text-slate-700'
+                    )}
+                  >
                     {grupo.producto.codigo_interno}
                   </span>
                   <span className="min-w-0 truncate text-sm font-semibold text-slate-900">
@@ -1773,46 +1581,101 @@ export function MovimientosPage() {
                     </span>
                   )}
                 </button>
-                <span className="inline-flex shrink-0 items-center rounded-lg bg-brand-50 px-2.5 py-1.5 text-sm font-bold tabular-nums text-brand-700 ring-1 ring-brand-100">
-                  {formatCantidad(grupo.total)}
-                </span>
+                <div className="shrink-0 text-right">
+                  {grupo.total > 0 && (
+                    <span
+                      className={cn(
+                        'inline-flex items-center rounded-lg px-2.5 py-1.5 text-sm font-bold tabular-nums ring-1',
+                        grupoVerificado
+                          ? 'bg-green-100 text-green-800 ring-green-200'
+                          : 'bg-brand-50 text-brand-700 ring-brand-100'
+                      )}
+                    >
+                      {formatCantidad(grupo.total)}
+                    </span>
+                  )}
+                  {grupo.totalSuelto > 0 && (
+                    <p className={cn('text-[11px] font-medium text-slate-500', grupo.total > 0 && 'mt-1')}>
+                      + {formatCantidadUnidad(grupo.totalSuelto, grupo.producto.unidad)}
+                    </p>
+                  )}
+                  {grupo.total <= 0 && grupo.totalSuelto <= 0 && (
+                    <span
+                      className={cn(
+                        'inline-flex items-center rounded-lg px-2.5 py-1.5 text-sm font-bold tabular-nums ring-1',
+                        grupoVerificado
+                          ? 'bg-green-100 text-green-800 ring-green-200'
+                          : 'bg-brand-50 text-brand-700 ring-brand-100'
+                      )}
+                    >
+                      0
+                    </span>
+                  )}
+                </div>
               </div>
               {isExpanded && (
-                <ul className="space-y-2 border-t border-brand-100/80 bg-gradient-to-b from-surface-muted/40 to-white px-4 py-3 sm:px-5">
+                <ul
+                  className={cn(
+                    'space-y-2 border-t px-4 py-3 sm:px-5',
+                    grupoVerificado
+                      ? 'border-green-100 bg-green-50/40'
+                      : 'border-brand-100/80 bg-gradient-to-b from-surface-muted/40 to-white'
+                  )}
+                >
                   {grupo.lineas.map((l) => (
-                    <li
-                      key={l.tempId}
-                      className="flex items-center justify-between gap-3 rounded-lg border border-surface-border bg-white px-3 py-2.5 text-sm"
+                    <SwipeableConteoLinea
+                      key={l.id}
+                      disabled={saving}
+                      open={swipeOpenLineId === l.id}
+                      onOpenChange={(open) => setSwipeOpenLineId(open ? l.id : null)}
+                      onEdit={() => empezarEditarLinea(l)}
+                      onDelete={() => void eliminarLinea(l.id)}
+                      className={
+                        dobleVerificacion && l.verificada
+                          ? 'border-green-500 bg-green-50'
+                          : undefined
+                      }
+                      contentClassName={
+                        dobleVerificacion && l.verificada ? 'bg-green-50' : undefined
+                      }
                     >
-                      <div className="min-w-0 text-slate-800">
-                        {l.etiqueta}
-                        {createTipo === 'RECIBIR' && (
-                          <span className="ml-1 text-slate-400">desde {l.sector_origen_nombre}</span>
-                        )}
-                        {l.ubicacion_origen_nombre && (
-                          <span className="ml-1 text-slate-400">
-                            {l.ubicacion_origen_nombre}
-                          </span>
-                        )}
-                        {l.ubicacion_destino_nombre && (
-                          <span className="ml-1 text-slate-400">→ {l.ubicacion_destino_nombre}</span>
-                        )}
+                      <div className="min-w-0 flex-1 text-slate-800">
+                        {etiquetaLinea(l)}
+                        <span className="ml-1.5 text-xs text-slate-500">{formatRutaLinea(l)}</span>
                       </div>
                       <div className="flex shrink-0 items-center gap-2">
                         <span className="rounded-md bg-slate-50 px-2 py-1 text-sm font-semibold tabular-nums text-slate-900 ring-1 ring-surface-border">
-                          {formatCantidad(l.cantidad_cajas)}
+                          {l.tipo_bulto === 'SUELTO'
+                            ? formatCantidadUnidad(l.cantidad_suelta ?? 0, l.unidad)
+                            : formatCantidad(l.cantidad_cajas)}
                         </span>
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="sm"
-                          className="rounded-lg"
-                          onClick={() => quitarLinea(l.tempId)}
-                        >
-                          <Trash2 className="h-4 w-4 text-red-500" />
-                        </Button>
+                        {l.tipo_bulto === 'CAJA' && Number(l.cantidad_suelta ?? 0) > 0 && (
+                          <span className="text-[11px] font-medium text-slate-500">
+                            + {formatCantidadUnidad(l.cantidad_suelta ?? 0, l.unidad)}
+                          </span>
+                        )}
+                        {dobleVerificacion && (
+                          <button
+                            type="button"
+                            title={l.verificada ? 'Quitar tilde' : 'Marcar verificada'}
+                            className={cn(
+                              'flex h-8 w-8 items-center justify-center rounded-lg border',
+                              l.verificada
+                                ? 'border-green-600 bg-green-600 text-white'
+                                : 'border-surface-border bg-white text-slate-500'
+                            )}
+                            disabled={saving}
+                            onPointerDown={(e) => e.stopPropagation()}
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              void toggleVerificada(l)
+                            }}
+                          >
+                            <Check className="h-4 w-4" />
+                          </button>
+                        )}
                       </div>
-                    </li>
+                    </SwipeableConteoLinea>
                   ))}
                 </ul>
               )}
@@ -1823,48 +1686,102 @@ export function MovimientosPage() {
 
     return (
       <div className="-m-4 flex h-[calc(100vh-5rem)] flex-col bg-surface-muted/30 lg:-m-6">
-        <div
-          ref={cargaPanelRef}
-          className="relative z-20 shrink-0 overflow-visible border-b border-surface-border bg-white shadow-sm"
-        >
+        <div className="relative z-20 shrink-0 overflow-visible border-b border-surface-border bg-white shadow-sm">
           <div className="border-b border-brand-100 bg-gradient-to-r from-brand-50/80 via-white to-white px-4 py-3 sm:px-5">
             <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-              <Button variant="ghost" size="sm" className="-ml-2 h-8 rounded-lg px-2" onClick={volverAlListado}>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="-ml-2 h-8 rounded-lg px-2"
+                onClick={volverAlListado}
+              >
                 <ChevronLeft className="h-3.5 w-3.5" />
                 Salir
               </Button>
               <div className="flex flex-wrap items-center gap-2 text-xs">
+                {badgeTipo('LISTA')}
+                {badgeEstado('ABIERTA')}
                 <span className="rounded-full bg-white px-2.5 py-1 font-medium text-slate-700 ring-1 ring-surface-border">
-                  {fecha}
+                  #{m.id}
                 </span>
-                {createTipo === 'ENVIAR' ? badgeTipo('ENVIAR') : badgeTipo('RECIBIR')}
-                {createTipo === 'ENVIAR' ? (
-                  <>
-                    <span className="rounded-full bg-white px-2.5 py-1 font-medium text-slate-700 ring-1 ring-surface-border">
-                      {contextoNombre} → {destinoNombre}
-                    </span>
-                  </>
-                ) : (
-                  <span className="rounded-full bg-brand-50 px-2.5 py-1 font-medium text-brand-800 ring-1 ring-brand-100">
-                    Hacia {contextoNombre}
-                  </span>
-                )}
+                <span className="rounded-full bg-white px-2.5 py-1 font-medium text-slate-700 ring-1 ring-surface-border">
+                  {lineasActivasEditor.length} línea{lineasActivasEditor.length === 1 ? '' : 's'}
+                </span>
               </div>
-              <button
-                type="button"
-                className="ml-auto text-xs font-medium text-brand-600 hover:text-brand-700 hover:underline"
-                onClick={() => setCreatePhase('datos')}
-              >
-                Editar datos
-              </button>
             </div>
           </div>
 
           {error && (
-            <div className="border-b border-red-100 bg-red-50 px-4 py-2 text-sm text-red-700 sm:px-5">{error}</div>
+            <div className="border-b border-red-100 bg-red-50 px-4 py-2 text-sm text-red-700 sm:px-5">
+              {error}
+            </div>
           )}
 
           <div className="space-y-3 overflow-visible p-4 sm:p-5">
+            <div className="flex flex-wrap gap-2">
+              <div className="flex min-w-[9.5rem] flex-1 items-center rounded-xl border border-surface-border bg-white shadow-sm focus-within:border-brand-500 focus-within:ring-2 focus-within:ring-brand-500/20">
+                <span className="shrink-0 pl-3 text-xs font-medium text-slate-400">Origen</span>
+                <select
+                  ref={origenRef}
+                  aria-label="Origen"
+                  value={origenId}
+                  onChange={(e) => setOrigenId(e.target.value)}
+                  className="min-w-0 flex-1 border-0 bg-transparent py-2 pl-2 pr-3 text-sm focus:outline-none"
+                >
+                  <option value="">Elegir…</option>
+                  {sectores.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.nombre}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              {origenUsaUb && (
+                <div className="flex min-w-[9.5rem] flex-1 items-center rounded-xl border border-surface-border bg-white shadow-sm focus-within:border-brand-500 focus-within:ring-2 focus-within:ring-brand-500/20">
+                  <span className="shrink-0 pl-3 text-xs font-medium text-slate-400">Ub. origen</span>
+                  <UbicacionOrigenSelect
+                    sectorId={Number(origenId)}
+                    value={ubicacionOrigenId ? Number(ubicacionOrigenId) : null}
+                    emptyLabel="Sin ub."
+                    className="min-w-0 flex-1 border-0 bg-transparent py-2 pl-2 pr-3 text-sm shadow-none focus:outline-none"
+                    onChange={(id) => setUbicacionOrigenId(id ? String(id) : '')}
+                  />
+                </div>
+              )}
+              <div className="flex min-w-[9.5rem] flex-1 items-center rounded-xl border border-surface-border bg-white shadow-sm focus-within:border-brand-500 focus-within:ring-2 focus-within:ring-brand-500/20">
+                <span className="shrink-0 pl-3 text-xs font-medium text-slate-400">Destino</span>
+                <select
+                  ref={destinoRef}
+                  aria-label="Destino"
+                  value={destinoId}
+                  onChange={(e) => setDestinoId(e.target.value)}
+                  className="min-w-0 flex-1 border-0 bg-transparent py-2 pl-2 pr-3 text-sm focus:outline-none"
+                >
+                  <option value="">Elegir…</option>
+                  {sectores
+                    .filter((s) => String(s.id) !== origenId || !!s.usa_ubicaciones)
+                    .map((s) => (
+                      <option key={s.id} value={s.id}>
+                        {s.nombre}
+                        {String(s.id) === origenId ? ' (reubicar)' : ''}
+                      </option>
+                    ))}
+                </select>
+              </div>
+              {destinoUsaUb && (
+                <div className="flex min-w-[9.5rem] flex-1 items-center rounded-xl border border-surface-border bg-white shadow-sm focus-within:border-brand-500 focus-within:ring-2 focus-within:ring-brand-500/20">
+                  <span className="shrink-0 pl-3 text-xs font-medium text-slate-400">Ub. destino</span>
+                  <UbicacionDestinoSelect
+                    sectorId={Number(destinoId)}
+                    value={ubicacionDestinoId ? Number(ubicacionDestinoId) : null}
+                    emptyLabel="Sin ub."
+                    className="min-w-0 flex-1 border-0 bg-transparent py-2 pl-2 pr-3 text-sm shadow-none focus:outline-none"
+                    onChange={(id) => setUbicacionDestinoId(id ? String(id) : '')}
+                  />
+                </div>
+              )}
+            </div>
+
             <div className="relative flex flex-col gap-2 overflow-visible sm:flex-row">
               <div
                 className="relative z-30 min-w-0 flex-1"
@@ -1881,17 +1798,23 @@ export function MovimientosPage() {
                   role="combobox"
                   aria-expanded={productResults.length > 0 && !selectedProduct}
                   aria-autocomplete="list"
-                  placeholder="Buscar producto — ↑↓ navegar · Enter seleccionar"
+                  placeholder={
+                    origenId
+                      ? 'Buscar producto con stock en origen — ↑↓ · Enter'
+                      : 'Primero elegí sector origen'
+                  }
+                  disabled={!origenId}
                   value={productSearch}
                   onChange={(e) => {
                     setProductSearch(e.target.value)
                     setProductHighlightIndex(-1)
                     if (selectedProduct && e.target.value !== selectedProduct.codigo_interno) {
                       setSelectedProduct(null)
+                      setError('')
                     }
                   }}
                   onKeyDown={handleProductSearchKeyDown}
-                  className="w-full rounded-xl border border-surface-border bg-white py-2.5 pl-10 pr-3 text-sm shadow-sm focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20"
+                  className="w-full rounded-xl border border-surface-border bg-white py-2.5 pl-10 pr-3 text-sm shadow-sm focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20 disabled:bg-slate-50 disabled:opacity-70"
                 />
                 {searchingProducts && productSearch.trim() && !selectedProduct && (
                   <Loader2 className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 animate-spin text-brand-600" />
@@ -1917,8 +1840,18 @@ export function MovimientosPage() {
                             {p.codigo_interno}
                           </span>
                           <span className="truncate text-slate-600">{p.nombre}</span>
-                          <span className="ml-auto shrink-0 text-xs text-slate-400">
-                            {formatCantidad(p.stock_cajas)}
+                          <span className="ml-auto shrink-0 text-right text-xs text-slate-400">
+                            {Number(p.stock_cajas) > 0 && (
+                              <span className="block">{formatCantidad(p.stock_cajas)} cj</span>
+                            )}
+                            {Number(p.stock_botellas_sueltas ?? 0) > 0 && (
+                              <span className="block">
+                                {formatCantidadUnidad(p.stock_botellas_sueltas ?? 0, p.unidad)}
+                              </span>
+                            )}
+                            {Number(p.stock_cajas) <= 0 &&
+                              Number(p.stock_botellas_sueltas ?? 0) <= 0 &&
+                              formatCantidad(p.stock_cajas)}
                           </span>
                         </button>
                       </li>
@@ -1927,259 +1860,359 @@ export function MovimientosPage() {
                 )}
               </div>
               <div className="flex shrink-0 gap-2">
-                <Button type="button" variant="secondary" size="sm" className="rounded-xl" onClick={() => setShowScanner(true)}>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  className="rounded-xl"
+                  disabled={!origenId}
+                  onClick={() => setShowScanner(true)}
+                >
                   <Camera className="h-4 w-4" />
                   Escanear
                 </Button>
               </div>
             </div>
 
-            {selectedProduct && (
-              <div
-                ref={productLineFormRef}
-                className="overflow-hidden rounded-xl border border-brand-200 bg-gradient-to-br from-brand-50/80 to-white p-4 shadow-card"
-              >
-                <div className="mb-4 flex items-center gap-3">
-                  <ProductImage
-                    productoId={selectedProduct.id}
-                    hasImage={!!selectedProduct.imagen_path}
-                    alt={selectedProduct.nombre}
-                    className="h-11 w-11 rounded-xl ring-1 ring-surface-border"
-                  />
-                  <div className="min-w-0 flex-1">
-                    <span className="inline-flex rounded-md bg-white px-2 py-0.5 font-mono text-xs font-semibold text-slate-700 ring-1 ring-surface-border">
-                      {selectedProduct.codigo_interno}
-                    </span>
-                    <p className="mt-1 truncate text-sm font-semibold text-slate-900">{selectedProduct.nombre}</p>
-                    {stockDisponible !== null && (
-                      <p className="text-xs text-slate-500">
-                        Disponible
-                        {sectorUsaUbicaciones(origenSectorIdCreate())
-                          ? lineUbicacionOrigenId
-                            ? ' (ubicación origen)'
-                            : ' (sin ubicación)'
-                          : ''}
-                        : {formatCantidad(stockDisponible)} cajas
-                      </p>
-                    )}
-                  </div>
-                  <button
-                    type="button"
-                    className="rounded-lg p-1.5 text-slate-400 hover:bg-white hover:text-slate-600"
-                    onClick={() => {
-                      setSelectedProduct(null)
-                      setProductSearch('')
-                      resetLineaForm()
-                      productSearchRef.current?.focus()
-                    }}
-                  >
-                    <X className="h-4 w-4" />
-                  </button>
-                </div>
-
-                <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-6">
-                  {createTipo === 'RECIBIR' && origenesDisponibles.length > 0 && (
-                    <div>
-                      <label className="mb-0.5 block text-xs font-medium text-slate-600">Traer desde</label>
-                      <select
-                        ref={lineOrigenRef}
-                        value={lineOrigenId}
-                        onChange={(e) => {
-                          setLineOrigenId(e.target.value)
-                          setLineUbicacionOrigenId('')
-                        }}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter') {
-                            e.preventDefault()
-                            if (sectorUsaUbicaciones(Number(e.currentTarget.value) || Number(lineOrigenId))) {
-                              focusField(lineUbicacionOrigenRef)
-                            } else if (sectorUsaUbicaciones(destinoSectorIdCreate())) {
-                              focusField(lineUbicacionDestinoRef)
-                            } else {
-                              focusField(tipoBultoRef)
-                            }
-                          }
-                        }}
-                        className="w-full rounded-lg border border-surface-border px-2 py-1.5 text-sm"
-                      >
-                        {origenesDisponibles.map((o) => (
-                          <option key={o.sector_id} value={o.sector_id}>
-                            {o.sector_nombre} ({formatCantidad(o.stock_cajas)})
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                  )}
-
-                  {sectorUsaUbicaciones(origenSectorIdCreate()) && (
-                    <div>
-                      <label className="mb-0.5 block text-xs font-medium text-slate-600">
-                        Ubicación origen
-                      </label>
-                      <select
-                        ref={lineUbicacionOrigenRef}
-                        value={lineUbicacionOrigenId}
-                        onChange={(e) => setLineUbicacionOrigenId(e.target.value)}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter') {
-                            e.preventDefault()
-                            if (sectorUsaUbicaciones(destinoSectorIdCreate())) {
-                              focusField(lineUbicacionDestinoRef)
-                            } else {
-                              focusField(tipoBultoRef)
-                            }
-                          }
-                        }}
-                        className="w-full rounded-lg border border-surface-border px-2 py-1.5 text-sm"
-                      >
-                        <option value="">Sin ubicación</option>
-                        {ubicacionesOrigen
-                          .filter(
-                            (u) =>
-                              !(
-                                createTipo === 'ENVIAR' &&
-                                sectorContextoId === sectorDestinoDefaultId &&
-                                String(u.id) === lineUbicacionDestinoId
-                              )
-                          )
-                          .map((u) => (
-                            <option key={u.id} value={u.id}>{u.nombre}</option>
-                          ))}
-                      </select>
-                    </div>
-                  )}
-
-                  {sectorUsaUbicaciones(destinoSectorIdCreate()) && (
-                    <div>
-                      <label className="mb-0.5 block text-xs font-medium text-slate-600">Ubicación destino</label>
-                      <select
-                        ref={lineUbicacionDestinoRef}
-                        value={lineUbicacionDestinoId}
-                        onChange={(e) => setLineUbicacionDestinoId(e.target.value)}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter') {
-                            e.preventDefault()
-                            focusField(tipoBultoRef)
-                          }
-                        }}
-                        className="w-full rounded-lg border border-surface-border px-2 py-1.5 text-sm"
-                      >
-                        <option value="">Sin ubicación</option>
-                        {ubicacionesDestino.map((u) => (
-                          <option key={u.id} value={u.id}>{u.nombre}</option>
-                        ))}
-                      </select>
-                    </div>
-                  )}
-
-                  <div>
-                    <label className="mb-0.5 block text-xs font-medium text-slate-600">Tipo</label>
-                    <select
-                      ref={tipoBultoRef}
-                      value={tipoBulto}
-                      onChange={(e) => handleTipoBultoChange(e.target.value as 'PALLET' | 'CAJA')}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter') {
-                          e.preventDefault()
-                          focusField(cantidadBultosRef)
-                        }
-                      }}
-                      className="w-full rounded-lg border border-surface-border px-2 py-1.5 text-sm"
-                    >
-                      <option value="PALLET">Pallet</option>
-                      <option value="CAJA">Caja</option>
-                    </select>
-                  </div>
-
-                  <Input
-                    ref={cantidadBultosRef}
-                    label={tipoBulto === 'PALLET' ? 'Cant. pallets' : 'Cant. cajas'}
-                    type="number"
-                    min="1"
-                    value={cantidadBultos}
-                    onChange={(e) => setCantidadBultos(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') {
-                        e.preventDefault()
-                        focusField(unidadesPorBultoRef)
-                      }
-                    }}
-                    placeholder={tipoBulto === 'PALLET' ? '2' : '1'}
-                    className="[&_label]:text-xs"
-                  />
-                  <Input
-                    ref={unidadesPorBultoRef}
-                    label={
-                      tipoBulto === 'PALLET'
-                        ? '× cajas por pallet'
-                        : '× botellas por caja'
-                    }
-                    type="number"
-                    min="1"
-                    value={unidadesPorBulto}
-                    onChange={(e) => setUnidadesPorBulto(e.target.value)}
-                    onKeyDown={handleLineaEnter}
-                    placeholder={tipoBulto === 'PALLET' ? '112' : '6'}
-                    className="[&_label]:text-xs"
-                  />
-
-                  <div className="flex items-end">
-                    <Button type="button" size="sm" className="w-full rounded-xl" onClick={agregarLineaYContinuar}>
-                      <Plus className="h-4 w-4" />
-                      Enter ↵
-                    </Button>
-                  </div>
-                </div>
-                <p className="mt-2 text-xs text-slate-500">
-                  <span className="font-medium text-slate-600">Pallet:</span> 3 × 112 = 3 pallets de 112 cajas.
-                  {' '}
-                  <span className="font-medium text-slate-600">Caja:</span> 30 × 6 = 30 cajas de 6 botellas.
-                  {' '}
-                  <span className="font-medium text-slate-600">Caja:</span> 30 × 6 = 30 cajas.{' '}
-                  <span className="font-medium text-slate-600">Suelto:</span> pucherio — visible en consulta,
-                  no suma como caja.
-                </p>
-                <p className="mt-1 text-xs text-slate-500">
-                  Enter avanza entre campos · último campo agrega la línea · buscador vacío + Enter guarda
-                </p>
-              </div>
-            )}
           </div>
         </div>
 
-        <div
-          ref={listScrollRef}
-          className="relative z-0 min-h-0 flex-1 overflow-y-auto bg-white"
-        >
+        <div ref={listScrollRef} className="relative z-0 min-h-0 flex-1 overflow-y-auto bg-white">
           {lineasListContent}
         </div>
 
         <div className="shrink-0 border-t border-surface-border bg-white px-4 py-4 shadow-[0_-4px_12px_rgba(0,0,0,0.04)] sm:px-5">
           <div className="flex items-center justify-between gap-4">
             <div>
-              <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">Total general</p>
-              <p className="text-2xl font-bold tabular-nums text-brand-700">{formatCantidad(totalGeneral)}</p>
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+                Total general
+              </p>
+              <p className="text-2xl font-bold tabular-nums text-brand-700">
+                {formatCantidad(totalGeneral)}
+              </p>
+              {totalSueltoGeneral > 0 && (
+                <p className="mt-0.5 text-xs font-medium text-slate-500">
+                  + {formatCantidad(totalSueltoGeneral)} botellas sueltas
+                </p>
+              )}
               <p className="mt-1 text-xs text-slate-500">
-                {lineas.length} línea{lineas.length === 1 ? '' : 's'} cargada
-                {lineas.length === 1 ? '' : 's'}
+                {dobleVerificacion ? (
+                  <>
+                    {lineasActivasEditor.filter((l) => l.verificada).length}/
+                    {lineasActivasEditor.length} verificada
+                    {lineasActivasEditor.length === 1 ? '' : 's'}
+                  </>
+                ) : (
+                  <>
+                    {lineasActivasEditor.length} línea
+                    {lineasActivasEditor.length === 1 ? '' : 's'} cargada
+                    {lineasActivasEditor.length === 1 ? '' : 's'}
+                  </>
+                )}
               </p>
             </div>
             {hasPermiso('movimientos_internos.crear') && (
-              <Button
-                className="rounded-xl"
-                onClick={() => void guardarMovimiento()}
-                disabled={lineas.length === 0 || saving}
-              >
-                <Check className="h-4 w-4" />
-                {saving
-                  ? 'Guardando...'
-                  : dobleVerificacion
-                    ? 'Crear movimiento pendiente'
-                    : 'Confirmar y mover stock'}
-              </Button>
+              <div className="flex shrink-0 flex-wrap gap-2">
+                <Button
+                  variant="secondary"
+                  className="rounded-xl"
+                  disabled={saving}
+                  onClick={() => void cancelarListaAbierta()}
+                >
+                  Cancelar movimientos
+                </Button>
+                <Button
+                  className="rounded-xl"
+                  onClick={() => void finalizarLista()}
+                  disabled={
+                    lineasActivasEditor.length === 0 ||
+                    saving ||
+                    (dobleVerificacion &&
+                      lineasActivasEditor.some((l) => !l.verificada))
+                  }
+                  title={
+                    dobleVerificacion &&
+                    lineasActivasEditor.some((l) => !l.verificada)
+                      ? 'Tildá cada línea activa antes de finalizar'
+                      : undefined
+                  }
+                >
+                  <Check className="h-4 w-4" />
+                  {saving ? 'Guardando...' : 'Finalizar movimientos'}
+                </Button>
+              </div>
             )}
           </div>
         </div>
+
+        {selectedProduct && (
+          <>
+            <div
+              className="fixed inset-0 z-40 bg-slate-900/45"
+              aria-hidden
+              onClick={cancelarLineaForm}
+            />
+            <div
+              ref={productLineFormRef}
+              className="fixed inset-x-0 bottom-0 z-50 mx-auto w-full max-w-3xl overflow-y-auto overscroll-contain rounded-t-2xl border-2 border-b-0 border-brand-400 bg-white p-4 shadow-[0_-12px_40px_rgba(15,23,42,0.25)] ring-4 ring-brand-500/15 sm:rounded-2xl sm:border sm:p-5"
+              style={{ maxHeight: 'min(92dvh, 40rem)' }}
+            >
+              <div className="mb-3 sm:mb-4">
+                <div className="flex items-center gap-2">
+                  <span className="inline-flex min-w-0 rounded-md bg-slate-50 px-2 py-0.5 font-mono text-sm font-semibold text-slate-700 ring-1 ring-surface-border">
+                    {selectedProduct.codigo_interno}
+                  </span>
+                  <p className="ml-auto shrink-0 text-xs font-semibold uppercase tracking-wide text-brand-600">
+                    {editingLineaId != null ? 'Editar línea' : 'Nueva línea'}
+                  </p>
+                  <button
+                    type="button"
+                    className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
+                    onClick={cancelarLineaForm}
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
+                <p className="mt-1 text-base font-semibold text-slate-900">{selectedProduct.nombre}</p>
+                {tipoBulto === 'SUELTO'
+                  ? stockDisponibleBotellas !== null && (
+                      <p className="mt-0.5 text-xs text-slate-500">
+                        Disponible:{' '}
+                        {formatCantidadUnidad(stockDisponibleBotellas, selectedProduct.unidad)}
+                      </p>
+                    )
+                  : (stockDisponible !== null || stockDisponibleBotellas !== null) && (
+                      <p className="mt-0.5 text-xs text-slate-500">
+                        Disponible:{' '}
+                        {stockDisponible !== null
+                          ? `${formatCantidad(stockDisponible)} cajas`
+                          : null}
+                        {tipoBulto === 'CAJA' &&
+                          stockDisponibleBotellas !== null &&
+                          stockDisponibleBotellas > 0 && (
+                            <>
+                              {stockDisponible !== null ? ' · ' : null}
+                              {formatCantidadUnidad(
+                                stockDisponibleBotellas,
+                                selectedProduct.unidad
+                              )}{' '}
+                              sueltas
+                            </>
+                          )}
+                      </p>
+                    )}
+              </div>
+
+              <div className="mb-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
+                <div className="flex items-center rounded-xl border border-surface-border bg-white focus-within:border-brand-500 focus-within:ring-2 focus-within:ring-brand-500/20">
+                  <span className="shrink-0 pl-3 text-xs font-medium text-slate-400">Origen</span>
+                  <select
+                    value={formOrigenId}
+                    onChange={(e) => {
+                      setFormOrigenId(e.target.value)
+                      setFormUbicacionOrigenId('')
+                    }}
+                    className="min-w-0 flex-1 border-0 bg-transparent py-2 pl-2 pr-3 text-sm focus:outline-none"
+                  >
+                    <option value="">Elegir…</option>
+                    {sectores.map((s) => (
+                      <option key={s.id} value={s.id}>
+                        {s.nombre}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                {formOrigenUsaUb && (
+                  <div className="flex items-center rounded-xl border border-surface-border bg-white focus-within:border-brand-500 focus-within:ring-2 focus-within:ring-brand-500/20">
+                    <span className="shrink-0 pl-3 text-xs font-medium text-slate-400">Ub. origen</span>
+                    <UbicacionOrigenSelect
+                      sectorId={Number(formOrigenId)}
+                      value={formUbicacionOrigenId ? Number(formUbicacionOrigenId) : null}
+                      emptyLabel="Sin ub."
+                      className="min-w-0 flex-1 border-0 bg-transparent py-2 pl-2 pr-3 text-sm shadow-none focus:outline-none"
+                      onChange={(id) => setFormUbicacionOrigenId(id ? String(id) : '')}
+                    />
+                  </div>
+                )}
+                <div className="flex items-center rounded-xl border border-surface-border bg-white focus-within:border-brand-500 focus-within:ring-2 focus-within:ring-brand-500/20">
+                  <span className="shrink-0 pl-3 text-xs font-medium text-slate-400">Destino</span>
+                  <select
+                    value={formDestinoId}
+                    onChange={(e) => {
+                      setFormDestinoId(e.target.value)
+                      setFormUbicacionDestinoId('')
+                    }}
+                    className="min-w-0 flex-1 border-0 bg-transparent py-2 pl-2 pr-3 text-sm focus:outline-none"
+                  >
+                    <option value="">Elegir…</option>
+                    {sectores
+                      .filter((s) => String(s.id) !== formOrigenId || !!s.usa_ubicaciones)
+                      .map((s) => (
+                        <option key={s.id} value={s.id}>
+                          {s.nombre}
+                          {String(s.id) === formOrigenId ? ' (reubicar)' : ''}
+                        </option>
+                      ))}
+                  </select>
+                </div>
+                {formDestinoUsaUb && (
+                  <div className="flex items-center rounded-xl border border-surface-border bg-white focus-within:border-brand-500 focus-within:ring-2 focus-within:ring-brand-500/20">
+                    <span className="shrink-0 pl-3 text-xs font-medium text-slate-400">Ub. destino</span>
+                    <UbicacionDestinoSelect
+                      sectorId={Number(formDestinoId)}
+                      value={formUbicacionDestinoId ? Number(formUbicacionDestinoId) : null}
+                      emptyLabel="Sin ub."
+                      className="min-w-0 flex-1 border-0 bg-transparent py-2 pl-2 pr-3 text-sm shadow-none focus:outline-none"
+                      onChange={(id) => setFormUbicacionDestinoId(id ? String(id) : '')}
+                    />
+                  </div>
+                )}
+              </div>
+
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                <div className="col-span-2">
+                  <label className="mb-1 block text-sm font-medium text-slate-700">Tipo</label>
+                  <div className="flex rounded-xl border border-surface-border bg-slate-50 p-0.5">
+                    {(
+                      [
+                        { value: 'PALLET' as const, label: 'Pallets' },
+                        { value: 'CAJA' as const, label: 'Cajas' },
+                        { value: 'SUELTO' as const, label: 'Botellas' }
+                      ]
+                    ).map((opt) => (
+                      <button
+                        key={opt.value}
+                        type="button"
+                        onClick={() => handleTipoBultoChange(opt.value)}
+                        className={cn(
+                          'flex-1 rounded-[10px] px-2 py-2 text-sm font-semibold transition-colors',
+                          tipoBulto === opt.value
+                            ? 'bg-brand-600 text-white shadow-md ring-2 ring-brand-600/30'
+                            : 'text-slate-500 hover:bg-white/70 hover:text-slate-700'
+                        )}
+                      >
+                        {opt.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                {tipoBulto === 'SUELTO' ? (
+                  <>
+                    <div className="col-span-2">
+                      <Input
+                        ref={cantidadSueltaRef}
+                        label="Cant. botellas"
+                        type="number"
+                        min="1"
+                        value={cantidadSuelta}
+                        onChange={(e) => setCantidadSuelta(e.target.value)}
+                        onKeyDown={handleLineaEnter}
+                        placeholder="6"
+                        className="rounded-xl [&_label]:text-sm"
+                      />
+                    </div>
+                    {/* Reserva la 2.ª fila (mismo alto que el campo opcional en Pallets/Cajas). */}
+                    <div
+                      className="col-span-2 invisible pointer-events-none sm:col-span-2 sm:col-start-3"
+                      aria-hidden
+                    >
+                      <Input
+                        label="Espacio"
+                        type="number"
+                        value=""
+                        readOnly
+                        tabIndex={-1}
+                        className="rounded-xl [&_label]:text-sm"
+                      />
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <Input
+                      ref={cantidadBultosRef}
+                      label={tipoBulto === 'PALLET' ? 'Cant. pallets' : 'Cant. cajas'}
+                      type="number"
+                      min="1"
+                      value={cantidadBultos}
+                      onChange={(e) => setCantidadBultos(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault()
+                          focusField(unidadesPorBultoRef)
+                        }
+                      }}
+                      placeholder={tipoBulto === 'PALLET' ? '2' : '1'}
+                      className="rounded-xl [&_label]:text-sm"
+                    />
+                    <Input
+                      ref={unidadesPorBultoRef}
+                      label={tipoBulto === 'PALLET' ? '× cajas por pallet' : '× botellas por caja'}
+                      type="number"
+                      min="1"
+                      value={unidadesPorBulto}
+                      onChange={(e) => setUnidadesPorBulto(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault()
+                          focusField(cantidadSueltaRef)
+                        }
+                      }}
+                      placeholder={tipoBulto === 'PALLET' ? '112' : '6'}
+                      className="rounded-xl [&_label]:text-sm"
+                    />
+                    <div className="col-span-2 sm:col-span-2 sm:col-start-3">
+                      <Input
+                        ref={cantidadSueltaRef}
+                        label={
+                          tipoBulto === 'PALLET'
+                            ? 'Cajas sueltas (opc.)'
+                            : 'Botellas sueltas (opc.)'
+                        }
+                        type="number"
+                        min="0"
+                        value={cantidadSuelta}
+                        onChange={(e) => setCantidadSuelta(e.target.value)}
+                        onKeyDown={handleLineaEnter}
+                        placeholder="0"
+                        className="rounded-xl [&_label]:text-sm"
+                      />
+                    </div>
+                  </>
+                )}
+              </div>
+
+              <div className="mt-4 flex gap-2">
+                <Button
+                  type="button"
+                  variant="secondary"
+                  className="flex-1 rounded-xl"
+                  disabled={saving}
+                  onClick={cancelarLineaForm}
+                >
+                  Cancelar
+                </Button>
+                <Button
+                  type="button"
+                  className="flex-1 rounded-xl"
+                  disabled={saving || !formOrigenId || !formDestinoId}
+                  onClick={() => void guardarLineaForm()}
+                >
+                  {editingLineaId != null ? (
+                    <>
+                      <Check className="h-4 w-4" />
+                      {saving ? 'Guardando...' : 'Guardar'}
+                    </>
+                  ) : (
+                    <>
+                      <Plus className="h-4 w-4" />
+                      {saving ? 'Guardando...' : 'Agregar'}
+                    </>
+                  )}
+                </Button>
+              </div>
+            </div>
+          </>
+        )}
 
         <BarcodeScannerModal
           open={showScanner}
@@ -2204,61 +2237,30 @@ export function MovimientosPage() {
           </h1>
           <p className="mt-2 max-w-xl text-sm leading-relaxed text-slate-500">
             {dobleVerificacion
-              ? 'Traslados entre sectores: el mismo usuario que crea puede completar la autorización.'
-              : 'Traslados entre sectores — ingreso directo: al confirmar ya mueve stock.'}
+              ? 'Lista abierta compartida: cargá líneas, salí y volvé cuando quieras; tildá y finalizá para mover el stock.'
+              : 'Lista abierta compartida: cargá líneas, salí y volvé cuando quieras; al finalizar se mueve el stock sin tildar.'}
           </p>
         </div>
         {hasPermiso('movimientos_internos.crear') && (
           <div className="flex flex-col items-stretch gap-2 sm:items-end">
             <p className="text-xs text-slate-400 sm:text-right">
-              {listTipoPickerActive
-                ? '← → para elegir · Enter confirma · Esc cancela'
-                : movimientosDelDia.length > 0
-                  ? 'Enter o ↓ en movimientos · Enter abre detalle'
-                  : 'Enter → Enviar o Recibir'}
+              {movimientosDelDia.length > 0
+                ? 'Enter o ↓ en movimientos · Enter abre detalle'
+                : 'Enter → abrir lista'}
             </p>
-            <div
-              className={cn(
-                'flex flex-wrap gap-2 rounded-xl p-1 transition-all',
-                listTipoPickerActive && 'bg-brand-50 ring-2 ring-brand-400 ring-offset-2'
-              )}
+            <Button
+              type="button"
+              className="rounded-xl px-4"
+              disabled={loadingEditor}
+              onClick={() => void abrirListaEditor()}
             >
-              <Button
-                ref={enviarBtnRef}
-                type="button"
-                className={cn(
-                  'rounded-xl px-4',
-                  listTipoPickerActive &&
-                    listTipoHighlight === 'ENVIAR' &&
-                    'ring-2 ring-brand-600 ring-offset-1'
-                )}
-                onFocus={() => {
-                  if (listTipoPickerActive) setListTipoHighlight('ENVIAR')
-                }}
-                onClick={() => iniciarCreacion('ENVIAR')}
-              >
-                <Send className="h-4 w-4" />
-                Enviar
-              </Button>
-              <Button
-                ref={recibirBtnRef}
-                type="button"
-                variant="secondary"
-                className={cn(
-                  'rounded-xl px-4',
-                  listTipoPickerActive &&
-                    listTipoHighlight === 'RECIBIR' &&
-                    'ring-2 ring-brand-600 ring-offset-1'
-                )}
-                onFocus={() => {
-                  if (listTipoPickerActive) setListTipoHighlight('RECIBIR')
-                }}
-                onClick={() => iniciarCreacion('RECIBIR')}
-              >
-                <ArrowLeftRight className="h-4 w-4" />
-                Recibir
-              </Button>
-            </div>
+              {loadingEditor ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <ClipboardList className="h-4 w-4" />
+              )}
+              {tieneListaAbierta ? 'Continuar lista abierta' : 'Crear lista de movimientos'}
+            </Button>
           </div>
         )}
       </section>
@@ -2323,36 +2325,9 @@ export function MovimientosPage() {
               )}
             </div>
 
-            <div className="flex flex-wrap items-center gap-2">
-              {(['PENDIENTE', 'COMPLETADO', 'CANCELADO'] as const).map((e) => (
-                <Button
-                  key={e}
-                  type="button"
-                  size="sm"
-                  className="rounded-xl"
-                  variant={filtroEstado === e ? 'primary' : 'secondary'}
-                  onClick={() => setFiltroEstado(filtroEstado === e ? 'TODOS' : e)}
-                >
-                  {e.charAt(0) + e.slice(1).toLowerCase()}
-                </Button>
-              ))}
-              <span className="hidden h-5 w-px bg-surface-border sm:block" aria-hidden />
-              {(['ENVIAR', 'RECIBIR'] as const).map((t) => (
-                <Button
-                  key={t}
-                  type="button"
-                  size="sm"
-                  className="rounded-xl"
-                  variant={filtroTipo === t ? 'primary' : 'secondary'}
-                  onClick={() => setFiltroTipo(filtroTipo === t ? 'TODOS' : t)}
-                >
-                  {t === 'ENVIAR' ? 'Enviar' : 'Recibir'}
-                </Button>
-              ))}
-            </div>
-
             <p className="text-xs text-slate-500">
-              Una sola fecha filtra ese día · las dos juntas = rango
+              Una sola fecha filtra ese día · las dos juntas = rango · la lista abierta no aparece
+              acá
             </p>
 
             <DayTabsRow
@@ -2367,7 +2342,7 @@ export function MovimientosPage() {
         <div className="flex items-center justify-between gap-3 border-b border-surface-border bg-slate-50/80 px-5 py-3.5 sm:px-6">
           <div>
             <h2 className="text-sm font-semibold text-slate-900">
-              {diasConMovimientos.length > 0 ? formatDayTabLabel(selectedDay) : 'Registros'}
+              {diasConMovimientos.length > 0 ? formatDayTabLabel(selectedDay) : 'Historial'}
             </h2>
             <p className="text-xs text-slate-500">
               {diasConMovimientos.length > 0
@@ -2380,7 +2355,9 @@ export function MovimientosPage() {
 
         <CardBody className="p-0">
           {error && (
-            <div className="border-b border-red-100 bg-red-50 px-6 py-3 text-sm text-red-700">{error}</div>
+            <div className="border-b border-red-100 bg-red-50 px-6 py-3 text-sm text-red-700">
+              {error}
+            </div>
           )}
           {loadingList ? (
             <div className="flex items-center justify-center gap-2 py-16 text-sm text-slate-500">
@@ -2390,17 +2367,17 @@ export function MovimientosPage() {
           ) : movimientos.length === 0 ? (
             <div className="flex flex-col items-center px-6 py-16 text-center">
               <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-slate-100 text-slate-400">
-                <ArrowLeftRight className="h-7 w-7" />
+                <ClipboardList className="h-7 w-7" />
               </div>
               <p className="mt-4 text-sm font-medium text-slate-700">
-                {listSearch || listFechaDesde || listFechaHasta || filtroEstado !== 'TODOS' || filtroTipo !== 'TODOS'
+                {listSearch || listFechaDesde || listFechaHasta
                   ? 'No hay movimientos con esos filtros'
-                  : 'No hay movimientos registrados'}
+                  : 'No hay movimientos cerrados'}
               </p>
               <p className="mt-1 max-w-sm text-xs text-slate-500">
-                {listSearch || listFechaDesde || listFechaHasta || filtroEstado !== 'TODOS' || filtroTipo !== 'TODOS'
-                  ? 'Probá ampliar el rango de fechas o cambiar los filtros'
-                  : 'Creá el primer envío o recepción para mover stock entre sectores'}
+                {listSearch || listFechaDesde || listFechaHasta
+                  ? 'Probá ampliar el rango de fechas o limpiar la búsqueda'
+                  : 'Creá una lista de movimientos para empezar a trasladar stock'}
               </p>
             </div>
           ) : movimientosDelDia.length === 0 ? (
@@ -2434,7 +2411,9 @@ export function MovimientosPage() {
                       <p className="mt-1 line-clamp-2 text-xs text-slate-500">{m.observacion}</p>
                     ) : null}
                     <div className="mt-2 flex flex-wrap items-center gap-3 text-xs text-slate-500">
-                      <span>{m.lineas_count} línea{m.lineas_count === 1 ? '' : 's'}</span>
+                      <span>
+                        {m.lineas_count} línea{m.lineas_count === 1 ? '' : 's'}
+                      </span>
                       <span className="inline-flex items-center gap-1">
                         <User className="h-3 w-3" />
                         {m.creado_por_nombre}
@@ -2473,12 +2452,14 @@ function UbicacionDestinoSelect({
   value,
   disabled = false,
   className = '',
+  emptyLabel = 'Sin ubicación',
   onChange
 }: {
   sectorId: number
   value: number | null
   disabled?: boolean
   className?: string
+  emptyLabel?: string
   onChange: (id: number | null) => void
 }) {
   const [opciones, setOpciones] = useState<SectorUbicacion[]>([])
@@ -2496,51 +2477,39 @@ function UbicacionDestinoSelect({
       onChange={(e) => onChange(e.target.value ? Number(e.target.value) : null)}
       className={`rounded border border-surface-border px-2 py-1.5 text-sm disabled:cursor-not-allowed disabled:bg-slate-50 disabled:opacity-70 ${className}`}
     >
-      <option value="">Sin ubicación</option>
+      <option value="">{emptyLabel}</option>
       {opciones.map((u) => (
-        <option key={u.id} value={u.id}>{u.nombre}</option>
+        <option key={u.id} value={u.id}>
+          {u.nombre}
+        </option>
       ))}
     </select>
   )
 }
 
-function SectorOrigenSelect({
-  productoId,
-  excluirSectorId,
+function UbicacionOrigenSelect({
+  sectorId,
   value,
   disabled = false,
   className = '',
+  emptyLabel,
   onChange
 }: {
-  productoId: number
-  excluirSectorId: number
-  value: number
+  sectorId: number
+  value: number | null
   disabled?: boolean
   className?: string
-  onChange: (id: number) => void
+  emptyLabel?: string
+  onChange: (id: number | null) => void
 }) {
-  const [opciones, setOpciones] = useState<MovimientoInternoSectorStock[]>([])
-
-  useEffect(() => {
-    void api<MovimientoInternoSectorStock[]>(
-      `/api/movimientos-internos/producto/${productoId}/sectores-stock?excluir_sector_id=${excluirSectorId}`
-    )
-      .then(setOpciones)
-      .catch(() => setOpciones([]))
-  }, [productoId, excluirSectorId])
-
   return (
-    <select
+    <UbicacionDestinoSelect
+      sectorId={sectorId}
       value={value}
       disabled={disabled}
-      onChange={(e) => onChange(Number(e.target.value))}
-      className={`rounded border border-surface-border px-2 py-1.5 text-sm disabled:cursor-not-allowed disabled:bg-slate-50 disabled:opacity-70 ${className}`}
-    >
-      {opciones.map((o) => (
-        <option key={o.sector_id} value={o.sector_id}>
-          {o.sector_nombre} ({formatCantidad(o.stock_cajas)})
-        </option>
-      ))}
-    </select>
+      className={className}
+      emptyLabel={emptyLabel}
+      onChange={onChange}
+    />
   )
 }

@@ -15,6 +15,8 @@ export type RegistroDetalleLinea = {
   extra?: ReactNode
   /** Agrupa extras iguales cuando hay varias líneas del mismo producto */
   extraKey?: string
+  /** Si true, `extra` solo se muestra en el desglose expandido */
+  extraSoloDesglose?: boolean
 }
 
 export function RegistroDetallePanel({
@@ -115,7 +117,7 @@ export function RegistroDetallePanel({
             const extrasFila = [
               ...new Map(
                 grupo.lineas
-                  .filter((l) => l.extra)
+                  .filter((l) => l.extra && !l.extraSoloDesglose)
                   .map((l) => [l.extraKey ?? String(l.id), l.extra] as const)
               ).values()
             ]
@@ -163,15 +165,21 @@ export function RegistroDetallePanel({
                     {grupo.lineas.map((l) => (
                       <li
                         key={l.id}
-                        className="flex items-center justify-between gap-2 py-2.5 pl-11 pr-4 text-sm"
+                        className="flex items-center gap-3 py-2.5 pl-11 pr-4 text-sm"
                       >
-                        <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
-                          <span className="text-slate-700">{l.etiqueta}</span>
-                          {l.extra}
-                        </div>
-                        <span className="shrink-0 font-semibold tabular-nums text-slate-900">
-                          {formatCantidad(l.cantidad)}
-                        </span>
+                        <span className="min-w-0 shrink text-slate-700">{l.etiqueta}</span>
+                        {l.extra ? (
+                          <div className="flex min-w-0 flex-1 items-center justify-end gap-6 sm:gap-8">
+                            <div className="min-w-0 truncate text-right">{l.extra}</div>
+                            <span className="shrink-0 font-semibold tabular-nums text-slate-900">
+                              {formatCantidad(l.cantidad)}
+                            </span>
+                          </div>
+                        ) : (
+                          <span className="ml-auto shrink-0 font-semibold tabular-nums text-slate-900">
+                            {formatCantidad(l.cantidad)}
+                          </span>
+                        )}
                       </li>
                     ))}
                   </ul>

@@ -1,5 +1,5 @@
 param(
-  [string]$Version = "0.3.29"
+  [string]$Version = "0.3.30"
 )
 
 $ErrorActionPreference = "Stop"
@@ -56,10 +56,13 @@ if (Test-Path $ymlPath) { $assets += (Resolve-Path $ymlPath).Path }
 $notes = @"
 ## ControlStock v$Version
 
-Sync offline: carga manual con puerto fijo.
+Movimientos con lista abierta, ingresos multi-destino y borradores persistentes.
 
 ### Nuevo / mejorado
-- Al unirse por IP al sync entre celulares: solo se edita la IP; el puerto queda fijo en 3850
+- Movimientos internos: lista abierta compartida, sueltos/botellas, tilde opcional según configuración, Finalizar/Cancelar movimientos
+- Ingresos: destino por línea (varios destinos), borrador en localStorage, Continuar / Cancelar ingreso
+- Planillas y retornos: borrador persistente al salir (Continuar / Cancelar)
+- Configuración: doble verificación de movimientos controla si hace falta tildar para finalizar
 
 ### Actualización
 - Desde **v0.2.7 o superior:** Configuración → Buscar actualizaciones

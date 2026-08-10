@@ -735,6 +735,73 @@ export function runMigrations(db: Database.Database): void {
     `)
   }
 
+  // Lista abierta de movimientos: estado ABIERTA + tipo LISTA + tilde por línea
+  if (
+    tableExists(db, 'movimiento_interno_lineas') &&
+    !columnExists(db, 'movimiento_interno_lineas', 'verificada')
+  ) {
+    db.exec(`
+      ALTER TABLE movimiento_interno_lineas
+      ADD COLUMN verificada INTEGER NOT NULL DEFAULT 0
+    `)
+  }
+
+  if (
+    tableExists(db, 'movimiento_interno_lineas') &&
+    !columnExists(db, 'movimiento_interno_lineas', 'cantidad_suelta')
+  ) {
+    db.exec(`
+      ALTER TABLE movimiento_interno_lineas
+      ADD COLUMN cantidad_suelta REAL
+    `)
+  }
+
+  if (tableExists(db, 'movimientos_internos')) {
+    const tableSql = (
+      db
+        .prepare(`SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'movimientos_internos'`)
+        .get() as { sql: string } | undefined
+    )?.sql
+    if (tableSql && !tableSql.includes("'ABIERTA'") ) {
+      db.pragma('foreign_keys = OFF')
+      try {
+        db.exec(`
+          CREATE TABLE movimientos_internos_lista (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            fecha TEXT NOT NULL,
+            tipo TEXT NOT NULL CHECK (tipo IN ('ENVIAR', 'RECIBIR', 'LISTA')),
+            sector_origen_id INTEGER REFERENCES sectores(id),
+            sector_destino_id INTEGER REFERENCES sectores(id),
+            observacion TEXT,
+            estado TEXT NOT NULL DEFAULT 'PENDIENTE'
+              CHECK (estado IN ('ABIERTA', 'PENDIENTE', 'COMPLETADO', 'CANCELADO')),
+            creado_por_id INTEGER NOT NULL REFERENCES usuarios(id),
+            recibido_por_id INTEGER REFERENCES usuarios(id),
+            cancelado_por_id INTEGER REFERENCES usuarios(id),
+            ingreso_directo INTEGER NOT NULL DEFAULT 0,
+            recibido_at TEXT,
+            cancelado_at TEXT,
+            created_at TEXT NOT NULL DEFAULT (datetime('now'))
+          );
+          INSERT INTO movimientos_internos_lista (
+            id, fecha, tipo, sector_origen_id, sector_destino_id, observacion,
+            estado, creado_por_id, recibido_por_id, cancelado_por_id,
+            ingreso_directo, recibido_at, cancelado_at, created_at
+          )
+          SELECT
+            id, fecha, tipo, sector_origen_id, sector_destino_id, observacion,
+            estado, creado_por_id, recibido_por_id, cancelado_por_id,
+            COALESCE(ingreso_directo, 0), recibido_at, cancelado_at, created_at
+          FROM movimientos_internos;
+          DROP TABLE movimientos_internos;
+          ALTER TABLE movimientos_internos_lista RENAME TO movimientos_internos;
+        `)
+      } finally {
+        db.pragma('foreign_keys = ON')
+      }
+    }
+  }
+
   if (tableExists(db, 'inventario_sesiones') && !columnExists(db, 'inventario_sesiones', 'archivada')) {
     db.exec(`ALTER TABLE inventario_sesiones ADD COLUMN archivada INTEGER NOT NULL DEFAULT 0`)
     db.exec(`ALTER TABLE inventario_sesiones ADD COLUMN archivada_at TEXT`)

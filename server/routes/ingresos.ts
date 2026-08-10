@@ -22,6 +22,7 @@ import {
 
 interface IngresoLineaBody extends LineaDesgloseInput {
   producto_id: number
+  sector_id: number
   ubicacion_id?: number | null
 }
 
@@ -29,8 +30,30 @@ interface IngresoBody {
   fecha?: string
   numero_remito?: string
   observacion?: string | null
+  /** @deprecated Preferir sector_id por línea. Si viene, se usa como default. */
   sector_id?: number
   lineas?: IngresoLineaBody[]
+}
+
+function resumenDestinosIngreso(
+  db: ReturnType<typeof getDb>,
+  ingresoId: number,
+  fallbackNombre: string | null
+): string {
+  const rows = db
+    .prepare(
+      `
+    SELECT DISTINCT s.nombre AS nombre
+    FROM ingreso_lineas il
+    JOIN sectores s ON s.id = il.sector_id
+    WHERE il.ingreso_id = ?
+    ORDER BY s.nombre COLLATE NOCASE
+  `
+    )
+    .all(ingresoId) as Array<{ nombre: string }>
+  if (rows.length === 0) return fallbackNombre || '—'
+  if (rows.length === 1) return rows[0].nombre
+  return 'Varios destinos'
 }
 
 function mapLineaRowInner(
@@ -120,7 +143,14 @@ export async function ingresosRoutes(app: FastifyInstance): Promise<void> {
     let sql = `
       SELECT
         i.id, i.fecha, i.numero_remito, i.observacion, i.sector_id, i.created_at,
-        s.nombre AS sector_nombre,
+        CASE
+          WHEN (
+            SELECT COUNT(DISTINCT il.sector_id)
+            FROM ingreso_lineas il
+            WHERE il.ingreso_id = i.id
+          ) > 1 THEN 'Varios destinos'
+          ELSE s.nombre
+        END AS sector_nombre,
         u.nombre AS usuario_nombre,
         COALESCE(st.total_unidades, 0) AS total_unidades,
         COALESCE(st.lineas_count, 0) AS lineas_count,
@@ -142,9 +172,16 @@ export async function ingresosRoutes(app: FastifyInstance): Promise<void> {
     const params: unknown[] = []
 
     if (q?.trim()) {
-      sql += ' AND (i.numero_remito LIKE ? OR i.observacion LIKE ? OR s.nombre LIKE ?)'
+      sql += ` AND (
+        i.numero_remito LIKE ? OR i.observacion LIKE ? OR s.nombre LIKE ?
+        OR EXISTS (
+          SELECT 1 FROM ingreso_lineas il2
+          JOIN sectores s2 ON s2.id = il2.sector_id
+          WHERE il2.ingreso_id = i.id AND s2.nombre LIKE ?
+        )
+      )`
       const term = `%${q.trim()}%`
-      params.push(term, term, term)
+      params.push(term, term, term, term)
     }
 
     if (fecha_desde?.trim() && fecha_hasta?.trim()) {
@@ -190,8 +227,25 @@ export async function ingresosRoutes(app: FastifyInstance): Promise<void> {
       return mapLineaRowInner(row, botellasPorCaja)
     })
     const total_unidades = lineas.reduce((s, l) => s + l.total_cajas, 0)
+    const ingresoRow = ingreso as {
+      id: number
+      fecha: string
+      numero_remito: string
+      observacion: string | null
+      sector_id: number
+      sector_nombre: string
+      usuario_nombre: string
+      created_at: string
+    }
 
-    return { ingreso, lineas, total_unidades }
+    return {
+      ingreso: {
+        ...ingresoRow,
+        sector_nombre: resumenDestinosIngreso(db, id, ingresoRow.sector_nombre)
+      },
+      lineas,
+      total_unidades
+    }
   })
 
   app.get('/api/ingresos/:id/export', {
@@ -268,9 +322,9 @@ export async function ingresosRoutes(app: FastifyInstance): Promise<void> {
     const body = request.body as IngresoBody
     const user = request.user!
 
-    if (!body.fecha?.trim() || !body.numero_remito?.trim() || !body.sector_id) {
+    if (!body.fecha?.trim() || !body.numero_remito?.trim()) {
       return reply.status(400).send({
-        error: 'Fecha, número de remito y sector son requeridos'
+        error: 'Fecha y número de remito son requeridos'
       })
     }
 
@@ -280,16 +334,13 @@ export async function ingresosRoutes(app: FastifyInstance): Promise<void> {
 
     const db = getDb()
 
-    const sector = db.prepare(`
-      SELECT id, activo FROM sectores WHERE id = ?
-    `).get(body.sector_id) as { id: number; activo: number } | undefined
-
-    if (!sector || !sector.activo) {
-      return reply.status(400).send({ error: 'Sector no válido' })
-    }
-
     for (let i = 0; i < body.lineas.length; i++) {
       const linea = body.lineas[i]
+      const sectorId = Number(linea.sector_id ?? body.sector_id)
+      if (!sectorId) {
+        return reply.status(400).send({ error: `Línea ${i + 1}: sector destino requerido` })
+      }
+
       const err = validateLineaDesglose(linea)
       if (err) {
         return reply.status(400).send({ error: `Línea ${i + 1}: ${err}` })
@@ -302,17 +353,27 @@ export async function ingresosRoutes(app: FastifyInstance): Promise<void> {
         return reply.status(400).send({ error: `Línea ${i + 1}: producto no válido` })
       }
 
+      const sector = db.prepare(`
+        SELECT id, activo FROM sectores WHERE id = ?
+      `).get(sectorId) as { id: number; activo: number } | undefined
+      if (!sector || !sector.activo) {
+        return reply.status(400).send({ error: `Línea ${i + 1}: sector no válido` })
+      }
+
       if (linea.ubicacion_id) {
         const ub = db.prepare(`
           SELECT id FROM sector_ubicaciones
           WHERE id = ? AND sector_id = ? AND activo = 1
-        `).get(linea.ubicacion_id, body.sector_id)
+        `).get(linea.ubicacion_id, sectorId)
         if (!ub) {
           return reply.status(400).send({ error: `Línea ${i + 1}: ubicación no válida para el sector` })
         }
       }
+
+      ;(linea as IngresoLineaBody).sector_id = sectorId
     }
 
+    const headerSectorId = Number(body.lineas[0].sector_id)
     const observacion = body.observacion?.trim() || null
 
     try {
@@ -321,16 +382,17 @@ export async function ingresosRoutes(app: FastifyInstance): Promise<void> {
           INSERT INTO ingresos (fecha, numero_remito, observacion, sector_id, usuario_id)
           VALUES (?, ?, ?, ?, ?)
         `).run(
-          body.fecha.trim(),
-          body.numero_remito.trim(),
+          body.fecha!.trim(),
+          body.numero_remito!.trim(),
           observacion,
-          body.sector_id,
+          headerSectorId,
           user.id
         )
 
         const ingresoId = Number(result.lastInsertRowid)
 
         body.lineas!.forEach((linea, index) => {
+          const sectorId = Number(linea.sector_id)
           const { botellasPorCaja } = getProductoDefaults(db, linea.producto_id)
           const totalCajas = calcTotalEnCajas(linea, botellasPorCaja)
 
@@ -351,7 +413,7 @@ export async function ingresosRoutes(app: FastifyInstance): Promise<void> {
           `).run(
             ingresoId,
             linea.producto_id,
-            body.sector_id,
+            sectorId,
             linea.ubicacion_id ?? null,
             linea.tipo_bulto,
             linea.tipo_bulto === 'SUELTO' ? null : linea.cantidad_bultos,
@@ -363,7 +425,7 @@ export async function ingresosRoutes(app: FastifyInstance): Promise<void> {
 
           applyIngresoLineToStock(db, {
             producto_id: linea.producto_id,
-            sector_id: body.sector_id!,
+            sector_id: sectorId,
             ubicacion_id: linea.ubicacion_id ?? null,
             ubicacion_nombre: ubicacionNombre,
             linea,

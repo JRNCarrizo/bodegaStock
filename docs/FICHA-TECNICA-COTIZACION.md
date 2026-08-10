@@ -1,7 +1,7 @@
 # ControlStock (BodegaStock) — Ficha técnica para cotización
 
 > **Documento pensado para terceros e IAs.**  
-> Describí el sistema tal como está construido (julio 2026, **v0.3.13**).
+> Describí el sistema tal como está construido (agosto 2026, **v0.3.30**).
 > Podés pegar este archivo completo en ChatGPT / Claude / Gemini y pedir una cotización independiente de desarrollo o de licencia.
 
 **Nombre comercial:** ControlStock  
@@ -71,7 +71,7 @@ No es un prototipo de una sola pantalla: es un sistema multi-módulo con reglas 
 | Misma UI React | PC, navegador móvil y APK comparten el frontend |
 | Stock por sector | Un producto puede tener stock en varios sectores |
 | Ledger / trazabilidad | Los cambios de stock generan movimientos auditables |
-| Doble verificación | Inventario con 2 contadores; retornos y movimientos internos con verificación **configurable** (activar/desactivar desde Configuración) |
+| Verificación | Inventario: **Simple** o **Doble** por sector; retornos con doble verificación configurable; movimientos: doble verificación actual, **rediseño futuro** a lista abierta + tilde ([MOVIMIENTOS-LISTA-ABIERTA-FUTURO.md](MOVIMIENTOS-LISTA-ABIERTA-FUTURO.md)) |
 
 ---
 
@@ -318,12 +318,12 @@ No inventes módulos que no estén en la ficha. Basate solo en lo documentado.
 
 ## 12. Estado del producto (honestidad comercial)
 
-**Estado:** sistema operativo en uso de desarrollo/pruebas de campo (**v0.3.13**), con flujo principal de inventario offline **implementado de punta a punta** (descarga → conteo → sync P2P → comparación → reconteo → import confirmado al PC).
+**Estado:** sistema en uso / pruebas de campo (**v0.3.30**). Inventario online + offline con verificación Simple/Doble; sync P2P puerto 3850; import al PC y Comparación B.
 
-**Entregado en el estado actual:** exportaciones Excel operativas, importación de productos por plantilla, doble verificación opcional y mejoras de inventario: actualización automática del listado, formulario adaptado al teclado, reconteo más directo, edición previa al sync, QR/IP de hotspot autorrefrescable, estado de recepción en PC y archivo final Plan B.
+**Entregado:** módulos operativos (consulta, ingresos, planillas, retornos, roturas, movimientos, inventario, Excel, APK Capacitor). Inventario: sticky UX, Simple/Doble, puerto fijo en carga manual, Plan B archivo.
 
-**Pendientes normales de producto maduro:** pruebas de campo intensivas, eventual iOS, mejoras visuales adicionales, posibles módulos futuros según cliente.
+**Futuro documentado (no cotizado como hecho):** OCR/foto de planilla impresa; rediseño de movimientos a lista abierta compartida — ver `docs/PLANILLAS-OCR-FUTURO.md` y `docs/MOVIMIENTOS-LISTA-ABIERTA-FUTURO.md`. También: firma de código Windows, iOS, PDF.
 
 ---
 
-*Documento generado para evaluación y cotización independiente — ControlStock / BodegaStock **v0.3.13** — julio 2026.*
+*Documento generado para evaluación y cotización — ControlStock / BodegaStock **v0.3.30** — agosto 2026.*

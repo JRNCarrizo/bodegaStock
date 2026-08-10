@@ -11,16 +11,28 @@ Toda la especificación del proyecto está en la carpeta [`docs/`](docs/):
 | [ESPECIFICACION.md](docs/ESPECIFICACION.md) | Visión general, arquitectura, módulos y reglas de negocio |
 | [MODELO-DE-DATOS.md](docs/MODELO-DE-DATOS.md) | Entidades, relaciones y tipos de movimiento |
 | [USUARIOS-Y-PERMISOS.md](docs/USUARIOS-Y-PERMISOS.md) | Roles, permisos por sección y reglas de acceso |
-| [INVENTARIO.md](docs/INVENTARIO.md) | Inventario dual: líneas independientes, comparación, reconteo |
+| [INVENTARIO.md](docs/INVENTARIO.md) | Inventario: verificación Simple/Doble, online/offline, comparación, reconteo |
 | [INVENTARIO-OFFLINE-ESTADO.md](docs/INVENTARIO-OFFLINE-ESTADO.md) | **Respaldo del flujo offline:** idea, estado, archivos, no desviarse |
 | [DESGLOSE-DE-CANTIDADES.md](docs/DESGLOSE-DE-CANTIDADES.md) | Formato pallet × unidades + sueltos (todo el sistema) |
 | [APP-MOVIL.md](docs/APP-MOVIL.md) | APK Android: terminal de bodega, módulos, roles, fases y priorización |
 | [ANDROID-DEV.md](docs/ANDROID-DEV.md) | **Desarrollo Android:** live reload en celular/emulador y cómo armar la APK |
+| [PLANILLAS-OCR-FUTURO.md](docs/PLANILLAS-OCR-FUTURO.md) | **Futuro:** escanear planilla impresa y autocompletar líneas |
+| [MOVIMIENTOS-LISTA-ABIERTA-FUTURO.md](docs/MOVIMIENTOS-LISTA-ABIERTA-FUTURO.md) | Movimientos con lista abierta compartida + tilde + finalizar (implementado) |
 | [FICHA-TECNICA-COTIZACION.md](docs/FICHA-TECNICA-COTIZACION.md) | Ficha técnica para cotizar / pasar a terceros o a una IA |
 
 ## Estado del proyecto
 
-**v0.3.29** — Sync offline: en carga manual solo se edita la IP; el puerto queda fijo en 3850.
+**v0.3.30** — Movimientos con lista abierta; ingresos multi-destino; borradores en ingresos/planillas/retornos.
+
+### Reciente (resumen)
+
+- **v0.3.30:** lista abierta de movimientos (sueltos, tilde configurable); ingresos con varios destinos y borrador; borradores en planillas/retornos.
+- **v0.3.29:** al unirse al sync por IP, solo se edita la IP; puerto **3850** fijo.
+- **v0.3.28:** verificación **Simple** / **Doble** por sector en inventario.
+
+### Futuro documentado (no hecho)
+
+- Escaneo/OCR de planilla impresa “A Despachar” → borrador de líneas: [PLANILLAS-OCR-FUTURO.md](docs/PLANILLAS-OCR-FUTURO.md).
 
 ## Desarrollo local
 

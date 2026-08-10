@@ -5,6 +5,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Check,
+  ClipboardList,
   Download,
   Eye,
   Loader2,
@@ -46,6 +47,54 @@ import { useRegistroListKeyboard } from '@/hooks/useRegistroListKeyboard'
 
 function newTempId(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+}
+
+const INGRESO_DRAFT_KEY = 'bodegaStock:ingresoDraft:v1'
+
+type IngresoDraftStored = {
+  fecha: string
+  numeroRemito: string
+  observacion: string
+  sectorId: string
+  ubicacionId: string
+  createPhase: 'remito' | 'carga'
+  lineas: IngresoLineaDraft[]
+}
+
+function readIngresoDraft(): IngresoDraftStored | null {
+  try {
+    const raw = localStorage.getItem(INGRESO_DRAFT_KEY)
+    if (!raw) return null
+    const parsed = JSON.parse(raw) as IngresoDraftStored
+    if (!parsed || !Array.isArray(parsed.lineas)) return null
+    return parsed
+  } catch {
+    return null
+  }
+}
+
+function writeIngresoDraft(draft: IngresoDraftStored): void {
+  try {
+    localStorage.setItem(INGRESO_DRAFT_KEY, JSON.stringify(draft))
+  } catch {
+    /* quota / private mode */
+  }
+}
+
+function clearIngresoDraft(): void {
+  try {
+    localStorage.removeItem(INGRESO_DRAFT_KEY)
+  } catch {
+    /* ignore */
+  }
+}
+
+function ingresoDraftTieneContenido(d: {
+  numeroRemito: string
+  observacion: string
+  lineas: IngresoLineaDraft[]
+}): boolean {
+  return d.lineas.length > 0 || !!d.numeroRemito.trim() || !!d.observacion.trim()
 }
 
 function normalizeIngresoListItem(row: IngresoListItem): IngresoListItem {
@@ -119,9 +168,10 @@ export function IngresosPage() {
 
   const [showScanner, setShowScanner] = useState(false)
   const [showNewProduct, setShowNewProduct] = useState(false)
-  const [showPreview, setShowPreview] = useState(false)
   const [createPhase, setCreatePhase] = useState<'remito' | 'carga'>('remito')
   const [expandedProductos, setExpandedProductos] = useState<Set<number>>(new Set())
+  const [tieneBorrador, setTieneBorrador] = useState(false)
+  const draftHydratedRef = useRef(false)
 
   const fechaRef = useRef<HTMLInputElement>(null)
   const remitoRef = useRef<HTMLInputElement>(null)
@@ -158,8 +208,44 @@ export function IngresosPage() {
   }
 
   function abrirNuevoIngreso() {
+    if (tieneBorrador && ingresoDraftTieneContenido({ numeroRemito, observacion, lineas })) {
+      if (!confirm('Hay un ingreso en curso. ¿Descartarlo y empezar uno nuevo?')) return
+    }
+    clearIngresoDraft()
+    setTieneBorrador(false)
     resetCreateForm()
     setView('create')
+  }
+
+  function continuarBorrador() {
+    const draft = readIngresoDraft()
+    if (draft) {
+      setFecha(draft.fecha || todayIsoDate())
+      setNumeroRemito(draft.numeroRemito || '')
+      setObservacion(draft.observacion || '')
+      setSectorId(draft.sectorId || '')
+      setUbicacionId(draft.ubicacionId || '')
+      setLineas(draft.lineas || [])
+      setCreatePhase(
+        draft.lineas?.length > 0 || draft.createPhase === 'carga' ? 'carga' : draft.createPhase || 'remito'
+      )
+      setTieneBorrador(true)
+    }
+    setSelectedProduct(null)
+    setProductSearch('')
+    setProductResults([])
+    setError('')
+    setView('create')
+  }
+
+  function cancelarIngresoEnCurso() {
+    if (lineas.length > 0 || numeroRemito.trim()) {
+      if (!confirm('¿Cancelar el ingreso en curso? Se perderán las líneas cargadas.')) return
+    }
+    clearIngresoDraft()
+    setTieneBorrador(false)
+    resetCreateForm()
+    volverAlListadoIngreso()
   }
 
   function scrollListToBottom() {
@@ -170,6 +256,44 @@ export function IngresosPage() {
       }
     })
   }
+
+  useEffect(() => {
+    if (draftHydratedRef.current) return
+    draftHydratedRef.current = true
+    const draft = readIngresoDraft()
+    if (!draft || !ingresoDraftTieneContenido(draft)) {
+      setTieneBorrador(false)
+      return
+    }
+    setFecha(draft.fecha || todayIsoDate())
+    setNumeroRemito(draft.numeroRemito || '')
+    setObservacion(draft.observacion || '')
+    setSectorId(draft.sectorId || '')
+    setUbicacionId(draft.ubicacionId || '')
+    setLineas(draft.lineas || [])
+    setCreatePhase(draft.createPhase || (draft.lineas?.length ? 'carga' : 'remito'))
+    setTieneBorrador(true)
+  }, [])
+
+  useEffect(() => {
+    if (!draftHydratedRef.current) return
+    const payload = {
+      fecha,
+      numeroRemito,
+      observacion,
+      sectorId,
+      ubicacionId,
+      createPhase,
+      lineas
+    }
+    if (!ingresoDraftTieneContenido(payload)) {
+      clearIngresoDraft()
+      setTieneBorrador(false)
+      return
+    }
+    writeIngresoDraft(payload)
+    setTieneBorrador(true)
+  }, [fecha, numeroRemito, observacion, sectorId, ubicacionId, createPhase, lineas])
 
   useEffect(() => {
     if (view !== 'list') return
@@ -203,7 +327,7 @@ export function IngresosPage() {
 
   useEffect(() => {
     if (view === 'create' && createPhase === 'carga') {
-      setTimeout(() => focusField(productSearchRef), 50)
+      setTimeout(() => focusField(sectorId ? productSearchRef : sectorRef), 50)
     }
   }, [view, createPhase])
 
@@ -271,7 +395,7 @@ export function IngresosPage() {
   }, [sectorId, sectorSeleccionado?.usa_ubicaciones])
 
   useEffect(() => {
-    if (!productSearch.trim()) {
+    if (!productSearch.trim() || !sectorId) {
       setProductResults([])
       return
     }
@@ -289,7 +413,7 @@ export function IngresosPage() {
       }
     }, 300)
     return () => clearTimeout(timer)
-  }, [productSearch])
+  }, [productSearch, sectorId])
 
   const totalGeneral = useMemo(
     () => lineas.reduce((s, l) => s + l.total_unidades, 0),
@@ -354,6 +478,7 @@ export function IngresosPage() {
     setNumeroRemito('')
     setObservacion('')
     setSectorId('')
+    setUbicacionId('')
     setProductSearch('')
     setProductResults([])
     setSelectedProduct(null)
@@ -365,10 +490,12 @@ export function IngresosPage() {
   }
 
   function volverAlListadoIngreso() {
-    resetCreateForm()
-    setShowPreview(false)
+    setSelectedProduct(null)
+    setProductSearch('')
+    setProductResults([])
     setShowScanner(false)
     setShowNewProduct(false)
+    setError('')
     setView('list')
   }
 
@@ -386,10 +513,6 @@ export function IngresosPage() {
   useEscHandler(view === 'create', () => {
     if (saving) return false
 
-    if (showPreview) {
-      setShowPreview(false)
-      return true
-    }
     if (showScanner) {
       setShowScanner(false)
       return true
@@ -447,6 +570,10 @@ export function IngresosPage() {
   }
 
   function selectProduct(p: Producto) {
+    if (!sectorId) {
+      setError('Seleccioná el sector destino primero')
+      return
+    }
     setSelectedProduct(p)
     setProductSearch(p.codigo_interno)
     setProductResults([])
@@ -468,10 +595,6 @@ export function IngresosPage() {
   function validarRemito(): boolean {
     if (!fecha || !numeroRemito.trim()) {
       setError('Completá fecha y número de remito')
-      return false
-    }
-    if (!sectorId) {
-      setError('Seleccioná el sector destino')
       return false
     }
     setError('')
@@ -557,6 +680,10 @@ export function IngresosPage() {
       setError('Seleccioná el sector destino')
       return false
     }
+    if (!sectorSeleccionado) {
+      setError('Sector destino no válido')
+      return false
+    }
 
     const sueltaNum = cantidadSuelta.trim() === '' ? 0 : Number(cantidadSuelta)
 
@@ -624,6 +751,8 @@ export function IngresosPage() {
       cantidad_suelta: sueltaNum > 0 ? sueltaNum : undefined,
       total_unidades: totalCajas,
       etiqueta: formatEtiqueta(lineaInput, selectedProduct.unidad),
+      sector_id: Number(sectorId),
+      sector_nombre: sectorSeleccionado.nombre,
       ubicacion_id: ub?.id ?? null,
       ubicacion_nombre: ub?.nombre ?? null
     }
@@ -662,9 +791,9 @@ export function IngresosPage() {
           fecha,
           numero_remito: numeroRemito,
           observacion: observacion || null,
-          sector_id: Number(sectorId),
           lineas: lineas.map((l) => ({
             producto_id: l.producto_id,
+            sector_id: l.sector_id,
             ubicacion_id: l.ubicacion_id ?? null,
             tipo_bulto: l.tipo_bulto,
             cantidad_bultos: l.cantidad_bultos ?? null,
@@ -673,11 +802,12 @@ export function IngresosPage() {
           }))
         })
       })
-      setShowPreview(false)
       const data = await api<IngresoDetalle>(`/api/ingresos/${result.id}`)
       setDetalle(data)
       setSelectedDay(fecha)
       setView('detail')
+      clearIngresoDraft()
+      setTieneBorrador(false)
       resetCreateForm()
       await loadIngresos()
     } catch (err) {
@@ -715,7 +845,10 @@ export function IngresosPage() {
     items: ingresosDelDia,
     listSearchRef,
     canCreate: hasPermiso('ingresos.crear'),
-    onCreate: abrirNuevoIngreso,
+    onCreate: () => {
+      if (tieneBorrador) continuarBorrador()
+      else abrirNuevoIngreso()
+    },
     onOpenDetail: (i) => {
       void verDetalle(i.id)
     }
@@ -726,21 +859,16 @@ export function IngresosPage() {
       setError('Completá fecha y número de remito')
       return false
     }
-    if (!sectorId) {
-      setError('Seleccioná el sector destino')
-      return false
-    }
     if (lineas.length === 0) {
       setError('Agregá al menos una línea de producto')
       return false
     }
+    if (lineas.some((l) => !l.sector_id)) {
+      setError('Todas las líneas necesitan sector destino')
+      return false
+    }
     setError('')
     return true
-  }
-
-  function abrirPreview() {
-    if (!validarIngresoParaRegistrar()) return
-    setShowPreview(true)
   }
 
   function confirmarIngresoDirecto() {
@@ -776,8 +904,16 @@ export function IngresosPage() {
           producto_id: l.producto_id,
           codigo_interno: l.codigo_interno,
           nombre: l.nombre,
-          etiqueta: l.ubicacion_nombre ? `${l.etiqueta} (${l.ubicacion_nombre})` : l.etiqueta,
-          cantidad: l.total_unidades
+          etiqueta: l.etiqueta,
+          cantidad: l.total_unidades,
+          extra: (
+            <span className="text-xs text-slate-500">
+              {l.sector_nombre}
+              {l.ubicacion_nombre ? ` (${l.ubicacion_nombre})` : ''}
+            </span>
+          ),
+          extraKey: `${l.sector_nombre}|${l.ubicacion_nombre ?? ''}`,
+          extraSoloDesglose: true
         }))}
       />
     )
@@ -819,7 +955,7 @@ export function IngresosPage() {
                 </div>
                 <div>
                   <p className="text-sm font-semibold text-slate-900">Remito de ingreso</p>
-                  <p className="text-xs text-slate-500">Fecha, número, sector y observaciones</p>
+                  <p className="text-xs text-slate-500">Fecha, número y observaciones</p>
                 </div>
               </div>
             </div>
@@ -838,29 +974,10 @@ export function IngresosPage() {
                 label="Número de remito *"
                 value={numeroRemito}
                 onChange={(e) => setNumeroRemito(e.target.value)}
-                onKeyDown={(e) => handleRemitoKeyDown(e, sectorRef)}
+                onKeyDown={(e) => handleRemitoKeyDown(e, observacionRef)}
                 placeholder="ej. REM-2024-001"
                 required
               />
-              <div>
-                <label className="mb-1 block text-sm font-medium text-slate-700">
-                  Sector destino *
-                </label>
-                <select
-                  ref={sectorRef}
-                  value={sectorId}
-                  onChange={(e) => setSectorId(e.target.value)}
-                  onKeyDown={(e) => handleRemitoKeyDown(e, observacionRef)}
-                  className="w-full rounded-xl border border-surface-border px-3 py-2.5 text-sm shadow-sm focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20"
-                >
-                  <option value="">Seleccionar sector...</option>
-                  {sectores.map((s) => (
-                    <option key={s.id} value={s.id}>
-                      {s.nombre}
-                    </option>
-                  ))}
-                </select>
-              </div>
               <Input
                 ref={observacionRef}
                 label="Observaciones"
@@ -870,7 +987,9 @@ export function IngresosPage() {
                 onKeyDown={(e) => handleRemitoKeyDown(e)}
                 placeholder="Notas sobre el ingreso..."
               />
-              <p className="text-xs text-slate-400">Enter en observaciones → carga de productos</p>
+              <p className="text-xs text-slate-400">
+                Enter en observaciones → carga de productos (el destino se elige ahí)
+              </p>
               <Button type="button" className="w-full rounded-xl" onClick={irACargaProductos}>
                 Continuar a productos
               </Button>
@@ -957,9 +1076,10 @@ export function IngresosPage() {
                     >
                       <div className="min-w-0 text-slate-800">
                         {l.etiqueta}
-                        {l.ubicacion_nombre && (
-                          <span className="ml-1.5 text-xs text-slate-500">({l.ubicacion_nombre})</span>
-                        )}
+                        <span className="ml-1.5 text-xs text-slate-500">
+                          {l.sector_nombre}
+                          {l.ubicacion_nombre ? ` (${l.ubicacion_nombre})` : ''}
+                        </span>
                       </div>
                       <div className="flex shrink-0 items-center gap-2">
                         <span className="rounded-md bg-slate-50 px-2 py-1 text-sm font-semibold tabular-nums text-slate-900 ring-1 ring-surface-border">
@@ -1013,10 +1133,6 @@ export function IngresosPage() {
                 <span className="rounded-full bg-white px-2.5 py-1 font-medium text-slate-700 ring-1 ring-surface-border">
                   Remito {numeroRemito}
                 </span>
-                <span className="inline-flex items-center gap-1 rounded-full bg-brand-50 px-2.5 py-1 font-medium text-brand-800 ring-1 ring-brand-100">
-                  <Warehouse className="h-3 w-3" />
-                  {sectorSeleccionado?.nombre}
-                </span>
               </div>
               <button
                 type="button"
@@ -1028,13 +1144,53 @@ export function IngresosPage() {
             </div>
           </div>
 
-          {error && !showPreview && (
+          {error && (
             <div className="border-b border-red-100 bg-red-50 px-4 py-2 text-sm text-red-700 sm:px-5">
               {error}
             </div>
           )}
 
           <div className="space-y-3 overflow-visible p-4 sm:p-5">
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+              <div className="flex items-center rounded-xl border border-surface-border bg-white focus-within:border-brand-500 focus-within:ring-2 focus-within:ring-brand-500/20">
+                <span className="shrink-0 pl-3 text-xs font-medium text-slate-400">Destino</span>
+                <select
+                  ref={sectorRef}
+                  value={sectorId}
+                  onChange={(e) => {
+                    setSectorId(e.target.value)
+                    setUbicacionId('')
+                  }}
+                  className="min-w-0 flex-1 border-0 bg-transparent py-2 pl-2 pr-3 text-sm focus:outline-none"
+                >
+                  <option value="">Elegir sector…</option>
+                  {sectores.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.nombre}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              {!!sectorSeleccionado?.usa_ubicaciones && (
+                <div className="flex items-center rounded-xl border border-surface-border bg-white focus-within:border-brand-500 focus-within:ring-2 focus-within:ring-brand-500/20">
+                  <span className="shrink-0 pl-3 text-xs font-medium text-slate-400">Ubicación</span>
+                  <select
+                    ref={ubicacionRef}
+                    value={ubicacionId}
+                    onChange={(e) => setUbicacionId(e.target.value)}
+                    className="min-w-0 flex-1 border-0 bg-transparent py-2 pl-2 pr-3 text-sm focus:outline-none"
+                  >
+                    <option value="">Sin ub.</option>
+                    {ubicaciones.map((u) => (
+                      <option key={u.id} value={u.id}>
+                        {u.nombre}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+            </div>
+
             <div className="relative flex flex-col gap-2 overflow-visible sm:flex-row">
               <div className="relative z-30 min-w-0 flex-1">
                 <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-brand-400" />
@@ -1044,8 +1200,13 @@ export function IngresosPage() {
                   role="combobox"
                   aria-expanded={productResults.length > 0 && !selectedProduct}
                   aria-autocomplete="list"
-                  placeholder="Buscar producto — ↑↓ navegar · Enter seleccionar"
+                  placeholder={
+                    sectorId
+                      ? 'Buscar producto — ↑↓ navegar · Enter seleccionar'
+                      : 'Primero elegí sector destino'
+                  }
                   value={productSearch}
+                  disabled={!sectorId}
                   onChange={(e) => {
                     setProductSearch(e.target.value)
                     setProductHighlightIndex(-1)
@@ -1054,7 +1215,7 @@ export function IngresosPage() {
                     }
                   }}
                   onKeyDown={handleProductSearchKeyDown}
-                  className="w-full rounded-xl border border-surface-border bg-white py-2.5 pl-10 pr-3 text-sm shadow-sm focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20"
+                  className="w-full rounded-xl border border-surface-border bg-white py-2.5 pl-10 pr-3 text-sm shadow-sm focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-400"
                 />
                 {searchingProducts && (
                   <Loader2 className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 animate-spin text-brand-600" />
@@ -1181,11 +1342,7 @@ export function IngresosPage() {
                       onKeyDown={(e) => {
                         if (e.key === 'Enter') {
                           e.preventDefault()
-                          if (sectorSeleccionado?.usa_ubicaciones && ubicaciones.length > 0) {
-                            ubicacionRef.current?.focus()
-                          } else {
-                            agregarLineaYContinuar()
-                          }
+                          agregarLineaYContinuar()
                         }
                       }}
                       placeholder="3"
@@ -1243,37 +1400,13 @@ export function IngresosPage() {
                         onKeyDown={(e) => {
                           if (e.key === 'Enter') {
                             e.preventDefault()
-                            if (sectorSeleccionado?.usa_ubicaciones && ubicaciones.length > 0) {
-                              ubicacionRef.current?.focus()
-                            } else {
-                              agregarLineaYContinuar()
-                            }
+                            agregarLineaYContinuar()
                           }
                         }}
                         placeholder="0"
                         className="[&_label]:text-xs"
                       />
                     </>
-                  )}
-
-                  {sectorSeleccionado?.usa_ubicaciones && ubicaciones.length > 0 && (
-                    <div>
-                      <label className="mb-0.5 block text-xs font-medium text-slate-600">Ubicación</label>
-                      <select
-                        ref={ubicacionRef}
-                        value={ubicacionId}
-                        onChange={(e) => setUbicacionId(e.target.value)}
-                        onKeyDown={handleLineaEnter}
-                        className="w-full rounded-lg border border-surface-border px-2 py-1.5 text-sm"
-                      >
-                        <option value="">—</option>
-                        {ubicaciones.map((u) => (
-                          <option key={u.id} value={u.id}>
-                            {u.nombre}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
                   )}
 
                   <div className="flex items-end">
@@ -1332,11 +1465,10 @@ export function IngresosPage() {
                 <Button
                   variant="secondary"
                   className="rounded-xl"
-                  onClick={abrirPreview}
-                  disabled={lineas.length === 0 || saving}
+                  onClick={cancelarIngresoEnCurso}
+                  disabled={saving}
                 >
-                  <Eye className="h-4 w-4" />
-                  Vista previa
+                  Cancelar ingreso
                 </Button>
                 <Button
                   className="rounded-xl"
@@ -1350,96 +1482,6 @@ export function IngresosPage() {
             )}
           </div>
         </div>
-
-        {showPreview && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-            <div className="absolute inset-0 bg-slate-900/50" onClick={() => setShowPreview(false)} />
-            <div className="relative z-10 max-h-[90vh] w-full max-w-2xl overflow-auto rounded-xl border border-surface-border bg-white shadow-xl">
-              <div className="sticky top-0 flex items-center justify-between border-b border-surface-border bg-white px-5 py-4">
-                <h3 className="font-semibold text-slate-900">Vista previa del ingreso</h3>
-                <button type="button" onClick={() => setShowPreview(false)} className="rounded p-1 text-slate-400 hover:bg-slate-100">
-                  <X className="h-5 w-5" />
-                </button>
-              </div>
-              <div className="space-y-4 p-5">
-                {error && (
-                  <div className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</div>
-                )}
-                <div className="grid gap-3 sm:grid-cols-2 text-sm">
-                  <div><span className="text-slate-500">Fecha:</span> <strong>{fecha}</strong></div>
-                  <div><span className="text-slate-500">Remito:</span> <strong>{numeroRemito}</strong></div>
-                  <div className="sm:col-span-2">
-                    <span className="text-slate-500">Sector:</span>{' '}
-                    <strong>{sectorSeleccionado?.nombre}</strong>
-                  </div>
-                  {observacion && (
-                    <div className="sm:col-span-2">
-                      <span className="text-slate-500">Observaciones:</span> {observacion}
-                    </div>
-                  )}
-                </div>
-
-                <div className="rounded-lg border border-surface-border">
-                  {lineasPorProducto.map((grupo) => (
-                    <div key={grupo.producto.producto_id} className="border-b border-surface-border last:border-0">
-                      <div className="bg-slate-50 px-4 py-2 font-medium text-slate-900">
-                        {grupo.producto.codigo_interno} — {grupo.producto.nombre}
-                        <span className="float-right text-right text-brand-700">
-                          {formatTotalCajas(grupo.total)}
-                          {grupo.totalSuelto > 0 && (
-                            <small className="block text-xs font-medium text-slate-500">
-                              + {formatCantidad(grupo.totalSuelto)}{' '}
-                              {normalizarUnidadProducto(grupo.producto.unidad)}
-                              {grupo.totalSuelto === 1 ? '' : 's'}
-                            </small>
-                          )}
-                        </span>
-                      </div>
-                      <ul className="divide-y divide-surface-border text-sm">
-                        {grupo.lineas.map((l) => (
-                          <li key={l.tempId} className="flex justify-between px-4 py-2">
-                            <span>
-                              {l.etiqueta}
-                              {l.ubicacion_nombre && ` (${l.ubicacion_nombre})`}
-                            </span>
-                            <span>
-                              {l.tipo_bulto === 'SUELTO'
-                                ? `${formatCantidad(l.cantidad_suelta ?? 0)} ${normalizarUnidadProducto(
-                                    l.unidad
-                                  )}${l.cantidad_suelta === 1 ? '' : 's'}`
-                                : formatTotalCajas(l.total_unidades)}
-                            </span>
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                  ))}
-                </div>
-
-                <div className="flex items-center justify-between rounded-lg bg-brand-50 px-4 py-3">
-                  <span className="font-medium text-slate-800">Total general</span>
-                  <span className="text-right text-xl font-bold text-brand-700">
-                    {formatTotalCajas(totalGeneral)}
-                    {totalSueltoGeneral > 0 && (
-                      <small className="block text-xs font-medium text-slate-500">
-                        + {formatCantidad(totalSueltoGeneral)} unidades sueltas
-                      </small>
-                    )}
-                  </span>
-                </div>
-
-                <div className="flex gap-2 pt-2">
-                  <Button onClick={confirmarIngreso} disabled={saving}>
-                    {saving ? 'Registrando...' : 'Confirmar ingreso'}
-                  </Button>
-                  <Button variant="secondary" onClick={() => setShowPreview(false)}>
-                    Volver a editar
-                  </Button>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
 
         <BarcodeScannerModal
           open={showScanner}
@@ -1471,18 +1513,37 @@ export function IngresosPage() {
             Ingresos
           </h1>
           <p className="mt-2 max-w-xl text-sm leading-relaxed text-slate-500">
-            Entrada de mercadería archivada por día, con remito y sector destino.
+            Entrada de mercadería archivada por día, con remito y destinos por línea.
           </p>
         </div>
         {hasPermiso('ingresos.crear') && (
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="hidden rounded-full border border-surface-border bg-white px-2.5 py-1 text-[11px] font-medium text-slate-500 shadow-card sm:inline-flex">
-              Enter = nuevo ingreso
-            </span>
-            <Button className="rounded-xl px-4" onClick={abrirNuevoIngreso}>
-              <Plus className="h-4 w-4" />
-              Nuevo ingreso
-            </Button>
+          <div className="flex flex-col items-stretch gap-2 sm:items-end">
+            <p className="text-xs text-slate-400 sm:text-right">
+              {tieneBorrador
+                ? 'Enter → continuar ingreso en curso'
+                : 'Enter → nuevo ingreso'}
+            </p>
+            <div className="flex flex-wrap items-center justify-end gap-2">
+              <Button
+                className="rounded-xl px-4"
+                onClick={() => {
+                  if (tieneBorrador) continuarBorrador()
+                  else abrirNuevoIngreso()
+                }}
+              >
+                {tieneBorrador ? (
+                  <>
+                    <ClipboardList className="h-4 w-4" />
+                    Continuar ingreso
+                  </>
+                ) : (
+                  <>
+                    <Plus className="h-4 w-4" />
+                    Nuevo ingreso
+                  </>
+                )}
+              </Button>
+            </div>
           </div>
         )}
       </section>
@@ -1596,9 +1657,21 @@ export function IngresosPage() {
               </p>
               {!(listSearch || listFechaDesde || listFechaHasta) &&
                 hasPermiso('ingresos.crear') && (
-                  <Button className="mt-4 rounded-xl" size="sm" onClick={abrirNuevoIngreso}>
-                    <Plus className="h-4 w-4" />
-                    Nuevo ingreso
+                  <Button className="mt-4 rounded-xl" size="sm" onClick={() => {
+                    if (tieneBorrador) continuarBorrador()
+                    else abrirNuevoIngreso()
+                  }}>
+                    {tieneBorrador ? (
+                      <>
+                        <ClipboardList className="h-4 w-4" />
+                        Continuar ingreso
+                      </>
+                    ) : (
+                      <>
+                        <Plus className="h-4 w-4" />
+                        Nuevo ingreso
+                      </>
+                    )}
                   </Button>
                 )}
             </div>

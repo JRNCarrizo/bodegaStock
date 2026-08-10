@@ -1,14 +1,21 @@
 # BodegaStock — Módulo de Inventario
 
-> **Documento de referencia.** Define el flujo completo del inventario físico: doble conteo, reconteo, comparación vs sistema, reorganización del depósito y cierre con reporte.
+> **Documento de referencia** (alineado a **v0.3.30**). Define el flujo del inventario físico: verificación Simple/Doble, online/offline, reconteo, comparación vs sistema, reorganización y cierre.
 
-Ver también: [DESGLOSE-DE-CANTIDADES.md](DESGLOSE-DE-CANTIDADES.md) · [MODELO-DE-DATOS.md](MODELO-DE-DATOS.md) · [APP-MOVIL.md](APP-MOVIL.md)
+Ver también: [DESGLOSE-DE-CANTIDADES.md](DESGLOSE-DE-CANTIDADES.md) · [MODELO-DE-DATOS.md](MODELO-DE-DATOS.md) · [APP-MOVIL.md](APP-MOVIL.md) · [INVENTARIO-OFFLINE-ESTADO.md](INVENTARIO-OFFLINE-ESTADO.md)
 
 ---
 
 ## 1. Propósito
 
-Realizar un **conteo físico** del stock en la bodega, sector por sector, con **dos personas contando en paralelo** desde el celular (**navegador web** o **APK** — ambos canales conviven; ver [APP-MOVIL.md](APP-MOVIL.md)). Cada contador registra **líneas independientes** por ubicación/pila (pallet × unidades, pucherios sueltos).
+Realizar un **conteo físico** del stock en la bodega, sector por sector, desde el celular (**navegador web** o **APK** — ver [APP-MOVIL.md](APP-MOVIL.md)). Cada contador registra **líneas independientes** por ubicación/pila (pallet × unidades, pucherios sueltos).
+
+Por sector se elige:
+
+| Dimensión | Opciones |
+|-----------|----------|
+| **Verificación** | **Doble** (2 contadores + Comparación A) o **Simple** (1 contador, sin pares) |
+| **Conectividad** | **Offline** (APK + P2P / import) u **Online** (red al PC) |
 
 El inventario cumple **dos funciones**:
 
@@ -21,17 +28,18 @@ En la operación diaria es muy común mover mercadería entre sectores **sin reg
 
 ### Objetivos
 
-- Doble conteo independiente con vistas separadas (sin fusionar líneas).
+- Conteo independiente con vistas separadas (sin fusionar líneas); Doble o Simple según el sector.
 - Desglose visible: pallet × cajas/unidades + sueltos, no solo total.
-- Detectar y localizar diferencias por producto (entre contadores y vs sistema).
+- Detectar y localizar diferencias por producto (entre contadores si Doble; vs sistema siempre).
 - Reorganizar stock entre sectores (movimientos parciales incluidos).
 - Generar reporte persistente: cómo estaba el sistema vs cómo quedó.
 
 ### Alcance típico
 
-- **4–5 sectores** por inventario.
-- **2 contadores distintos** por sector.
-- Por defecto se inventarian **todos los sectores**; opción de elegir solo algunos (inventario parcial).
+- **4–5 sectores** por inventario (o parcial).
+- Sectores grandes / críticos: **Doble** (2 contadores).
+- Sectores chicos / poco movidos: **Simple** (1 contador).
+- Por defecto se inventarian **todos los sectores**; opción de elegir solo algunos.
 
 ### Plataforma de conteo
 
@@ -53,16 +61,17 @@ Supervisor siempre opera desde **PC (Electron)**.
 
 | Actor | Rol | Dispositivo |
 |-------|-----|-------------|
-| **Supervisor** | Crea sesión, asigna sectores y contadores, supervisa, cierra inventario, confirma ajustes | PC (Electron) |
-| **Contador 1** | Cuenta productos en sector asignado | Celular (navegador / APK) |
-| **Contador 2** | Cuenta productos en el mismo sector | Celular (navegador / APK) |
+| **Supervisor** | Crea sesión, asigna sectores y contadores, elige Simple/Doble y Online/Offline, supervisa, cierra | PC (Electron) |
+| **Contador 1** | Cuenta el sector (siempre presente) | Celular (navegador / APK) |
+| **Contador 2** | Segundo conteo (solo verificación **Doble**) | Celular (navegador / APK) |
 
 ### Reglas de asignación
 
-- Cada sector tiene exactamente **2 contadores distintos** (Contador 1 ≠ Contador 2).
-- Un contador **puede estar asignado a varios sectores** en la misma sesión (ej. Juan en Depósito A y Reserva).
+- **Doble:** exactamente **2 contadores distintos** (`contador_1_id` ≠ `contador_2_id`).
+- **Simple:** solo **Contador 1**; `contador_2_id` = null; no hay Comparación A ni sync P2P.
+- Un contador **puede estar asignado a varios sectores** en la misma sesión.
 - Un contador **no debe tener dos sectores activos al mismo tiempo** (evita confusión operativa).
-- Productos no catalogados: **rechazar en v1** (el supervisor los da de alta desde PC si hace falta).
+- Productos no catalogados: **rechazar** (alta previa desde PC).
 
 ---
 
@@ -73,61 +82,40 @@ Supervisor siempre opera desde **PC (Electron)**.
 │  FASE 0: PREPARACIÓN (Supervisor - PC)                          │
 │  • Crear sesión de inventario (nombre, fecha)                   │
 │  • Seleccionar sectores (todos o solo algunos)                  │
-│  • Asignar Contador 1 y Contador 2 por sector                   │
+│  • Por sector: verificación Simple/Doble + Online/Offline       │
+│  • Asignar Contador 1 (y Contador 2 si Doble)                   │
 │  • Snapshot del stock del sistema (estado inicial)              │
 │  • Iniciar sesión → EN_PROGRESO                                 │
 │  • BLOQUEO GLOBAL de movimientos en todo el depósito            │
 └────────────────────────────┬────────────────────────────────────┘
                              ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│  FASE 1: CONTEO INDEPENDIENTE (Contadores - Celular)            │
-│  • Cada contador trabaja SOLO en su vista (no ve al otro)       │
-│  • Busca producto: buscador dinámico O escaneo                  │
-│  • Registra LÍNEAS independientes por ubicación/pila            │
-│  • Las líneas NO se fusionan (ni entre sí ni con el otro)       │
-│  • Mismo producto puede tener varias líneas en el mismo sector  │
-│  • Cuando termina → marca "Finalicé este sector"                │
+│  FASE 1: CONTEO (Contadores - Celular)                          │
+│  • Cada contador trabaja SOLO en su vista                       │
+│  • Líneas independientes (no se fusionan)                       │
+│  • Cuando termina → "Finalicé este sector"                      │
 └────────────────────────────┬────────────────────────────────────┘
                              ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│  FASE 2: COMPARACIÓN A — Contador vs Contador (por sector)     │
-│  • Solo cuando AMBOS finalizaron el sector en la ronda actual   │
-│  • Compara TOTAL por producto (suma de líneas de cada uno)      │
-│  • AMBOS ven el resultado; se destacan diferencias              │
-│  • Si todo coincide → sector CERRADO_OK                         │
-│  • Si hay diferencias → sector CON_DIFERENCIAS → reconteo     │
-└────────────────────────────┬────────────────────────────────────┘
-                             ▼
-┌─────────────────────────────────────────────────────────────────┐
-│  FASE 3: RECONTEO (solo productos con diferencia entre contadores)│
-│  • Nueva ronda; solo productos que no coincidieron              │
-│  • Muestra desglose anterior de AMBOS como REFERENCIA           │
-│  • Cada uno cuenta de nuevo como quiera (totales deben coincidir)│
-│  • Al finalizar ambos → nueva Comparación A                     │
-│  • Repetir hasta diferencia = 0 en todos los productos          │
+│  FASE 2–3: solo verificación DOBLE                              │
+│  • Comparación A (pares) → OK o CON_DIFERENCIAS                 │
+│  • Reconteo de productos con diferencia hasta coincidir         │
+│  • SIMPLE: salta esta fase → sector CERRADO_OK al finalizar     │
 └────────────────────────────┬────────────────────────────────────┘
                              ▼
 ┌─────────────────────────────────────────────────────────────────┐
 │  FASE 4: COMPARACIÓN B — Contado vs Sistema (Supervisor - PC)   │
 │  • Todos los sectores elegidos deben estar CERRADO_OK           │
-│  • Por producto, en todos los sectores del inventario:          │
-│      - ¿Total global contado vs sistema?                        │
-│      - ¿Distribución por sector coincide?                       │
 │  • Detecta: ajustes de cantidad + reorganizaciones              │
 └────────────────────────────┬────────────────────────────────────┘
                              ▼
 ┌─────────────────────────────────────────────────────────────────┐
 │  FASE 5: CIERRE (Supervisor - PC)                               │
-│  • Revisar propuesta: ajustes + reorganizaciones                │
-│  • Supervisor confirma                                          │
-│  • stock_lineas se reemplaza por el desglose contado            │
-│  • Movimientos AJUSTE_INVENTARIO en el ledger                  │
-│  • Genera REPORTE (antes / después)                             │
-│  • Sesión → CERRADA → DESBLOQUEO de movimientos                 │
+│  • Supervisor confirma → stock_lineas + reporte + desbloqueo    │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
-Las fases 1–3 son las mismas en espíritu; cambia **dónde** viven el conteo y la Comparación A según el **modo de conectividad** (§3.1).
+La Comparación A / reconteo solo aplican en **Doble**. Dónde viven conteo y Comparación A depende de **Online vs Offline** (§3.1). Verificación Simple/Doble: §3.2.
 
 ---
 
@@ -146,19 +134,19 @@ Las fases 1–3 son las mismas en espíritu; cambia **dónde** viven el conteo y
 | Comparación A | El **PC** la dispara cuando ambos finalizan | Los **dos celulares** sincronizan entre sí al final del sector |
 | Comparación B / cierre | En el PC | En el PC, **después de importar** el sector |
 
-En una misma sesión puede haber sectores contados **con red** y otros **offline**. El PC solo exige que cada sector llegue a estado “OK entre contadores” antes de la Comparación B.
+En una misma sesión puede haber sectores **Online/Offline** y **Simple/Doble**. El PC exige que cada sector esté `CERRADO_OK` (Doble: tras Comparación A; Simple: tras finalizar/importar) antes de la Comparación B.
 
 ### Cómo se elige
 
-- Al preparar el sector (supervisor o contador al “Preparar”): **Con red** u **Offline**.
-- El modo queda asociado al sector de esa sesión (detalle de UI a definir en implementación).
+- Al **crear la sesión** en PC: por sector, toggles **Simple/Doble** y **Con red / Offline**.
+- Offline por defecto; Doble por defecto.
 
 ### Modo con red
 
 1. Celulares conectados al PC (`:3847`).
 2. Cuentan; las líneas se persisten en el servidor.
-3. Ambos marcan “Finalicé” → el **servidor** hace Comparación A.
-4. Reconteo online si hace falta.
+3. **Doble:** ambos “Finalicé” → Comparación A en servidor (+ reconteo si hace falta).
+4. **Simple:** el contador finaliza → sector `CERRADO_OK` sin pares.
 5. Cuando todos los sectores OK → Comparación B + cierre en PC.
 
 ### Modo offline — flujo acordado
@@ -178,18 +166,18 @@ Bajan paquete offline             (base local propia)                 Importar s
 
 | Método | Path | Uso |
 |--------|------|-----|
-| Crear sesión | `POST /api/inventario/sesiones` | Body `sectores[].modo_conectividad`: `ONLINE` \| `OFFLINE` |
+| Crear sesión | `POST /api/inventario/sesiones` | `sectores[].modo_conectividad` + `modo_verificacion` (`DOBLE`\|`SIMPLE`); `contador_2_id` null si Simple |
 | Cambiar modo | `PATCH /api/inventario/sectores/:id/modo` | Solo si el sector está `PENDIENTE` |
-| Descargar paquete | `GET /api/inventario/sectores/:id/paquete-offline` | Contador asignado; catálogo + rol + snapshot |
-| Avisar inicio de import | `POST /api/inventario/sectores/:id/iniciar-importacion-offline` | La PC muestra “Recibiendo conteo…” mientras llega |
-| Importar conteo | `POST /api/inventario/sectores/:id/importar-offline` | Líneas de ambos + `ronda_actual` → Comparación A en el PC |
-| Importar archivo Plan B | `POST /api/inventario/sectores/:id/importar-offline-archivo` | Supervisor; valida formato, sesión, sector, contadores y checksum |
+| Descargar paquete | `GET /api/inventario/sectores/:id/paquete-offline` | Contador asignado; incluye `modo_verificacion` |
+| Avisar inicio de import | `POST /api/inventario/sectores/:id/iniciar-importacion-offline` | La PC muestra “Recibiendo conteo…” |
+| Importar conteo | `POST /api/inventario/sectores/:id/importar-offline` | Doble → Comparación A; Simple → cierra sin pares |
+| Importar archivo Plan B | `POST /api/inventario/sectores/:id/importar-offline-archivo` | Supervisor; checksum / sesión / sector |
 
-Columnas en `inventario_sectores`: `modo_conectividad`, `paquete_descargado_at`, `importado_at`.
+Columnas en `inventario_sectores`: `modo_conectividad`, `modo_verificacion`, `paquete_descargado_at`, `importado_at`; `contador_2_id` nullable.
 
 El conteo online (líneas/finalizar/reconteo por REST) **queda bloqueado** en sectores `OFFLINE`; esos flujos viven en la APK + import.
 
-> **Estado julio 2026:** el flujo offline de punta a punta está **implementado** en APK (conteo local, sync P2P por hotspot, Comparación A, import, limpieza). Detalle de estado, archivos y “no desviarse”: **[INVENTARIO-OFFLINE-ESTADO.md](INVENTARIO-OFFLINE-ESTADO.md)**.
+> **Estado agosto 2026 (v0.3.30):** offline punta a punta + Simple/Doble implementados. Detalle: **[INVENTARIO-OFFLINE-ESTADO.md](INVENTARIO-OFFLINE-ESTADO.md)**.
 
 #### 1) Carga en oficina (ambos al PC)
 
@@ -216,7 +204,7 @@ Modelo acordado: **ambos tienen base local**; **no** hace falta un servidor perm
 1. Contador 1 marca “Finalicé este sector”.
 2. Contador 2 marca “Finalicé este sector”.
 3. Se juntan / uno activa hotspot; el otro se conecta.
-4. **Sincronizan** el conteo de ese sector / ronda **por HTTP local** (puerto 3850; UI host/cliente en la APK). La IP/QR se refresca automáticamente al activarse el hotspot y también puede actualizarse manualmente.
+4. **Sincronizan** el conteo de ese sector / ronda **por HTTP local** (puerto **3850**; UI host/cliente en la APK). La IP/QR se refresca al activar el hotspot. En carga manual: **solo se edita la IP**; el puerto queda fijo en 3850 (v0.3.30). **Simple:** no hay sync P2P; tras finalizar se importa al PC.
 5. La app detecta que hay **dos conteos completos** → dispara **Comparación A** (totales por producto).
 6. Resultado:
    - **OK** → sector cerrado offline, listo para importar.
@@ -241,8 +229,8 @@ Antes de sincronizar, quien ya marcó “Finalicé” puede usar **Seguir editan
 ### Qué no es el modo offline
 
 - **No** es editar el stock del PC desde el celular sin red.
-- **No** es un dump ciego de todo el inventario al final sin Comparación A (eso se descartó porque rompe reconteo entre contadores).
-- Offline = conteo + Comparación A **entre pares**; la verdad de stock y Comparación B siguen en el **PC**.
+- **No** es un dump ciego sin Comparación A en modo **Doble** (eso se descartó). El modo **Simple** es otra decisión explícita: un solo contador, sin pares, y Comparación B en PC.
+- Offline **Doble** = conteo + Comparación A entre pares; la verdad de stock y Comparación B siguen en el **PC**.
 
 ### Estado del sector en el PC mientras está offline
 
@@ -255,10 +243,28 @@ Mientras el conteo ocurre en el depósito, el sector conserva su estado y marca 
 | | Comparación A | Comparación B |
 |---|---------------|---------------|
 | **Entre** | Contador 1 vs Contador 2 | Total contado vs stock del sistema |
-| **Cuándo** | Al finalizar cada sector (por ronda) | Al cerrar toda la sesión |
+| **Cuándo** | Solo **Doble**, al finalizar el sector (por ronda) | Al cerrar la sesión (todos `CERRADO_OK`) |
 | **Granularidad** | Total por producto en el sector | Total global + distribución por sector y líneas |
 | **Si difiere** | Reconteo (solo ese producto) | Ajuste y/o reorganización (supervisor confirma) |
 | **Quién ve** | Ambos contadores | Supervisor |
+| **Simple** | No aplica | Sí (igual que Doble) |
+
+---
+
+## 3.2 Modo de verificación (Simple vs Doble)
+
+Campo `inventario_sectores.modo_verificacion`: `DOBLE` (default) \| `SIMPLE`.
+
+| | **Doble** | **Simple** |
+|--|-----------|------------|
+| Contadores | 2 distintos | 1 (`contador_2_id` null) |
+| Comparación A / reconteo | Sí | No |
+| Sync P2P (offline) | Sí | No |
+| Cierre de sector | Tras coincidencia entre pares | Al finalizar (online) o al importar (offline) → `CERRADO_OK` |
+| Uso típico | Sectores grandes / críticos | Sectores chicos / poco movidos |
+| Comparación B | Sí | Sí |
+
+Implementado desde **v0.3.28**. UI de creación: toggles por sector en “Nuevo inventario”.
 
 ---
 
@@ -754,7 +760,9 @@ Ver [MODELO-DE-DATOS.md](MODELO-DE-DATOS.md).
 - [x] **D14:** Al cerrar, reorganizar sectores y líneas según conteo físico (movimientos parciales incluidos).
 - [x] **D15:** Reporte persistente antes/después obligatorio al cerrar.
 - [x] **D16:** **Modo dual de conectividad:** se elige **con red al PC** u **offline** (alternativa si no hay WiFi en depósito). Ver §3.1.
-- [x] **D17:** Offline: ambos bajan catálogo en oficina; cada uno cuenta en base local; **sync entre celulares solo cuando ambos finalizaron** el sector → Comparación A; import al PC para ensamble y Comparación B.
+- [x] **D17:** Offline Doble: ambos bajan catálogo en oficina; cuentan en base local; **sync entre celulares cuando ambos finalizaron** → Comparación A; import al PC → Comparación B.
+- [x] **D18:** **Verificación Simple/Doble por sector** (v0.3.28): Simple = 1 contador, sin Comparación A/P2P; Comparación B en PC. Ver §3.2.
+- [x] **D19:** Sync manual offline: IP editable, puerto fijo **3850** (v0.3.30).
 - [x] **D18:** Import por red sector a sector como flujo principal; archivo final validado como Plan B hacia la PC.
 - [x] **Desglose:** pallet × unidades + sueltos en todo el flujo.
 

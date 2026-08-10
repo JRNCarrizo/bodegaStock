@@ -1,6 +1,6 @@
 # BodegaStock — Modelo de datos
 
-> Esquema implementado en SQLite (ControlStock / BodegaStock **v0.3.13**).
+> Esquema implementado en SQLite (ControlStock / BodegaStock **v0.3.30**).
 > Describe las entidades persistidas en el servidor; las exportaciones Excel son agregaciones de consulta y **no** agregan tablas.
 
 ---
@@ -251,18 +251,21 @@ Cada módulo operativo tiene una cabecera con ítems.
 | id | PK | |
 | numero | string | Referencia de planilla |
 | camionero_id | FK → camioneros | |
-| sector_origen_id | FK → sectores | |
+| sector_origen_id | FK → sectores | En práctica el descuento sigue reglas de sectores de descuento |
 | usuario_id | FK → usuarios | |
 | created_at | datetime | |
 
-### `planilla_items`
+> **Futuro (no en schema aún):** posible origen `ocr` / imagen asociada al cargar desde foto de planilla impresa — ver [PLANILLAS-OCR-FUTURO.md](PLANILLAS-OCR-FUTURO.md). Hoy no hay tablas de OCR.
 
-| Campo | Tipo |
-|-------|------|
-| id | PK |
-| planilla_id | FK |
-| producto_id | FK |
-| cantidad | decimal |
+### `planilla_items` / `planilla_lineas`
+
+| Campo | Tipo | Notas |
+|-------|------|-------|
+| id | PK | |
+| planilla_id | FK | |
+| producto_id | FK | |
+| cantidad | decimal | |
+| modo_salida | enum | `CAJA` \| `BOTELLA` (implementación actual) |
 
 ---
 
@@ -322,24 +325,33 @@ Cada módulo operativo tiene una cabecera con ítems.
 | Campo | Tipo | Notas |
 |-------|------|-------|
 | id | PK | |
-| tipo | enum | `ENVIAR`, `RECIBIR` |
-| sector_origen_id | FK | |
-| sector_destino_id | FK | |
+| fecha | TEXT | Fecha del documento (al finalizar se actualiza) |
+| tipo | enum | `ENVIAR`, `RECIBIR`, `LISTA` (flujo actual = `LISTA`) |
+| sector_origen_id | FK | Nullable en lista abierta (la ruta va por línea) |
+| sector_destino_id | FK | Nullable en lista abierta |
 | observacion | string | |
-| estado | enum | `PENDIENTE`, `COMPLETADO`, `CANCELADO` |
-| creado_por_id | FK → usuarios | Quién inició el movimiento |
-| recibido_por_id | FK → usuarios | Nullable hasta completar |
-| ingreso_directo | INTEGER | DEFAULT 0. `1` si se completó sin doble verificación |
+| estado | enum | `ABIERTA`, `PENDIENTE`, `COMPLETADO`, `CANCELADO` |
+| creado_por_id | FK → usuarios | Quién abrió la lista / creó el doc |
+| recibido_por_id | FK → usuarios | Quién finalizó (nullable hasta completar) |
+| ingreso_directo | INTEGER | DEFAULT 0. Legado: sin doble verificación |
 | created_at | datetime | |
 
-### `movimiento_interno_items`
+Como máximo una fila con `estado=ABIERTA` y `tipo=LISTA`.
 
-| Campo | Tipo |
-|-------|------|
-| id | PK |
-| movimiento_interno_id | FK |
-| producto_id | FK |
-| cantidad | decimal |
+### `movimiento_interno_lineas`
+
+| Campo | Tipo | Notas |
+|-------|------|-------|
+| id | PK | |
+| movimiento_interno_id | FK | |
+| producto_id | FK | |
+| sector_origen_id / sector_destino_id | FK | Por línea |
+| ubicacion_origen_id / ubicacion_destino_id | FK | Nullable |
+| cantidad_cajas | REAL | |
+| tipo_bulto / cantidad_bultos / unidades_por_bulto / etiqueta | | Desglose |
+| cancelada | INTEGER | DEFAULT 0 |
+| verificada | INTEGER | DEFAULT 0 — tilde obligatoria antes de finalizar |
+| orden | INTEGER | |
 
 ---
 
@@ -368,12 +380,16 @@ Sectores incluidos en una sesión, con contadores asignados.
 | id | PK | |
 | sesion_id | FK → inventario_sesiones | |
 | sector_id | FK → sectores | |
-| contador_1_id | FK → usuarios | |
-| contador_2_id | FK → usuarios | Distinto de contador_1 |
+| contador_1_id | FK → usuarios | Siempre |
+| contador_2_id | FK → usuarios | Nullable si `modo_verificacion = SIMPLE`; si Doble, distinto de contador_1 |
 | estado | enum | `PENDIENTE`, `EN_CONTEO`, `ESPERANDO_COMPANERO`, `CON_DIFERENCIAS`, `CERRADO_OK` |
 | ronda_actual | int | 1 = conteo inicial, 2+ = reconteos |
 | contador_1_finalizo | boolean | Si finalizó la ronda actual |
-| contador_2_finalizo | boolean | Si finalizó la ronda actual |
+| contador_2_finalizo | boolean | Si finalizó la ronda actual (en Simple se marca al cerrar) |
+| modo_conectividad | enum | `ONLINE` \| `OFFLINE` |
+| modo_verificacion | enum | `DOBLE` (default) \| `SIMPLE` |
+| paquete_descargado_at | datetime | Nullable; offline |
+| importado_at | datetime | Nullable; offline |
 
 ### `inventario_conteo_lineas`
 

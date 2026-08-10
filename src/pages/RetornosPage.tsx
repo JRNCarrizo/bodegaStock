@@ -5,6 +5,7 @@ import {
   ChevronDown,
   ChevronLeft,
   ChevronRight,
+  ClipboardList,
   Download,
   Loader2,
   Pencil,
@@ -125,6 +126,64 @@ function notifyRetornosPendientesChanged() {
   window.dispatchEvent(new Event('retornos-pendientes-changed'))
 }
 
+const RETORNO_DRAFT_KEY = 'bodegaStock:retornoDraft:v1'
+
+type RetornoDraftStored = {
+  fecha: string
+  numeroPlanilla: string
+  observacion: string
+  camioneroId: string
+  vehiculoId: string
+  sectorId: string
+  lineSectorId: string
+  createPhase: 'datos' | 'carga'
+  lineas: RetornoLineaDraft[]
+}
+
+function readRetornoDraft(): RetornoDraftStored | null {
+  try {
+    const raw = localStorage.getItem(RETORNO_DRAFT_KEY)
+    if (!raw) return null
+    const parsed = JSON.parse(raw) as RetornoDraftStored
+    if (!parsed || !Array.isArray(parsed.lineas)) return null
+    return parsed
+  } catch {
+    return null
+  }
+}
+
+function writeRetornoDraft(draft: RetornoDraftStored): void {
+  try {
+    localStorage.setItem(RETORNO_DRAFT_KEY, JSON.stringify(draft))
+  } catch {
+    /* quota / private mode */
+  }
+}
+
+function clearRetornoDraft(): void {
+  try {
+    localStorage.removeItem(RETORNO_DRAFT_KEY)
+  } catch {
+    /* ignore */
+  }
+}
+
+function retornoDraftTieneContenido(d: {
+  numeroPlanilla: string
+  observacion: string
+  camioneroId: string
+  sectorId: string
+  lineas: RetornoLineaDraft[]
+}): boolean {
+  return (
+    d.lineas.length > 0 ||
+    !!d.numeroPlanilla.trim() ||
+    !!d.observacion.trim() ||
+    !!d.camioneroId ||
+    !!d.sectorId
+  )
+}
+
 export function RetornosPage() {
   const { hasPermiso, user } = useAuth()
   const [view, setView] = useState<'list' | 'create' | 'detail' | 'verify'>('list')
@@ -169,6 +228,8 @@ export function RetornosPage() {
   const [editSector, setEditSector] = useState('')
   const [obsVerificacion, setObsVerificacion] = useState('')
   const [dobleVerificacion, setDobleVerificacion] = useState(true)
+  const [tieneBorrador, setTieneBorrador] = useState(false)
+  const draftHydratedRef = useRef(false)
 
   const fechaRef = useRef<HTMLInputElement>(null)
   const planillaRef = useRef<HTMLInputElement>(null)
@@ -428,8 +489,16 @@ export function RetornosPage() {
     setError('')
   }
 
+  function salirDeCreacion() {
+    setSelectedProduct(null)
+    setProductSearch('')
+    setProductResults([])
+    setShowScanner(false)
+    setError('')
+    setView('list')
+  }
+
   function volverAlListado() {
-    resetCreateForm()
     setDetalle(null)
     setEditLineaId(null)
     setShowScanner(false)
@@ -456,6 +525,18 @@ export function RetornosPage() {
   }
 
   function abrirNuevoRetorno() {
+    if (
+      tieneBorrador &&
+      retornoDraftTieneContenido({
+        numeroPlanilla,
+        observacion,
+        camioneroId,
+        sectorId,
+        lineas
+      })
+    ) {
+      if (!confirm('Hay un retorno en curso. ¿Descartarlo y empezar uno nuevo?')) return
+    }
     void (async () => {
       try {
         const cfg = await api<{ doble_verificacion: boolean }>('/api/configuracion/retornos')
@@ -464,10 +545,106 @@ export function RetornosPage() {
         /* keep previous */
       }
     })()
+    clearRetornoDraft()
+    setTieneBorrador(false)
     resetCreateForm()
     setView('create')
     setTimeout(() => focusField(fechaRef), 50)
   }
+
+  function continuarBorrador() {
+    void (async () => {
+      try {
+        const cfg = await api<{ doble_verificacion: boolean }>('/api/configuracion/retornos')
+        setDobleVerificacion(cfg.doble_verificacion)
+      } catch {
+        /* keep previous */
+      }
+    })()
+    const draft = readRetornoDraft()
+    if (draft) {
+      setFecha(draft.fecha || todayIsoDate())
+      setNumeroPlanilla(draft.numeroPlanilla || '')
+      setObservacion(draft.observacion || '')
+      setCamioneroId(draft.camioneroId || '')
+      setVehiculoId(draft.vehiculoId || '')
+      setSectorId(draft.sectorId || '')
+      setLineSectorId(draft.lineSectorId || '')
+      setLineas(draft.lineas || [])
+      setCreatePhase(
+        draft.lineas?.length > 0 || draft.createPhase === 'carga' ? 'carga' : draft.createPhase || 'datos'
+      )
+      setTieneBorrador(true)
+    }
+    setSelectedProduct(null)
+    setProductSearch('')
+    setProductResults([])
+    setShowScanner(false)
+    setError('')
+    setView('create')
+  }
+
+  function cancelarRetornoEnCurso() {
+    if (lineas.length > 0 || numeroPlanilla.trim() || camioneroId || sectorId) {
+      if (!confirm('¿Cancelar el retorno en curso? Se perderán las líneas cargadas.')) return
+    }
+    clearRetornoDraft()
+    setTieneBorrador(false)
+    resetCreateForm()
+    salirDeCreacion()
+  }
+
+  useEffect(() => {
+    if (draftHydratedRef.current) return
+    draftHydratedRef.current = true
+    const draft = readRetornoDraft()
+    if (!draft || !retornoDraftTieneContenido(draft)) {
+      setTieneBorrador(false)
+      return
+    }
+    setFecha(draft.fecha || todayIsoDate())
+    setNumeroPlanilla(draft.numeroPlanilla || '')
+    setObservacion(draft.observacion || '')
+    setCamioneroId(draft.camioneroId || '')
+    setVehiculoId(draft.vehiculoId || '')
+    setSectorId(draft.sectorId || '')
+    setLineSectorId(draft.lineSectorId || '')
+    setLineas(draft.lineas || [])
+    setCreatePhase(draft.createPhase || (draft.lineas?.length ? 'carga' : 'datos'))
+    setTieneBorrador(true)
+  }, [])
+
+  useEffect(() => {
+    if (!draftHydratedRef.current) return
+    const payload = {
+      fecha,
+      numeroPlanilla,
+      observacion,
+      camioneroId,
+      vehiculoId,
+      sectorId,
+      lineSectorId,
+      createPhase,
+      lineas
+    }
+    if (!retornoDraftTieneContenido(payload)) {
+      clearRetornoDraft()
+      setTieneBorrador(false)
+      return
+    }
+    writeRetornoDraft(payload)
+    setTieneBorrador(true)
+  }, [
+    fecha,
+    numeroPlanilla,
+    observacion,
+    camioneroId,
+    vehiculoId,
+    sectorId,
+    lineSectorId,
+    createPhase,
+    lineas
+  ])
 
   useEscHandler(view === 'detail' || view === 'verify', () => {
     if (saving) return false
@@ -493,7 +670,7 @@ export function RetornosPage() {
       focusField(productSearchRef)
       return true
     }
-    volverAlListado()
+    salirDeCreacion()
     return true
   })
 
@@ -688,6 +865,8 @@ export function RetornosPage() {
       await loadRetornos()
       notifyRetornosPendientesChanged()
       await abrirRetorno(result.id)
+      clearRetornoDraft()
+      setTieneBorrador(false)
       resetCreateForm()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error al registrar retorno')
@@ -733,7 +912,10 @@ export function RetornosPage() {
     items: retornosDelDiaOrdenados,
     listSearchRef,
     canCreate: hasPermiso('retornos.crear'),
-    onCreate: abrirNuevoRetorno,
+    onCreate: () => {
+      if (tieneBorrador) continuarBorrador()
+      else abrirNuevoRetorno()
+    },
     onOpenDetail: (r) => {
       void abrirRetorno(r.id)
     }
@@ -1174,7 +1356,7 @@ export function RetornosPage() {
             variant="ghost"
             size="sm"
             className="-ml-2 h-9 self-start rounded-xl px-3"
-            onClick={volverAlListado}
+            onClick={salirDeCreacion}
           >
             <ChevronLeft className="h-4 w-4" />
             Volver al listado
@@ -1405,7 +1587,7 @@ export function RetornosPage() {
                 variant="ghost"
                 size="sm"
                 className="-ml-2 h-8 rounded-lg px-2"
-                onClick={volverAlListado}
+                onClick={salirDeCreacion}
               >
                 <ChevronLeft className="h-3.5 w-3.5" />
                 Salir
@@ -1646,18 +1828,28 @@ export function RetornosPage() {
               </p>
             </div>
             {hasPermiso('retornos.crear') && (
-              <Button
-                className="rounded-xl"
-                onClick={() => void confirmarRetorno()}
-                disabled={lineas.length === 0 || saving}
-              >
-                <Check className="h-4 w-4" />
-                {saving
-                  ? 'Registrando...'
-                  : dobleVerificacion
-                    ? 'Confirmar retorno'
-                    : 'Confirmar y sumar stock'}
-              </Button>
+              <div className="flex shrink-0 flex-wrap gap-2">
+                <Button
+                  variant="secondary"
+                  className="rounded-xl"
+                  onClick={cancelarRetornoEnCurso}
+                  disabled={saving}
+                >
+                  Cancelar retorno
+                </Button>
+                <Button
+                  className="rounded-xl"
+                  onClick={() => void confirmarRetorno()}
+                  disabled={lineas.length === 0 || saving}
+                >
+                  <Check className="h-4 w-4" />
+                  {saving
+                    ? 'Registrando...'
+                    : dobleVerificacion
+                      ? 'Confirmar retorno'
+                      : 'Confirmar y sumar stock'}
+                </Button>
+              </div>
             )}
           </div>
         </div>
@@ -1692,13 +1884,30 @@ export function RetornosPage() {
           </p>
         </div>
         {hasPermiso('retornos.crear') && (
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="hidden rounded-full border border-surface-border bg-white px-2.5 py-1 text-[11px] font-medium text-slate-500 shadow-card sm:inline-flex">
-              Enter = nuevo retorno
-            </span>
-            <Button className="rounded-xl px-4" onClick={abrirNuevoRetorno}>
-              <Plus className="h-4 w-4" />
-              Nuevo retorno
+          <div className="flex flex-col items-stretch gap-2 sm:items-end">
+            <p className="text-xs text-slate-400 sm:text-right">
+              {tieneBorrador
+                ? 'Enter → continuar retorno en curso'
+                : 'Enter → nuevo retorno'}
+            </p>
+            <Button
+              className="rounded-xl px-4"
+              onClick={() => {
+                if (tieneBorrador) continuarBorrador()
+                else abrirNuevoRetorno()
+              }}
+            >
+              {tieneBorrador ? (
+                <>
+                  <ClipboardList className="h-4 w-4" />
+                  Continuar retorno
+                </>
+              ) : (
+                <>
+                  <Plus className="h-4 w-4" />
+                  Nuevo retorno
+                </>
+              )}
             </Button>
           </div>
         )}
@@ -1858,9 +2067,25 @@ export function RetornosPage() {
               </p>
               {!(listSearch || listFechaDesde || listFechaHasta || filtroEstado !== 'TODOS') &&
                 hasPermiso('retornos.crear') && (
-                  <Button className="mt-4 rounded-xl" size="sm" onClick={abrirNuevoRetorno}>
-                    <Plus className="h-4 w-4" />
-                    Nuevo retorno
+                  <Button
+                    className="mt-4 rounded-xl"
+                    size="sm"
+                    onClick={() => {
+                      if (tieneBorrador) continuarBorrador()
+                      else abrirNuevoRetorno()
+                    }}
+                  >
+                    {tieneBorrador ? (
+                      <>
+                        <ClipboardList className="h-4 w-4" />
+                        Continuar retorno
+                      </>
+                    ) : (
+                      <>
+                        <Plus className="h-4 w-4" />
+                        Nuevo retorno
+                      </>
+                    )}
                   </Button>
                 )}
             </div>

@@ -7,12 +7,23 @@ import {
   applyMovimientoInternoDespachoLine,
   applyMovimientoInternoRecepcionLine,
   formatEtiquetaLinea,
-  getStockDisponibleCajasEnSector
+  getStockDisponibleCajasEnSector,
+  getStockDisponibleSueltasEnSector,
+  STOCK_SECTOR_VISIBLE_SQL,
+  STOCK_LINEA_SUELTO_SQL
 } from '../utils/stock'
 import { sqlProductoSearchClause, sqlNormalizeCodigoExpr } from '../utils/productoSearch'
 
-type MovimientoTipo = 'ENVIAR' | 'RECIBIR'
-type MovimientoEstado = 'PENDIENTE' | 'COMPLETADO' | 'CANCELADO'
+type MovimientoTipo = 'ENVIAR' | 'RECIBIR' | 'LISTA'
+type MovimientoEstado = 'ABIERTA' | 'PENDIENTE' | 'COMPLETADO' | 'CANCELADO'
+
+function todayIsoDateServer(): string {
+  const d = new Date()
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${y}-${m}-${day}`
+}
 
 interface LineaBody {
   producto_id: number
@@ -21,19 +32,27 @@ interface LineaBody {
   sector_destino_id: number
   ubicacion_destino_id?: number | null
   ubicacion_origen_id?: number | null
-  tipo_bulto?: 'PALLET' | 'CAJA' | null
+  tipo_bulto?: 'PALLET' | 'CAJA' | 'SUELTO' | null
   cantidad_bultos?: number | null
   unidades_por_bulto?: number | null
+  cantidad_suelta?: number | null
   etiqueta?: string | null
 }
 
 interface LineaUpdateBody {
   id: number
   cancelada?: boolean
+  verificada?: boolean
   sector_origen_id?: number
   sector_destino_id?: number
   ubicacion_destino_id?: number | null
   ubicacion_origen_id?: number | null
+  cantidad_cajas?: number
+  tipo_bulto?: 'PALLET' | 'CAJA' | 'SUELTO' | null
+  cantidad_bultos?: number | null
+  unidades_por_bulto?: number | null
+  cantidad_suelta?: number | null
+  etiqueta?: string | null
 }
 
 interface MovimientoBody {
@@ -87,6 +106,88 @@ function resolveUbicacionOrigen(
   return Number(ubicacionOrigenId)
 }
 
+/** Cantidades ya cargadas en la lista abierta (aún no descontadas del stock físico). */
+function reservadoEnListaAbierta(
+  db: ReturnType<typeof getDb>,
+  movimientoId: number,
+  productoId: number,
+  sectorOrigenId: number,
+  ubicacionFilter: { ubicacion_id: number | null } | null,
+  excluirLineaId?: number | null
+): { cajas: number; botellas: number } {
+  const params: Array<number | null> = [movimientoId, productoId, sectorOrigenId]
+  let sql = `
+    SELECT
+      COALESCE(SUM(CASE WHEN COALESCE(tipo_bulto, '') != 'SUELTO' THEN cantidad_cajas ELSE 0 END), 0) AS cajas,
+      COALESCE(SUM(
+        CASE
+          WHEN tipo_bulto = 'SUELTO' THEN COALESCE(cantidad_suelta, 0)
+          WHEN tipo_bulto = 'CAJA' THEN COALESCE(cantidad_suelta, 0)
+          ELSE 0
+        END
+      ), 0) AS botellas
+    FROM movimiento_interno_lineas
+    WHERE movimiento_interno_id = ?
+      AND producto_id = ?
+      AND sector_origen_id = ?
+      AND cancelada = 0
+  `
+  if (excluirLineaId != null && Number.isFinite(excluirLineaId)) {
+    sql += ` AND id != ?`
+    params.push(excluirLineaId)
+  }
+  if (ubicacionFilter != null) {
+    if (ubicacionFilter.ubicacion_id == null) {
+      sql += ` AND ubicacion_origen_id IS NULL`
+    } else {
+      sql += ` AND ubicacion_origen_id = ?`
+      params.push(ubicacionFilter.ubicacion_id)
+    }
+  }
+
+  const row = db.prepare(sql).get(...params) as { cajas: number; botellas: number }
+  return {
+    cajas: Number(row?.cajas ?? 0),
+    botellas: Number(row?.botellas ?? 0)
+  }
+}
+
+function stockLibreEnOrigenLista(
+  db: ReturnType<typeof getDb>,
+  opts: {
+    movimientoId: number
+    productoId: number
+    sectorOrigenId: number
+    ubicacionFilter: { ubicacion_id: number | null } | null
+    excluirLineaId?: number | null
+  }
+): { cajas: number; botellas: number } {
+  const fisicoCajas = getStockDisponibleCajasEnSector(
+    db,
+    opts.productoId,
+    opts.sectorOrigenId,
+    opts.ubicacionFilter
+  )
+  const fisicoBotellas = getStockDisponibleSueltasEnSector(
+    db,
+    opts.productoId,
+    opts.sectorOrigenId,
+    opts.ubicacionFilter
+  )
+  const reservado = reservadoEnListaAbierta(
+    db,
+    opts.movimientoId,
+    opts.productoId,
+    opts.sectorOrigenId,
+    opts.ubicacionFilter,
+    opts.excluirLineaId
+  )
+  return {
+    cajas: Math.max(0, fisicoCajas - reservado.cajas),
+    botellas: Math.max(0, fisicoBotellas - reservado.botellas)
+  }
+}
+
 /** Reubicación dentro del mismo sector: exige ubicaciones distintas (origen puede ser sin ubicación). */
 function assertMovimientoLineaSectoresOk(
   db: ReturnType<typeof getDb>,
@@ -121,8 +222,8 @@ function getMovimientoLineas(db: ReturnType<typeof getDb>, movimientoId: number,
       ml.sector_destino_id, sd.nombre AS sector_destino_nombre,
       ml.ubicacion_destino_id, su.nombre AS ubicacion_destino_nombre,
       ml.ubicacion_origen_id, suo.nombre AS ubicacion_origen_nombre,
-      ml.cantidad_cajas, ml.tipo_bulto, ml.cantidad_bultos, ml.unidades_por_bulto, ml.etiqueta,
-      ml.cancelada, ml.orden
+      ml.cantidad_cajas, ml.tipo_bulto, ml.cantidad_bultos, ml.unidades_por_bulto, ml.cantidad_suelta, ml.etiqueta,
+      ml.cancelada, ml.verificada, ml.orden
     FROM movimiento_interno_lineas ml
     JOIN productos p ON p.id = ml.producto_id
     JOIN sectores so ON so.id = ml.sector_origen_id
@@ -151,8 +252,10 @@ function getMovimientoLineas(db: ReturnType<typeof getDb>, movimientoId: number,
     tipo_bulto: string | null
     cantidad_bultos: number | null
     unidades_por_bulto: number | null
+    cantidad_suelta: number | null
     etiqueta: string | null
     cancelada: number
+    verificada: number
     orden: number
   }>
 }
@@ -201,12 +304,22 @@ function getMovimientoHeader(db: ReturnType<typeof getDb>, id: number) {
 
 function enrichLineaEtiqueta(l: ReturnType<typeof getMovimientoLineas>[number]) {
   if (l.etiqueta) return l.etiqueta
+  if (l.tipo_bulto === 'SUELTO') {
+    return formatEtiquetaLinea(
+      {
+        tipo_bulto: 'SUELTO',
+        cantidad_suelta: l.cantidad_suelta
+      },
+      l.unidad
+    )
+  }
   if (!l.tipo_bulto || l.cantidad_bultos == null || l.unidades_por_bulto == null) return null
   return formatEtiquetaLinea(
     {
       tipo_bulto: l.tipo_bulto as 'PALLET' | 'CAJA' | 'SUELTO',
       cantidad_bultos: l.cantidad_bultos,
-      unidades_por_bulto: l.unidades_por_bulto
+      unidades_por_bulto: l.unidades_por_bulto,
+      cantidad_suelta: l.cantidad_suelta
     },
     l.unidad
   )
@@ -233,6 +346,8 @@ function aplicarStockLineasActivas(
       producto_id: linea.producto_id,
       sector_origen_id: linea.sector_origen_id,
       cantidad_cajas: linea.cantidad_cajas,
+      cantidad_suelta: linea.cantidad_suelta,
+      tipo_bulto: linea.tipo_bulto,
       movimiento_id: movimientoId,
       movimiento_linea_id: linea.id,
       usuario_id: usuarioId,
@@ -245,6 +360,7 @@ function aplicarStockLineasActivas(
       producto_id: linea.producto_id,
       sector_destino_id: linea.sector_destino_id,
       cantidad_cajas: linea.cantidad_cajas,
+      cantidad_suelta: linea.cantidad_suelta,
       movimiento_id: movimientoId,
       usuario_id: usuarioId,
       observacion,
@@ -263,6 +379,7 @@ function buildDetalle(db: ReturnType<typeof getDb>, id: number) {
   const lineas = getMovimientoLineas(db, id).map((l) => ({
     ...l,
     cancelada: !!l.cancelada,
+    verificada: !!l.verificada,
     etiqueta: enrichLineaEtiqueta(l)
   }))
   const lineasActivas = lineas.filter((l) => !l.cancelada)
@@ -299,14 +416,16 @@ export async function movimientosInternosRoutes(app: FastifyInstance): Promise<v
   app.get('/api/movimientos-internos/productos', {
     preHandler: requirePermiso('movimientos_internos.crear')
   }, async (request, reply) => {
-    const { modo, sector_id, q } = request.query as {
+    const { modo, sector_id, q, movimiento_id } = request.query as {
       modo?: string
       sector_id?: string
       q?: string
+      movimiento_id?: string
     }
     const sectorId = Number(sector_id)
-    if (!sectorId || (modo !== 'enviar' && modo !== 'recibir')) {
-      return reply.status(400).send({ error: 'Parámetros modo y sector_id requeridos' })
+    const modoNorm = modo === 'origen' || modo === 'enviar' ? 'enviar' : modo === 'recibir' ? 'recibir' : null
+    if (!sectorId || !modoNorm) {
+      return reply.status(400).send({ error: 'Parámetros modo (origen|enviar|recibir) y sector_id requeridos' })
     }
 
     const db = getDb()
@@ -316,14 +435,20 @@ export async function movimientosInternosRoutes(app: FastifyInstance): Promise<v
     let sql: string
     const params: Array<number | string> = []
 
-    if (modo === 'enviar') {
+    if (modoNorm === 'enviar') {
       sql = `
         SELECT
           p.id, p.codigo_interno, p.codigo_barras, p.nombre, p.imagen_path, p.unidad,
           p.unidades_por_pallet_default, p.unidades_por_caja_default,
-          ss.cantidad_total AS stock_cajas
+          ss.cantidad_total AS stock_cajas,
+          (
+            SELECT COALESCE(SUM(${STOCK_LINEA_SUELTO_SQL}), 0)
+            FROM stock_lineas sl
+            WHERE sl.stock_sector_id = ss.id
+          ) AS stock_botellas_sueltas
         FROM productos p
-        JOIN stock_sector ss ON ss.producto_id = p.id AND ss.sector_id = ? AND ss.cantidad_total > 0
+        JOIN stock_sector ss ON ss.producto_id = p.id AND ss.sector_id = ?
+          AND ${STOCK_SECTOR_VISIBLE_SQL}
         WHERE p.activo = 1
       `
       params.push(sectorId)
@@ -335,10 +460,13 @@ export async function movimientosInternosRoutes(app: FastifyInstance): Promise<v
           (
             SELECT COALESCE(SUM(ss2.cantidad_total), 0)
             FROM stock_sector ss2
-            WHERE ss2.producto_id = p.id AND ss2.sector_id != ? AND ss2.cantidad_total > 0
-          ) AS stock_cajas
+            WHERE ss2.producto_id = p.id AND ss2.sector_id != ?
+              AND ${STOCK_SECTOR_VISIBLE_SQL.replace(/ss\./g, 'ss2.')}
+          ) AS stock_cajas,
+          0 AS stock_botellas_sueltas
         FROM productos p
-        JOIN stock_sector ss ON ss.producto_id = p.id AND ss.sector_id != ? AND ss.cantidad_total > 0
+        JOIN stock_sector ss ON ss.producto_id = p.id AND ss.sector_id != ?
+          AND ${STOCK_SECTOR_VISIBLE_SQL}
         WHERE p.activo = 1
       `
       params.push(sectorId, sectorId)
@@ -351,7 +479,37 @@ export async function movimientosInternosRoutes(app: FastifyInstance): Promise<v
 
     sql += ' ORDER BY p.nombre COLLATE NOCASE ASC LIMIT 40'
 
-    return db.prepare(sql).all(...params)
+    const rows = db.prepare(sql).all(...params) as Array<{
+      id: number
+      codigo_interno: string
+      codigo_barras: string | null
+      nombre: string
+      imagen_path: string | null
+      unidad: string | null
+      unidades_por_pallet_default: number | null
+      unidades_por_caja_default: number | null
+      stock_cajas: number
+      stock_botellas_sueltas: number
+    }>
+
+    const movimientoId = movimiento_id ? Number(movimiento_id) : null
+    if (!movimientoId || !Number.isFinite(movimientoId) || modoNorm !== 'enviar') {
+      return rows
+    }
+
+    // El stock del buscador es por sector; restar todo lo ya cargado en la lista
+    // para ese producto/origen (sin filtrar ubicación).
+    return rows.map((r) => {
+      const reservado = reservadoEnListaAbierta(db, movimientoId, r.id, sectorId, null)
+      return {
+        ...r,
+        stock_cajas: Math.max(0, Number(r.stock_cajas) - reservado.cajas),
+        stock_botellas_sueltas: Math.max(
+          0,
+          Number(r.stock_botellas_sueltas ?? 0) - reservado.botellas
+        )
+      }
+    })
   })
 
   app.get('/api/movimientos-internos/producto/:id/sectores-stock', {
@@ -391,9 +549,11 @@ export async function movimientosInternosRoutes(app: FastifyInstance): Promise<v
   }, async (request) => {
     const productoId = Number((request.params as { id: string }).id)
     const sectorId = Number((request.params as { sectorId: string }).sectorId)
-    const { sin_ubicacion, ubicacion_id } = request.query as {
+    const { sin_ubicacion, ubicacion_id, movimiento_id, excluir_linea_id } = request.query as {
       sin_ubicacion?: string
       ubicacion_id?: string
+      movimiento_id?: string
+      excluir_linea_id?: string
     }
     const db = getDb()
     assertProductoActivo(db, productoId)
@@ -406,8 +566,32 @@ export async function movimientosInternosRoutes(app: FastifyInstance): Promise<v
       ubicacionFilter = { ubicacion_id: Number(ubicacion_id) }
     }
 
+    const movimientoId = movimiento_id ? Number(movimiento_id) : null
+    const excluirLineaId = excluir_linea_id ? Number(excluir_linea_id) : null
+
+    if (movimientoId && Number.isFinite(movimientoId)) {
+      const libre = stockLibreEnOrigenLista(db, {
+        movimientoId,
+        productoId,
+        sectorOrigenId: sectorId,
+        ubicacionFilter,
+        excluirLineaId:
+          excluirLineaId && Number.isFinite(excluirLineaId) ? excluirLineaId : null
+      })
+      return {
+        stock_disponible_cajas: libre.cajas,
+        stock_disponible_botellas: libre.botellas
+      }
+    }
+
     return {
       stock_disponible_cajas: getStockDisponibleCajasEnSector(
+        db,
+        productoId,
+        sectorId,
+        ubicacionFilter
+      ),
+      stock_disponible_botellas: getStockDisponibleSueltasEnSector(
         db,
         productoId,
         sectorId,
@@ -463,6 +647,9 @@ export async function movimientosInternosRoutes(app: FastifyInstance): Promise<v
     if (estado && estado !== 'TODOS') {
       sql += ' AND m.estado = ?'
       params.push(estado)
+    } else {
+      // Historial: no mostrar la lista abierta viva
+      sql += " AND m.estado != 'ABIERTA'"
     }
     if (tipo && tipo !== 'TODOS') {
       sql += ' AND m.tipo = ?'
@@ -502,6 +689,62 @@ export async function movimientosInternosRoutes(app: FastifyInstance): Promise<v
         sector_destino_nombre: ruta.destino
       }
     })
+  })
+
+  app.get('/api/movimientos-internos/abierto', {
+    preHandler: requirePermiso('movimientos_internos.ver')
+  }, async () => {
+    const db = getDb()
+    const row = db
+      .prepare(
+        `
+      SELECT id FROM movimientos_internos
+      WHERE estado = 'ABIERTA' AND tipo = 'LISTA'
+      ORDER BY id DESC
+      LIMIT 1
+    `
+      )
+      .get() as { id: number } | undefined
+    if (!row) return { abierto: null }
+    return { abierto: buildDetalle(db, row.id) }
+  })
+
+  app.post('/api/movimientos-internos/abierto', {
+    preHandler: [blockIfInventarioActivo(), requirePermiso('movimientos_internos.crear')]
+  }, async (request, reply) => {
+    const user = request.user!
+    const db = getDb()
+    const existing = db
+      .prepare(
+        `
+      SELECT id FROM movimientos_internos
+      WHERE estado = 'ABIERTA' AND tipo = 'LISTA'
+      ORDER BY id DESC
+      LIMIT 1
+    `
+      )
+      .get() as { id: number } | undefined
+    if (existing) {
+      return buildDetalle(db, existing.id)
+    }
+
+    try {
+      const result = db
+        .prepare(
+          `
+        INSERT INTO movimientos_internos (
+          fecha, tipo, sector_origen_id, sector_destino_id, observacion,
+          estado, creado_por_id, ingreso_directo
+        ) VALUES (?, 'LISTA', NULL, NULL, NULL, 'ABIERTA', ?, 0)
+      `
+        )
+        .run(todayIsoDateServer(), user.id)
+      return buildDetalle(db, Number(result.lastInsertRowid))
+    } catch (err) {
+      return reply
+        .status(400)
+        .send({ error: err instanceof Error ? err.message : 'No se pudo abrir la lista' })
+    }
   })
 
   app.get('/api/movimientos-internos/:id', {
@@ -638,13 +881,24 @@ export async function movimientosInternosRoutes(app: FastifyInstance): Promise<v
           const unidadesPorBulto =
             linea.unidades_por_bulto != null ? Number(linea.unidades_por_bulto) : null
 
+          const cantidadSuelta =
+            linea.cantidad_suelta != null && Number(linea.cantidad_suelta) > 0
+              ? Number(linea.cantidad_suelta)
+              : null
+
           let etiqueta = linea.etiqueta?.trim() || null
-          if (!etiqueta && tipoBulto && cantidadBultos && unidadesPorBulto) {
+          if (!etiqueta && tipoBulto === 'SUELTO' && cantidadSuelta) {
+            etiqueta = formatEtiquetaLinea(
+              { tipo_bulto: 'SUELTO', cantidad_suelta: cantidadSuelta },
+              producto?.unidad
+            )
+          } else if (!etiqueta && tipoBulto && cantidadBultos && unidadesPorBulto) {
             etiqueta = formatEtiquetaLinea(
               {
                 tipo_bulto: tipoBulto,
                 cantidad_bultos: cantidadBultos,
-                unidades_por_bulto: unidadesPorBulto
+                unidades_por_bulto: unidadesPorBulto,
+                cantidad_suelta: cantidadSuelta
               },
               producto?.unidad
             )
@@ -654,8 +908,8 @@ export async function movimientosInternosRoutes(app: FastifyInstance): Promise<v
             INSERT INTO movimiento_interno_lineas (
               movimiento_interno_id, producto_id, sector_origen_id, sector_destino_id,
               ubicacion_destino_id, ubicacion_origen_id,
-              cantidad_cajas, tipo_bulto, cantidad_bultos, unidades_por_bulto, etiqueta, orden
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+              cantidad_cajas, tipo_bulto, cantidad_bultos, unidades_por_bulto, cantidad_suelta, etiqueta, orden
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
           `).run(
             movimientoId,
             linea.producto_id,
@@ -667,6 +921,7 @@ export async function movimientosInternosRoutes(app: FastifyInstance): Promise<v
             tipoBulto,
             cantidadBultos,
             unidadesPorBulto,
+            cantidadSuelta,
             etiqueta,
             index + 1
           )
@@ -697,8 +952,8 @@ export async function movimientosInternosRoutes(app: FastifyInstance): Promise<v
     if (!movimiento) {
       return reply.status(404).send({ error: 'Registro no encontrado' })
     }
-    if (movimiento.estado !== 'PENDIENTE') {
-      return reply.status(400).send({ error: 'Solo se pueden editar movimientos pendientes' })
+    if (movimiento.estado !== 'PENDIENTE' && movimiento.estado !== 'ABIERTA') {
+      return reply.status(400).send({ error: 'Solo se pueden editar movimientos abiertos o pendientes' })
     }
 
     const updates = Array.isArray(body.lineas) ? body.lineas : []
@@ -710,11 +965,23 @@ export async function movimientosInternosRoutes(app: FastifyInstance): Promise<v
       const tx = db.transaction(() => {
         for (const upd of updates) {
           const linea = db.prepare(`
-            SELECT id, producto_id, sector_origen_id, sector_destino_id
+            SELECT id, producto_id, sector_origen_id, sector_destino_id,
+                   cantidad_cajas, tipo_bulto, cantidad_bultos, unidades_por_bulto, cantidad_suelta, etiqueta
             FROM movimiento_interno_lineas
             WHERE id = ? AND movimiento_interno_id = ?
           `).get(upd.id, id) as
-            | { id: number; producto_id: number; sector_origen_id: number; sector_destino_id: number }
+            | {
+                id: number
+                producto_id: number
+                sector_origen_id: number
+                sector_destino_id: number
+                cantidad_cajas: number
+                tipo_bulto: string | null
+                cantidad_bultos: number | null
+                unidades_por_bulto: number | null
+                cantidad_suelta: number | null
+                etiqueta: string | null
+              }
             | undefined
 
           if (!linea) throw new Error('Línea no encontrada')
@@ -771,10 +1038,111 @@ export async function movimientosInternosRoutes(app: FastifyInstance): Promise<v
             cancelada = current.cancelada
           }
 
+          let cantidadCajas = linea.cantidad_cajas
+          let tipoBulto = linea.tipo_bulto
+          let cantidadBultos = linea.cantidad_bultos
+          let unidadesPorBulto = linea.unidades_por_bulto
+          let cantidadSuelta = linea.cantidad_suelta
+          let etiqueta = linea.etiqueta
+
+          if (upd.tipo_bulto !== undefined) tipoBulto = upd.tipo_bulto
+          if (upd.cantidad_bultos !== undefined) {
+            cantidadBultos = upd.cantidad_bultos == null ? null : Number(upd.cantidad_bultos)
+          }
+          if (upd.unidades_por_bulto !== undefined) {
+            unidadesPorBulto =
+              upd.unidades_por_bulto == null ? null : Number(upd.unidades_por_bulto)
+          }
+          if (upd.cantidad_suelta !== undefined) {
+            cantidadSuelta = upd.cantidad_suelta == null ? null : Number(upd.cantidad_suelta)
+          }
+          if (upd.etiqueta !== undefined) etiqueta = upd.etiqueta
+
+          if (upd.cantidad_cajas !== undefined) {
+            cantidadCajas = Number(upd.cantidad_cajas)
+          }
+
+          const esSuelto = tipoBulto === 'SUELTO'
+          if (esSuelto) {
+            cantidadCajas = 0
+            cantidadBultos = null
+            unidadesPorBulto = null
+            if (!Number.isFinite(Number(cantidadSuelta)) || Number(cantidadSuelta) <= 0) {
+              throw new Error('Cantidad de botellas inválida')
+            }
+          } else {
+            if (upd.cantidad_cajas !== undefined) {
+              if (!Number.isFinite(cantidadCajas) || cantidadCajas <= 0) {
+                throw new Error('Cantidad inválida')
+              }
+            }
+            if (cantidadSuelta != null) {
+              const n = Number(cantidadSuelta)
+              if (!Number.isFinite(n) || n < 0) {
+                throw new Error('Cantidad suelta inválida')
+              }
+              cantidadSuelta = n > 0 ? n : null
+            }
+          }
+
+          const debeValidarStock =
+            movimiento.estado === 'ABIERTA' &&
+            (upd.cantidad_cajas !== undefined ||
+              upd.cantidad_suelta !== undefined ||
+              upd.tipo_bulto !== undefined ||
+              upd.sector_origen_id !== undefined ||
+              upd.ubicacion_origen_id !== undefined)
+
+          if (debeValidarStock) {
+            const origenMeta = db
+              .prepare(`SELECT usa_ubicaciones FROM sectores WHERE id = ?`)
+              .get(origenId) as { usa_ubicaciones: number } | undefined
+            const filtrarOrigen = Boolean(origenMeta?.usa_ubicaciones)
+            const filtro = filtrarOrigen ? { ubicacion_id: ubicacionOrigenId } : null
+            const libre = stockLibreEnOrigenLista(db, {
+              movimientoId: id,
+              productoId: linea.producto_id,
+              sectorOrigenId: origenId,
+              ubicacionFilter: filtro,
+              excluirLineaId: upd.id
+            })
+            if (esSuelto) {
+              if (libre.botellas + 1e-9 < Number(cantidadSuelta)) {
+                throw new Error(
+                  `Stock insuficiente en origen (disponible: ${libre.botellas} botellas; ya cargado en esta lista)`
+                )
+              }
+            } else {
+              if (libre.cajas + 1e-9 < cantidadCajas) {
+                throw new Error(
+                  `Stock insuficiente en origen (disponible: ${libre.cajas}; ya cargado en esta lista)`
+                )
+              }
+              if (tipoBulto === 'CAJA' && Number(cantidadSuelta ?? 0) > 0) {
+                if (libre.botellas + 1e-9 < Number(cantidadSuelta)) {
+                  throw new Error(
+                    `Stock insuficiente de botellas en origen (disponible: ${libre.botellas}; ya cargado en esta lista)`
+                  )
+                }
+              }
+            }
+          }
+
           db.prepare(`
             UPDATE movimiento_interno_lineas
             SET sector_origen_id = ?, sector_destino_id = ?,
-                ubicacion_destino_id = ?, ubicacion_origen_id = ?, cancelada = ?
+                ubicacion_destino_id = ?, ubicacion_origen_id = ?,
+                cancelada = ?,
+                verificada = CASE
+                  WHEN ? IS NOT NULL THEN ?
+                  ELSE verificada
+                END,
+                cantidad_cajas = ?,
+                tipo_bulto = ?,
+                cantidad_bultos = ?,
+                unidades_por_bulto = ?,
+                cantidad_suelta = ?,
+                etiqueta = ?
             WHERE id = ?
           `).run(
             origenId,
@@ -782,6 +1150,14 @@ export async function movimientosInternosRoutes(app: FastifyInstance): Promise<v
             ubicacionDestinoId,
             ubicacionOrigenId,
             cancelada ? 1 : 0,
+            upd.verificada === undefined ? null : upd.verificada ? 1 : 0,
+            upd.verificada === undefined ? null : upd.verificada ? 1 : 0,
+            cantidadCajas,
+            tipoBulto,
+            cantidadBultos,
+            unidadesPorBulto,
+            cantidadSuelta,
+            etiqueta,
             upd.id
           )
         }
@@ -792,6 +1168,246 @@ export async function movimientosInternosRoutes(app: FastifyInstance): Promise<v
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Error al actualizar líneas'
       return reply.status(400).send({ error: message })
+    }
+  })
+
+  app.post('/api/movimientos-internos/:id/lineas', {
+    preHandler: [blockIfInventarioActivo(), requirePermiso('movimientos_internos.crear')]
+  }, async (request, reply) => {
+    const id = Number((request.params as { id: string }).id)
+    const db = getDb()
+    const body = (request.body ?? {}) as LineaBody
+
+    const movimiento = getMovimientoHeader(db, id)
+    if (!movimiento) {
+      return reply.status(404).send({ error: 'Registro no encontrado' })
+    }
+    if (movimiento.estado !== 'ABIERTA') {
+      return reply.status(400).send({ error: 'Solo se pueden agregar líneas a una lista abierta' })
+    }
+
+    const tipoBulto = body.tipo_bulto ?? null
+    const esSuelto = tipoBulto === 'SUELTO'
+    const qtyCajas = esSuelto ? 0 : Number(body.cantidad_cajas)
+    const qtySueltaRaw =
+      body.cantidad_suelta != null && Number(body.cantidad_suelta) > 0
+        ? Number(body.cantidad_suelta)
+        : null
+    const qtySuelta = esSuelto ? Number(body.cantidad_suelta) : qtySueltaRaw
+    const origenId = Number(body.sector_origen_id)
+    const destinoId = Number(body.sector_destino_id)
+    if (
+      !body.producto_id ||
+      !origenId ||
+      !destinoId ||
+      (esSuelto
+        ? !qtySuelta || qtySuelta <= 0
+        : !qtyCajas || qtyCajas <= 0)
+    ) {
+      return reply.status(400).send({ error: 'Línea inválida' })
+    }
+
+    try {
+      assertProductoActivo(db, body.producto_id)
+      assertSectorActivo(db, origenId, 'Origen')
+      assertSectorActivo(db, destinoId, 'Destino')
+      const ubicacionDestinoId = resolveUbicacionDestino(db, destinoId, body.ubicacion_destino_id)
+      const ubicacionOrigenId = resolveUbicacionOrigen(db, origenId, body.ubicacion_origen_id)
+      assertMovimientoLineaSectoresOk(db, origenId, destinoId, ubicacionOrigenId, ubicacionDestinoId)
+
+      const origenMeta = db
+        .prepare(`SELECT usa_ubicaciones FROM sectores WHERE id = ?`)
+        .get(origenId) as { usa_ubicaciones: number } | undefined
+      const filtrarOrigen = Boolean(origenMeta?.usa_ubicaciones)
+      const filtro = filtrarOrigen ? { ubicacion_id: ubicacionOrigenId } : null
+      const libre = stockLibreEnOrigenLista(db, {
+        movimientoId: id,
+        productoId: body.producto_id,
+        sectorOrigenId: origenId,
+        ubicacionFilter: filtro
+      })
+      if (esSuelto) {
+        if (libre.botellas + 1e-9 < Number(qtySuelta)) {
+          throw new Error(
+            `Stock insuficiente en origen (disponible: ${libre.botellas} botellas; ya cargado en esta lista)`
+          )
+        }
+      } else {
+        if (libre.cajas + 1e-9 < qtyCajas) {
+          throw new Error(
+            `Stock insuficiente en origen (disponible: ${libre.cajas}; ya cargado en esta lista)`
+          )
+        }
+        if (tipoBulto === 'CAJA' && Number(qtySuelta ?? 0) > 0) {
+          if (libre.botellas + 1e-9 < Number(qtySuelta)) {
+            throw new Error(
+              `Stock insuficiente de botellas en origen (disponible: ${libre.botellas}; ya cargado en esta lista)`
+            )
+          }
+        }
+      }
+
+      const producto = db.prepare(`SELECT unidad FROM productos WHERE id = ?`).get(body.producto_id) as
+        | { unidad: string | null }
+        | undefined
+      const cantidadBultos = esSuelto
+        ? null
+        : body.cantidad_bultos != null
+          ? Number(body.cantidad_bultos)
+          : null
+      const unidadesPorBulto = esSuelto
+        ? null
+        : body.unidades_por_bulto != null
+          ? Number(body.unidades_por_bulto)
+          : null
+      let etiqueta = body.etiqueta?.trim() || null
+      if (!etiqueta && tipoBulto === 'SUELTO' && qtySuelta) {
+        etiqueta = formatEtiquetaLinea(
+          { tipo_bulto: 'SUELTO', cantidad_suelta: qtySuelta },
+          producto?.unidad
+        )
+      } else if (!etiqueta && tipoBulto && cantidadBultos && unidadesPorBulto) {
+        etiqueta = formatEtiquetaLinea(
+          {
+            tipo_bulto: tipoBulto,
+            cantidad_bultos: cantidadBultos,
+            unidades_por_bulto: unidadesPorBulto,
+            cantidad_suelta: qtySuelta
+          },
+          producto?.unidad
+        )
+      }
+
+      const maxOrden = db
+        .prepare(
+          `
+        SELECT COALESCE(MAX(orden), 0) AS m FROM movimiento_interno_lineas
+        WHERE movimiento_interno_id = ?
+      `
+        )
+        .get(id) as { m: number }
+
+      db.prepare(
+        `
+        INSERT INTO movimiento_interno_lineas (
+          movimiento_interno_id, producto_id, sector_origen_id, sector_destino_id,
+          ubicacion_destino_id, ubicacion_origen_id,
+          cantidad_cajas, tipo_bulto, cantidad_bultos, unidades_por_bulto, cantidad_suelta, etiqueta,
+          verificada, orden
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?)
+      `
+      ).run(
+        id,
+        body.producto_id,
+        origenId,
+        destinoId,
+        ubicacionDestinoId,
+        ubicacionOrigenId,
+        qtyCajas,
+        tipoBulto,
+        cantidadBultos,
+        unidadesPorBulto,
+        qtySuelta,
+        etiqueta,
+        Number(maxOrden.m) + 1
+      )
+
+      return buildDetalle(db, id)
+    } catch (err) {
+      return reply
+        .status(400)
+        .send({ error: err instanceof Error ? err.message : 'Error al agregar línea' })
+    }
+  })
+
+  app.delete('/api/movimientos-internos/:id/lineas/:lineaId', {
+    preHandler: [blockIfInventarioActivo(), requirePermiso('movimientos_internos.crear')]
+  }, async (request, reply) => {
+    const id = Number((request.params as { id: string }).id)
+    const lineaId = Number((request.params as { lineaId: string }).lineaId)
+    const db = getDb()
+    const movimiento = getMovimientoHeader(db, id)
+    if (!movimiento) {
+      return reply.status(404).send({ error: 'Registro no encontrado' })
+    }
+    if (movimiento.estado !== 'ABIERTA') {
+      return reply.status(400).send({ error: 'Solo se pueden borrar líneas de una lista abierta' })
+    }
+    const del = db
+      .prepare(
+        `
+      DELETE FROM movimiento_interno_lineas
+      WHERE id = ? AND movimiento_interno_id = ?
+    `
+      )
+      .run(lineaId, id)
+    if (del.changes === 0) {
+      return reply.status(404).send({ error: 'Línea no encontrada' })
+    }
+    return buildDetalle(db, id)
+  })
+
+  app.post('/api/movimientos-internos/:id/finalizar', {
+    preHandler: [blockIfInventarioActivo(), requirePermiso('movimientos_internos.crear')]
+  }, async (request, reply) => {
+    const id = Number((request.params as { id: string }).id)
+    const user = request.user!
+    const db = getDb()
+
+    const movimiento = getMovimientoHeader(db, id)
+    if (!movimiento) {
+      return reply.status(404).send({ error: 'Registro no encontrado' })
+    }
+    if (movimiento.estado !== 'ABIERTA') {
+      return reply.status(400).send({ error: 'Solo se puede finalizar una lista abierta' })
+    }
+
+    try {
+      const tx = db.transaction(() => {
+        const activas = getMovimientoLineas(db, id, true)
+        if (activas.length === 0) {
+          throw new Error('Agregá al menos una línea')
+        }
+
+        const dobleVerificacion = getMovimientosDobleVerificacion(db)
+        if (dobleVerificacion) {
+          const sinTilde = activas.filter((l) => !l.verificada)
+          if (sinTilde.length > 0) {
+            throw new Error(
+              `Hay ${sinTilde.length} línea(s) sin tilde. Tildalas o eliminalas antes de finalizar.`
+            )
+          }
+        } else {
+          db.prepare(
+            `
+            UPDATE movimiento_interno_lineas
+            SET verificada = 1
+            WHERE movimiento_interno_id = ? AND cancelada = 0
+          `
+          ).run(id)
+        }
+
+        aplicarStockLineasActivas(db, id, user.id, movimiento.observacion)
+
+        db.prepare(
+          `
+          UPDATE movimientos_internos
+          SET estado = 'COMPLETADO',
+              ingreso_directo = ?,
+              recibido_por_id = ?,
+              recibido_at = datetime('now'),
+              fecha = ?
+          WHERE id = ?
+        `
+        ).run(dobleVerificacion ? 0 : 1, user.id, todayIsoDateServer(), id)
+      })
+
+      tx()
+      return buildDetalle(db, id)
+    } catch (err) {
+      return reply
+        .status(400)
+        .send({ error: err instanceof Error ? err.message : 'Error al finalizar' })
     }
   })
 
@@ -842,7 +1458,7 @@ export async function movimientosInternosRoutes(app: FastifyInstance): Promise<v
     if (!movimiento) {
       return reply.status(404).send({ error: 'Registro no encontrado' })
     }
-    if (movimiento.estado !== 'PENDIENTE') {
+    if (movimiento.estado !== 'PENDIENTE' && movimiento.estado !== 'ABIERTA') {
       return reply.status(400).send({ error: 'Este movimiento ya no se puede cancelar' })
     }
 

@@ -7,10 +7,12 @@ import {
   Loader2,
   MapPin,
   Package,
+  Pencil,
   ScanLine,
   Search,
   Warehouse
 } from 'lucide-react'
+import { AjustarStockForm, type AjusteStockLineaPayload } from '@/components/AjustarStockForm'
 import { BarcodeScannerModal } from '@/components/BarcodeScannerModal'
 import { ConsultaPorSectorPanel } from '@/components/ConsultaPorSectorPanel'
 import { ImagePreviewModal } from '@/components/ImagePreviewModal'
@@ -42,12 +44,17 @@ function StockDetallePanel({
   reorganizingSectorId,
   confirmLineaId,
   reorganizingLineaId,
+  adjustSectorId,
+  adjustingSectorId,
   onRequestReorganizar,
   onConfirmReorganizar,
   onCancelReorganizar,
   onRequestReorganizarLinea,
   onConfirmReorganizarLinea,
-  onCancelReorganizarLinea
+  onCancelReorganizarLinea,
+  onRequestAjustar,
+  onConfirmAjustar,
+  onCancelAjustar
 }: {
   detalle: ConsultaDetalle
   canReorganizar: boolean
@@ -55,12 +62,20 @@ function StockDetallePanel({
   reorganizingSectorId: number | null
   confirmLineaId: number | null
   reorganizingLineaId: number | null
+  adjustSectorId: number | null
+  adjustingSectorId: number | null
   onRequestReorganizar: (sector: SectorStockConsulta) => void
   onConfirmReorganizar: (stockSectorId: number, desglose: ReorganizarDesglosePayload) => void
   onCancelReorganizar: () => void
   onRequestReorganizarLinea: (lineaId: number) => void
   onConfirmReorganizarLinea: (lineaId: number, desglose: ReorganizarDesglosePayload) => void
   onCancelReorganizarLinea: () => void
+  onRequestAjustar: (sector: SectorStockConsulta) => void
+  onConfirmAjustar: (
+    stockSectorId: number,
+    payload: { motivo: string; lineas: AjusteStockLineaPayload[] }
+  ) => void
+  onCancelAjustar: () => void
 }) {
   if (detalle.sectores.length === 0) {
     return (
@@ -79,7 +94,10 @@ function StockDetallePanel({
       {detalle.sectores.map((sector) => {
         const showConfirm = confirmSectorId === sector.stock_sector_id
         const isReorganizing = reorganizingSectorId === sector.stock_sector_id
+        const showAjuste = adjustSectorId === sector.stock_sector_id
+        const isAdjusting = adjustingSectorId === sector.stock_sector_id
         const puedeReorganizar = canReorganizar && sector.reorganizar.puede
+        const busy = reorganizingSectorId !== null || adjustingSectorId !== null
 
         return (
           <div
@@ -101,12 +119,24 @@ function StockDetallePanel({
                       </p>
                     )}
                 </div>
-                {puedeReorganizar && !showConfirm && (
+                {canReorganizar && !showAjuste && !showConfirm && (
                   <Button
                     type="button"
                     variant="secondary"
                     className="h-8 gap-1.5 px-2.5 text-xs"
-                    disabled={reorganizingSectorId !== null}
+                    disabled={busy}
+                    onClick={() => onRequestAjustar(sector)}
+                  >
+                    <Pencil className="h-3.5 w-3.5" />
+                    Ajustar stock
+                  </Button>
+                )}
+                {puedeReorganizar && !showConfirm && !showAjuste && (
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    className="h-8 gap-1.5 px-2.5 text-xs"
+                    disabled={busy}
                     onClick={() => onRequestReorganizar(sector)}
                   >
                     <Layers className="h-3.5 w-3.5" />
@@ -127,14 +157,27 @@ function StockDetallePanel({
             </div>
 
             <div className="p-4">
-              {!canReorganizar && sector.reorganizar.puede && (
+              {!canReorganizar && (
                 <p className="mb-3 text-xs text-slate-400">
-                  Requiere permiso de ajustes de stock
+                  Ajuste y reorganización requieren permiso de ajustes de stock
                 </p>
               )}
 
-              {!sector.reorganizar.puede && sector.reorganizar.motivo && (
+              {!sector.reorganizar.puede && sector.reorganizar.motivo && !showAjuste && (
                 <p className="mb-3 text-xs text-slate-400">{sector.reorganizar.motivo}</p>
+              )}
+
+              {showAjuste && (
+                <AjustarStockForm
+                  sectorId={sector.sector_id}
+                  sectorNombre={sector.sector_nombre}
+                  lineasActuales={sector.lineas}
+                  unidadProducto={detalle.producto.unidad}
+                  botellasPorCaja={sector.reorganizar.botellas_por_caja}
+                  loading={isAdjusting}
+                  onConfirm={(payload) => onConfirmAjustar(sector.stock_sector_id, payload)}
+                  onCancel={onCancelAjustar}
+                />
               )}
 
               {showConfirm && (
@@ -156,7 +199,7 @@ function StockDetallePanel({
                     const showLineaForm = confirmLineaId === linea.id
                     const lineaInfo = {
                       puede: true,
-                      total_unidades: linea.total_cajas,
+                      total_unidades: linea.total_cajas ?? linea.total_unidades,
                       total_suelto: linea.total_suelto,
                       botellas_por_caja: sector.reorganizar.botellas_por_caja,
                       referencias_bulto: sector.reorganizar.referencias_bulto
@@ -183,12 +226,12 @@ function StockDetallePanel({
                             )}
                           </div>
                           <div className="flex shrink-0 items-center gap-2">
-                            {canReorganizar && !showLineaForm && (
+                            {canReorganizar && !showLineaForm && !showAjuste && (
                               <Button
                                 type="button"
                                 variant="ghost"
                                 className="h-7 gap-1 px-2 text-xs"
-                                disabled={reorganizingLineaId !== null}
+                                disabled={busy}
                                 onClick={() => onRequestReorganizarLinea(linea.id)}
                               >
                                 <Layers className="h-3.5 w-3.5" />
@@ -244,6 +287,8 @@ export function ConsultaPage() {
   const [reorganizingSectorId, setReorganizingSectorId] = useState<number | null>(null)
   const [confirmLineaId, setConfirmLineaId] = useState<number | null>(null)
   const [reorganizingLineaId, setReorganizingLineaId] = useState<number | null>(null)
+  const [adjustSectorId, setAdjustSectorId] = useState<number | null>(null)
+  const [adjustingSectorId, setAdjustingSectorId] = useState<number | null>(null)
   const [loading, setLoading] = useState(false)
   const [exporting, setExporting] = useState(false)
   const [exportingSectores, setExportingSectores] = useState(false)
@@ -456,6 +501,37 @@ export function ConsultaPage() {
     }
   }
 
+  async function confirmAjustar(
+    stockSectorId: number,
+    payload: { motivo: string; lineas: AjusteStockLineaPayload[] }
+  ) {
+    if (!expandedId) return
+    setAdjustingSectorId(stockSectorId)
+    setError('')
+    try {
+      const res = await api<{
+        ok: boolean
+        detalle?: ConsultaDetalle
+      }>(`/api/consulta/stock-sector/${stockSectorId}/ajustar`, {
+        method: 'POST',
+        body: JSON.stringify(payload)
+      })
+
+      if (res.detalle) {
+        setDetalleCache((prev) => ({ ...prev, [expandedId]: res.detalle! }))
+        sincronizarResumen(expandedId, res.detalle)
+      } else {
+        const data = await cargarDetalle(expandedId, true)
+        if (data) sincronizarResumen(expandedId, data)
+      }
+      setAdjustSectorId(null)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Error al ajustar stock')
+    } finally {
+      setAdjustingSectorId(null)
+    }
+  }
+
   const buscar = useCallback(async (q: string) => {
     if (!q.trim()) {
       setResultados([])
@@ -596,6 +672,14 @@ export function ConsultaPage() {
     }
     if (confirmSectorId !== null) {
       setConfirmSectorId(null)
+      return true
+    }
+    if (adjustSectorId !== null) {
+      setAdjustSectorId(null)
+      return true
+    }
+    if (confirmLineaId !== null) {
+      setConfirmLineaId(null)
       return true
     }
     if (expandedId !== null) {
@@ -860,8 +944,11 @@ export function ConsultaPage() {
                   canReorganizar={canReorganizar}
                   confirmSectorId={confirmSectorId}
                   reorganizingSectorId={reorganizingSectorId}
+                  adjustSectorId={adjustSectorId}
+                  adjustingSectorId={adjustingSectorId}
                   onRequestReorganizar={(sector) => {
                     setConfirmLineaId(null)
+                    setAdjustSectorId(null)
                     setConfirmSectorId(sector.stock_sector_id)
                   }}
                   onConfirmReorganizar={confirmReorganizar}
@@ -870,10 +957,18 @@ export function ConsultaPage() {
                   reorganizingLineaId={reorganizingLineaId}
                   onRequestReorganizarLinea={(lineaId) => {
                     setConfirmSectorId(null)
+                    setAdjustSectorId(null)
                     setConfirmLineaId(lineaId)
                   }}
                   onConfirmReorganizarLinea={confirmReorganizarLinea}
                   onCancelReorganizarLinea={() => setConfirmLineaId(null)}
+                  onRequestAjustar={(sector) => {
+                    setConfirmLineaId(null)
+                    setConfirmSectorId(null)
+                    setAdjustSectorId(sector.stock_sector_id)
+                  }}
+                  onConfirmAjustar={confirmAjustar}
+                  onCancelAjustar={() => setAdjustSectorId(null)}
                 />
               ) : (
                 <p className="py-4 text-sm text-slate-500">No se pudo cargar el detalle</p>

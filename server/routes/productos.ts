@@ -14,6 +14,7 @@ import {
   readSheetAsObjects,
   sendExcelFile
 } from '../utils/excel-export'
+import { resolveUnidadesPorCajaDefault } from '../utils/empaqueNombre'
 import { sqlProductoSearchClause } from '../utils/productoSearch'
 import { ensureUnidadesPorCajaDefaultFromStock } from '../utils/stock'
 
@@ -183,7 +184,7 @@ export async function productosRoutes(app: FastifyInstance): Promise<void> {
       INSERT INTO productos (
         codigo_interno, codigo_barras, nombre, descripcion, unidad,
         unidades_por_pallet_default, unidades_por_caja_default, activo
-      ) VALUES (?, NULL, ?, ?, 'botella', 112, 6, 1)
+      ) VALUES (?, NULL, ?, ?, 'botella', 112, ?, 1)
     `)
 
     const detalle: Array<{ fila: number; codigo_interno: string; estado: string; motivo?: string }> =
@@ -236,7 +237,8 @@ export async function productosRoutes(app: FastifyInstance): Promise<void> {
         }
 
         try {
-          insertStmt.run(codigo, nombre, descripcion)
+          const botellasPorCaja = resolveUnidadesPorCajaDefault(nombre, null)
+          insertStmt.run(codigo, nombre, descripcion, botellasPorCaja)
           creados += 1
           detalle.push({ fila, codigo_interno: codigo, estado: 'creado' })
         } catch (err) {
@@ -316,6 +318,8 @@ export async function productosRoutes(app: FastifyInstance): Promise<void> {
     const db = getDb()
 
     try {
+      const nombre = body.nombre.trim()
+      const unidadesPorCaja = resolveUnidadesPorCajaDefault(nombre, body.unidades_por_caja_default)
       const result = db.prepare(`
         INSERT INTO productos (
           codigo_interno, codigo_barras, nombre, descripcion, unidad,
@@ -324,11 +328,11 @@ export async function productosRoutes(app: FastifyInstance): Promise<void> {
       `).run(
         body.codigo_interno.trim(),
         body.codigo_barras?.trim() || null,
-        body.nombre.trim(),
+        nombre,
         body.descripcion?.trim() || null,
         body.unidad?.trim() || 'unidad',
         body.unidades_por_pallet_default ?? null,
-        body.unidades_por_caja_default ?? null,
+        unidadesPorCaja,
         body.activo === false ? 0 : 1
       )
 
@@ -364,6 +368,19 @@ export async function productosRoutes(app: FastifyInstance): Promise<void> {
     if (!existing) return reply.status(404).send({ error: 'Producto no encontrado' })
 
     try {
+      const existingFull = db
+        .prepare(`SELECT nombre, unidades_por_caja_default FROM productos WHERE id = ?`)
+        .get(id) as { nombre: string; unidades_por_caja_default: number | null }
+
+      const nombreFinal = body.nombre?.trim() || existingFull.nombre
+      const unidadesPorCaja =
+        body.unidades_por_caja_default !== undefined
+          ? resolveUnidadesPorCajaDefault(nombreFinal, body.unidades_por_caja_default)
+          : resolveUnidadesPorCajaDefault(
+              nombreFinal,
+              existingFull.unidades_por_caja_default
+            )
+
       db.prepare(`
         UPDATE productos SET
           codigo_interno = COALESCE(?, codigo_interno),
@@ -383,7 +400,7 @@ export async function productosRoutes(app: FastifyInstance): Promise<void> {
         body.descripcion?.trim() ?? null,
         body.unidad?.trim() ?? null,
         body.unidades_por_pallet_default ?? null,
-        body.unidades_por_caja_default ?? null,
+        unidadesPorCaja,
         body.activo === undefined ? null : body.activo ? 1 : 0,
         id
       )

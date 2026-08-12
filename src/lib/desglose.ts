@@ -148,7 +148,8 @@ export function cajasPorPalletDefault(unidadesPorPalletDefault?: number | null):
 export function formatCantidadUnidad(cantidad: number | string, unidad?: string | null): string {
   const n = Number(cantidad)
   const nombre = normalizarUnidadProducto(unidad)
-  return `${n} ${nombre}`
+  const etiqueta = n === 1 || nombre.endsWith('s') ? nombre : `${nombre}s`
+  return `${n} ${etiqueta}`
 }
 
 export function calcTotalUnidades(linea: {
@@ -244,14 +245,18 @@ export function formatEtiqueta(
   const porBulto = Number(linea.unidades_por_bulto ?? 0)
 
   if (linea.tipo_bulto === 'PALLET') {
-    const base = `${bultos} pallet por ${porBulto}`
+    const base = `${bultos} pallet${bultos === 1 ? '' : 's'} × ${porBulto}`
     const extra = Number(linea.cantidad_suelta ?? 0)
-    return extra > 0 ? `${base} + ${extra} cajas` : base
+    return extra > 0
+      ? `${base} + ${extra} caja${extra === 1 ? '' : 's'}`
+      : base
   }
   if (linea.tipo_bulto === 'CAJA') {
-    const base = `${bultos} caja × ${porBulto} ${unidad}`
+    const base = `${bultos} caja${bultos === 1 ? '' : 's'}`
     const extra = Number(linea.cantidad_suelta ?? 0)
-    return extra > 0 ? `${base} + ${extra} ${unidad}` : base
+    if (extra <= 0) return base
+    const unidadExtra = extra === 1 || unidad.endsWith('s') ? unidad : `${unidad}s`
+    return `${base} + ${extra} ${unidadExtra}`
   }
   if (linea.tipo_bulto === 'SUELTO') {
     return formatCantidadUnidad(linea.cantidad_suelta ?? 0, unidadProducto)

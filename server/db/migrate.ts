@@ -1,6 +1,7 @@
 import type Database from 'better-sqlite3'
 import { ensureSystemRoles } from './roles-seed'
 import { migrateLegacyUsersToSecciones } from '../utils/secciones'
+import { syncUnidadesPorCajaFromNombres } from '../utils/empaqueNombre'
 import { recalcStockTotalsEnCajas } from '../utils/stock'
 
 function columnExists(db: Database.Database, table: string, column: string): boolean {
@@ -819,6 +820,16 @@ export function runMigrations(db: Database.Database): void {
         ronda INTEGER NOT NULL,
         producto_id INTEGER NOT NULL REFERENCES productos(id),
         PRIMARY KEY (inventario_sector_id, ronda, producto_id)
+      )
+    `)
+  }
+
+  // Botellas/caja desde empaque en el nombre (ej. 3X750 → 3)
+  if (tableExists(db, 'productos') && !tableExists(db, '_migration_empaque_desde_nombre')) {
+    syncUnidadesPorCajaFromNombres(db)
+    db.exec(`
+      CREATE TABLE _migration_empaque_desde_nombre (
+        applied_at TEXT NOT NULL DEFAULT (datetime('now'))
       )
     `)
   }

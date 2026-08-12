@@ -303,7 +303,6 @@ function getMovimientoHeader(db: ReturnType<typeof getDb>, id: number) {
 }
 
 function enrichLineaEtiqueta(l: ReturnType<typeof getMovimientoLineas>[number]) {
-  if (l.etiqueta) return l.etiqueta
   if (l.tipo_bulto === 'SUELTO') {
     return formatEtiquetaLinea(
       {
@@ -313,16 +312,18 @@ function enrichLineaEtiqueta(l: ReturnType<typeof getMovimientoLineas>[number]) 
       l.unidad
     )
   }
-  if (!l.tipo_bulto || l.cantidad_bultos == null || l.unidades_por_bulto == null) return null
-  return formatEtiquetaLinea(
-    {
-      tipo_bulto: l.tipo_bulto as 'PALLET' | 'CAJA' | 'SUELTO',
-      cantidad_bultos: l.cantidad_bultos,
-      unidades_por_bulto: l.unidades_por_bulto,
-      cantidad_suelta: l.cantidad_suelta
-    },
-    l.unidad
-  )
+  if (l.tipo_bulto && l.cantidad_bultos != null && l.unidades_por_bulto != null) {
+    return formatEtiquetaLinea(
+      {
+        tipo_bulto: l.tipo_bulto as 'PALLET' | 'CAJA' | 'SUELTO',
+        cantidad_bultos: l.cantidad_bultos,
+        unidades_por_bulto: l.unidades_por_bulto,
+        cantidad_suelta: l.cantidad_suelta
+      },
+      l.unidad
+    )
+  }
+  return l.etiqueta
 }
 
 function aplicarStockLineasActivas(

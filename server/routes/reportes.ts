@@ -15,7 +15,8 @@ const DETALLE_TIPOS: ReporteDetalleTipo[] = [
   'planillas',
   'roturas',
   'stock_inicial',
-  'balance_final'
+  'balance_final',
+  'ajustes'
 ]
 
 export async function reportesRoutes(app: FastifyInstance): Promise<void> {

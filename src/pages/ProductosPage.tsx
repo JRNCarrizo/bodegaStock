@@ -18,6 +18,7 @@ import {
 import { BarcodePrintModal } from '@/components/BarcodePrintModal'
 import { BarcodeScannerModal } from '@/components/BarcodeScannerModal'
 import { downloadApiFile } from '@/lib/downloadFile'
+import { parseBotellasPorCajaFromNombre } from '@/lib/empaqueNombre'
 import { api } from '@/lib/utils'
 import { prepareProductImage } from '@/lib/image'
 import type { Producto, ProductoForm } from '@/types'
@@ -55,6 +56,8 @@ export function ProductosPage() {
   const [error, setError] = useState('')
   const [view, setView] = useState<'list' | 'form'>('list')
   const [editingId, setEditingId] = useState<number | null>(null)
+  /** Si el usuario editó botellas/caja a mano, no pisar al cambiar el nombre. */
+  const [cajaManual, setCajaManual] = useState(false)
   const [editingHadImage, setEditingHadImage] = useState(false)
   const [form, setForm] = useState<ProductoForm>(emptyForm())
   const [imagenPreview, setImagenPreview] = useState<string | null>(null)
@@ -235,11 +238,24 @@ export function ProductosPage() {
   function resetFormFields() {
     setForm(emptyForm())
     setEditingId(null)
+    setCajaManual(false)
     setImagenPreview(null)
     setImagenBase64(null)
     setImagenMime(null)
     setEliminarImagen(false)
     setEditingHadImage(false)
+  }
+
+  function applyNombreAndEmpaque(nombre: string) {
+    const parsed = parseBotellasPorCajaFromNombre(nombre)
+    setForm((f) => {
+      if (cajaManual) return { ...f, nombre }
+      return {
+        ...f,
+        nombre,
+        unidades_por_caja_default: parsed ?? ''
+      }
+    })
   }
 
   function volverAlListado() {
@@ -258,6 +274,20 @@ export function ProductosPage() {
   async function openEdit(p: Producto) {
     setEditingId(p.id)
     setEditingHadImage(!!p.imagen_path)
+    const parsed = parseBotellasPorCajaFromNombre(p.nombre)
+    const rawCaja = p.unidades_por_caja_default
+    const cajaNum = rawCaja == null ? null : Number(rawCaja)
+    const cajaSugerida =
+      parsed != null && (cajaNum == null || cajaNum <= 0 || cajaNum === 6 || cajaNum === parsed)
+        ? parsed
+        : rawCaja ?? ''
+    setCajaManual(
+      cajaNum != null &&
+        cajaNum > 0 &&
+        parsed != null &&
+        cajaNum !== parsed &&
+        cajaNum !== 6
+    )
     setForm({
       codigo_interno: p.codigo_interno,
       codigo_barras: p.codigo_barras ?? '',
@@ -265,7 +295,7 @@ export function ProductosPage() {
       descripcion: p.descripcion ?? '',
       unidad: p.unidad || 'botella',
       unidades_por_pallet_default: p.unidades_por_pallet_default ?? 112,
-      unidades_por_caja_default: p.unidades_por_caja_default ?? '',
+      unidades_por_caja_default: cajaSugerida,
       activo: !!p.activo
     })
     setImagenPreview(null)
@@ -280,6 +310,21 @@ export function ProductosPage() {
     try {
       const fresh = await api<Producto>(`/api/productos/${p.id}`)
       setEditingHadImage(!!fresh.imagen_path)
+      const freshParsed = parseBotellasPorCajaFromNombre(fresh.nombre)
+      const freshRaw = fresh.unidades_por_caja_default
+      const freshNum = freshRaw == null ? null : Number(freshRaw)
+      const freshCaja =
+        freshParsed != null &&
+        (freshNum == null || freshNum <= 0 || freshNum === 6 || freshNum === freshParsed)
+          ? freshParsed
+          : freshRaw ?? ''
+      setCajaManual(
+        freshNum != null &&
+          freshNum > 0 &&
+          freshParsed != null &&
+          freshNum !== freshParsed &&
+          freshNum !== 6
+      )
       setForm({
         codigo_interno: fresh.codigo_interno,
         codigo_barras: fresh.codigo_barras ?? '',
@@ -287,7 +332,7 @@ export function ProductosPage() {
         descripcion: fresh.descripcion ?? '',
         unidad: fresh.unidad || 'botella',
         unidades_por_pallet_default: fresh.unidades_por_pallet_default ?? 112,
-        unidades_por_caja_default: fresh.unidades_por_caja_default ?? '',
+        unidades_por_caja_default: freshCaja,
         activo: !!fresh.activo
       })
     } catch {
@@ -488,7 +533,7 @@ export function ProductosPage() {
                 ref={nombreRef}
                 label="Nombre *"
                 value={form.nombre}
-                onChange={(e) => setForm({ ...form, nombre: e.target.value })}
+                onChange={(e) => applyNombreAndEmpaque(e.target.value)}
                 onKeyDown={(e) => handleFormKeyDown(e, descripcionRef)}
                 required
                 className="min-w-0"
@@ -571,17 +616,19 @@ export function ProductosPage() {
               inputMode="numeric"
               min="1"
               value={form.unidades_por_caja_default}
-              onChange={(e) =>
+              onChange={(e) => {
+                setCajaManual(true)
                 setForm({
                   ...form,
                   unidades_por_caja_default: e.target.value === '' ? '' : Number(e.target.value)
                 })
-              }
+              }}
               onKeyDown={(e) => handleFormKeyDown(e, activoRef)}
-              placeholder="Vacío hasta contar en Caja (ej. 4, 6, 12)"
+              placeholder="Ej. 3 — o se lee del nombre (3X750)"
             />
             <p className="mt-2 text-xs text-slate-500">
-              Si lo dejás vacío, al contar en tipo Caja (o al cerrar el inventario) se guarda solo.
+              Si el nombre trae empaque tipo <span className="font-medium">3X750</span>, se completa
+              solo. También se puede dejar vacío y completar al contar en Caja.
             </p>
           </div>
 

@@ -60,16 +60,24 @@ export function etiquetaLinea(
   const bultos = Number(linea.cantidad_bultos ?? 0)
   const porBulto = Number(linea.unidades_por_bulto ?? 0)
   if (linea.tipo_bulto === 'PALLET') {
-    const base = `${bultos} pallet por ${porBulto}`
+    const base = `${bultos} pallet${bultos === 1 ? '' : 's'} × ${porBulto}`
     const extra = Number(linea.cantidad_suelta ?? 0)
-    return extra > 0 ? `${base} + ${extra} cajas` : base
+    return extra > 0
+      ? `${base} + ${extra} caja${extra === 1 ? '' : 's'}`
+      : base
   }
   if (linea.tipo_bulto === 'CAJA') {
-    const base = `${bultos} caja × ${porBulto} ${unidadProducto}`
+    const base = `${bultos} caja${bultos === 1 ? '' : 's'}`
     const extra = Number(linea.cantidad_suelta ?? 0)
-    return extra > 0 ? `${base} + ${extra} ${unidadProducto}` : base
+    if (extra <= 0) return base
+    const u = String(unidadProducto || 'unidad')
+    const unidadExtra = extra === 1 || u.endsWith('s') ? u : `${u}s`
+    return `${base} + ${extra} ${unidadExtra}`
   }
-  return `${Number(linea.cantidad_suelta ?? 0)} ${unidadProducto}`
+  const n = Number(linea.cantidad_suelta ?? 0)
+  const u = String(unidadProducto || 'unidad')
+  const unidadExtra = n === 1 || u.endsWith('s') ? u : `${u}s`
+  return `${n} ${unidadExtra}`
 }
 
 export function buildOfflineLinea(

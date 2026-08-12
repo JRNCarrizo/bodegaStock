@@ -11,6 +11,10 @@ export interface MovimientosDiaReport {
   roturas: number
   balance_final: number
   perdidos_retornos: number
+  /** Neto de cajas por ajustes (manual + inventario). */
+  ajustes: number
+  /** Cantidad de movimientos de ajuste en el período. */
+  ajustes_count: number
 }
 
 export interface RetornoPerdidoDiaItem {
@@ -29,11 +33,14 @@ export type ReporteDetalleTipo =
   | 'roturas'
   | 'stock_inicial'
   | 'balance_final'
+  | 'ajustes'
 
 export interface ReporteDetalleItem {
   codigo_interno: string
   nombre: string
   cantidad_cajas: number
+  observacion?: string | null
+  tipo_ajuste?: string | null
 }
 
 export interface ReporteDetalle {
@@ -222,14 +229,30 @@ function sumRoturaCajasAfter(db: Database.Database, fecha: string): number {
   return row.total
 }
 
-function sumAjusteInventarioCajasAfter(db: Database.Database, fecha: string): number {
+function sumAjustesCajasAfter(db: Database.Database, fecha: string): number {
   const row = db.prepare(`
     SELECT COALESCE(SUM(m.cantidad), 0) AS total
     FROM movimientos m
-    WHERE m.tipo = 'AJUSTE_INVENTARIO'
+    WHERE m.tipo IN ('AJUSTE_INVENTARIO', 'AJUSTE_MANUAL')
       AND date(m.created_at) > date(?)
   `).get(fecha) as { total: number }
   return row.total
+}
+
+function sumAjustesCajasInRange(db: Database.Database, desde: string, hasta: string): {
+  total: number
+  count: number
+} {
+  const row = db.prepare(`
+    SELECT
+      COALESCE(SUM(m.cantidad), 0) AS total,
+      COUNT(*) AS cnt
+    FROM movimientos m
+    WHERE m.tipo IN ('AJUSTE_INVENTARIO', 'AJUSTE_MANUAL')
+      AND date(m.created_at) >= date(?)
+      AND date(m.created_at) <= date(?)
+  `).get(desde, hasta) as { total: number; cnt: number }
+  return { total: row.total, count: Number(row.cnt) }
 }
 
 function netMovimientoAfterDate(db: Database.Database, fecha: string): number {
@@ -237,8 +260,8 @@ function netMovimientoAfterDate(db: Database.Database, fecha: string): number {
   const retornos = sumRetornoCajasBuenEstadoAfter(db, fecha)
   const planillas = sumPlanillaCajasAfter(db, fecha)
   const roturas = sumRoturaCajasAfter(db, fecha)
-  const inventario = sumAjusteInventarioCajasAfter(db, fecha)
-  return ingresos + retornos + inventario - planillas - roturas
+  const ajustes = sumAjustesCajasAfter(db, fecha)
+  return ingresos + retornos + ajustes - planillas - roturas
 }
 
 /** Stock al cierre del día `fecha` (incluye movimientos de ese día). */
@@ -440,7 +463,7 @@ function detalleAjusteInventario(
       m.cantidad AS cantidad_cajas
     FROM movimientos m
     JOIN productos p ON p.id = m.producto_id
-    WHERE m.tipo = 'AJUSTE_INVENTARIO'
+    WHERE m.tipo IN ('AJUSTE_INVENTARIO', 'AJUSTE_MANUAL')
       AND date(m.created_at) >= date(?)
       AND date(m.created_at) <= date(?)
   `).all(desde, hasta) as LineaStockRow[]
@@ -464,6 +487,44 @@ function detalleAjusteInventario(
   return Array.from(map.values()).sort((a, b) =>
     a.nombre.localeCompare(b.nombre, 'es', { sensitivity: 'base' })
   )
+}
+
+/** Lista cada movimiento de ajuste (para el detalle discreto). */
+function detalleAjustes(
+  db: Database.Database,
+  desde: string,
+  hasta: string
+): ReporteDetalleItem[] {
+  const rows = db.prepare(`
+    SELECT
+      p.codigo_interno,
+      p.nombre,
+      m.cantidad AS cantidad_cajas,
+      m.observacion,
+      m.tipo AS tipo_ajuste
+    FROM movimientos m
+    JOIN productos p ON p.id = m.producto_id
+    WHERE m.tipo IN ('AJUSTE_INVENTARIO', 'AJUSTE_MANUAL')
+      AND date(m.created_at) >= date(?)
+      AND date(m.created_at) <= date(?)
+    ORDER BY m.created_at DESC, m.id DESC
+  `).all(desde, hasta) as Array<{
+    codigo_interno: string
+    nombre: string
+    cantidad_cajas: number
+    observacion: string | null
+    tipo_ajuste: string
+  }>
+
+  return rows
+    .filter((row) => Math.abs(Number(row.cantidad_cajas)) > 0.0001)
+    .map((row) => ({
+      codigo_interno: row.codigo_interno,
+      nombre: row.nombre,
+      cantidad_cajas: roundCajas(Number(row.cantidad_cajas)),
+      observacion: row.observacion,
+      tipo_ajuste: row.tipo_ajuste
+    }))
 }
 
 function detalleStockPorProducto(db: Database.Database): ReporteDetalleItem[] {
@@ -493,7 +554,8 @@ const DETALLE_TITULOS: Record<ReporteDetalleTipo, string> = {
   planillas: 'Carga de planillas',
   roturas: 'Roturas y pérdidas',
   stock_inicial: 'Stock inicial',
-  balance_final: 'Balance final'
+  balance_final: 'Balance final',
+  ajustes: 'Ajustes de stock'
 }
 
 export function getMovimientosDiaReport(
@@ -508,6 +570,7 @@ export function getMovimientosDiaReport(
   const retornos = sumRetornoCajasBuenEstadoInRange(db, desde, hasta)
   const planillas = sumPlanillaCajasInRange(db, desde, hasta)
   const roturas = sumRoturaCajasInRange(db, desde, hasta)
+  const ajustesInfo = sumAjustesCajasInRange(db, desde, hasta)
 
   const stock_inicial = sumStockInicialDetalle(db, desde, hasta)
   const balance_final = Math.max(0, getStockAtEndOfDay(db, hasta, today))
@@ -535,6 +598,8 @@ export function getMovimientosDiaReport(
     retornos: roundCajas(retornos),
     planillas: roundCajas(planillas),
     roturas: roundCajas(roturas),
+    ajustes: roundCajas(ajustesInfo.total),
+    ajustes_count: ajustesInfo.count,
     balance_final: roundCajas(balance_final),
     perdidos_retornos: roundCajas(perdidosRow.total)
   }
@@ -577,6 +642,10 @@ export function getReporteDetalle(
     case 'balance_final':
       total = report.balance_final
       items = detalleStockPorProducto(db)
+      break
+    case 'ajustes':
+      items = detalleAjustes(db, desde, hasta)
+      total = report.ajustes
       break
   }
 

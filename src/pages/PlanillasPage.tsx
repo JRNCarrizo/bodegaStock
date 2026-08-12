@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import {
+  Check,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
@@ -9,7 +10,6 @@ import {
   Loader2,
   Plus,
   Search,
-  Trash2,
   Truck,
   User,
   X
@@ -21,6 +21,7 @@ import {
   RegistroDetallePanel
 } from '@/components/RegistroDetallePanel'
 import { ProductImage } from '@/components/ProductImage'
+import { SwipeableConteoLinea } from '@/components/SwipeableConteoLinea'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { Card, CardBody } from '@/components/ui/Card'
@@ -151,6 +152,8 @@ export function PlanillasPage() {
   const [createPhase, setCreatePhase] = useState<'datos' | 'carga'>('datos')
   const [expandedProductos, setExpandedProductos] = useState<Set<number>>(new Set())
   const [tieneBorrador, setTieneBorrador] = useState(false)
+  const [editingLineaTempId, setEditingLineaTempId] = useState<string | null>(null)
+  const [swipeOpenLineId, setSwipeOpenLineId] = useState<string | null>(null)
   const draftHydratedRef = useRef(false)
 
   const fechaRef = useRef<HTMLInputElement>(null)
@@ -444,6 +447,8 @@ export function PlanillasPage() {
     setCreatePhase('datos')
     setPreviewData(null)
     setExpandedProductos(new Set())
+    setEditingLineaTempId(null)
+    setSwipeOpenLineId(null)
   }
 
   function volverAlListadoPlanilla() {
@@ -532,6 +537,7 @@ export function PlanillasPage() {
   }, [selectedProduct, modoSalida, cantidad])
 
   async function selectProduct(p: Producto) {
+    setEditingLineaTempId(null)
     setSelectedProduct(p)
     setProductSearch(p.codigo_interno)
     setProductResults([])
@@ -553,6 +559,64 @@ export function PlanillasPage() {
       resetLineaForm(p)
     }
     setTimeout(() => focusField(cantidadRef), 50)
+  }
+
+  function cancelarLineaForm() {
+    setEditingLineaTempId(null)
+    setSelectedProduct(null)
+    setProductoRefs(null)
+    setProductSearch('')
+    setProductResults([])
+    resetLineaForm(null)
+    setError('')
+    setTimeout(() => focusField(productSearchRef), 50)
+  }
+
+  async function empezarEditarLinea(l: PlanillaLineaDraft) {
+    setSwipeOpenLineId(null)
+    setEditingLineaTempId(l.tempId)
+    setExpandedProductos((prev) => new Set(prev).add(l.producto_id))
+    setSelectedProduct({
+      id: l.producto_id,
+      codigo_interno: l.codigo_interno,
+      codigo_barras: null,
+      nombre: l.nombre,
+      descripcion: null,
+      imagen_path: null,
+      unidad: 'botella',
+      unidades_por_pallet_default: null,
+      unidades_por_caja_default: null,
+      activo: 1,
+      created_at: '',
+      updated_at: ''
+    })
+    setProductSearch(l.codigo_interno)
+    setProductResults([])
+    setModoSalida(l.modo_salida)
+    setCantidad(String(l.cantidad))
+    setError('')
+    scrollFieldIntoView(productLineFormRef)
+    setTimeout(() => focusField(cantidadRef), 50)
+    try {
+      const refs = await api<{
+        stock_disponible: number
+        stock_disponible_cajas: number
+        stock_disponible_botellas: number
+        referencias_bulto: Array<{ tipo_bulto: 'PALLET' | 'CAJA'; unidades_por_bulto: number }>
+        unidades_por_pallet_default: number | null
+        unidades_por_caja_default: number | null
+      }>(`/api/planillas/producto/${l.producto_id}/referencias`)
+      setProductoRefs(refs)
+      const rows = await api<Producto[]>(
+        `/api/productos?q=${encodeURIComponent(l.codigo_interno)}&activo=1`
+      )
+      const p = rows.find((r) => r.id === l.producto_id) ?? rows[0]
+      if (p) {
+        setSelectedProduct((cur) => (cur?.id === p.id ? p : cur))
+      }
+    } catch {
+      setProductoRefs(null)
+    }
   }
 
   function validarDatos(): boolean {
@@ -660,10 +724,9 @@ export function PlanillasPage() {
       return false
     }
 
-    setLineas((prev) => [
-      ...prev,
-      {
-        tempId: newTempId(),
+    setLineas((prev) => {
+      const draft: PlanillaLineaDraft = {
+        tempId: editingLineaTempId ?? newTempId(),
         producto_id: selectedProduct.id,
         codigo_interno: selectedProduct.codigo_interno,
         nombre: selectedProduct.nombre,
@@ -672,7 +735,12 @@ export function PlanillasPage() {
         total_unidades: n,
         etiqueta: formatPlanillaEtiqueta(modoSalida, n, selectedProduct.unidad)
       }
-    ])
+      if (editingLineaTempId) {
+        return prev.map((l) => (l.tempId === editingLineaTempId ? draft : l))
+      }
+      return [...prev, draft]
+    })
+    setEditingLineaTempId(null)
     resetLineaForm(selectedProduct)
     setError('')
     return true
@@ -693,6 +761,14 @@ export function PlanillasPage() {
   }
 
   function quitarLinea(tempId: string) {
+    setSwipeOpenLineId(null)
+    if (editingLineaTempId === tempId) {
+      setEditingLineaTempId(null)
+      setSelectedProduct(null)
+      setProductoRefs(null)
+      setProductSearch('')
+      resetLineaForm(null)
+    }
     setLineas((prev) => prev.filter((l) => l.tempId !== tempId))
   }
 
@@ -998,30 +1074,18 @@ export function PlanillasPage() {
               {isExpanded && (
                 <ul className="space-y-2 border-t border-brand-100/80 bg-gradient-to-b from-surface-muted/40 to-white px-4 py-3 sm:px-5">
                   {grupo.lineas.map((l) => (
-                    <li
+                    <SwipeableConteoLinea
                       key={l.tempId}
-                      className="flex items-center justify-between gap-3 rounded-lg border border-surface-border bg-white px-3 py-2.5 text-sm"
+                      open={swipeOpenLineId === l.tempId}
+                      onOpenChange={(open) => setSwipeOpenLineId(open ? l.tempId : null)}
+                      onEdit={() => void empezarEditarLinea(l)}
+                      onDelete={() => quitarLinea(l.tempId)}
                     >
-                      <div className="min-w-0 text-slate-800">
-                        {l.modo_salida === 'CAJA'
-                          ? formatCantidad(l.cantidad)
-                          : l.etiqueta}
-                      </div>
-                      <div className="flex shrink-0 items-center gap-2">
-                        <span className="rounded-md bg-slate-50 px-2 py-1 text-sm font-semibold tabular-nums text-slate-900 ring-1 ring-surface-border">
-                          {formatCantidad(l.total_unidades)}
-                        </span>
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="sm"
-                          className="rounded-lg"
-                          onClick={() => quitarLinea(l.tempId)}
-                        >
-                          <Trash2 className="h-4 w-4 text-red-500" />
-                        </Button>
-                      </div>
-                    </li>
+                      <div className="min-w-0 flex-1 text-slate-800">{l.etiqueta}</div>
+                      <span className="shrink-0 rounded-md bg-slate-50 px-2 py-1 text-sm font-semibold tabular-nums text-slate-900 ring-1 ring-surface-border">
+                        {formatCantidad(l.total_unidades)}
+                      </span>
+                    </SwipeableConteoLinea>
                   ))}
                 </ul>
               )}
@@ -1139,9 +1203,14 @@ export function PlanillasPage() {
                     className="h-11 w-11 rounded-xl ring-1 ring-surface-border"
                   />
                   <div className="min-w-0 flex-1">
-                    <span className="inline-flex rounded-md bg-white px-2 py-0.5 font-mono text-xs font-semibold text-slate-700 ring-1 ring-surface-border">
-                      {selectedProduct.codigo_interno}
-                    </span>
+                    <div className="flex items-center gap-2">
+                      <span className="inline-flex rounded-md bg-white px-2 py-0.5 font-mono text-xs font-semibold text-slate-700 ring-1 ring-surface-border">
+                        {selectedProduct.codigo_interno}
+                      </span>
+                      <p className="ml-auto shrink-0 text-[10px] font-semibold uppercase tracking-wide text-brand-600">
+                        {editingLineaTempId ? 'Editar línea' : 'Nueva línea'}
+                      </p>
+                    </div>
                     <p className="mt-1 truncate text-sm font-semibold text-slate-900">
                       {selectedProduct.nombre}
                     </p>
@@ -1149,12 +1218,7 @@ export function PlanillasPage() {
                   <button
                     type="button"
                     className="rounded-lg p-1.5 text-slate-400 hover:bg-white hover:text-slate-600"
-                    onClick={() => {
-                      setSelectedProduct(null)
-                      setProductoRefs(null)
-                      setProductSearch('')
-                      productSearchRef.current?.focus()
-                    }}
+                    onClick={cancelarLineaForm}
                   >
                     <X className="h-4 w-4" />
                   </button>
@@ -1200,8 +1264,17 @@ export function PlanillasPage() {
                       className="w-full rounded-xl"
                       onClick={() => void agregarLineaYContinuar()}
                     >
-                      <Plus className="h-4 w-4" />
-                      Enter ↵
+                      {editingLineaTempId ? (
+                        <>
+                          <Check className="h-4 w-4" />
+                          Guardar
+                        </>
+                      ) : (
+                        <>
+                          <Plus className="h-4 w-4" />
+                          Agregar
+                        </>
+                      )}
                     </Button>
                   </div>
                 </div>
@@ -1221,16 +1294,6 @@ export function PlanillasPage() {
                     </p>
                   </div>
                 )}
-
-                <p className="mt-3 text-xs leading-relaxed text-slate-500">
-                  <span className="font-medium text-slate-600">Cajas:</span> descuenta cajas enteras del stock
-                  (pallets se abren si hace falta).
-                  {' '}
-                  <span className="font-medium text-slate-600">
-                    {normalizarUnidadProducto(selectedProduct.unidad)}s:
-                  </span>{' '}
-                  descuenta de cajas parciales (ej. 2 {normalizarUnidadProducto(selectedProduct.unidad)}s de una caja de 6).
-                </p>
               </div>
             )}
           </div>
@@ -1263,15 +1326,6 @@ export function PlanillasPage() {
                   disabled={saving || loadingPreview}
                 >
                   Cancelar planilla
-                </Button>
-                <Button
-                  variant="secondary"
-                  className="rounded-xl"
-                  onClick={abrirPreview}
-                  disabled={lineas.length === 0 || loadingPreview || saving}
-                >
-                  <Eye className="h-4 w-4" />
-                  {loadingPreview ? 'Calculando...' : 'Vista previa'}
                 </Button>
                 <Button
                   className="rounded-xl"
@@ -1346,7 +1400,7 @@ export function PlanillasPage() {
                       {pl.codigo_interno} — {pl.nombre}
                     </p>
                     <p className="text-sm text-slate-600">
-                      Solicitado: {formatCantidad(pl.total_solicitado)}
+                      Solicitado: {pl.etiqueta || formatCantidad(pl.total_solicitado)}
                     </p>
                     {pl.error ? (
                       <p className="mt-2 text-sm font-medium text-red-700">{pl.error}</p>
@@ -1359,11 +1413,18 @@ export function PlanillasPage() {
                           >
                             <span>
                               {d.sector_nombre}
+                              {' · '}
+                              {formatPlanillaEtiqueta(
+                                pl.modo_salida === 'BOTELLA' ? 'BOTELLA' : 'CAJA',
+                                d.unidades
+                              )}
                               {d.etiqueta && (
                                 <span className="ml-1 text-slate-400">({d.etiqueta})</span>
                               )}
                             </span>
-                            <span className="font-medium tabular-nums">{formatCantidad(d.unidades)}</span>
+                            <span className="font-medium tabular-nums">
+                              {formatCantidad(d.unidades)}
+                            </span>
                           </li>
                         ))}
                       </ul>
@@ -1665,6 +1726,36 @@ function PlanillaDetallePanel({
       ? [planilla.vehiculo_marca, planilla.vehiculo_modelo].filter(Boolean).join(' ')
       : null
 
+  const lineasDetalle = detalle.lineas.flatMap((l) => {
+    if (l.descuentos.length > 0) {
+      return l.descuentos.map((d) => ({
+        id: d.id,
+        producto_id: l.producto_id,
+        codigo_interno: l.codigo_interno,
+        nombre: l.nombre,
+        etiqueta:
+          d.sector_nombre +
+          ' · ' +
+          formatPlanillaEtiqueta(
+            l.modo_salida === 'BOTELLA' ? 'BOTELLA' : 'CAJA',
+            d.unidades,
+            l.unidad
+          ),
+        cantidad: d.unidades
+      }))
+    }
+    return [
+      {
+        id: l.id,
+        producto_id: l.producto_id,
+        codigo_interno: l.codigo_interno,
+        nombre: l.nombre,
+        etiqueta: l.etiqueta,
+        cantidad: l.total_unidades
+      }
+    ]
+  })
+
   return (
     <RegistroDetallePanel
       onVolver={onVolver}
@@ -1697,14 +1788,7 @@ function PlanillaDetallePanel({
           )}
         </>
       }
-      lineas={detalle.lineas.map((l) => ({
-        id: l.id,
-        producto_id: l.producto_id,
-        codigo_interno: l.codigo_interno,
-        nombre: l.nombre,
-        etiqueta: l.etiqueta,
-        cantidad: l.total_unidades
-      }))}
+      lineas={lineasDetalle}
     />
   )
 }

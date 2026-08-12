@@ -18,14 +18,16 @@ Toda la especificación del proyecto está en la carpeta [`docs/`](docs/):
 | [ANDROID-DEV.md](docs/ANDROID-DEV.md) | **Desarrollo Android:** live reload en celular/emulador y cómo armar la APK |
 | [PLANILLAS-OCR-FUTURO.md](docs/PLANILLAS-OCR-FUTURO.md) | **Futuro:** escanear planilla impresa y autocompletar líneas |
 | [MOVIMIENTOS-LISTA-ABIERTA-FUTURO.md](docs/MOVIMIENTOS-LISTA-ABIERTA-FUTURO.md) | Movimientos con lista abierta compartida + tilde + finalizar (implementado) |
+| [SERVIDOR-CLOUD-RAILWAY-FUTURO.md](docs/SERVIDOR-CLOUD-RAILWAY-FUTURO.md) | **Futuro:** API + Postgres en la nube (Railway), multi-PC, migrar datos |
 | [FICHA-TECNICA-COTIZACION.md](docs/FICHA-TECNICA-COTIZACION.md) | Ficha técnica para cotizar / pasar a terceros o a una IA |
 
 ## Estado del proyecto
 
-**v0.3.30** — Movimientos con lista abierta; ingresos multi-destino; borradores en ingresos/planillas/retornos.
+**v0.3.31** — Ajuste de stock, UX de conteo/movimientos/ingresos/planillas y permiso de ajustes.
 
 ### Reciente (resumen)
 
+- **v0.3.31:** ajuste de stock en Consulta; empaque desde nombre; íconos de tipo; swipe editar/borrar en ingresos/planillas; permiso Ajustes de stock.
 - **v0.3.30:** lista abierta de movimientos (sueltos, tilde configurable); ingresos con varios destinos y borrador; borradores en planillas/retornos.
 - **v0.3.29:** al unirse al sync por IP, solo se edita la IP; puerto **3850** fijo.
 - **v0.3.28:** verificación **Simple** / **Doble** por sector en inventario.
@@ -33,6 +35,7 @@ Toda la especificación del proyecto está en la carpeta [`docs/`](docs/):
 ### Futuro documentado (no hecho)
 
 - Escaneo/OCR de planilla impresa “A Despachar” → borrador de líneas: [PLANILLAS-OCR-FUTURO.md](docs/PLANILLAS-OCR-FUTURO.md).
+- Servidor en la nube (Railway): API + Postgres, multi-PC, migrar datos: [SERVIDOR-CLOUD-RAILWAY-FUTURO.md](docs/SERVIDOR-CLOUD-RAILWAY-FUTURO.md).
 
 ## Desarrollo local
 

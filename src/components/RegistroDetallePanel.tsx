@@ -4,6 +4,12 @@ import { formatCantidad } from '@/lib/desglose'
 import { Badge, Card } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 
+function formatCantidadConUnidad(cantidad: number, unidad?: string, texto?: string) {
+  if (texto) return texto
+  if (!unidad) return formatCantidad(cantidad)
+  return `${formatCantidad(cantidad)} ${unidad}${cantidad === 1 ? '' : 's'}`
+}
+
 export type RegistroDetalleLinea = {
   id: number
   producto_id: number
@@ -11,6 +17,13 @@ export type RegistroDetalleLinea = {
   nombre: string
   etiqueta: string
   cantidad: number
+  /**
+   * Unidad para acompañar la cantidad (ej. "caja", "botella").
+   * Se pluraliza automáticamente según el número.
+   */
+  cantidadUnidad?: string
+  /** Si está, se muestra en lugar de cantidad + unidad (ej. texto ya formateado). */
+  cantidadTexto?: string
   /** Badge u otro contenido visible en la fila del producto (sin desplegar) */
   extra?: ReactNode
   /** Agrupa extras iguales cuando hay varias líneas del mismo producto */
@@ -61,7 +74,8 @@ export function RegistroDetallePanel({
     }
     return [...map.values()].map((g) => ({
       ...g,
-      total: g.lineas.reduce((s, l) => s + l.cantidad, 0)
+      total: g.lineas.reduce((s, l) => s + l.cantidad, 0),
+      cantidadUnidad: g.lineas[0]?.cantidadUnidad
     }))
   }, [lineasLista])
 
@@ -157,7 +171,9 @@ export function RegistroDetallePanel({
                   </button>
                   <div className="flex shrink-0 items-center gap-2">
                     {extrasFila}
-                    <Badge variant="default">{formatCantidad(grupo.total)}</Badge>
+                    <Badge variant="default">
+                      {formatCantidadConUnidad(grupo.total, grupo.cantidadUnidad)}
+                    </Badge>
                   </div>
                 </div>
                 {isExpanded && (
@@ -172,12 +188,12 @@ export function RegistroDetallePanel({
                           <div className="flex min-w-0 flex-1 items-center justify-end gap-6 sm:gap-8">
                             <div className="min-w-0 truncate text-right">{l.extra}</div>
                             <span className="shrink-0 font-semibold tabular-nums text-slate-900">
-                              {formatCantidad(l.cantidad)}
+                              {formatCantidadConUnidad(l.cantidad, l.cantidadUnidad, l.cantidadTexto)}
                             </span>
                           </div>
                         ) : (
                           <span className="ml-auto shrink-0 font-semibold tabular-nums text-slate-900">
-                            {formatCantidad(l.cantidad)}
+                            {formatCantidadConUnidad(l.cantidad, l.cantidadUnidad, l.cantidadTexto)}
                           </span>
                         )}
                       </li>

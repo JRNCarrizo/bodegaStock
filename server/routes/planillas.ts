@@ -508,6 +508,7 @@ export async function planillasRoutes(app: FastifyInstance): Promise<void> {
             nombre: producto.nombre,
             total_solicitado: mapped.total_unidades,
             etiqueta: mapped.etiqueta,
+            modo_salida: mapped.modo_salida,
             descuentos
           })
         } catch (e) {
@@ -517,6 +518,7 @@ export async function planillasRoutes(app: FastifyInstance): Promise<void> {
             nombre: producto.nombre,
             total_solicitado: mapped.total_unidades,
             etiqueta: mapped.etiqueta,
+            modo_salida: mapped.modo_salida,
             descuentos: [],
             error: e instanceof Error ? e.message : 'Error al calcular descuento'
           })

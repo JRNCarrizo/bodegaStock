@@ -18,6 +18,7 @@ import {
   Eye,
   EyeOff,
   Hash,
+  Layers,
   Loader2,
   MapPin,
   MoreVertical,
@@ -34,8 +35,10 @@ import {
   Warehouse,
   Wifi,
   WifiOff,
+  Box,
   X
 } from 'lucide-react'
+import { BottleIcon } from '@/components/icons/BottleIcon'
 import { BarcodeScannerModal } from '@/components/BarcodeScannerModal'
 import { ProductImage } from '@/components/ProductImage'
 import {
@@ -1564,14 +1567,23 @@ function totalLineasManuales(
   )
 }
 
-function manualLineasToPayload(lineas: ManualLineaDraft[]): Array<Record<string, unknown>> {
+function manualLineasToPayload(
+  lineas: ManualLineaDraft[],
+  botellasPorCaja = 6
+): Array<Record<string, unknown>> {
   return lineas.map((l) => {
     const body: Record<string, unknown> = { tipo_bulto: l.tipo_bulto }
     if (l.tipo_bulto === 'SUELTO') {
       body.cantidad_suelta = Number(l.cantidad_suelta)
     } else {
       body.cantidad_bultos = Number(l.cantidad_bultos)
-      body.unidades_por_bulto = Number(l.unidades_por_bulto)
+      const porBulto =
+        l.tipo_bulto === 'CAJA'
+          ? Number(l.unidades_por_bulto) > 0
+            ? Number(l.unidades_por_bulto)
+            : botellasPorCaja
+          : Number(l.unidades_por_bulto)
+      body.unidades_por_bulto = porBulto
       if (l.cantidad_suelta.trim()) {
         body.cantidad_suelta = Number(l.cantidad_suelta)
       }
@@ -1669,7 +1681,7 @@ function ManualLineasEditor({
         tempId: `new-${Date.now()}`,
         tipo_bulto: 'CAJA',
         cantidad_bultos: '',
-        unidades_por_bulto: '',
+        unidades_por_bulto: String(botellasPorCaja),
         cantidad_suelta: ''
       }
     ])
@@ -1705,14 +1717,20 @@ function ManualLineasEditor({
                 </label>
                 <select
                   value={linea.tipo_bulto}
-                  onChange={(e) =>
+                  onChange={(e) => {
+                    const tipo = e.target.value as TipoBulto
                     updateLinea(linea.tempId, {
-                      tipo_bulto: e.target.value as TipoBulto,
+                      tipo_bulto: tipo,
                       cantidad_bultos: '',
-                      unidades_por_bulto: '',
+                      unidades_por_bulto:
+                        tipo === 'CAJA'
+                          ? String(botellasPorCaja)
+                          : tipo === 'PALLET'
+                            ? ''
+                            : '',
                       cantidad_suelta: ''
                     })
-                  }
+                  }}
                   className="w-full rounded-lg border border-surface-border px-2 py-1.5 text-sm"
                 >
                   <option value="PALLET">Pallet</option>
@@ -1749,20 +1767,22 @@ function ManualLineasEditor({
                       className="h-9"
                     />
                   </div>
-                  <div className="min-w-[80px]">
-                    <label className="mb-1 block text-[10px] font-medium uppercase text-slate-400">
-                      Por bulto
-                    </label>
-                    <Input
-                      type="number"
-                      min={0}
-                      value={linea.unidades_por_bulto}
-                      onChange={(e) =>
-                        updateLinea(linea.tempId, { unidades_por_bulto: e.target.value })
-                      }
-                      className="h-9"
-                    />
-                  </div>
+                  {linea.tipo_bulto === 'PALLET' && (
+                    <div className="min-w-[80px]">
+                      <label className="mb-1 block text-[10px] font-medium uppercase text-slate-400">
+                        Por bulto
+                      </label>
+                      <Input
+                        type="number"
+                        min={0}
+                        value={linea.unidades_por_bulto}
+                        onChange={(e) =>
+                          updateLinea(linea.tempId, { unidades_por_bulto: e.target.value })
+                        }
+                        className="h-9"
+                      />
+                    </div>
+                  )}
                   <div className="min-w-[80px]">
                     <label className="mb-1 block text-[10px] font-medium uppercase text-slate-400">
                       Extra
@@ -1785,7 +1805,10 @@ function ManualLineasEditor({
                   {
                     tipo_bulto: linea.tipo_bulto,
                     cantidad_bultos: linea.cantidad_bultos,
-                    unidades_por_bulto: linea.unidades_por_bulto,
+                    unidades_por_bulto:
+                      linea.tipo_bulto === 'CAJA' && !Number(linea.unidades_por_bulto)
+                        ? botellasPorCaja
+                        : linea.unidades_por_bulto,
                     cantidad_suelta: linea.cantidad_suelta
                   },
                   unidad
@@ -2370,7 +2393,10 @@ function InventarioVistaPreviaCierre({
         modo
       }
       if (modo === 'MANUAL') {
-        entry.lineas = manualLineasToPayload(decision?.lineas ?? [])
+        entry.lineas = manualLineasToPayload(
+          decision?.lineas ?? [],
+          Number(item.botellas_por_caja ?? 6)
+        )
       }
       payload.push(entry)
     }
@@ -4839,9 +4865,11 @@ function ConteoSectorView({
 
   function resetLineaForm(forProduct?: Producto | null) {
     const p = forProduct ?? selectedProduct
-    setTipoBulto('PALLET')
+    // Conserva el tipo elegido para el próximo producto
     setCantidadBultos('')
-    setUnidadesPorBulto(defaultUnidadesPorBulto('PALLET', p))
+    setUnidadesPorBulto(
+      tipoBulto === 'SUELTO' ? '' : defaultUnidadesPorBulto(tipoBulto, p)
+    )
     setCantidadSuelta('')
   }
 
@@ -5210,9 +5238,12 @@ function ConteoSectorView({
           }
         }
       } else {
-        const porBulto = Number(unidadesPorBulto)
+        const porBulto =
+          Number(unidadesPorBulto) > 0
+            ? Number(unidadesPorBulto)
+            : Number(defaultUnidadesPorBulto('CAJA', selectedProduct))
         if (!Number.isFinite(porBulto) || porBulto <= 0) {
-          setError('Indicá las unidades por bulto')
+          setError('No hay botellas por caja definidas para este producto')
           return false
         }
         body.unidades_por_bulto = porBulto
@@ -5963,9 +5994,30 @@ function ConteoSectorView({
                     <div className="flex rounded-xl border border-surface-border bg-slate-50 p-0.5">
                       {(
                         [
-                          { value: 'PALLET', label: 'Pallets' },
-                          { value: 'CAJA', label: 'Cajas' },
-                          { value: 'SUELTO', label: 'Botellas' }
+                          {
+                            value: 'PALLET' as const,
+                            label: 'Pallets',
+                            Icon: Layers,
+                            active:
+                              'bg-indigo-600 text-white shadow-md ring-2 ring-indigo-500/40',
+                            idle: 'text-indigo-700/75 hover:bg-indigo-50 hover:text-indigo-900'
+                          },
+                          {
+                            value: 'CAJA' as const,
+                            label: 'Cajas',
+                            Icon: Box,
+                            active:
+                              'bg-amber-600 text-white shadow-md ring-2 ring-amber-500/40',
+                            idle: 'text-amber-800/80 hover:bg-amber-50 hover:text-amber-950'
+                          },
+                          {
+                            value: 'SUELTO' as const,
+                            label: 'Botellas',
+                            Icon: BottleIcon,
+                            active:
+                              'bg-emerald-600 text-white shadow-md ring-2 ring-emerald-500/40',
+                            idle: 'text-emerald-800/75 hover:bg-emerald-50 hover:text-emerald-950'
+                          }
                         ] as const
                       ).map((opt) => (
                         <button
@@ -5974,20 +6026,19 @@ function ConteoSectorView({
                           onPointerDown={(e) => e.preventDefault()}
                           onClick={() => handleTipoBultoChange(opt.value)}
                           className={cn(
-                            'flex-1 rounded-[10px] px-2 py-2 text-sm font-semibold transition-colors',
-                            tipoBulto === opt.value
-                              ? 'bg-brand-600 text-white shadow-md ring-2 ring-brand-600/30'
-                              : 'text-slate-500 hover:bg-white/70 hover:text-slate-700'
+                            'flex flex-1 items-center justify-center gap-1.5 rounded-[10px] px-2 py-2 text-sm font-semibold transition-colors',
+                            tipoBulto === opt.value ? opt.active : opt.idle
                           )}
                         >
-                          {opt.label}
+                          <opt.Icon className="h-4 w-4 shrink-0 opacity-90" aria-hidden />
+                          <span className="truncate">{opt.label}</span>
                         </button>
                       ))}
                     </div>
                   </div>
 
                   <div className="col-span-2 grid min-h-[12rem] grid-cols-2 content-start gap-3 sm:col-span-4 lg:col-span-4">
-                    <div className={cn(tipoBulto === 'SUELTO' && 'hidden')}>
+                    <div className={cn(tipoBulto === 'SUELTO' && 'hidden', tipoBulto === 'CAJA' && 'col-span-2')}>
                       <Input
                         ref={cantidadBultosRef}
                         label={tipoBulto === 'PALLET' ? 'Cant. pallets' : 'Cant. cajas'}
@@ -6003,11 +6054,18 @@ function ConteoSectorView({
                         onKeyDown={(e) => {
                           if (e.key === 'Enter') {
                             e.preventDefault()
-                            focusField(unidadesRef)
+                            focusField(tipoBulto === 'CAJA' ? cantidadSueltaRef : unidadesRef)
                           }
                         }}
                         placeholder={
                           tipoBulto === 'PALLET' ? '2' : tipoBulto === 'CAJA' ? '1 o 28×4-4' : '1'
+                        }
+                        leading={
+                          tipoBulto === 'PALLET' ? (
+                            <Layers className="h-4 w-4" aria-hidden />
+                          ) : (
+                            <Box className="h-4 w-4" aria-hidden />
+                          )
                         }
                         className="rounded-xl px-3 py-2.5 text-base"
                       />
@@ -6026,16 +6084,12 @@ function ConteoSectorView({
                         </p>
                       )}
                     </div>
-                    <div className={cn(tipoBulto === 'SUELTO' && 'hidden')}>
+                    <div className={cn((tipoBulto === 'SUELTO' || tipoBulto === 'CAJA') && 'hidden')}>
                       <Input
                         ref={unidadesRef}
-                        label={
-                          tipoBulto === 'PALLET'
-                            ? '× cajas por pallet'
-                            : '× botellas por caja'
-                        }
+                        label="× cajas por pallet"
                         type="text"
-                        inputMode={tipoBulto === 'PALLET' ? 'text' : 'numeric'}
+                        inputMode="text"
                         value={unidadesPorBulto}
                         onChange={(e) => setUnidadesPorBulto(e.target.value)}
                         onFocus={() => {
@@ -6049,7 +6103,8 @@ function ConteoSectorView({
                             focusField(cantidadSueltaRef)
                           }
                         }}
-                        placeholder={tipoBulto === 'PALLET' ? '112 o 112-6' : '6'}
+                        placeholder="112 o 112-6"
+                        leading={<Box className="h-4 w-4" aria-hidden />}
                         className="rounded-xl px-3 py-2.5 text-base"
                       />
                       {tipoBulto === 'PALLET' && cantidadExprEsCuenta(unidadesPorBulto) && (
@@ -6094,6 +6149,13 @@ function ConteoSectorView({
                         }}
                         placeholder={
                           tipoBulto === 'SUELTO' ? '12' : tipoBulto === 'PALLET' ? '0 o 8-2' : '0'
+                        }
+                        leading={
+                          tipoBulto === 'PALLET' ? (
+                            <Box className="h-4 w-4" aria-hidden />
+                          ) : (
+                            <BottleIcon className="h-4 w-4" />
+                          )
                         }
                         className="rounded-xl px-3 py-2.5 text-base"
                       />
@@ -6157,8 +6219,8 @@ function ConteoSectorView({
                 <p className="mt-3 hidden text-sm leading-relaxed text-slate-500 sm:block">
                   <span className="font-medium text-slate-600">Pallet:</span> 3 × 112 = 3 pallets de 112
                   cajas; cajas sueltas al costado van en el campo aparte.{' '}
-                  <span className="font-medium text-slate-600">Caja:</span> 30 × 6 = 30 cajas de 6
-                  botellas; botellas sueltas al costado, en su campo.{' '}
+                  <span className="font-medium text-slate-600">Caja:</span> solo cantidad de cajas
+                  (botellas por caja sale del producto); botellas sueltas al costado.{' '}
                   <span className="font-medium text-slate-600">Suelto:</span> solo unidades sueltas, sin bulto.
                 </p>
               </div>

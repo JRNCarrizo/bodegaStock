@@ -12,6 +12,7 @@ export const SECCIONES_ASIGNABLES = [
   { id: 'roturas', label: 'Roturas y pérdidas' },
   { id: 'movimientos', label: 'Movimientos' },
   { id: 'inventario', label: 'Inventario (conteo)' },
+  { id: 'ajustes', label: 'Ajustes de stock' },
   { id: 'camioneros', label: 'Camioneros' },
   { id: 'reportes', label: 'Movimientos del día' },
   { id: 'usuarios', label: 'Usuarios' }
@@ -29,6 +30,7 @@ const SECCION_PERMISOS: Record<SeccionId, readonly string[]> = {
   roturas: ['roturas.ver', 'roturas.crear'],
   movimientos: ['movimientos_internos.ver', 'movimientos_internos.crear'],
   inventario: ['inventario.contar'],
+  ajustes: ['ajustes.crear'],
   camioneros: ['camioneros.ver', 'camioneros.crear', 'camioneros.editar'],
   reportes: ['reportes.ver', 'reportes.exportar'],
   usuarios: ['usuarios.ver', 'usuarios.crear', 'usuarios.editar']
@@ -41,7 +43,7 @@ export function isSeccionAsignable(seccion: string): seccion is SeccionId {
 }
 
 export function permisoToSeccionId(codigo: string): SeccionId | null {
-  if (codigo.startsWith('ajustes.')) return 'inventario'
+  if (codigo.startsWith('ajustes.')) return 'ajustes'
   const [seccion] = codigo.split('.')
   if (seccion === 'movimientos_internos') return 'movimientos'
   if (isSeccionAsignable(seccion)) return seccion

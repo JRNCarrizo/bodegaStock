@@ -197,8 +197,15 @@ function DetalleModal({
               <p className="mt-0.5 text-sm text-slate-500">
                 Total:{' '}
                 <span className="font-semibold tabular-nums text-brand-700">
-                  {formatCantidad(detalle.total)}
+                  {detalle.tipo === 'ajustes'
+                    ? `${detalle.total > 0 ? '+' : ''}${formatCantidad(detalle.total)}`
+                    : formatCantidad(detalle.total)}
                 </span>
+                {detalle.tipo === 'ajustes' && (
+                  <span className="ml-1 text-slate-400">
+                    · {detalle.items.length} movimiento(s)
+                  </span>
+                )}
               </p>
             )}
           </div>
@@ -237,20 +244,54 @@ function DetalleModal({
                 <p className="mt-4 text-sm text-slate-500">Ningún producto coincide con la búsqueda</p>
               ) : (
                 <ul className="mt-4 min-h-0 flex-1 space-y-2 overflow-auto">
-                  {itemsFiltrados.map((item) => (
+                  {itemsFiltrados.map((item, idx) => (
                     <li
-                      key={`${item.codigo_interno}-${item.nombre}`}
-                      className="flex items-center justify-between gap-3 rounded-lg border border-surface-border bg-white px-4 py-3 shadow-sm"
+                      key={`${item.codigo_interno}-${idx}-${item.observacion ?? item.nombre}`}
+                      className="flex items-start justify-between gap-3 rounded-lg border border-surface-border bg-white px-4 py-3 shadow-sm"
                     >
-                      <div className="flex min-w-0 items-center gap-2">
-                        <span className="inline-flex shrink-0 rounded-md bg-slate-100 px-2 py-0.5 font-mono text-xs font-semibold text-slate-700">
-                          {item.codigo_interno}
-                        </span>
-                        <p className="min-w-0 truncate text-sm font-medium text-slate-800">{item.nombre}</p>
+                      <div className="min-w-0">
+                        <div className="flex min-w-0 flex-wrap items-center gap-2">
+                          <span className="inline-flex shrink-0 rounded-md bg-slate-100 px-2 py-0.5 font-mono text-xs font-semibold text-slate-700">
+                            {item.codigo_interno}
+                          </span>
+                          <p className="min-w-0 truncate text-sm font-medium text-slate-800">
+                            {item.nombre}
+                          </p>
+                          {detalle.tipo === 'ajustes' && item.tipo_ajuste === 'AJUSTE_MANUAL' && (
+                            <span className="rounded bg-amber-50 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-700 ring-1 ring-amber-100">
+                              Manual
+                            </span>
+                          )}
+                          {detalle.tipo === 'ajustes' &&
+                            item.tipo_ajuste === 'AJUSTE_INVENTARIO' && (
+                              <span className="rounded bg-indigo-50 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-indigo-700 ring-1 ring-indigo-100">
+                                Inventario
+                              </span>
+                            )}
+                        </div>
+                        {detalle.tipo === 'ajustes' && item.observacion && (
+                          <p className="mt-1 line-clamp-2 text-xs text-slate-500">
+                            {item.observacion}
+                          </p>
+                        )}
                       </div>
-                      <span className="inline-flex shrink-0 rounded-lg bg-brand-50 px-2.5 py-1.5 text-sm font-bold tabular-nums text-brand-700 ring-1 ring-brand-100">
-                        {formatCantidad(item.cantidad_cajas)}
-                      </span>
+                      {detalle.tipo === 'ajustes' ? (
+                        <span
+                          className={cn(
+                            'inline-flex shrink-0 rounded-lg px-2.5 py-1.5 text-sm font-bold tabular-nums ring-1',
+                            item.cantidad_cajas >= 0
+                              ? 'bg-emerald-50 text-emerald-700 ring-emerald-100'
+                              : 'bg-red-50 text-red-700 ring-red-100'
+                          )}
+                        >
+                          {item.cantidad_cajas >= 0 ? '+' : ''}
+                          {formatCantidad(item.cantidad_cajas)}
+                        </span>
+                      ) : (
+                        <span className="inline-flex shrink-0 rounded-lg bg-brand-50 px-2.5 py-1.5 text-sm font-bold tabular-nums text-brand-700 ring-1 ring-brand-100">
+                          {formatCantidad(item.cantidad_cajas)}
+                        </span>
+                      )}
                     </li>
                   ))}
                 </ul>
@@ -540,9 +581,28 @@ export function ReportesPage() {
           </div>
           {loading && <Loader2 className="h-5 w-5 shrink-0 animate-spin text-brand-600" />}
           {report && !loading && (
-            <p className="max-w-md text-xs leading-relaxed text-slate-500">
-              Balance = stock inicial + ingresos + retornos − planillas − roturas
-            </p>
+            <div className="flex max-w-lg flex-col items-end gap-1 text-right">
+              <p className="text-xs leading-relaxed text-slate-500">
+                Balance = stock inicial + ingresos + retornos − planillas − roturas
+                {report.ajustes_count > 0 ? ' ± ajustes' : ''}
+              </p>
+              {report.ajustes_count > 0 && (
+                <button
+                  type="button"
+                  onClick={() => void abrirDetalle('ajustes')}
+                  className="text-xs font-medium text-slate-500 underline decoration-slate-300 underline-offset-2 transition hover:text-brand-700 hover:decoration-brand-400"
+                >
+                  Ver ajustes
+                  <span className="ml-1 tabular-nums text-slate-400">
+                    ({report.ajustes_count}
+                    {Math.abs(report.ajustes) > 0.0001
+                      ? ` · ${report.ajustes > 0 ? '+' : ''}${formatCantidad(report.ajustes)}`
+                      : ''}
+                    )
+                  </span>
+                </button>
+              )}
+            </div>
           )}
         </CardBody>
       </Card>

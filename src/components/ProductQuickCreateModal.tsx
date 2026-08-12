@@ -4,6 +4,7 @@ import { BarcodePrintModal } from '@/components/BarcodePrintModal'
 import { BarcodeScannerModal } from '@/components/BarcodeScannerModal'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
+import { parseBotellasPorCajaFromNombre } from '@/lib/empaqueNombre'
 import { api } from '@/lib/utils'
 import type { Producto } from '@/types'
 
@@ -22,6 +23,7 @@ export function ProductQuickCreateModal({
   const [codigoBarras, setCodigoBarras] = useState('')
   const [nombre, setNombre] = useState('')
   const [botellasPorCaja, setBotellasPorCaja] = useState('')
+  const [cajaManual, setCajaManual] = useState(false)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const [showScanner, setShowScanner] = useState(false)
@@ -34,6 +36,7 @@ export function ProductQuickCreateModal({
     setCodigoBarras('')
     setNombre('')
     setBotellasPorCaja('')
+    setCajaManual(false)
     setError('')
   }
 
@@ -115,7 +118,14 @@ export function ProductQuickCreateModal({
             <Input
               label="Nombre *"
               value={nombre}
-              onChange={(e) => setNombre(e.target.value)}
+              onChange={(e) => {
+                const next = e.target.value
+                setNombre(next)
+                if (!cajaManual) {
+                  const parsed = parseBotellasPorCajaFromNombre(next)
+                  setBotellasPorCaja(parsed != null ? String(parsed) : '')
+                }
+              }}
               required
             />
             <div className="space-y-2">
@@ -153,8 +163,11 @@ export function ProductQuickCreateModal({
               inputMode="numeric"
               min="1"
               value={botellasPorCaja}
-              onChange={(e) => setBotellasPorCaja(e.target.value)}
-              placeholder="Ej. 6 — o lo completa el inventario"
+              onChange={(e) => {
+                setCajaManual(true)
+                setBotellasPorCaja(e.target.value)
+              }}
+              placeholder="Ej. 3 — o se lee del nombre (3X750)"
             />
 
             <div className="flex gap-2 pt-2">

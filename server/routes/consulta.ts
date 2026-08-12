@@ -14,12 +14,14 @@ import {
   getProductoDefaults,
   getProductoUnidad,
   getReorganizarSectorInfo,
+  ajustarStockSector,
   lineaTotalEnCajas,
   reorganizeStockLine,
   reorganizeStockSector,
   STOCK_LINEA_SUELTO_SQL,
   STOCK_SECTOR_VISIBLE_SQL,
   totalSueltoLineaConteo,
+  type AjusteStockLineaInput,
   type ReorganizarDesgloseInput
 } from '../utils/stock'
 import { sqlProductoSearchClause } from '../utils/productoSearch'
@@ -647,6 +649,68 @@ export async function consultaRoutes(app: FastifyInstance): Promise<void> {
       }
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Error al reorganizar'
+      return reply.status(400).send({ error: message })
+    }
+  })
+
+  app.post('/api/consulta/stock-sector/:id/ajustar', {
+    preHandler: [blockIfInventarioActivo(), requirePermiso('ajustes.crear')]
+  }, async (request, reply) => {
+    const stockSectorId = Number((request.params as { id: string }).id)
+    if (!Number.isFinite(stockSectorId) || stockSectorId <= 0) {
+      return reply.status(400).send({ error: 'ID de stock por sector inválido' })
+    }
+
+    const db = getDb()
+    const user = request.user!
+    const body = (request.body ?? {}) as {
+      motivo?: string
+      lineas?: AjusteStockLineaInput[]
+    }
+
+    const motivo = String(body.motivo ?? '').trim()
+    if (!motivo) {
+      return reply.status(400).send({ error: 'Indicá el motivo del ajuste' })
+    }
+
+    const lineasRaw = Array.isArray(body.lineas) ? body.lineas : []
+    const lineas: AjusteStockLineaInput[] = lineasRaw.map((l) => ({
+      tipo_bulto: l.tipo_bulto,
+      cantidad_bultos: l.cantidad_bultos != null ? Number(l.cantidad_bultos) : null,
+      unidades_por_bulto: l.unidades_por_bulto != null ? Number(l.unidades_por_bulto) : null,
+      cantidad_suelta: l.cantidad_suelta != null ? Number(l.cantidad_suelta) : null,
+      ubicacion_id: l.ubicacion_id != null ? Number(l.ubicacion_id) : null,
+      ubicacion: l.ubicacion ?? null
+    }))
+
+    try {
+      const sectorMeta = db
+        .prepare(`SELECT producto_id FROM stock_sector WHERE id = ?`)
+        .get(stockSectorId) as { producto_id: number } | undefined
+      if (!sectorMeta) {
+        return reply.status(404).send({ error: 'Stock por sector no encontrado' })
+      }
+
+      const result = ajustarStockSector(db, stockSectorId, user.id, lineas, motivo)
+
+      const producto = db.prepare(`
+        SELECT id, codigo_interno, codigo_barras, nombre, descripcion, imagen_path, activo, unidad
+        FROM productos WHERE id = ?
+      `).get(sectorMeta.producto_id)
+
+      const sectores = getStockDetalle(db, sectorMeta.producto_id)
+      const stock_total = sectores.reduce((sum, s) => sum + s.cantidad_total, 0)
+      const suelto_total = sectores.reduce((sum, s) => sum + s.suelto_total, 0)
+
+      return {
+        ok: true,
+        cajas_antes: result.cajas_antes,
+        cajas_despues: result.cajas_despues,
+        etiquetas: result.etiquetas,
+        detalle: { producto, stock_total, suelto_total, sectores }
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Error al ajustar stock'
       return reply.status(400).send({ error: message })
     }
   })

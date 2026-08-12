@@ -43,7 +43,9 @@ export interface StockLineaConsulta {
   unidades_por_bulto: number | null
   cantidad_suelta: number | null
   ubicacion: string | null
+  ubicacion_id?: number | null
   total_unidades: number
+  total_cajas?: number
   total_suelto: number
   etiqueta: string
 }
@@ -331,6 +333,8 @@ export interface PlanillaDetalleLinea {
   nombre: string
   etiqueta: string
   total_unidades: number
+  modo_salida?: 'CAJA' | 'BOTELLA'
+  unidad?: string
   descuentos: PlanillaDescuentoDetalle[]
 }
 
@@ -340,6 +344,7 @@ export interface PlanillaPreviewLinea {
   nombre: string
   total_solicitado: number
   etiqueta: string
+  modo_salida?: 'CAJA' | 'BOTELLA'
   descuentos: {
     sector_id: number
     sector_nombre: string
@@ -513,6 +518,10 @@ export interface MovimientosDiaReport {
   retornos: number
   planillas: number
   roturas: number
+  /** Neto de ajustes (manual + inventario) en el período. */
+  ajustes: number
+  /** Cantidad de movimientos de ajuste en el período. */
+  ajustes_count: number
   balance_final: number
   perdidos_retornos: number
 }
@@ -533,11 +542,14 @@ export type ReporteDetalleTipo =
   | 'roturas'
   | 'stock_inicial'
   | 'balance_final'
+  | 'ajustes'
 
 export interface ReporteDetalleItem {
   codigo_interno: string
   nombre: string
   cantidad_cajas: number
+  observacion?: string | null
+  tipo_ajuste?: string | null
 }
 
 export interface ReporteDetalle {

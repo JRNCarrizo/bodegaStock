@@ -360,7 +360,9 @@ export function normalizeCajaStockLineaTotales(db: Database.Database): number {
 }
 
 export function formatCantidadUnidad(cantidad: number, unidad?: string | null): string {
-  return `${cantidad} ${normalizarUnidadProducto(unidad)}`
+  const nombre = normalizarUnidadProducto(unidad)
+  const etiqueta = cantidad === 1 || nombre.endsWith('s') ? nombre : `${nombre}s`
+  return `${cantidad} ${etiqueta}`
 }
 
 export function getProductoUnidad(db: Database.Database, producto_id: number): string {
@@ -379,14 +381,18 @@ export function formatEtiquetaLinea(
   const porBulto = Number(linea.unidades_por_bulto ?? 0)
 
   if (linea.tipo_bulto === 'PALLET') {
-    const base = `${bultos} pallet por ${porBulto}`
+    const base = `${bultos} pallet${bultos === 1 ? '' : 's'} × ${porBulto}`
     const extra = Number(linea.cantidad_suelta ?? 0)
-    return extra > 0 ? `${base} + ${extra} cajas` : base
+    return extra > 0
+      ? `${base} + ${extra} caja${extra === 1 ? '' : 's'}`
+      : base
   }
   if (linea.tipo_bulto === 'CAJA') {
-    const base = `${bultos} caja × ${porBulto} ${unidad}`
+    const base = `${bultos} caja${bultos === 1 ? '' : 's'}`
     const extra = Number(linea.cantidad_suelta ?? 0)
-    return extra > 0 ? `${base} + ${extra} ${unidad}` : base
+    if (extra <= 0) return base
+    const unidadExtra = extra === 1 || unidad.endsWith('s') ? unidad : `${unidad}s`
+    return `${base} + ${extra} ${unidadExtra}`
   }
   if (linea.tipo_bulto === 'SUELTO') {
     return formatCantidadUnidad(Number(linea.cantidad_suelta ?? 0), unidadProducto)
@@ -709,6 +715,184 @@ export function getReorganizarSectorInfo(
     botellas_por_caja: botellasPorCaja,
     referencias_bulto: referencias
   }
+}
+
+export interface AjusteStockLineaInput {
+  tipo_bulto: TipoBulto
+  cantidad_bultos?: number | null
+  unidades_por_bulto?: number | null
+  cantidad_suelta?: number | null
+  ubicacion_id?: number | null
+  ubicacion?: string | null
+}
+
+/**
+ * Reemplaza el desglose de un stock_sector (ajuste manual con auditoría).
+ * Permite corregir errores de inventario (ej. botellas cargadas como cajas).
+ */
+export function ajustarStockSector(
+  db: Database.Database,
+  stockSectorId: number,
+  usuarioId: number,
+  lineas: AjusteStockLineaInput[],
+  motivo: string
+): { cajas_antes: number; cajas_despues: number; etiquetas: string[] } {
+  const motivoTrim = motivo.trim()
+  if (!motivoTrim) {
+    throw new Error('Indicá el motivo del ajuste')
+  }
+
+  const sectorRow = db
+    .prepare(
+      `
+      SELECT ss.id, ss.producto_id, ss.sector_id, ss.cantidad_total
+      FROM stock_sector ss
+      WHERE ss.id = ?
+    `
+    )
+    .get(stockSectorId) as
+    | {
+        id: number
+        producto_id: number
+        sector_id: number
+        cantidad_total: number
+      }
+    | undefined
+
+  if (!sectorRow) {
+    throw new Error('Stock por sector no encontrado')
+  }
+
+  const { unidad } = getProductoDefaults(db, sectorRow.producto_id)
+  const cajasAntes = Number(sectorRow.cantidad_total ?? 0)
+
+  const normalized: Array<{
+    linea: LineaDesgloseInput
+    ubicacion_id: number | null
+    ubicacion: string | null
+    totalStock: number
+    etiqueta: string
+  }> = []
+
+  for (let i = 0; i < lineas.length; i++) {
+    const raw = lineas[i]
+    const tipo = raw.tipo_bulto
+    if (tipo !== 'PALLET' && tipo !== 'CAJA' && tipo !== 'SUELTO') {
+      throw new Error(`Línea ${i + 1}: tipo de bulto inválido`)
+    }
+
+    const linea: LineaDesgloseInput = {
+      tipo_bulto: tipo,
+      cantidad_bultos: tipo === 'SUELTO' ? null : Number(raw.cantidad_bultos ?? 0),
+      unidades_por_bulto: tipo === 'SUELTO' ? null : Number(raw.unidades_por_bulto ?? 0),
+      cantidad_suelta:
+        tipo === 'SUELTO'
+          ? Number(raw.cantidad_suelta ?? 0)
+          : Number(raw.cantidad_suelta ?? 0) || null
+    }
+
+    const err = validateLineaDesglose(linea)
+    if (err) throw new Error(`Línea ${i + 1}: ${err}`)
+
+    let ubicacion_id: number | null =
+      raw.ubicacion_id != null && Number(raw.ubicacion_id) > 0
+        ? Number(raw.ubicacion_id)
+        : null
+    let ubicacion: string | null = raw.ubicacion?.trim() || null
+
+    if (ubicacion_id != null) {
+      const ub = db
+        .prepare(
+          `
+          SELECT id, nombre FROM sector_ubicaciones
+          WHERE id = ? AND sector_id = ? AND activo = 1
+        `
+        )
+        .get(ubicacion_id, sectorRow.sector_id) as { id: number; nombre: string } | undefined
+      if (!ub) {
+        throw new Error(`Línea ${i + 1}: ubicación inválida para este sector`)
+      }
+      ubicacion = ub.nombre
+    } else {
+      ubicacion_id = null
+      ubicacion = null
+    }
+
+    const totalStock = calcTotalUnidades(linea)
+    if (totalStock <= 0) {
+      throw new Error(`Línea ${i + 1}: cantidad inválida`)
+    }
+
+    normalized.push({
+      linea,
+      ubicacion_id,
+      ubicacion,
+      totalStock,
+      etiqueta: formatEtiquetaLinea(linea, unidad)
+    })
+  }
+
+  const run = db.transaction(() => {
+    db.prepare('DELETE FROM stock_lineas WHERE stock_sector_id = ?').run(stockSectorId)
+
+    const insert = db.prepare(`
+      INSERT INTO stock_lineas (
+        stock_sector_id, tipo_bulto, cantidad_bultos, unidades_por_bulto,
+        cantidad_suelta, ubicacion, ubicacion_id, total_unidades, orden
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `)
+
+    let orden = 0
+    for (const row of normalized) {
+      insert.run(
+        stockSectorId,
+        row.linea.tipo_bulto,
+        row.linea.tipo_bulto === 'SUELTO' ? null : row.linea.cantidad_bultos,
+        row.linea.tipo_bulto === 'SUELTO' ? null : row.linea.unidades_por_bulto,
+        row.linea.cantidad_suelta || null,
+        row.ubicacion,
+        row.ubicacion_id,
+        row.totalStock,
+        orden++
+      )
+    }
+
+    rememberUnidadesPorCajaFromLineas(
+      db,
+      sectorRow.producto_id,
+      normalized.map((n) => n.linea)
+    )
+    refreshStockSectorTotal(db, stockSectorId)
+
+    const despuesRow = db
+      .prepare(`SELECT cantidad_total FROM stock_sector WHERE id = ?`)
+      .get(stockSectorId) as { cantidad_total: number }
+    const cajasDespues = Number(despuesRow.cantidad_total)
+    const delta = cajasDespues - cajasAntes
+
+    const etiquetasResumen =
+      normalized.length > 0
+        ? normalized.map((n) => n.etiqueta).join(' + ')
+        : 'sin stock'
+
+    db.prepare(`
+      INSERT INTO movimientos (
+        tipo, producto_id, cantidad, sector_destino_id,
+        documento_tipo, documento_id, usuario_id, observacion
+      ) VALUES ('AJUSTE_MANUAL', ?, ?, ?, 'ajuste_manual', ?, ?, ?)
+    `).run(
+      sectorRow.producto_id,
+      delta,
+      sectorRow.sector_id,
+      stockSectorId,
+      usuarioId,
+      `${motivoTrim} · Antes: ${cajasAntes} cajas → Ahora: ${cajasDespues} cajas (${etiquetasResumen})`
+    )
+
+    return { cajas_antes: cajasAntes, cajas_despues: cajasDespues, etiquetas: normalized.map((n) => n.etiqueta) }
+  })
+
+  return run()
 }
 
 function applyReorganizarDesgloseToStockSector(

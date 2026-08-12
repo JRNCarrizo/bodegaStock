@@ -1,13 +1,14 @@
 ﻿import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import {
   ArrowLeftRight,
-  Camera,
+  Box,
   Check,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
   ClipboardList,
   Eye,
+  Layers,
   Loader2,
   Plus,
   Search,
@@ -15,7 +16,7 @@ import {
   User,
   X
 } from 'lucide-react'
-import { BarcodeScannerModal } from '@/components/BarcodeScannerModal'
+import { BottleIcon } from '@/components/icons/BottleIcon'
 import { DayTabsRow } from '@/components/DayTabsRow'
 import {
   RegistroDetalleMetaChip,
@@ -109,7 +110,6 @@ function badgeEstado(estado: MovimientoInternoEstado, ingresoDirecto = false) {
 }
 
 function etiquetaLinea(l: MovimientoInternoDetalleLinea): string {
-  if (l.etiqueta) return l.etiqueta
   if (l.tipo_bulto === 'SUELTO') {
     return formatEtiqueta(
       { tipo_bulto: 'SUELTO', cantidad_suelta: l.cantidad_suelta ?? 0 },
@@ -127,6 +127,7 @@ function etiquetaLinea(l: MovimientoInternoDetalleLinea): string {
       l.unidad
     )
   }
+  if (l.etiqueta) return l.etiqueta
   return formatTotalCajas(l.cantidad_cajas)
 }
 
@@ -164,7 +165,6 @@ export function MovimientosPage() {
   const [stockDisponible, setStockDisponible] = useState<number | null>(null)
   const [stockDisponibleBotellas, setStockDisponibleBotellas] = useState<number | null>(null)
   const [expandedProductos, setExpandedProductos] = useState<Set<number>>(() => new Set())
-  const [showScanner, setShowScanner] = useState(false)
   const [editingLineaId, setEditingLineaId] = useState<number | null>(null)
   const [swipeOpenLineId, setSwipeOpenLineId] = useState<number | null>(null)
   const [formOrigenId, setFormOrigenId] = useState('')
@@ -479,10 +479,6 @@ export function MovimientosPage() {
   }, [detalle, view])
 
   useEscHandler(view !== 'list', () => {
-    if (showScanner) {
-      setShowScanner(false)
-      return true
-    }
     if (selectedProduct || editingLineaId != null) {
       cancelarLineaForm()
       return true
@@ -581,10 +577,11 @@ export function MovimientosPage() {
 
   function resetLineaForm(forProduct?: MovimientoInternoProductoStock | null) {
     const p = forProduct ?? selectedProduct
-    setTipoBulto('PALLET')
     setCantidadBultos('')
     setCantidadSuelta('')
-    setUnidadesPorBulto(defaultUnidadesPorBulto('PALLET', p))
+    setUnidadesPorBulto(
+      tipoBulto === 'SUELTO' ? '' : defaultUnidadesPorBulto(tipoBulto, p)
+    )
   }
 
   function handleTipoBultoChange(tipo: 'PALLET' | 'CAJA' | 'SUELTO') {
@@ -625,7 +622,10 @@ export function MovimientosPage() {
     setFormUbicacionDestinoId(ubicacionDestinoId)
     resetLineaForm(p)
     setError('')
-    setTimeout(() => focusField(cantidadBultosRef), 50)
+    setTimeout(
+      () => focusField(tipoBulto === 'SUELTO' ? cantidadSueltaRef : cantidadBultosRef),
+      50
+    )
   }
 
   function empezarEditarLinea(l: MovimientoInternoDetalleLinea) {
@@ -737,13 +737,22 @@ export function MovimientosPage() {
       )
     } else {
       const bultos = Number(cantidadBultos)
-      const porBulto = Number(unidadesPorBulto)
+      const porBulto =
+        tipoBulto === 'CAJA'
+          ? Number(unidadesPorBulto) > 0
+            ? Number(unidadesPorBulto)
+            : Number(defaultUnidadesPorBulto('CAJA', selectedProduct))
+          : Number(unidadesPorBulto)
       if (!Number.isFinite(bultos) || bultos <= 0) {
         setError(`Indicá la cantidad de ${tipoBulto === 'PALLET' ? 'pallets' : 'cajas'}`)
         return
       }
       if (!Number.isFinite(porBulto) || porBulto <= 0) {
-        setError('Indicá las unidades por bulto')
+        setError(
+          tipoBulto === 'CAJA'
+            ? 'No hay botellas por caja definidas para este producto'
+            : 'Indicá las cajas por pallet'
+        )
         return
       }
 
@@ -1782,9 +1791,9 @@ export function MovimientosPage() {
               )}
             </div>
 
-            <div className="relative flex flex-col gap-2 overflow-visible sm:flex-row">
+            <div className="relative overflow-visible">
               <div
-                className="relative z-30 min-w-0 flex-1"
+                className="relative z-30 min-w-0"
                 onMouseDown={(e) => {
                   if (e.target === productSearchRef.current) return
                   e.preventDefault()
@@ -1859,19 +1868,6 @@ export function MovimientosPage() {
                   </ul>
                 )}
               </div>
-              <div className="flex shrink-0 gap-2">
-                <Button
-                  type="button"
-                  variant="secondary"
-                  size="sm"
-                  className="rounded-xl"
-                  disabled={!origenId}
-                  onClick={() => setShowScanner(true)}
-                >
-                  <Camera className="h-4 w-4" />
-                  Escanear
-                </Button>
-              </div>
             </div>
 
           </div>
@@ -1881,20 +1877,27 @@ export function MovimientosPage() {
           {lineasListContent}
         </div>
 
-        <div className="shrink-0 border-t border-surface-border bg-white px-4 py-4 shadow-[0_-4px_12px_rgba(0,0,0,0.04)] sm:px-5">
-          <div className="flex items-center justify-between gap-4">
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">
-                Total general
-              </p>
-              <p className="text-2xl font-bold tabular-nums text-brand-700">
-                {formatCantidad(totalGeneral)}
-              </p>
-              {totalSueltoGeneral > 0 && (
-                <p className="mt-0.5 text-xs font-medium text-slate-500">
-                  + {formatCantidad(totalSueltoGeneral)} botellas sueltas
-                </p>
-              )}
+        <div className="shrink-0 border-t border-surface-border bg-white px-4 py-3 shadow-[0_-4px_12px_rgba(0,0,0,0.04)] sm:px-5 sm:py-4">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-baseline gap-x-3 gap-y-0.5">
+                <div>
+                  <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400 sm:text-xs">
+                    Total general
+                  </p>
+                  <p className="text-xl font-bold tabular-nums leading-tight text-brand-700 sm:text-2xl">
+                    {formatCantidad(totalGeneral)}
+                    <span className="ml-1 text-sm font-semibold text-brand-600/80 sm:text-base">
+                      cajas
+                    </span>
+                  </p>
+                </div>
+                {totalSueltoGeneral > 0 && (
+                  <p className="text-xs font-medium text-slate-500 sm:text-sm">
+                    + {formatCantidad(totalSueltoGeneral)} botellas sueltas
+                  </p>
+                )}
+              </div>
               <p className="mt-1 text-xs text-slate-500">
                 {dobleVerificacion ? (
                   <>
@@ -1912,17 +1915,17 @@ export function MovimientosPage() {
               </p>
             </div>
             {hasPermiso('movimientos_internos.crear') && (
-              <div className="flex shrink-0 flex-wrap gap-2">
+              <div className="flex w-full gap-2 sm:w-auto sm:shrink-0">
                 <Button
                   variant="secondary"
-                  className="rounded-xl"
+                  className="min-w-0 flex-1 rounded-xl sm:flex-none"
                   disabled={saving}
                   onClick={() => void cancelarListaAbierta()}
                 >
-                  Cancelar movimientos
+                  Cancelar
                 </Button>
                 <Button
-                  className="rounded-xl"
+                  className="min-w-0 flex-[1.6] rounded-xl sm:flex-none"
                   onClick={() => void finalizarLista()}
                   disabled={
                     lineasActivasEditor.length === 0 ||
@@ -1937,8 +1940,10 @@ export function MovimientosPage() {
                       : undefined
                   }
                 >
-                  <Check className="h-4 w-4" />
-                  {saving ? 'Guardando...' : 'Finalizar movimientos'}
+                  <Check className="h-4 w-4 shrink-0" />
+                  <span className="truncate">
+                    {saving ? 'Guardando...' : 'Finalizar'}
+                  </span>
                 </Button>
               </div>
             )}
@@ -2075,23 +2080,44 @@ export function MovimientosPage() {
                   <div className="flex rounded-xl border border-surface-border bg-slate-50 p-0.5">
                     {(
                       [
-                        { value: 'PALLET' as const, label: 'Pallets' },
-                        { value: 'CAJA' as const, label: 'Cajas' },
-                        { value: 'SUELTO' as const, label: 'Botellas' }
-                      ]
+                        {
+                          value: 'PALLET' as const,
+                          label: 'Pallets',
+                          Icon: Layers,
+                          active:
+                            'bg-indigo-600 text-white shadow-md ring-2 ring-indigo-500/40',
+                          idle: 'text-indigo-700/75 hover:bg-indigo-50 hover:text-indigo-900'
+                        },
+                        {
+                          value: 'CAJA' as const,
+                          label: 'Cajas',
+                          Icon: Box,
+                          active:
+                            'bg-amber-600 text-white shadow-md ring-2 ring-amber-500/40',
+                          idle: 'text-amber-800/80 hover:bg-amber-50 hover:text-amber-950'
+                        },
+                        {
+                          value: 'SUELTO' as const,
+                          label: 'Botellas',
+                          Icon: BottleIcon,
+                          active:
+                            'bg-emerald-600 text-white shadow-md ring-2 ring-emerald-500/40',
+                          idle: 'text-emerald-800/75 hover:bg-emerald-50 hover:text-emerald-950'
+                        }
+                      ] as const
                     ).map((opt) => (
                       <button
                         key={opt.value}
                         type="button"
+                        onPointerDown={(e) => e.preventDefault()}
                         onClick={() => handleTipoBultoChange(opt.value)}
                         className={cn(
-                          'flex-1 rounded-[10px] px-2 py-2 text-sm font-semibold transition-colors',
-                          tipoBulto === opt.value
-                            ? 'bg-brand-600 text-white shadow-md ring-2 ring-brand-600/30'
-                            : 'text-slate-500 hover:bg-white/70 hover:text-slate-700'
+                          'flex flex-1 items-center justify-center gap-1.5 rounded-[10px] px-2 py-2 text-sm font-semibold transition-colors',
+                          tipoBulto === opt.value ? opt.active : opt.idle
                         )}
                       >
-                        {opt.label}
+                        <opt.Icon className="h-4 w-4 shrink-0 opacity-90" aria-hidden />
+                        <span className="truncate">{opt.label}</span>
                       </button>
                     ))}
                   </div>
@@ -2108,6 +2134,7 @@ export function MovimientosPage() {
                         onChange={(e) => setCantidadSuelta(e.target.value)}
                         onKeyDown={handleLineaEnter}
                         placeholder="6"
+                        leading={<BottleIcon className="h-4 w-4" />}
                         className="rounded-xl [&_label]:text-sm"
                       />
                     </div>
@@ -2128,38 +2155,52 @@ export function MovimientosPage() {
                   </>
                 ) : (
                   <>
-                    <Input
-                      ref={cantidadBultosRef}
-                      label={tipoBulto === 'PALLET' ? 'Cant. pallets' : 'Cant. cajas'}
-                      type="number"
-                      min="1"
-                      value={cantidadBultos}
-                      onChange={(e) => setCantidadBultos(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter') {
-                          e.preventDefault()
-                          focusField(unidadesPorBultoRef)
+                    <div className={cn(tipoBulto === 'CAJA' && 'col-span-2')}>
+                      <Input
+                        ref={cantidadBultosRef}
+                        label={tipoBulto === 'PALLET' ? 'Cant. pallets' : 'Cant. cajas'}
+                        type="number"
+                        min="1"
+                        value={cantidadBultos}
+                        onChange={(e) => setCantidadBultos(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault()
+                            focusField(
+                              tipoBulto === 'CAJA' ? cantidadSueltaRef : unidadesPorBultoRef
+                            )
+                          }
+                        }}
+                        placeholder={tipoBulto === 'PALLET' ? '2' : '1'}
+                        leading={
+                          tipoBulto === 'PALLET' ? (
+                            <Layers className="h-4 w-4" aria-hidden />
+                          ) : (
+                            <Box className="h-4 w-4" aria-hidden />
+                          )
                         }
-                      }}
-                      placeholder={tipoBulto === 'PALLET' ? '2' : '1'}
-                      className="rounded-xl [&_label]:text-sm"
-                    />
-                    <Input
-                      ref={unidadesPorBultoRef}
-                      label={tipoBulto === 'PALLET' ? '× cajas por pallet' : '× botellas por caja'}
-                      type="number"
-                      min="1"
-                      value={unidadesPorBulto}
-                      onChange={(e) => setUnidadesPorBulto(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter') {
-                          e.preventDefault()
-                          focusField(cantidadSueltaRef)
-                        }
-                      }}
-                      placeholder={tipoBulto === 'PALLET' ? '112' : '6'}
-                      className="rounded-xl [&_label]:text-sm"
-                    />
+                        className="rounded-xl [&_label]:text-sm"
+                      />
+                    </div>
+                    {tipoBulto === 'PALLET' && (
+                      <Input
+                        ref={unidadesPorBultoRef}
+                        label="× cajas por pallet"
+                        type="number"
+                        min="1"
+                        value={unidadesPorBulto}
+                        onChange={(e) => setUnidadesPorBulto(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault()
+                            focusField(cantidadSueltaRef)
+                          }
+                        }}
+                        placeholder="112"
+                        leading={<Box className="h-4 w-4" aria-hidden />}
+                        className="rounded-xl [&_label]:text-sm"
+                      />
+                    )}
                     <div className="col-span-2 sm:col-span-2 sm:col-start-3">
                       <Input
                         ref={cantidadSueltaRef}
@@ -2174,6 +2215,13 @@ export function MovimientosPage() {
                         onChange={(e) => setCantidadSuelta(e.target.value)}
                         onKeyDown={handleLineaEnter}
                         placeholder="0"
+                        leading={
+                          tipoBulto === 'PALLET' ? (
+                            <Box className="h-4 w-4" aria-hidden />
+                          ) : (
+                            <BottleIcon className="h-4 w-4" />
+                          )
+                        }
                         className="rounded-xl [&_label]:text-sm"
                       />
                     </div>
@@ -2213,16 +2261,6 @@ export function MovimientosPage() {
             </div>
           </>
         )}
-
-        <BarcodeScannerModal
-          open={showScanner}
-          onClose={() => setShowScanner(false)}
-          onScan={(code) => {
-            setProductSearch(code)
-            setShowScanner(false)
-          }}
-          title="Escanear producto"
-        />
       </div>
     )
   }

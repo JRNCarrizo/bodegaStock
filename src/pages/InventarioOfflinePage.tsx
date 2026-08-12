@@ -10,6 +10,7 @@ import {
   Copy,
   Download,
   Hash,
+  Layers,
   Loader2,
   MapPin,
   MoreVertical,
@@ -22,9 +23,11 @@ import {
   Trash2,
   Upload,
   Wifi,
+  Box,
   X,
   Eye
 } from 'lucide-react'
+import { BottleIcon } from '@/components/icons/BottleIcon'
 import { Share } from '@capacitor/share'
 import { App as CapApp } from '@capacitor/app'
 import { Capacitor } from '@capacitor/core'
@@ -683,17 +686,18 @@ export function InventarioOfflinePage() {
     setSelected(p)
     setProductSearch(p.codigo_interno)
     if (!editingLocalId) {
-      setTipoBulto('PALLET')
-      setUnidadesPorBulto(defaultUnidadesPorBulto('PALLET', p))
+      setCantidadBultos('')
+      setCantidadSuelta('')
+      setUnidadesPorBulto(
+        tipoBulto === 'SUELTO' ? '' : defaultUnidadesPorBulto(tipoBulto, p)
+      )
     }
   }
 
   useEffect(() => {
     if (!selected || !pendingFocusCantidadRef.current) return
     pendingFocusCantidadRef.current = false
-    // Tras pintar el modal: pasar el foco al campo real (el teclado ya está abriéndose)
-    const tipo = editingLocalId ? tipoBulto : 'PALLET'
-    const id = window.requestAnimationFrame(() => focusCantidadEnModal(tipo))
+    const id = window.requestAnimationFrame(() => focusCantidadEnModal(tipoBulto))
     return () => window.cancelAnimationFrame(id)
   }, [selected, editingLocalId, tipoBulto])
 
@@ -775,9 +779,10 @@ export function InventarioOfflinePage() {
     setSelected(null)
     setProductSearch('')
     setCantidadBultos('')
-    setUnidadesPorBulto('')
     setCantidadSuelta('')
-    setTipoBulto('PALLET')
+    setUnidadesPorBulto(
+      tipoBulto === 'SUELTO' ? '' : defaultUnidadesPorBulto(tipoBulto, null)
+    )
     setTimeout(() => productSearchRef.current?.focus(), 50)
   }
 
@@ -861,6 +866,16 @@ export function InventarioOfflinePage() {
         }
         bultosValor = cajas.value
         setCantidadBultos(cajas.text)
+        const porCaja =
+          Number(unidadesPorBulto) > 0
+            ? Number(unidadesPorBulto)
+            : Number(defaultUnidadesPorBulto('CAJA', selected))
+        if (!Number.isFinite(porCaja) || porCaja <= 0) {
+          setError('No hay botellas por caja definidas para este producto')
+          setBusy(false)
+          return
+        }
+        unidadesValor = porCaja
       }
 
       const input = {
@@ -2391,9 +2406,30 @@ export function InventarioOfflinePage() {
                     <div className="flex rounded-xl border border-surface-border bg-slate-50 p-0.5">
                       {(
                         [
-                          { value: 'PALLET', label: 'Pallets' },
-                          { value: 'CAJA', label: 'Cajas' },
-                          { value: 'SUELTO', label: 'Botellas' }
+                          {
+                            value: 'PALLET' as const,
+                            label: 'Pallets',
+                            Icon: Layers,
+                            active:
+                              'bg-indigo-600 text-white shadow-md ring-2 ring-indigo-500/40',
+                            idle: 'text-indigo-700/75 hover:bg-indigo-50 hover:text-indigo-900'
+                          },
+                          {
+                            value: 'CAJA' as const,
+                            label: 'Cajas',
+                            Icon: Box,
+                            active:
+                              'bg-amber-600 text-white shadow-md ring-2 ring-amber-500/40',
+                            idle: 'text-amber-800/80 hover:bg-amber-50 hover:text-amber-950'
+                          },
+                          {
+                            value: 'SUELTO' as const,
+                            label: 'Botellas',
+                            Icon: BottleIcon,
+                            active:
+                              'bg-emerald-600 text-white shadow-md ring-2 ring-emerald-500/40',
+                            idle: 'text-emerald-800/75 hover:bg-emerald-50 hover:text-emerald-950'
+                          }
                         ] as const
                       ).map((opt) => (
                         <button
@@ -2402,19 +2438,18 @@ export function InventarioOfflinePage() {
                           onPointerDown={(e) => e.preventDefault()}
                           onClick={() => handleTipoBultoChange(opt.value)}
                           className={cn(
-                            'flex-1 rounded-[10px] px-2 py-2 text-sm font-semibold transition-colors',
-                            tipoBulto === opt.value
-                              ? 'bg-brand-600 text-white shadow-md ring-2 ring-brand-600/30'
-                              : 'text-slate-500 hover:bg-white/70 hover:text-slate-700'
+                            'flex flex-1 items-center justify-center gap-1.5 rounded-[10px] px-2 py-2 text-sm font-semibold transition-colors',
+                            tipoBulto === opt.value ? opt.active : opt.idle
                           )}
                         >
-                          {opt.label}
+                          <opt.Icon className="h-4 w-4 shrink-0 opacity-90" aria-hidden />
+                          <span className="truncate">{opt.label}</span>
                         </button>
                       ))}
                     </div>
                   </div>
                   <div className="col-span-2 grid min-h-[12rem] grid-cols-2 content-start gap-3 sm:col-span-4 sm:grid-cols-4">
-                    <div className={cn(tipoBulto === 'SUELTO' && 'hidden')}>
+                    <div className={cn(tipoBulto === 'SUELTO' && 'hidden', tipoBulto === 'CAJA' && 'col-span-2')}>
                       <Input
                         ref={cantidadBultosRef}
                         label={tipoBulto === 'PALLET' ? 'Cant. pallets' : 'Cant. cajas'}
@@ -2430,6 +2465,13 @@ export function InventarioOfflinePage() {
                         className="rounded-xl px-3 py-2.5 text-base"
                         placeholder={tipoBulto === 'CAJA' ? '1 o 28×4-4' : '1'}
                         required={tipoBulto !== 'SUELTO'}
+                        leading={
+                          tipoBulto === 'PALLET' ? (
+                            <Layers className="h-4 w-4" aria-hidden />
+                          ) : (
+                            <Box className="h-4 w-4" aria-hidden />
+                          )
+                        }
                       />
                       {tipoBulto === 'CAJA' && cantidadExprEsCuenta(cantidadBultos) && (
                         <p
@@ -2446,14 +2488,12 @@ export function InventarioOfflinePage() {
                         </p>
                       )}
                     </div>
-                    <div className={cn(tipoBulto === 'SUELTO' && 'hidden')}>
+                    <div className={cn((tipoBulto === 'SUELTO' || tipoBulto === 'CAJA') && 'hidden')}>
                       <Input
                         ref={unidadesPorBultoRef}
-                        label={
-                          tipoBulto === 'PALLET' ? '× cajas por pallet' : '× botellas por caja'
-                        }
+                        label="× cajas por pallet"
                         type="text"
-                        inputMode={tipoBulto === 'PALLET' ? 'text' : 'numeric'}
+                        inputMode="text"
                         value={unidadesPorBulto}
                         onChange={(e) => setUnidadesPorBulto(e.target.value)}
                         onFocus={(e) => {
@@ -2462,8 +2502,9 @@ export function InventarioOfflinePage() {
                           requestAnimationFrame(() => el.select())
                         }}
                         className="rounded-xl px-3 py-2.5 text-base"
-                        placeholder={tipoBulto === 'PALLET' ? '112 o 112-6' : '6'}
-                        required={tipoBulto !== 'SUELTO'}
+                        placeholder="112 o 112-6"
+                        required={tipoBulto === 'PALLET'}
+                        leading={<Box className="h-4 w-4" aria-hidden />}
                       />
                       {tipoBulto === 'PALLET' && cantidadExprEsCuenta(unidadesPorBulto) && (
                         <p
@@ -2504,6 +2545,13 @@ export function InventarioOfflinePage() {
                           tipoBulto === 'SUELTO' ? '12' : tipoBulto === 'PALLET' ? '0 o 8-2' : '0'
                         }
                         required={tipoBulto === 'SUELTO'}
+                        leading={
+                          tipoBulto === 'PALLET' ? (
+                            <Box className="h-4 w-4" aria-hidden />
+                          ) : (
+                            <BottleIcon className="h-4 w-4" />
+                          )
+                        }
                       />
                       {tipoBulto === 'PALLET' && cantidadExprEsCuenta(cantidadSuelta) && (
                         <p

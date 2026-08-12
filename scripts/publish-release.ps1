@@ -1,5 +1,5 @@
 param(
-  [string]$Version = "0.3.30"
+  [string]$Version = "0.3.31"
 )
 
 $ErrorActionPreference = "Stop"
@@ -56,13 +56,16 @@ if (Test-Path $ymlPath) { $assets += (Resolve-Path $ymlPath).Path }
 $notes = @"
 ## ControlStock v$Version
 
-Movimientos con lista abierta, ingresos multi-destino y borradores persistentes.
+Ajuste de stock, UX de carga (íconos / cajas) y permiso de ajustes asignable.
 
 ### Nuevo / mejorado
-- Movimientos internos: lista abierta compartida, sueltos/botellas, tilde opcional según configuración, Finalizar/Cancelar movimientos
-- Ingresos: destino por línea (varios destinos), borrador en localStorage, Continuar / Cancelar ingreso
-- Planillas y retornos: borrador persistente al salir (Continuar / Cancelar)
-- Configuración: doble verificación de movimientos controla si hace falta tildar para finalizar
+- Consulta: **Ajustar stock** (reemplazo de desglose) con auditoría; link **Ver ajustes** en Movimientos del día
+- Permiso **Ajustes de stock** seleccionable al crear/editar usuario
+- Empaque automático desde el nombre (`3X750` → botellas por caja)
+- Inventario, Movimientos e Ingresos: selector de tipo con íconos; en Cajas no se pide × botellas (sale del producto)
+- Ingresos y Planillas: swipe derecha = editar, izquierda = borrar
+- Planillas: unidad (cajas/botellas) en el desglose a la izquierda; sin botón Vista previa
+- Movimientos: footer más responsive; sin escáner en la carga
 
 ### Actualización
 - Desde **v0.2.7 o superior:** Configuración → Buscar actualizaciones

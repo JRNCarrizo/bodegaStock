@@ -9,6 +9,7 @@ export const SECCIONES_ASIGNABLES = [
   { id: 'roturas', label: 'Roturas y pérdidas', group: 'Movimientos' },
   { id: 'movimientos', label: 'Movimientos', group: 'Movimientos' },
   { id: 'inventario', label: 'Inventario (conteo)', group: 'Inventario' },
+  { id: 'ajustes', label: 'Ajustes de stock', group: 'Inventario' },
   { id: 'camioneros', label: 'Camioneros', group: 'Administración' },
   { id: 'reportes', label: 'Movimientos del día', group: 'Reportes' },
   { id: 'usuarios', label: 'Usuarios', group: 'Administración' }

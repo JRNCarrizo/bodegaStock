@@ -18,6 +18,12 @@ const config: CapacitorConfig = {
   },
   android: {
     allowMixedContent: true
+  },
+  // Fetch nativo: evita bloqueos del WebView al hablar con Railway (HTTPS)
+  plugins: {
+    CapacitorHttp: {
+      enabled: true
+    }
   }
 }
 

@@ -58,7 +58,8 @@ export async function api<T>(
   path: string,
   options: RequestInit & { timeoutMs?: number } = {}
 ): Promise<T> {
-  const { timeoutMs = 12000, ...fetchOptions } = options
+  const cloud = getApiUrl().startsWith('https://')
+  const { timeoutMs = cloud ? 45000 : 12000, ...fetchOptions } = options
   const token = localStorage.getItem('token')
   const headers: Record<string, string> = {
     ...((fetchOptions.headers as Record<string, string> | undefined) ?? {})
@@ -95,8 +96,12 @@ export async function api<T>(
       (e instanceof Error && e.name === 'AbortError')
     throw new Error(
       aborted
-        ? 'Tiempo agotado al conectar con el servidor. Verificá red e IP del PC.'
-        : 'No se pudo conectar con el servidor. Verificá la configuración de red en Configuración.'
+        ? cloud
+          ? 'Tiempo agotado con la nube. Verificá internet; si Railway estaba dormido, reintentá.'
+          : 'Tiempo agotado al conectar con el servidor. Verificá red e IP del PC.'
+        : cloud
+          ? 'No se pudo conectar con la nube. Verificá la URL en Configuración / login.'
+          : 'No se pudo conectar con el servidor. Verificá la configuración de red en Configuración.'
     )
   } finally {
     clearTimeout(timer)

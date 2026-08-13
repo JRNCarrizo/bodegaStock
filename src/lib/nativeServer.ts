@@ -93,32 +93,42 @@ export async function testServerConnection(
     return { ok: false, message: e instanceof Error ? e.message : 'URL inválida' }
   }
 
-  const controller = new AbortController()
-  const timer = setTimeout(() => controller.abort(), 10000)
+  const isCloud = base.startsWith('https://')
+  // Railway puede tardar en despertar (cold start)
+  const timeoutMs = isCloud ? 45000 : 10000
+  const attempts = isCloud ? 2 : 1
 
-  try {
-    const res = await fetch(`${base}/api/health`, { signal: controller.signal })
-    if (!res.ok) {
-      return { ok: false, message: `El servidor respondió con error (${res.status})` }
-    }
-    const data = (await res.json().catch(() => ({}))) as { version?: string; ok?: boolean }
-    return { ok: true, version: data.version }
-  } catch (e) {
-    if (e instanceof DOMException && e.name === 'AbortError') {
-      return {
-        ok: false,
-        message: base.startsWith('https://')
-          ? 'Tiempo agotado. Verificá la URL de Railway y tu conexión a internet.'
-          : 'Tiempo agotado. Verificá IP, WiFi y que el PC esté en modo servidor.',
+  let lastError: string | null = null
+  for (let attempt = 1; attempt <= attempts; attempt++) {
+    const controller = new AbortController()
+    const timer = setTimeout(() => controller.abort(), timeoutMs)
+    try {
+      const res = await fetch(`${base}/api/health`, {
+        signal: controller.signal,
+        cache: 'no-store',
+      })
+      if (!res.ok) {
+        return { ok: false, message: `El servidor respondió con error (${res.status})` }
       }
+      const data = (await res.json().catch(() => ({}))) as { version?: string; ok?: boolean }
+      return { ok: true, version: data.version }
+    } catch (e) {
+      const aborted = e instanceof DOMException && e.name === 'AbortError'
+      lastError = aborted
+        ? isCloud
+          ? 'Tiempo agotado. Railway puede estar despertando: esperá ~30s e intentá de nuevo. Verificá internet y la URL.'
+          : 'Tiempo agotado. Verificá IP, WiFi y que el PC esté en modo servidor.'
+        : isCloud
+          ? 'No se pudo conectar a la nube. Revisá la URL (https://….up.railway.app) e internet móvil/WiFi.'
+          : 'No se pudo conectar. Misma WiFi, PC en modo servidor y puerto 3847 abierto.'
+      if (attempt < attempts) {
+        await new Promise((r) => setTimeout(r, 2000))
+        continue
+      }
+    } finally {
+      clearTimeout(timer)
     }
-    return {
-      ok: false,
-      message: base.startsWith('https://')
-        ? 'No se pudo conectar a la nube. Revisá la URL (https://….up.railway.app).'
-        : 'No se pudo conectar. Misma WiFi, PC en modo servidor y puerto 3847 abierto.',
-    }
-  } finally {
-    clearTimeout(timer)
   }
+
+  return { ok: false, message: lastError || 'No se pudo conectar' }
 }

@@ -2,6 +2,7 @@ import { app, BrowserWindow, shell } from 'electron'
 import { join } from 'path'
 import { getAppIcon } from './icon'
 import { bootstrapNetworkServer, setupNetworkIpc, shutdownNetworkServer } from './network'
+import { setupMigracionIpc } from './migracion'
 import { setupAutoUpdater } from './updater'
 
 const isDev = !app.isPackaged
@@ -63,6 +64,7 @@ function createWindow(): void {
 
 app.whenReady().then(async () => {
   setupNetworkIpc()
+  setupMigracionIpc()
   setupAutoUpdater(() => mainWindow)
   await bootstrapNetworkServer()
   createWindow()

@@ -60,11 +60,13 @@ La app Electron **no** usa `DATABASE_URL`; sigue en SQLite local. El volumen `/d
 
 1. ~~API standalone + Docker + Railway smoke~~
 2. ~~Postgres + schema (`DATABASE_URL`)~~
-3. Migrador SQLite → Postgres (asistente en Configuración)
-4. ~~UI: modo local vs URL nube (desktop + APK)~~ ← acá (probar en `npm run dev`)
+3. Migrador SQLite → Postgres (asistente en Configuración) ← acá
+4. ~~UI: modo local vs URL nube (desktop + APK)~~
 5. Piloto y corte en planta
 
-**Probar UI nube (dev):** Configuración → **Nube (Railway)** → pegar `https://bodegastock-production-d795.up.railway.app` → Probar → Guardar. Login cloud: `admin` / `admin123` (base vacía). Para volver: **Red local**.
+**Probar UI nube (dev):** Configuración → **Nube (Railway)** → pegar URL → Probar → Guardar.  
+**Migrar:** con nube activa y admin logueado → Configuración → Migrar → escribir `MIGRAR`.  
+Guía impresa: [PASOS-TRABAJO-CLOUD.txt](PASOS-TRABAJO-CLOUD.txt).
 
 ---
 

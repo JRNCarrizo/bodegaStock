@@ -1,0 +1,67 @@
+PASOS EN EL TRABAJO — ControlStock en la nube
+==============================================
+
+Antes: en casa ya quedó Railway con la API + Postgres.
+URL de ejemplo (la tuya puede ser igual o parecida):
+https://bodegastock-production-d795.up.railway.app
+
+IMPORTANTE
+- El laburo diario puede seguir en “Red local” hasta que ustedes corten.
+- La migración copia datos del PC (SQLite) hacia la nube (Postgres).
+- Las fotos de productos NO se suben todavía (quedan en el PC).
+- Hacé la migración desde la PC que tiene la base “buena” (la del servidor).
+
+
+PASO 1 — Abrir la app en esa PC
+- Abrí ControlStock (escritorio) en la PC servidor.
+- Entrá con un usuario administrador.
+
+
+PASO 2 — Apuntar a la nube
+- Andá a Configuración → “Red y conexión”.
+- Elegí “Nube (Railway)”.
+- Pegá la URL https de Railway (sin barra al final).
+- Tocá “Probar conexión”. Tiene que decir ok.
+- Tocá “Guardar nube”.
+
+
+PASO 3 — Entrar a la nube
+- Cerrá sesión.
+- Entrá de nuevo.
+  - Si la nube está vacía: usuario admin / clave admin123
+  - (Después de migrar usarás los usuarios reales de la empresa.)
+
+
+PASO 4 — Migrar los datos
+- Configuración → “Migrar datos a la nube”.
+- Escribí exactamente: MIGRAR
+- Tocá “Migrar SQLite local → nube”.
+- Esperá el mensaje de éxito.
+- Cerrá sesión.
+
+
+PASO 5 — Verificar
+- Entrá con un usuario real de la empresa (el de siempre).
+- Revisá: productos, stock, un reporte rápido.
+- Si algo no cierra, volvé a “Red local” y seguí laburando como siempre.
+  (La nube no borra el SQLite del PC.)
+
+
+PASO 6 — Otras PCs / celulares (cuando digan que va)
+- En cada equipo: Configuración (o login en APK) → Nube → misma URL → Guardar.
+- Ya no hace falta que esa notebook “servidor” esté prendida para el día a día online.
+
+
+SI ALGO FALLA
+- Probar: abrir en el navegador:
+  https://TU-DOMINIO.up.railway.app/api/health
+  Tiene que responder ok.
+- Si no conecta: internet, URL mal pegada, o Railway pausado/sin crédito.
+- Si migró mal: en modo nube se puede volver a migrar (pisa la nube otra vez).
+- Para volver al modo de siempre: Configuración → “Red local”.
+
+
+NOTAS CORTAS
+- Local = datos en el disco de la PC.
+- Nube = datos en Railway (Postgres).
+- No hace falta tocar GitHub ni Docker en el trabajo para el uso diario.

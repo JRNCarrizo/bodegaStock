@@ -44,11 +44,25 @@ export type UpdateActionResult =
   | { ok: true }
   | { ok: false; reason?: 'dev'; message?: string }
 
+export type MigrationExportResult =
+  | {
+      ok: true
+      dump: {
+        version: 1
+        exportedAt: string
+        tables: Record<string, Record<string, unknown>[]>
+      }
+      counts: Record<string, number>
+      dbPath: string
+    }
+  | { ok: false; message?: string }
+
 interface Window {
   bodegaStock?: {
     getNetworkInfo?: () => Promise<NetworkRuntimeInfo>
     testNetworkConnection?: (host: string, port: number) => Promise<NetworkTestResult>
     applyNetworkConfig?: (config: NetworkConfig) => Promise<{ ok: boolean; apiUrl?: string }>
+    exportLocalDatabase?: () => Promise<MigrationExportResult>
     getAppInfo?: () => Promise<AppInfo>
     resetDatabase?: (
       confirmacion: string

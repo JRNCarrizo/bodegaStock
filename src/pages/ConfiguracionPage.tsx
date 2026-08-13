@@ -6,6 +6,7 @@ import {
   ClipboardCheck,
   Cloud,
   Copy,
+  Database,
   Download,
   Loader2,
   RefreshCw,
@@ -177,6 +178,11 @@ export function ConfiguracionPage() {
   const [wipeConfirmacion, setWipeConfirmacion] = useState('')
   const [wipingDb, setWipingDb] = useState(false)
   const [wipeDbError, setWipeDbError] = useState('')
+  const [migConfirmacion, setMigConfirmacion] = useState('')
+  const [migrating, setMigrating] = useState(false)
+  const [migError, setMigError] = useState('')
+  const [migOk, setMigOk] = useState('')
+  const [migCounts, setMigCounts] = useState<Record<string, number> | null>(null)
 
   const primaryConnectionUrl = useMemo(
     () => networkInfo?.connectionUrls[0] ?? '',
@@ -520,6 +526,53 @@ export function ConfiguracionPage() {
       })
     } finally {
       setSavingNetwork(false)
+    }
+  }
+
+  async function migrarLocalANube() {
+    setMigError('')
+    setMigOk('')
+    setMigCounts(null)
+    if (connectionMode !== 'cloud') {
+      setMigError('Primero activá y guardá el modo Nube (Railway).')
+      return
+    }
+    if (!getApiUrl().startsWith('https://')) {
+      setMigError('La API actual no parece ser la nube (HTTPS). Guardá la URL de Railway.')
+      return
+    }
+    if (migConfirmacion.trim() !== 'MIGRAR') {
+      setMigError('Escribí MIGRAR para confirmar.')
+      return
+    }
+    if (!api?.exportLocalDatabase) {
+      setMigError('La migración requiere la aplicación de escritorio.')
+      return
+    }
+
+    setMigrating(true)
+    try {
+      const exported = await api.exportLocalDatabase()
+      if (!exported.ok) {
+        setMigError(exported.message || 'No se pudo leer la base local')
+        return
+      }
+      setMigCounts(exported.counts)
+      const result = await httpApi<{ ok: boolean; message?: string; imported?: Record<string, number> }>(
+        '/api/migracion/import',
+        {
+          method: 'POST',
+          body: JSON.stringify({ dump: exported.dump, confirmacion: 'MIGRAR' }),
+          timeoutMs: 120000,
+        }
+      )
+      setMigOk(result.message || 'Migración completa. Cerrá sesión y volvé a entrar.')
+      if (result.imported) setMigCounts(result.imported)
+      setMigConfirmacion('')
+    } catch (err) {
+      setMigError(err instanceof Error ? err.message : 'Error al migrar')
+    } finally {
+      setMigrating(false)
     }
   }
 
@@ -880,6 +933,95 @@ export function ConfiguracionPage() {
               <p className="text-xs text-slate-400">
                 Los cambios de modo o puerto requieren reiniciar la aplicación.
               </p>
+            </>
+          )}
+        </CardBody>
+      </Card>
+
+      <Card className="overflow-hidden shadow-panel">
+        <div className="border-b border-brand-100 bg-gradient-to-r from-brand-50/80 via-white to-white px-5 py-4 sm:px-6">
+          <div className="flex items-start gap-3">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-brand-600 text-white shadow-sm">
+              <Database className="h-5 w-5" />
+            </div>
+            <div>
+              <h2 className="font-semibold text-slate-900">Migrar datos a la nube</h2>
+              <p className="mt-0.5 text-sm text-slate-500">
+                Copia la base SQLite de esta PC hacia Postgres en Railway
+              </p>
+            </div>
+          </div>
+        </div>
+        <CardBody className="space-y-4 p-5 sm:p-6">
+          {connectionMode !== 'cloud' ? (
+            <p className="rounded-xl bg-slate-50 px-4 py-3 text-sm text-slate-600 ring-1 ring-slate-200">
+              Activá primero <strong>Nube (Railway)</strong> arriba, guardá la URL y entrá con un
+              admin de la nube. Después volvé acá a migrar.
+            </p>
+          ) : !api?.exportLocalDatabase ? (
+            <p className="rounded-xl bg-amber-50 px-4 py-3 text-sm text-amber-800 ring-1 ring-amber-100">
+              La migración se hace desde la app de escritorio (lee el SQLite local).
+            </p>
+          ) : (
+            <>
+              <p className="text-sm leading-relaxed text-slate-600">
+                Esto <strong>reemplaza</strong> todos los datos actuales de la nube con los de esta
+                PC. Las imágenes de productos no se suben (quedan en el disco local por ahora).
+                Después cerrá sesión y entrá con un usuario de la base migrada.
+              </p>
+              <p className="text-xs text-slate-500">
+                Destino: <code className="font-mono text-slate-700">{getApiUrl()}</code>
+              </p>
+              <Input
+                label='Escribí MIGRAR para confirmar'
+                value={migConfirmacion}
+                onChange={(e) => setMigConfirmacion(e.target.value)}
+                placeholder="MIGRAR"
+                className="max-w-xs rounded-xl shadow-sm"
+                autoComplete="off"
+              />
+              <Button
+                type="button"
+                className="rounded-xl"
+                disabled={migrating || migConfirmacion.trim() !== 'MIGRAR'}
+                onClick={() => void migrarLocalANube()}
+              >
+                {migrating ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Migrando…
+                  </>
+                ) : (
+                  <>
+                    <Database className="h-4 w-4" />
+                    Migrar SQLite local → nube
+                  </>
+                )}
+              </Button>
+              {migOk && (
+                <p className="rounded-xl bg-emerald-50 px-3 py-2.5 text-sm text-emerald-800 ring-1 ring-emerald-100">
+                  {migOk}
+                </p>
+              )}
+              {migError && (
+                <p className="rounded-xl bg-red-50 px-3 py-2.5 text-sm text-red-800 ring-1 ring-red-100">
+                  {migError}
+                </p>
+              )}
+              {migCounts && (
+                <details className="rounded-xl border border-surface-border bg-slate-50/80 px-3 py-2 text-xs text-slate-600">
+                  <summary className="cursor-pointer font-semibold">Ver conteo de filas</summary>
+                  <ul className="mt-2 max-h-40 space-y-0.5 overflow-auto font-mono">
+                    {Object.entries(migCounts)
+                      .filter(([, n]) => n > 0)
+                      .map(([table, n]) => (
+                        <li key={table}>
+                          {table}: {n}
+                        </li>
+                      ))}
+                  </ul>
+                </details>
+              )}
             </>
           )}
         </CardBody>

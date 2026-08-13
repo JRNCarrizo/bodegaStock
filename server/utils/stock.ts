@@ -1935,11 +1935,8 @@ function incrementFullPalletLine(
     SELECT id, cantidad_bultos, total_unidades
     FROM stock_lineas
     WHERE stock_sector_id = ? AND tipo_bulto = 'PALLET' AND unidades_por_bulto = ?
-      AND (
-        (ubicacion_id IS NULL AND ? IS NULL)
-        OR ubicacion_id = ?
-      )
-  `).get(stock_sector_id, cajasPorPallet, ubicacion_id, ubicacion_id) as
+      AND ubicacion_id IS ?
+  `).get(stock_sector_id, cajasPorPallet, ubicacion_id) as
     | { id: number; cantidad_bultos: number | null; total_unidades: number }
     | undefined
 
@@ -2157,11 +2154,8 @@ function addSueltoToStockSector(
     SELECT id, cantidad_suelta, total_unidades
     FROM stock_lineas
     WHERE stock_sector_id = ? AND tipo_bulto = 'SUELTO'
-      AND (
-        (ubicacion_id IS NULL AND ? IS NULL)
-        OR ubicacion_id = ?
-      )
-  `).get(stock_sector_id, ubicacion_id, ubicacion_id) as
+      AND ubicacion_id IS ?
+  `).get(stock_sector_id, ubicacion_id) as
     | { id: number; cantidad_suelta: number | null; total_unidades: number }
     | undefined
 
@@ -2202,11 +2196,8 @@ function addPartialBultoToStockSector(
     FROM stock_lineas
     WHERE stock_sector_id = ? AND tipo_bulto = ?
       AND cantidad_bultos = 1 AND unidades_por_bulto = ?
-      AND (
-        (ubicacion_id IS NULL AND ? IS NULL)
-        OR ubicacion_id = ?
-      )
-  `).get(stock_sector_id, tipo_bulto, unidades, ubicacion_id, ubicacion_id) as
+      AND ubicacion_id IS ?
+  `).get(stock_sector_id, tipo_bulto, unidades, ubicacion_id) as
     | { id: number; unidades_por_bulto: number | null; total_unidades: number }
     | undefined
 
@@ -2429,11 +2420,8 @@ function addCajasFullToStockSector(
     WHERE stock_sector_id = ? AND tipo_bulto = 'CAJA'
       AND unidades_por_bulto = ?
       AND cantidad_bultos >= 1
-      AND (
-        (ubicacion_id IS NULL AND ? IS NULL)
-        OR ubicacion_id = ?
-      )
-  `).get(stock_sector_id, botellasPorCaja, ubicacion_id, ubicacion_id) as
+      AND ubicacion_id IS ?
+  `).get(stock_sector_id, botellasPorCaja, ubicacion_id) as
     | { id: number; cantidad_bultos: number | null; total_unidades: number }
     | undefined
 
@@ -3398,11 +3386,8 @@ export function applyMovimientoInternoRecepcionLine(
         WHERE stock_sector_id = ? AND tipo_bulto = 'PALLET' AND unidades_por_bulto = ?
           AND (cantidad_suelta IS NULL OR cantidad_suelta = 0)
           AND total_unidades = COALESCE(cantidad_bultos, 0) * unidades_por_bulto
-          AND (
-            (ubicacion_id IS NULL AND ? IS NULL)
-            OR ubicacion_id = ?
-          )
-      `).get(stockSector.id, unidades, ubicacionId, ubicacionId) as
+          AND ubicacion_id IS ?
+      `).get(stockSector.id, unidades, ubicacionId) as
         | { id: number; cantidad_bultos: number | null; total_unidades: number }
         | undefined
 

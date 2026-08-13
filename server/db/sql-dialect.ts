@@ -21,6 +21,14 @@ export function translateSqliteSql(sql: string): string {
   s = s.replace(/\s+COLLATE\s+NOCASE/gi, '')
   s = s.replace(/\bexcluded\./gi, 'EXCLUDED.')
 
+  // SQLite null-safe "col IS ?" → Postgres "col IS NOT DISTINCT FROM ?"
+  s = s.replace(
+    /\b([a-z_][a-z0-9_]*)\s+IS\s+\?/gi,
+    '$1 IS NOT DISTINCT FROM ?'
+  )
+  // "? IS NULL" sin tipo → Postgres no infiere el OID del parámetro
+  s = s.replace(/\?\s+IS\s+NULL/gi, 'CAST(? AS TEXT) IS NULL')
+
   if (insertOrIgnore && !/\bON\s+CONFLICT\b/i.test(s)) {
     s = `${s.replace(/;?\s*$/, '')} ON CONFLICT DO NOTHING`
   }

@@ -160,10 +160,17 @@ export function openPgDatabase(databaseUrl: string, schemaSql: string): PgDataba
   console.log('[ControlStock] Conectando a Postgres...')
   callPg({ op: 'init', databaseUrl })
   console.log('[ControlStock] Aplicando schema Postgres...')
-  const statements = schemaSql
+  const withoutBlockComments = schemaSql.replace(/\/\*[\s\S]*?\*\//g, ' ')
+  const statements = withoutBlockComments
     .split(';')
-    .map((s) => s.trim())
-    .filter((s) => s.length > 0 && !s.startsWith('/*'))
+    .map((s) =>
+      s
+        .split('\n')
+        .map((line) => line.replace(/^\s*--.*$/, '').trimEnd())
+        .join('\n')
+        .trim()
+    )
+    .filter((s) => s.length > 0)
   for (const statement of statements) {
     callPg({ op: 'exec', sql: statement })
   }

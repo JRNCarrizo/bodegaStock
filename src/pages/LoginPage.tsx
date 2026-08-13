@@ -22,10 +22,13 @@ import { Input } from '@/components/ui/Input'
 import { cn, getApiUrl, setApiUrl } from '@/lib/utils'
 import {
   isNativeApp,
+  loadConnectionMode,
   loadSavedServerUrl,
   normalizeServerUrl,
+  saveConnectionMode,
   saveServerUrl,
-  testServerConnection
+  testServerConnection,
+  type ConnectionMode
 } from '@/lib/nativeServer'
 import { hasOfflineAuth } from '@/lib/offlineAuth'
 
@@ -55,11 +58,14 @@ const FEATURE_TONES: Record<(typeof FEATURES)[number]['tone'], { chip: string; i
   }
 }
 
-function splitServerParts(raw: string): { host: string; port: string } {
+function splitServerParts(raw: string): { host: string; port: string; fullUrl?: string } {
   try {
     const normalized = normalizeServerUrl(raw)
     const url = new URL(normalized)
-    return { host: url.hostname, port: url.port || '3847' }
+    if (url.protocol === 'https:') {
+      return { host: normalized, port: '', fullUrl: normalized }
+    }
+    return { host: url.hostname, port: url.port || '3847', fullUrl: normalized }
   } catch {
     const cleaned = raw.replace(/^https?:\/\//i, '').split('/')[0] ?? ''
     const idx = cleaned.lastIndexOf(':')
@@ -76,8 +82,10 @@ export function LoginPage() {
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
+  const [connMode, setConnMode] = useState<ConnectionMode>('local')
   const [serverHost, setServerHost] = useState('')
   const [serverPort, setServerPort] = useState('3847')
+  const [cloudUrl, setCloudUrl] = useState('')
   const [serverReady, setServerReady] = useState(!native)
   const [serverMsg, setServerMsg] = useState('')
   const [serverOk, setServerOk] = useState(false)
@@ -88,19 +96,32 @@ export function LoginPage() {
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
 
-  const serverInput = serverHost.trim()
-    ? `${serverHost.trim()}:${(serverPort.trim() || '3847').trim()}`
-    : ''
+  const serverInput =
+    connMode === 'cloud'
+      ? cloudUrl.trim()
+      : serverHost.trim()
+        ? `${serverHost.trim()}:${(serverPort.trim() || '3847').trim()}`
+        : ''
 
   useEffect(() => {
     if (!native) return
     void (async () => {
-      const [saved, offlineOk] = await Promise.all([loadSavedServerUrl(), hasOfflineAuth()])
+      const [saved, offlineOk, mode] = await Promise.all([
+        loadSavedServerUrl(),
+        hasOfflineAuth(),
+        loadConnectionMode(),
+      ])
       setOfflineUnlockReady(offlineOk)
+      setConnMode(mode)
       if (saved) {
         const parts = splitServerParts(saved)
-        setServerHost(parts.host)
-        setServerPort(parts.port)
+        if (mode === 'cloud' || saved.startsWith('https://')) {
+          setConnMode('cloud')
+          setCloudUrl(saved)
+        } else {
+          setServerHost(parts.host)
+          setServerPort(parts.port || '3847')
+        }
         setApiUrl(saved)
         setServerReady(true)
         setServerOk(true)
@@ -127,9 +148,17 @@ export function LoginPage() {
         return
       }
       const saved = await saveServerUrl(raw)
-      const parts = splitServerParts(saved)
-      setServerHost(parts.host)
-      setServerPort(parts.port)
+      const modeToSave: ConnectionMode =
+        connMode === 'cloud' || saved.startsWith('https://') ? 'cloud' : 'local'
+      await saveConnectionMode(modeToSave)
+      setConnMode(modeToSave)
+      if (modeToSave === 'cloud') {
+        setCloudUrl(saved)
+      } else {
+        const parts = splitServerParts(saved)
+        setServerHost(parts.host)
+        setServerPort(parts.port || '3847')
+      }
       setApiUrl(saved)
       setServerReady(true)
       setServerOk(true)
@@ -148,11 +177,19 @@ export function LoginPage() {
     setError('')
     const trimmed = code.trim()
     try {
+      if (/^https:\/\//i.test(trimmed) || /railway\.app/i.test(trimmed)) {
+        setConnMode('cloud')
+        setCloudUrl(trimmed.startsWith('http') ? trimmed : `https://${trimmed}`)
+        markServerDirty()
+        void handleSaveServer(trimmed.startsWith('http') ? trimmed : `https://${trimmed}`)
+        return
+      }
       const parts = splitServerParts(trimmed)
+      setConnMode('local')
       setServerHost(parts.host)
-      setServerPort(parts.port)
+      setServerPort(parts.port || '3847')
       markServerDirty()
-      void handleSaveServer(`${parts.host}:${parts.port}`)
+      void handleSaveServer(`${parts.host}:${parts.port || '3847'}`)
     } catch {
       setServerMsg('El QR no contiene una IP/URL válida del PC servidor')
       setServerOk(false)
@@ -315,53 +352,110 @@ export function LoginPage() {
               </button>
               {serverPanelOpen && (
                 <CardBody className="space-y-3 p-5">
-                  <p className="text-xs text-slate-500">
-                    Escaneá el QR de Configuración en el PC, o escribí la IP. El puerto suele ser
-                    3847.
-                  </p>
-                  <div className="flex gap-2">
-                    <div className="min-w-0 flex-1">
-                      <Input
-                        label="IP del PC"
-                        value={serverHost}
-                        onChange={(e) => {
-                          setServerHost(e.target.value.replace(/[^\d.]/g, ''))
-                          markServerDirty()
-                        }}
-                        placeholder="192.168.1.56"
-                        autoComplete="off"
-                        inputMode="decimal"
-                      />
-                    </div>
-                    <div className="w-[88px] shrink-0">
-                      <Input
-                        label="Puerto"
-                        value={serverPort}
-                        onChange={(e) => {
-                          setServerPort(e.target.value.replace(/\D/g, ''))
-                          markServerDirty()
-                        }}
-                        placeholder="3847"
-                        autoComplete="off"
-                        inputMode="numeric"
-                      />
-                    </div>
-                  </div>
-                  <div className="flex flex-col gap-2.5">
-                    <Button
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
                       type="button"
-                      variant="secondary"
-                      className="w-full border-slate-300 bg-slate-800 py-2.5 text-white shadow-sm hover:bg-slate-900 hover:text-white"
-                      disabled={testingServer}
-                      onClick={() => setShowServerQr(true)}
+                      className={cn(
+                        'rounded-xl px-3 py-2 text-sm font-semibold ring-1',
+                        connMode === 'local'
+                          ? 'bg-brand-600 text-white ring-brand-600'
+                          : 'bg-white text-slate-700 ring-slate-200'
+                      )}
+                      onClick={() => {
+                        setConnMode('local')
+                        markServerDirty()
+                      }}
                     >
-                      <Camera className="h-4 w-4" />
-                      Escanear QR del PC
-                    </Button>
+                      Red local
+                    </button>
+                    <button
+                      type="button"
+                      className={cn(
+                        'rounded-xl px-3 py-2 text-sm font-semibold ring-1',
+                        connMode === 'cloud'
+                          ? 'bg-brand-600 text-white ring-brand-600'
+                          : 'bg-white text-slate-700 ring-slate-200'
+                      )}
+                      onClick={() => {
+                        setConnMode('cloud')
+                        markServerDirty()
+                      }}
+                    >
+                      Nube
+                    </button>
+                  </div>
+                  {connMode === 'local' ? (
+                    <>
+                      <p className="text-xs text-slate-500">
+                        Escaneá el QR de Configuración en el PC, o escribí la IP. El puerto suele ser
+                        3847.
+                      </p>
+                      <div className="flex gap-2">
+                        <div className="min-w-0 flex-1">
+                          <Input
+                            label="IP del PC"
+                            value={serverHost}
+                            onChange={(e) => {
+                              setServerHost(e.target.value.replace(/[^\d.]/g, ''))
+                              markServerDirty()
+                            }}
+                            placeholder="192.168.1.56"
+                            autoComplete="off"
+                            inputMode="decimal"
+                          />
+                        </div>
+                        <div className="w-[88px] shrink-0">
+                          <Input
+                            label="Puerto"
+                            value={serverPort}
+                            onChange={(e) => {
+                              setServerPort(e.target.value.replace(/\D/g, ''))
+                              markServerDirty()
+                            }}
+                            placeholder="3847"
+                            autoComplete="off"
+                            inputMode="numeric"
+                          />
+                        </div>
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <p className="text-xs text-slate-500">
+                        Pegá la URL de Railway (https://….up.railway.app).
+                      </p>
+                      <Input
+                        label="URL nube"
+                        value={cloudUrl}
+                        onChange={(e) => {
+                          setCloudUrl(e.target.value.trim())
+                          markServerDirty()
+                        }}
+                        placeholder="https://….up.railway.app"
+                        autoComplete="off"
+                      />
+                    </>
+                  )}
+                  <div className="flex flex-col gap-2.5">
+                    {connMode === 'local' && (
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        className="w-full border-slate-300 bg-slate-800 py-2.5 text-white shadow-sm hover:bg-slate-900 hover:text-white"
+                        disabled={testingServer}
+                        onClick={() => setShowServerQr(true)}
+                      >
+                        <Camera className="h-4 w-4" />
+                        Escanear QR del PC
+                      </Button>
+                    )}
                     <Button
                       type="button"
                       className="w-full py-2.5 shadow-sm"
-                      disabled={testingServer || !serverHost.trim()}
+                      disabled={
+                        testingServer ||
+                        (connMode === 'local' ? !serverHost.trim() : !cloudUrl.trim())
+                      }
                       onClick={() => void handleSaveServer()}
                     >
                       {testingServer ? (

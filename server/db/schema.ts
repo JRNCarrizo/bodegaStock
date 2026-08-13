@@ -354,7 +354,7 @@ CREATE TABLE IF NOT EXISTS inventario_conteo_lineas (
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
-/** Productos que entraron a una ronda de reconteo (si quedan sin líneas = contado 0). */
+-- Productos en ronda de reconteo (si quedan sin líneas = contado 0)
 CREATE TABLE IF NOT EXISTS inventario_sector_reconteo_productos (
   inventario_sector_id INTEGER NOT NULL REFERENCES inventario_sectores(id) ON DELETE CASCADE,
   ronda INTEGER NOT NULL,

@@ -1,7 +1,7 @@
-import { app } from 'electron'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs'
 import { networkInterfaces } from 'os'
 import { join } from 'path'
+import { getUserDataDir } from './runtime-env'
 
 export type NetworkMode = 'server' | 'client'
 
@@ -27,7 +27,7 @@ export const DEFAULT_NETWORK_CONFIG: NetworkConfig = {
 }
 
 function getConfigPath(): string {
-  const dir = join(app.getPath('userData'), 'data')
+  const dir = join(getUserDataDir(), 'data')
   if (!existsSync(dir)) mkdirSync(dir, { recursive: true })
   return join(dir, 'network-config.json')
 }

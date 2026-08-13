@@ -1,7 +1,6 @@
 import Fastify from 'fastify'
 import cors from '@fastify/cors'
 import fastifyStatic from '@fastify/static'
-import { app } from 'electron'
 import { existsSync } from 'fs'
 import http from 'http'
 import { join } from 'path'
@@ -11,6 +10,7 @@ import {
   getLanAddresses,
   loadNetworkConfig
 } from './network-config'
+import { getAppVersion } from './runtime-env'
 import { registerAuthHook } from './plugins/auth'
 import { authRoutes } from './routes/auth'
 import { camionerosRoutes } from './routes/camioneros'
@@ -26,6 +26,7 @@ import { inventarioRoutes } from './routes/inventario'
 import { productosRoutes } from './routes/productos'
 import { sectoresRoutes } from './routes/sectores'
 import { usuariosRoutes } from './routes/usuarios'
+import { migracionRoutes } from './routes/migracion'
 
 function resolveRendererDir(): string | null {
   const candidates = [
@@ -112,13 +113,13 @@ export async function startServer(options: StartServerOptions = {}): Promise<voi
   server.get('/api/health', async () => ({
     ok: true,
     app: 'ControlStock',
-    version: app.getVersion?.() ?? '0.1.0',
+    version: getAppVersion(),
     port: activePort
   }))
 
   server.get('/api/server/info', async () => ({
     app: 'ControlStock',
-    version: app.getVersion?.() ?? '0.1.0',
+    version: getAppVersion(),
     port: activePort,
     addresses: getLanAddresses(),
     urls: buildConnectionUrls(activePort)
@@ -138,6 +139,7 @@ export async function startServer(options: StartServerOptions = {}): Promise<voi
   await server.register(movimientosInternosRoutes)
   await server.register(reportesRoutes)
   await server.register(inventarioRoutes)
+  await server.register(migracionRoutes)
 
   const rendererDir = resolveRendererDir()
   if (rendererDir) {

@@ -1,0 +1,131 @@
+PASOS CONTROLSTOCK EN LA NUBE
+=============================
+
+Hay DOS partes:
+  A) Configurar Railway (servidor en internet)  ← la importante de infraestructura
+  B) Configurar la app (PC / APK) y migrar datos
+
+Tu URL actual (ejemplo):
+https://bodegastock-production-d795.up.railway.app
+
+
+================================================================
+A) RAILWAY — crear / revisar el servidor
+================================================================
+(En casa ya está hecho. En el trabajo: cuenta de la empresa o la tuya,
+y que el proyecto siga corriendo. Si hay que armarlo de nuevo, seguí esto.)
+
+A1. Entrar a Railway
+- Abrí https://railway.com e iniciá sesión.
+- Si es la empresa: usá la cuenta / proyecto de ellos.
+
+A2. Proyecto + código
+- New Project → Deploy from GitHub.
+- Elegí el repo bodegaStock.
+- Rama: cloud/api-standalone (no main, hasta que mergeen).
+- Railway construye con el Dockerfile del repo.
+
+A3. Variables del servicio API (Settings → Variables)
+- JWT_SECRET = una clave larga inventada (no la compartas).
+- BODEGA_DATA_DIR = /data
+- (Más abajo se agrega DATABASE_URL)
+
+A4. Base Postgres
+- En el mismo proyecto: New → Database → PostgreSQL.
+- Esperá que quede Running / verde.
+
+A5. Conectar Postgres a la API
+- Abrí el servicio de la API (no el de Postgres).
+- Variables → Add → Variable Reference.
+- Nombre: DATABASE_URL
+- Valor: ${{Postgres.DATABASE_URL}}
+  (si el servicio se llama distinto, elegí ese nombre en el menú)
+- Guardá. Se redeploya solo.
+
+A6. Dominio público (para PCs y celulares)
+- Servicio API → Settings → Networking → Public Networking.
+- Generate Domain (si no hay).
+- Vas a ver algo como: xxx.up.railway.app  (Puerto suele ser 8080; Railway lo maneja)
+- NO uses la red Private (.railway.internal) desde la PC o el celu.
+
+A7. Probar que el cerebro vive
+- En el navegador abrí:
+  https://TU-DOMINIO.up.railway.app/api/health
+- Tiene que decir ok (app ControlStock, version, etc.).
+- En logs del deploy debería verse:
+  DB: Postgres (DATABASE_URL)
+  Postgres listo
+  API escuchando...
+
+A8. (Opcional) Volumen /data
+- Si usan archivos en disco del contenedor: Volume montado en /data.
+- La base de datos “de verdad” es Postgres, no el SQLite del volumen.
+
+
+Si el deploy falla
+- VOLUME en Dockerfile → ya está sacado en el código actual.
+- better-sqlite3 / ABI → el Dockerfile actual rebuilda para Node.
+- Tabla faltante → redesplegar con el código nuevo (CREATE IF NOT EXISTS).
+
+
+================================================================
+B) APP — apuntar a la nube y migrar (en el trabajo)
+================================================================
+
+IMPORTANTE
+- Hasta el corte, pueden seguir en “Red local”.
+- Migrá desde la PC que tiene la base buena (la del servidor).
+- Fotos de productos aún no suben a la nube.
+
+
+B1. Abrir ControlStock en la PC servidor
+- Entrá como administrador.
+
+
+B2. Pegar la URL de Railway
+- Configuración → Red y conexión → Nube (Railway).
+- Pegá https://TU-DOMINIO.up.railway.app (sin / al final).
+- Probar conexión → tiene que OK.
+- Guardar nube → tiene que decir “Conectada y guardada”.
+
+
+B3. Login en la nube
+- Cerrá sesión y entrá de nuevo.
+- Si la nube está vacía: admin / admin123
+- Después de migrar: usuarios reales de la empresa.
+
+
+B4. Migrar datos
+- Configuración → “Migrar datos a la nube” (desplegable).
+- Escribí: MIGRAR
+- Migrar SQLite local → nube.
+- Éxito → cerrá sesión.
+
+
+B5. Verificar
+- Login con usuario real.
+- Mirar productos / stock / un reporte.
+- Si falla: Red local y siguen como siempre (el SQLite del PC no se borra).
+
+
+B6. Otras PCs y APK
+- Misma URL en Configuración (PC) o en login → Nube (APK).
+- Guardar. Todas ven la misma info.
+- No hace falta notebook servidor prendida (sí hace falta internet).
+
+
+================================================================
+SI ALGO FALLA (rápido)
+================================================================
+- /api/health en el navegador no responde → Railway caído, sin crédito, o URL mal.
+- App no conecta → URL mal pegada o modo Red local todavía activo.
+- Migración error → mirar mensaje; a veces falta redeploy del API.
+- Volver atrás → Configuración → Red local.
+
+
+================================================================
+RESUMEN DE UNA LÍNEA
+================================================================
+Railway = cerebro + Postgres.
+Misma URL en todas las PCs/APK = mismos datos.
+App en Nube + Migrar = llevar la info del PC a esa base.

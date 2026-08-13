@@ -1,6 +1,6 @@
 import { clsx, type ClassValue } from 'clsx'
 import { twMerge } from 'tailwind-merge'
-import { isNativeApp, loadSavedServerUrl } from '@/lib/nativeServer'
+import { isNativeApp, loadConnectionMode, loadSavedServerUrl } from '@/lib/nativeServer'
 
 export function cn(...inputs: ClassValue[]): string {
   return twMerge(clsx(inputs))
@@ -19,6 +19,15 @@ export function setApiUrl(url: string): void {
 }
 
 export async function initApiFromBridge(): Promise<void> {
+  const mode = await loadConnectionMode()
+  const savedCloudOrLan = await loadSavedServerUrl()
+
+  // Modo nube: prioridad sobre Electron LAN / defaults
+  if (mode === 'cloud' && savedCloudOrLan) {
+    setApiUrl(savedCloudOrLan)
+    return
+  }
+
   if (window.bodegaStock?.getNetworkInfo) {
     const info = await window.bodegaStock.getNetworkInfo()
     setApiUrl(info.apiUrl)
@@ -27,8 +36,7 @@ export async function initApiFromBridge(): Promise<void> {
 
   // APK / iOS (Capacitor): URL del PC servidor guardada en el dispositivo
   if (isNativeApp()) {
-    const saved = await loadSavedServerUrl()
-    if (saved) setApiUrl(saved)
+    if (savedCloudOrLan) setApiUrl(savedCloudOrLan)
     return
   }
 

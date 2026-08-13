@@ -1,8 +1,72 @@
 # Servidor en la nube (Railway) — plan futuro
 
-> **Estado: NO implementado.** Documento de planeamiento (agosto 2026).  
-> **No tocar código** hasta priorizar esta feature.  
+> **Estado: EN PROGRESO (agosto 2026).** Slice 1 OK (API en Railway). Slice 2: Postgres via `DATABASE_URL`.  
+> Modo local Electron+SQLite **se conserva**. Migrador SQLite→PG y UI local/cloud: siguientes.  
 > Complementa [ESPECIFICACION.md](ESPECIFICACION.md) §2 (arquitectura LAN + SQLite).
+
+---
+
+## 0. Slice 1 — API sin Electron (listo para probar en Railway)
+
+### Qué hay en el repo
+
+| Pieza | Archivo |
+|--------|---------|
+| Entry API | `server/standalone.ts` |
+| Paths / JWT sin Electron | `server/runtime-env.ts` |
+| Docker | `Dockerfile` |
+| Railway | `railway.toml` |
+| Env ejemplo | `.env.example` |
+| Scripts | `npm run start:api` / `npm run dev:api` |
+
+### Probar en casa (sin Railway)
+
+```bash
+npm install
+# Si better-sqlite3 falla por versión de Node (vs Electron):
+npm rebuild better-sqlite3
+npm run start:api
+# Al volver a Electron: npx electron-builder install-app-deps
+```
+
+Abrí `http://127.0.0.1:3847/api/health` → `{ ok: true, ... }`.  
+Login: `admin` / `admin123` (base SQLite nueva en `./data` o `BODEGA_DATA_DIR`).
+
+> **Nota:** Electron y `start:api` usan el mismo `better-sqlite3` nativo. Rebuild para Node del sistema al probar la API; `install-app-deps` otra vez antes de `npm run dev`. En **Docker/Railway** no hay conflicto (compila para Node del contenedor).
+
+### Subir a Railway (cuenta tuya de prueba)
+
+1. En [railway.com](https://railway.com): **New Project** → **Deploy from GitHub** → repo `bodegaStock`.
+2. En el servicio: Variables:
+   - `JWT_SECRET` = una clave larga al azar
+   - `BODEGA_DATA_DIR` = `/data` (ya es default en el Dockerfile)
+3. **Volumes** → montar volumen en `/data` (para que el SQLite no se borre en cada deploy).
+4. **Settings** → Generate Domain (HTTPS).
+5. Probar: `https://TU-DOMINIO.up.railway.app/api/health`
+
+> Esta fase usa **SQLite en el volumen** solo para aprender el deploy. La base productiva en la nube será **Postgres** (slice siguiente). El laburo diario en la empresa sigue en **modo local**.
+
+### Slice 2 — Postgres (`DATABASE_URL`)
+
+1. En Railway: **New** → **Database** → **PostgreSQL** (en el mismo proyecto).
+2. En el servicio de la API → **Variables** → **Add reference** / conectar `DATABASE_URL` del Postgres (Railway lo suele inyectar al linkear).
+3. Redeploy de la API. En logs deberías ver: `DB: Postgres (DATABASE_URL)`.
+4. Health: `https://TU-DOMINIO.up.railway.app/api/health`
+5. Login de prueba: `admin` / `admin123` (base vacía nueva en Postgres).
+
+La app Electron **no** usa `DATABASE_URL`; sigue en SQLite local. El volumen `/data` queda para imágenes u otros archivos, no para la DB principal.
+
+### Orden de slices
+
+1. ~~API standalone + Docker + Railway smoke~~
+2. ~~Postgres + schema (`DATABASE_URL`)~~
+3. Migrador SQLite → Postgres (asistente en Configuración) ← acá
+4. ~~UI: modo local vs URL nube (desktop + APK)~~
+5. Piloto y corte en planta
+
+**Probar UI nube (dev):** Configuración → **Nube (Railway)** → pegar URL → Probar → Guardar.  
+**Migrar:** con nube activa y admin logueado → Configuración → Migrar → escribir `MIGRAR`.  
+Guía impresa: [PASOS-TRABAJO-CLOUD.txt](PASOS-TRABAJO-CLOUD.txt).
 
 ---
 

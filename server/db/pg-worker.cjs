@@ -1,8 +1,8 @@
 'use strict'
 
+const { parentPort, workerData } = require('worker_threads')
 const { Pool, types } = require('pg')
 
-// COUNT(*) / BIGINT → number (SQLite devuelve number)
 types.setTypeParser(types.builtins.INT8, (v) => parseInt(v, 10))
 types.setTypeParser(types.builtins.NUMERIC, (v) => parseFloat(v))
 
@@ -12,23 +12,28 @@ let pool = null
 let txClient = null
 let txDepth = 0
 
+function needsSsl(url) {
+  if (!url) return false
+  if (/sslmode=require/i.test(url)) return true
+  return /railway\.app|rlwy\.net|railway\.internal/i.test(url)
+}
+
 function q(sql, params) {
   const client = txClient || pool
   if (!client) throw new Error('Postgres pool not initialized')
   return client.query(sql, params ?? [])
 }
 
-/**
- * @param {{ op: string, sql?: string, params?: unknown[], schemaSql?: string, databaseUrl?: string }} msg
- */
-module.exports = async function pgWorker(msg) {
+async function handle(msg) {
   switch (msg.op) {
     case 'init': {
       if (pool) return { ok: true }
+      const databaseUrl = msg.databaseUrl
       pool = new Pool({
-        connectionString: msg.databaseUrl,
+        connectionString: databaseUrl,
         max: 10,
         idleTimeoutMillis: 30_000,
+        ssl: needsSsl(databaseUrl) ? { rejectUnauthorized: false } : undefined,
       })
       await pool.query('SELECT 1')
       return { ok: true }
@@ -39,10 +44,7 @@ module.exports = async function pgWorker(msg) {
     }
     case 'query': {
       const result = await q(msg.sql, msg.params)
-      return {
-        rows: result.rows,
-        rowCount: result.rowCount ?? 0,
-      }
+      return { rows: result.rows, rowCount: result.rowCount ?? 0 }
     }
     case 'begin': {
       if (!pool) throw new Error('Postgres pool not initialized')
@@ -100,3 +102,21 @@ module.exports = async function pgWorker(msg) {
       throw new Error(`Unknown pg worker op: ${msg.op}`)
   }
 }
+
+const { port, sharedBuffer } = workerData
+const signal = new Int32Array(sharedBuffer)
+
+port.on('message', async (msg) => {
+  try {
+    const result = await handle(msg)
+    port.postMessage({ ok: true, result })
+  } catch (err) {
+    port.postMessage({
+      ok: false,
+      error: err instanceof Error ? err.message : String(err),
+    })
+  } finally {
+    Atomics.store(signal, 0, 1)
+    Atomics.notify(signal, 0, 1)
+  }
+})

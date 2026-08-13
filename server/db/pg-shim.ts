@@ -1,16 +1,75 @@
 /**
- * Shim sync compatible con better-sqlite3 usando Postgres + synckit.
+ * Shim sync compatible con better-sqlite3 usando Postgres + worker_threads.
  * Solo para modo cloud (DATABASE_URL). Electron sigue con better-sqlite3.
  */
 import { createRequire } from 'module'
-import { createSyncFn } from 'synckit'
+import {
+  Worker,
+  MessageChannel,
+  receiveMessageOnPort,
+  type MessagePort,
+} from 'worker_threads'
 import { translateSqliteSql } from './sql-dialect'
 
 const require = createRequire(import.meta.url)
-const callPg = createSyncFn(require.resolve('./pg-worker.cjs')) as (msg: Record<string, unknown>) => {
+const workerPath = require.resolve('./pg-worker.cjs')
+
+type WorkerResult = {
   rows?: Record<string, unknown>[]
   rowCount?: number
   ok?: boolean
+}
+
+type WorkerReply = {
+  ok: boolean
+  result?: WorkerResult
+  error?: string
+}
+
+let worker: Worker | null = null
+let port: MessagePort | null = null
+let signal: Int32Array | null = null
+
+function ensureWorker(): void {
+  if (worker && port && signal) return
+
+  const channel = new MessageChannel()
+  const sharedBuffer = new SharedArrayBuffer(4)
+  signal = new Int32Array(sharedBuffer)
+  port = channel.port1
+
+  worker = new Worker(workerPath, {
+    workerData: { port: channel.port2, sharedBuffer },
+    transferList: [channel.port2],
+  })
+
+  worker.on('error', (err) => {
+    console.error('[ControlStock] Postgres worker error:', err)
+  })
+  worker.on('exit', (code) => {
+    if (code !== 0) console.error(`[ControlStock] Postgres worker exit ${code}`)
+    worker = null
+    port = null
+    signal = null
+  })
+}
+
+function callPg(msg: Record<string, unknown>): WorkerResult {
+  ensureWorker()
+  if (!port || !signal) throw new Error('Postgres worker not ready')
+
+  Atomics.store(signal, 0, 0)
+  port.postMessage(msg)
+
+  const wait = Atomics.wait(signal, 0, 0, 60_000)
+  if (wait === 'timed-out') {
+    throw new Error('Timeout esperando Postgres worker')
+  }
+
+  const reply = receiveMessageOnPort(port)?.message as WorkerReply | undefined
+  if (!reply) throw new Error('Sin respuesta del Postgres worker')
+  if (!reply.ok) throw new Error(reply.error || 'Error Postgres worker')
+  return reply.result ?? { ok: true }
 }
 
 export type PgRunResult = { changes: number; lastInsertRowid: number | bigint }
@@ -50,7 +109,6 @@ export class PgDatabase {
   }
 
   exec(sql: string): this {
-    // better-sqlite3 acepta varios statements; pg también en query simple
     callPg({ op: 'exec', sql: translateSqliteSqlForExec(sql) })
     return this
   }
@@ -78,11 +136,20 @@ export class PgDatabase {
   }
 
   close(): void {
-    callPg({ op: 'close' })
+    try {
+      callPg({ op: 'close' })
+    } catch {
+      /* ignore */
+    }
+    if (worker) {
+      void worker.terminate()
+      worker = null
+      port = null
+      signal = null
+    }
   }
 }
 
-/** exec() puede traer varios CREATE; no reescribir ? ni RETURNING por statement suelto. */
 function translateSqliteSqlForExec(sql: string): string {
   return sql
     .replace(/datetime\('now'\)/gi, "to_char(NOW() AT TIME ZONE 'UTC', 'YYYY-MM-DD HH24:MI:SS')")
@@ -90,7 +157,16 @@ function translateSqliteSqlForExec(sql: string): string {
 }
 
 export function openPgDatabase(databaseUrl: string, schemaSql: string): PgDatabase {
+  console.log('[ControlStock] Conectando a Postgres...')
   callPg({ op: 'init', databaseUrl })
-  callPg({ op: 'exec', sql: schemaSql })
+  console.log('[ControlStock] Aplicando schema Postgres...')
+  const statements = schemaSql
+    .split(';')
+    .map((s) => s.trim())
+    .filter((s) => s.length > 0 && !s.startsWith('/*'))
+  for (const statement of statements) {
+    callPg({ op: 'exec', sql: statement })
+  }
+  console.log('[ControlStock] Postgres listo')
   return new PgDatabase()
 }

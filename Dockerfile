@@ -23,6 +23,6 @@ ENV PORT=3847
 
 EXPOSE 3847
 
-VOLUME ["/data"]
+# Persistencia: montar Railway Volume en /data (no usar VOLUME en el Dockerfile)
 
 CMD ["npx", "tsx", "server/standalone.ts"]

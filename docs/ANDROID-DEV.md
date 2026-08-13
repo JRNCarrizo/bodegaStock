@@ -11,7 +11,8 @@ Relacionado: [APP-MOVIL.md](APP-MOVIL.md) · scripts en `package.json` · `capac
 | Situación | Qué pasa |
 |-----------|----------|
 | **Desarrollo** (`npm run dev:android`) | La app carga la UI desde Vite en tu PC. Guardás código → se refleja en el celular. |
-| **APK / producción** (`npm run cap:sync`) | La web queda **embebida** en el APK. No depende de Vite ni de tu PC. |
+| **APK / producción** (`npm run cap:sync` + `assembleRelease`) | APK firmado (debug keystore si no hay keystore de Play). Instalable. |
+| **APK debug** (`assembleDebug`) | También instalable; útil en desarrollo. |
 
 El live reload se activa **solo** si el script de desarrollo setea `CAP_SERVER_URL`.  
 `cap:sync` **no** setea esa variable → la APK sale siempre “cerrada”. **No hay que editar `capacitor.config.ts` a mano.**

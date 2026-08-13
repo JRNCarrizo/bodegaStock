@@ -1,5 +1,5 @@
 param(
-  [string]$Version = "0.3.32"
+  [string]$Version = "0.3.33"
 )
 
 $ErrorActionPreference = "Stop"
@@ -56,23 +56,22 @@ if (Test-Path $ymlPath) { $assets += (Resolve-Path $ymlPath).Path }
 $notes = @"
 ## ControlStock v$Version
 
-Modo nube (Railway/Postgres), migrador SQLite→nube y checklist de despliegue.
+APK firmado instalable, QR de nube y mejor conexión APK↔Railway.
 
 ### Nuevo / mejorado
-- Configuración: **Red local** vs **Nube (Railway)**; URL HTTPS guardada con estado “Conectada y guardada”
-- Migrador en Configuración: copiar base local SQLite a Postgres en la nube
-- API standalone + Docker para Railway; ``DATABASE_URL`` para Postgres
-- Login APK: panel Local / Nube para la misma URL
+- APK de release **firmado** (el 0.3.32 unsigned daba “paquete no válido”)
+- QR dinámico de la URL nube en Configuración; APK puede escanearlo
+- CapacitorHttp + timeouts más largos para Railway (cold start)
+- Configuración: **Red local** vs **Nube**; migrador SQLite→nube
 - Guía: ``docs/PASOS-TRABAJO-CLOUD.txt``
 
 ### Notas
-- El modo local (Electron + SQLite) sigue igual por defecto
-- Fotos de productos aún no se sincronizan a la nube
-- Tras migrar: cerrar sesión y entrar con un usuario de la base migrada
+- Modo local sigue por defecto
+- Fotos de productos aún no van a la nube
 
 ### Actualización
 - Desde **v0.2.7 o superior:** Configuración → Buscar actualizaciones
-- O instalá el Setup / APK de este release manualmente
+- O instalá Setup / APK de este release
 
 Login inicial (base vacía): **admin** / **admin123**
 "@

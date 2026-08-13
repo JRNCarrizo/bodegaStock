@@ -1,5 +1,5 @@
 param(
-  [string]$Version = "0.3.31"
+  [string]$Version = "0.3.32"
 )
 
 $ErrorActionPreference = "Stop"
@@ -56,22 +56,25 @@ if (Test-Path $ymlPath) { $assets += (Resolve-Path $ymlPath).Path }
 $notes = @"
 ## ControlStock v$Version
 
-Ajuste de stock, UX de carga (íconos / cajas) y permiso de ajustes asignable.
+Modo nube (Railway/Postgres), migrador SQLite→nube y checklist de despliegue.
 
 ### Nuevo / mejorado
-- Consulta: **Ajustar stock** (reemplazo de desglose) con auditoría; link **Ver ajustes** en Movimientos del día
-- Permiso **Ajustes de stock** seleccionable al crear/editar usuario
-- Empaque automático desde el nombre (`3X750` → botellas por caja)
-- Inventario, Movimientos e Ingresos: selector de tipo con íconos; en Cajas no se pide × botellas (sale del producto)
-- Ingresos y Planillas: swipe derecha = editar, izquierda = borrar
-- Planillas: unidad (cajas/botellas) en el desglose a la izquierda; sin botón Vista previa
-- Movimientos: footer más responsive; sin escáner en la carga
+- Configuración: **Red local** vs **Nube (Railway)**; URL HTTPS guardada con estado “Conectada y guardada”
+- Migrador en Configuración: copiar base local SQLite a Postgres en la nube
+- API standalone + Docker para Railway; ``DATABASE_URL`` para Postgres
+- Login APK: panel Local / Nube para la misma URL
+- Guía: ``docs/PASOS-TRABAJO-CLOUD.txt``
+
+### Notas
+- El modo local (Electron + SQLite) sigue igual por defecto
+- Fotos de productos aún no se sincronizan a la nube
+- Tras migrar: cerrar sesión y entrar con un usuario de la base migrada
 
 ### Actualización
 - Desde **v0.2.7 o superior:** Configuración → Buscar actualizaciones
 - O instalá el Setup / APK de este release manualmente
 
-Login inicial: **admin** / **admin123**
+Login inicial (base vacía): **admin** / **admin123**
 "@
 
 Write-Host "Publicando release $tag..." -ForegroundColor Green

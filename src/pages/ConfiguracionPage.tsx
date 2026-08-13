@@ -3,6 +3,7 @@ import QRCode from 'qrcode'
 import {
   ArrowLeftRight,
   Check,
+  ChevronDown,
   ClipboardCheck,
   Cloud,
   Copy,
@@ -149,6 +150,9 @@ export function ConfiguracionPage() {
   const [cloudTest, setCloudTest] = useState<'idle' | 'testing' | 'ok' | 'fail'>('idle')
   const [cloudMessage, setCloudMessage] = useState('')
   const [savingCloud, setSavingCloud] = useState(false)
+  const [cloudPanelOpen, setCloudPanelOpen] = useState(false)
+  const [cloudLive, setCloudLive] = useState(false)
+  const [migPanelOpen, setMigPanelOpen] = useState(false)
   const [mode, setMode] = useState<NetworkConfig['mode']>('server')
   const [remoteHost, setRemoteHost] = useState('')
   const [port, setPort] = useState('3847')
@@ -208,15 +212,36 @@ export function ConfiguracionPage() {
       setConnectionMode(modeSaved)
       if (urlSaved?.startsWith('https://')) setCloudUrl(urlSaved)
       else if (modeSaved === 'cloud' && urlSaved) setCloudUrl(urlSaved)
+
+      if (modeSaved === 'cloud' && urlSaved) {
+        setCloudPanelOpen(false)
+        const result = await testServerConnection(urlSaved)
+        setCloudLive(result.ok)
+        setCloudTest(result.ok ? 'ok' : 'fail')
+        if (result.ok) {
+          setCloudMessage(
+            result.version
+              ? `Conectado a ControlStock v${result.version}`
+              : 'Conexión activa con la nube'
+          )
+        } else {
+          setCloudMessage(result.message)
+        }
+      } else if (modeSaved === 'cloud') {
+        setCloudPanelOpen(true)
+        setCloudLive(false)
+      }
     })()
   }, [])
 
   async function probarNube() {
     setCloudTest('testing')
     setCloudMessage('')
+    setCloudLive(false)
     const result = await testServerConnection(cloudUrl.trim())
     if (result.ok) {
       setCloudTest('ok')
+      setCloudLive(false) // aún no guardada en esta acción
       setCloudMessage(
         result.version
           ? `Conectado a ControlStock v${result.version}`
@@ -235,6 +260,7 @@ export function ConfiguracionPage() {
       const result = await testServerConnection(cloudUrl.trim())
       if (!result.ok) {
         setCloudTest('fail')
+        setCloudLive(false)
         setCloudMessage(result.message)
         return
       }
@@ -244,10 +270,12 @@ export function ConfiguracionPage() {
       setCloudUrl(saved)
       setConnectionMode('cloud')
       setCloudTest('ok')
+      setCloudLive(true)
+      setCloudPanelOpen(false)
       setCloudMessage(
         result.version
-          ? `Guardado · nube activa (v${result.version}). Cerrá sesión y volvé a entrar si hace falta.`
-          : 'Guardado · la app usa la URL de la nube.'
+          ? `Guardado y conectado · ControlStock v${result.version}`
+          : 'URL guardada y conectada a la nube'
       )
     } finally {
       setSavingCloud(false)
@@ -259,6 +287,9 @@ export function ConfiguracionPage() {
     setConnectionMode('local')
     setCloudTest('idle')
     setCloudMessage('')
+    setCloudLive(false)
+    setCloudPanelOpen(false)
+    setMigPanelOpen(false)
     if (api?.getNetworkInfo) {
       const info = await api.getNetworkInfo()
       setApiUrl(info.apiUrl)
@@ -631,77 +662,114 @@ export function ConfiguracionPage() {
               icon={Cloud}
               title="Nube (Railway)"
               description="API remota por HTTPS. Datos en el servidor cloud."
-              onClick={() => setConnectionMode('cloud')}
+              onClick={() => {
+                setConnectionMode('cloud')
+                if (!cloudLive) setCloudPanelOpen(true)
+              }}
             />
           </div>
 
           {connectionMode === 'cloud' && (
-            <div className="space-y-4 rounded-xl border border-surface-border bg-slate-50/80 p-4 sm:p-5">
-              <p className="text-sm text-slate-600">
-                Pegá la URL pública de Railway (sin barra final). Ejemplo:{' '}
-                <code className="rounded bg-white px-1.5 py-0.5 text-xs ring-1 ring-slate-200">
-                  https://bodegastock-production-d795.up.railway.app
-                </code>
-              </p>
-              <Input
-                label="URL del servidor cloud"
-                value={cloudUrl}
-                onChange={(e) => {
-                  setCloudUrl(e.target.value.trim())
-                  setCloudTest('idle')
-                }}
-                placeholder="https://….up.railway.app"
-                className="rounded-xl shadow-sm"
-                autoComplete="off"
-              />
-              <p className="text-xs text-slate-500">
-                API actual en esta sesión:{' '}
-                <code className="font-mono text-slate-700">{getApiUrl()}</code>
-              </p>
-              <div className="flex flex-wrap gap-2">
-                <Button
-                  type="button"
-                  variant="secondary"
-                  size="sm"
-                  className="rounded-xl"
-                  disabled={cloudTest === 'testing' || !cloudUrl.trim()}
-                  onClick={() => void probarNube()}
-                >
-                  {cloudTest === 'testing' ? (
-                    <>
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                      Probando…
-                    </>
-                  ) : (
-                    'Probar conexión'
+            <div className="overflow-hidden rounded-xl border border-surface-border bg-slate-50/80">
+              <button
+                type="button"
+                className="flex w-full items-center gap-3 px-4 py-3.5 text-left transition hover:bg-white/70 sm:px-5"
+                onClick={() => setCloudPanelOpen((open) => !open)}
+                aria-expanded={cloudPanelOpen}
+              >
+                <div className="min-w-0 flex-1 space-y-1.5">
+                  <div className="flex flex-wrap items-center gap-2">
+                    {cloudLive ? (
+                      <StatusPill tone="success">Conectada y guardada</StatusPill>
+                    ) : cloudUrl.trim() && connectionMode === 'cloud' ? (
+                      <StatusPill tone="warning">URL pendiente de guardar/probar</StatusPill>
+                    ) : (
+                      <StatusPill tone="neutral">Sin URL de nube</StatusPill>
+                    )}
+                    {cloudTest === 'ok' && !cloudLive && (
+                      <StatusPill tone="brand">Prueba OK — guardá para activar</StatusPill>
+                    )}
+                  </div>
+                  {(cloudUrl || getApiUrl().startsWith('https://')) && (
+                    <p className="truncate font-mono text-xs text-slate-600">
+                      {cloudUrl || getApiUrl()}
+                    </p>
                   )}
-                </Button>
-                <Button
-                  type="button"
-                  size="sm"
-                  className="rounded-xl"
-                  disabled={savingCloud || !cloudUrl.trim()}
-                  onClick={() => void guardarNube()}
-                >
-                  {savingCloud ? (
-                    <>
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                      Guardando…
-                    </>
-                  ) : (
-                    'Guardar nube'
+                  {cloudLive && cloudMessage && !cloudPanelOpen && (
+                    <p className="text-xs text-emerald-700">{cloudMessage}</p>
                   )}
-                </Button>
-              </div>
-              {cloudTest === 'ok' && cloudMessage && (
-                <p className="rounded-xl bg-emerald-50 px-3 py-2.5 text-sm text-emerald-800 ring-1 ring-emerald-100">
-                  {cloudMessage}
-                </p>
-              )}
-              {cloudTest === 'fail' && cloudMessage && (
-                <p className="rounded-xl bg-red-50 px-3 py-2.5 text-sm text-red-800 ring-1 ring-red-100">
-                  {cloudMessage}
-                </p>
+                </div>
+                <ChevronDown
+                  className={cn(
+                    'h-5 w-5 shrink-0 text-slate-400 transition-transform',
+                    cloudPanelOpen && 'rotate-180'
+                  )}
+                />
+              </button>
+
+              {cloudPanelOpen && (
+                <div className="space-y-4 border-t border-surface-border px-4 py-4 sm:px-5">
+                  <p className="text-sm text-slate-600">
+                    Pegá la URL pública de Railway (sin barra final).
+                  </p>
+                  <Input
+                    label="URL del servidor cloud"
+                    value={cloudUrl}
+                    onChange={(e) => {
+                      setCloudUrl(e.target.value.trim())
+                      setCloudTest('idle')
+                      setCloudLive(false)
+                    }}
+                    placeholder="https://….up.railway.app"
+                    className="rounded-xl shadow-sm"
+                    autoComplete="off"
+                  />
+                  <div className="flex flex-wrap gap-2">
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      size="sm"
+                      className="rounded-xl"
+                      disabled={cloudTest === 'testing' || !cloudUrl.trim()}
+                      onClick={() => void probarNube()}
+                    >
+                      {cloudTest === 'testing' ? (
+                        <>
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                          Probando…
+                        </>
+                      ) : (
+                        'Probar conexión'
+                      )}
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      className="rounded-xl"
+                      disabled={savingCloud || !cloudUrl.trim()}
+                      onClick={() => void guardarNube()}
+                    >
+                      {savingCloud ? (
+                        <>
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                          Guardando…
+                        </>
+                      ) : (
+                        'Guardar nube'
+                      )}
+                    </Button>
+                  </div>
+                  {cloudTest === 'ok' && cloudMessage && (
+                    <p className="rounded-xl bg-emerald-50 px-3 py-2.5 text-sm text-emerald-800 ring-1 ring-emerald-100">
+                      {cloudMessage}
+                    </p>
+                  )}
+                  {cloudTest === 'fail' && cloudMessage && (
+                    <p className="rounded-xl bg-red-50 px-3 py-2.5 text-sm text-red-800 ring-1 ring-red-100">
+                      {cloudMessage}
+                    </p>
+                  )}
+                </div>
               )}
             </div>
           )}
@@ -939,92 +1007,105 @@ export function ConfiguracionPage() {
       </Card>
 
       <Card className="overflow-hidden shadow-panel">
-        <div className="border-b border-brand-100 bg-gradient-to-r from-brand-50/80 via-white to-white px-5 py-4 sm:px-6">
-          <div className="flex items-start gap-3">
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-brand-600 text-white shadow-sm">
-              <Database className="h-5 w-5" />
-            </div>
-            <div>
-              <h2 className="font-semibold text-slate-900">Migrar datos a la nube</h2>
-              <p className="mt-0.5 text-sm text-slate-500">
-                Copia la base SQLite de esta PC hacia Postgres en Railway
-              </p>
-            </div>
+        <button
+          type="button"
+          className="flex w-full items-start gap-3 border-b border-brand-100 bg-gradient-to-r from-brand-50/80 via-white to-white px-5 py-4 text-left transition hover:from-brand-50 sm:px-6"
+          onClick={() => setMigPanelOpen((open) => !open)}
+          aria-expanded={migPanelOpen}
+        >
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-brand-600 text-white shadow-sm">
+            <Database className="h-5 w-5" />
           </div>
-        </div>
-        <CardBody className="space-y-4 p-5 sm:p-6">
-          {connectionMode !== 'cloud' ? (
-            <p className="rounded-xl bg-slate-50 px-4 py-3 text-sm text-slate-600 ring-1 ring-slate-200">
-              Activá primero <strong>Nube (Railway)</strong> arriba, guardá la URL y entrá con un
-              admin de la nube. Después volvé acá a migrar.
+          <div className="min-w-0 flex-1">
+            <h2 className="font-semibold text-slate-900">Migrar datos a la nube</h2>
+            <p className="mt-0.5 text-sm text-slate-500">
+              {migPanelOpen
+                ? 'Copia la base SQLite de esta PC hacia Postgres en Railway'
+                : 'Oculto · tocá para abrir (solo cuando haga falta)'}
             </p>
-          ) : !api?.exportLocalDatabase ? (
-            <p className="rounded-xl bg-amber-50 px-4 py-3 text-sm text-amber-800 ring-1 ring-amber-100">
-              La migración se hace desde la app de escritorio (lee el SQLite local).
-            </p>
-          ) : (
-            <>
-              <p className="text-sm leading-relaxed text-slate-600">
-                Esto <strong>reemplaza</strong> todos los datos actuales de la nube con los de esta
-                PC. Las imágenes de productos no se suben (quedan en el disco local por ahora).
-                Después cerrá sesión y entrá con un usuario de la base migrada.
+          </div>
+          <ChevronDown
+            className={cn(
+              'mt-2 h-5 w-5 shrink-0 text-slate-400 transition-transform',
+              migPanelOpen && 'rotate-180'
+            )}
+          />
+        </button>
+        {migPanelOpen && (
+          <CardBody className="space-y-4 p-5 sm:p-6">
+            {connectionMode !== 'cloud' ? (
+              <p className="rounded-xl bg-slate-50 px-4 py-3 text-sm text-slate-600 ring-1 ring-slate-200">
+                Activá primero <strong>Nube (Railway)</strong> arriba, guardá la URL y entrá con un
+                admin de la nube. Después volvé acá a migrar.
               </p>
-              <p className="text-xs text-slate-500">
-                Destino: <code className="font-mono text-slate-700">{getApiUrl()}</code>
+            ) : !api?.exportLocalDatabase ? (
+              <p className="rounded-xl bg-amber-50 px-4 py-3 text-sm text-amber-800 ring-1 ring-amber-100">
+                La migración se hace desde la app de escritorio (lee el SQLite local).
               </p>
-              <Input
-                label='Escribí MIGRAR para confirmar'
-                value={migConfirmacion}
-                onChange={(e) => setMigConfirmacion(e.target.value)}
-                placeholder="MIGRAR"
-                className="max-w-xs rounded-xl shadow-sm"
-                autoComplete="off"
-              />
-              <Button
-                type="button"
-                className="rounded-xl"
-                disabled={migrating || migConfirmacion.trim() !== 'MIGRAR'}
-                onClick={() => void migrarLocalANube()}
-              >
-                {migrating ? (
-                  <>
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                    Migrando…
-                  </>
-                ) : (
-                  <>
-                    <Database className="h-4 w-4" />
-                    Migrar SQLite local → nube
-                  </>
+            ) : (
+              <>
+                <p className="text-sm leading-relaxed text-slate-600">
+                  Esto <strong>reemplaza</strong> todos los datos actuales de la nube con los de esta
+                  PC. Las imágenes de productos no se suben (quedan en el disco local por ahora).
+                  Después cerrá sesión y entrá con un usuario de la base migrada.
+                </p>
+                <p className="text-xs text-slate-500">
+                  Destino: <code className="font-mono text-slate-700">{getApiUrl()}</code>
+                </p>
+                <Input
+                  label="Escribí MIGRAR para confirmar"
+                  value={migConfirmacion}
+                  onChange={(e) => setMigConfirmacion(e.target.value)}
+                  placeholder="MIGRAR"
+                  className="max-w-xs rounded-xl shadow-sm"
+                  autoComplete="off"
+                />
+                <Button
+                  type="button"
+                  className="rounded-xl"
+                  disabled={migrating || migConfirmacion.trim() !== 'MIGRAR'}
+                  onClick={() => void migrarLocalANube()}
+                >
+                  {migrating ? (
+                    <>
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      Migrando…
+                    </>
+                  ) : (
+                    <>
+                      <Database className="h-4 w-4" />
+                      Migrar SQLite local → nube
+                    </>
+                  )}
+                </Button>
+                {migOk && (
+                  <p className="rounded-xl bg-emerald-50 px-3 py-2.5 text-sm text-emerald-800 ring-1 ring-emerald-100">
+                    {migOk}
+                  </p>
                 )}
-              </Button>
-              {migOk && (
-                <p className="rounded-xl bg-emerald-50 px-3 py-2.5 text-sm text-emerald-800 ring-1 ring-emerald-100">
-                  {migOk}
-                </p>
-              )}
-              {migError && (
-                <p className="rounded-xl bg-red-50 px-3 py-2.5 text-sm text-red-800 ring-1 ring-red-100">
-                  {migError}
-                </p>
-              )}
-              {migCounts && (
-                <details className="rounded-xl border border-surface-border bg-slate-50/80 px-3 py-2 text-xs text-slate-600">
-                  <summary className="cursor-pointer font-semibold">Ver conteo de filas</summary>
-                  <ul className="mt-2 max-h-40 space-y-0.5 overflow-auto font-mono">
-                    {Object.entries(migCounts)
-                      .filter(([, n]) => n > 0)
-                      .map(([table, n]) => (
-                        <li key={table}>
-                          {table}: {n}
-                        </li>
-                      ))}
-                  </ul>
-                </details>
-              )}
-            </>
-          )}
-        </CardBody>
+                {migError && (
+                  <p className="rounded-xl bg-red-50 px-3 py-2.5 text-sm text-red-800 ring-1 ring-red-100">
+                    {migError}
+                  </p>
+                )}
+                {migCounts && (
+                  <details className="rounded-xl border border-surface-border bg-slate-50/80 px-3 py-2 text-xs text-slate-600">
+                    <summary className="cursor-pointer font-semibold">Ver conteo de filas</summary>
+                    <ul className="mt-2 max-h-40 space-y-0.5 overflow-auto font-mono">
+                      {Object.entries(migCounts)
+                        .filter(([, n]) => n > 0)
+                        .map(([table, n]) => (
+                          <li key={table}>
+                            {table}: {n}
+                          </li>
+                        ))}
+                    </ul>
+                  </details>
+                )}
+              </>
+            )}
+          </CardBody>
+        )}
       </Card>
 
       <Card className="overflow-hidden shadow-panel">

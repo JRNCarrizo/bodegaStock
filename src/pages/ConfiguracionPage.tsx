@@ -161,6 +161,7 @@ export function ConfiguracionPage() {
   const [savingNetwork, setSavingNetwork] = useState(false)
   const [copiedUrl, setCopiedUrl] = useState('')
   const [qrDataUrl, setQrDataUrl] = useState<string | null>(null)
+  const [cloudQrDataUrl, setCloudQrDataUrl] = useState<string | null>(null)
   const [phase, setPhase] = useState<UpdatePhase>('idle')
   const [availableVersion, setAvailableVersion] = useState('')
   const [releaseNotes, setReleaseNotes] = useState('')
@@ -429,6 +430,24 @@ export function ConfiguracionPage() {
       color: { dark: '#0f172a', light: '#ffffff' }
     }).then(setQrDataUrl)
   }, [primaryConnectionUrl, mode])
+
+  const cloudQrUrl = useMemo(() => {
+    if (connectionMode !== 'cloud') return ''
+    const raw = (cloudUrl || getApiUrl()).trim().replace(/\/$/, '')
+    return raw.startsWith('https://') ? raw : ''
+  }, [connectionMode, cloudUrl])
+
+  useEffect(() => {
+    if (!cloudQrUrl || !cloudLive) {
+      setCloudQrDataUrl(null)
+      return
+    }
+    void QRCode.toDataURL(cloudQrUrl, {
+      margin: 1,
+      width: 180,
+      color: { dark: '#0f172a', light: '#ffffff' }
+    }).then(setCloudQrDataUrl)
+  }, [cloudQrUrl, cloudLive])
 
   const handleStatus = useCallback((status: UpdateStatusPayload) => {
     switch (status.type) {
@@ -769,6 +788,43 @@ export function ConfiguracionPage() {
                       {cloudMessage}
                     </p>
                   )}
+                </div>
+              )}
+
+              {cloudLive && cloudQrDataUrl && cloudQrUrl && (
+                <div className="flex flex-wrap items-start gap-4 border-t border-surface-border px-4 py-4 sm:px-5">
+                  <img
+                    src={cloudQrDataUrl}
+                    alt={`QR de conexión nube ${cloudQrUrl}`}
+                    className="rounded-xl border border-surface-border bg-white p-2 shadow-sm"
+                  />
+                  <div className="min-w-0 space-y-1.5">
+                    <div className="flex items-center gap-2 text-sm font-semibold text-slate-900">
+                      <Smartphone className="h-4 w-4 text-brand-600" />
+                      QR para celulares (nube)
+                    </div>
+                    <p className="text-xs leading-relaxed text-slate-500">
+                      En la APK, login → Nube → “Escanear QR del PC” (o pegá la URL). El código es
+                      la URL guardada ahora; si cambia Railway, se actualiza solo.
+                    </p>
+                    <p className="inline-flex max-w-full break-all rounded-md bg-brand-50 px-2 py-1 font-mono text-xs text-brand-800 ring-1 ring-brand-100">
+                      {cloudQrUrl}
+                    </p>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="rounded-lg"
+                      onClick={() => void copiarUrl(cloudQrUrl)}
+                    >
+                      {copiedUrl === cloudQrUrl ? (
+                        <Check className="h-4 w-4 text-emerald-600" />
+                      ) : (
+                        <Copy className="h-4 w-4" />
+                      )}
+                      Copiar URL
+                    </Button>
+                  </div>
                 </div>
               )}
             </div>

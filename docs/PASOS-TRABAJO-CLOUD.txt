@@ -87,6 +87,8 @@ B2. Pegar la URL de Railway
 - Pegá https://TU-DOMINIO.up.railway.app (sin / al final).
 - Probar conexión → tiene que OK.
 - Guardar nube → tiene que decir “Conectada y guardada”.
+- Aparece un QR con esa URL (no está fijo: si cambia la URL, cambia el QR).
+- En la APK: login → Nube → “Escanear QR de la nube” (o pegar la URL a mano).
 
 
 B3. Login en la nube

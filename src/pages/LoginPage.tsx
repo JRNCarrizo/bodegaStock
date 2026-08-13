@@ -437,18 +437,16 @@ export function LoginPage() {
                     </>
                   )}
                   <div className="flex flex-col gap-2.5">
-                    {connMode === 'local' && (
-                      <Button
-                        type="button"
-                        variant="secondary"
-                        className="w-full border-slate-300 bg-slate-800 py-2.5 text-white shadow-sm hover:bg-slate-900 hover:text-white"
-                        disabled={testingServer}
-                        onClick={() => setShowServerQr(true)}
-                      >
-                        <Camera className="h-4 w-4" />
-                        Escanear QR del PC
-                      </Button>
-                    )}
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      className="w-full border-slate-300 bg-slate-800 py-2.5 text-white shadow-sm hover:bg-slate-900 hover:text-white"
+                      disabled={testingServer}
+                      onClick={() => setShowServerQr(true)}
+                    >
+                      <Camera className="h-4 w-4" />
+                      {connMode === 'cloud' ? 'Escanear QR de la nube' : 'Escanear QR del PC'}
+                    </Button>
                     <Button
                       type="button"
                       className="w-full py-2.5 shadow-sm"
@@ -574,7 +572,7 @@ export function LoginPage() {
           open={showServerQr}
           onClose={() => setShowServerQr(false)}
           onScan={handleServerQrScan}
-          title="Escanear QR del PC servidor"
+          title={connMode === 'cloud' ? 'Escanear QR de la nube' : 'Escanear QR del PC servidor'}
           variant="qr"
         />
       )}

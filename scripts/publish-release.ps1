@@ -1,5 +1,5 @@
 param(
-  [string]$Version = "0.3.33"
+  [string]$Version = "0.3.34"
 )
 
 $ErrorActionPreference = "Stop"
@@ -56,18 +56,11 @@ if (Test-Path $ymlPath) { $assets += (Resolve-Path $ymlPath).Path }
 $notes = @"
 ## ControlStock v$Version
 
-APK firmado instalable, QR de nube y mejor conexión APK↔Railway.
+Fix: URLs de Railway se reconocen como nube (HTTPS) aunque falte ``https://``.
 
-### Nuevo / mejorado
-- APK de release **firmado** (el 0.3.32 unsigned daba “paquete no válido”)
-- QR dinámico de la URL nube en Configuración; APK puede escanearlo
-- CapacitorHttp + timeouts más largos para Railway (cold start)
-- Configuración: **Red local** vs **Nube**; migrador SQLite→nube
-- Guía: ``docs/PASOS-TRABAJO-CLOUD.txt``
-
-### Notas
-- Modo local sigue por defecto
-- Fotos de productos aún no van a la nube
+### Corrección
+- Si pegás ``….up.railway.app`` sin ``https://``, ya no se fuerza ``:3847`` ni el mensaje de “modo servidor” local
+- Timeouts largos + reintento para cold start de Railway (como en 0.3.33)
 
 ### Actualización
 - Desde **v0.2.7 o superior:** Configuración → Buscar actualizaciones

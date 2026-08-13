@@ -11,9 +11,14 @@ export function isNativeApp(): boolean {
   return Capacitor.isNativePlatform()
 }
 
-/** Normaliza host/IP/URL sin barra final. HTTPS no fuerza :3847. */
+function isCloudHostname(hostname: string): boolean {
+  const h = hostname.toLowerCase()
+  return h.endsWith('.railway.app') || h.endsWith('.up.railway.app')
+}
+
+/** Normaliza host/IP/URL sin barra final. HTTPS / Railway no fuerza :3847. */
 export function normalizeServerUrl(raw: string, defaultPort = 3847): string {
-  const value = raw.trim()
+  const value = raw.trim().replace(/\/+$/, '')
   if (!value) throw new Error('Ingresá la IP o URL del servidor')
 
   let url: URL
@@ -25,13 +30,15 @@ export function normalizeServerUrl(raw: string, defaultPort = 3847): string {
 
   if (!url.hostname) throw new Error('URL o IP inválida')
 
-  const protocol = url.protocol === 'https:' ? 'https:' : 'http:'
-  if (protocol === 'https:') {
-    return url.port ? `${protocol}//${url.hostname}:${url.port}` : `${protocol}//${url.hostname}`
+  // Railway u hosts nube: siempre HTTPS (sin :3847), aunque peguen sin esquema o con http://
+  if (isCloudHostname(url.hostname) || url.protocol === 'https:') {
+    return url.port
+      ? `https://${url.hostname}:${url.port}`
+      : `https://${url.hostname}`
   }
 
   const port = url.port || String(defaultPort)
-  return `${protocol}//${url.hostname}:${port}`
+  return `http://${url.hostname}:${port}`
 }
 
 export async function loadConnectionMode(): Promise<ConnectionMode> {

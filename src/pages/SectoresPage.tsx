@@ -13,6 +13,7 @@ import {
   Warehouse
 } from 'lucide-react'
 import { formatCantidad } from '@/lib/desglose'
+import { searchDelayMs } from '@/lib/searchDelay'
 import { api, cn } from '@/lib/utils'
 import type { Sector, SectorForm, SectorUbicacion } from '@/types'
 import { useAuth } from '@/context/AuthContext'
@@ -420,7 +421,7 @@ export function SectoresPage() {
   }, [])
 
   useEffect(() => {
-    const timer = setTimeout(() => load(search), 300)
+    const timer = setTimeout(() => load(search), searchDelayMs(search))
     return () => clearTimeout(timer)
   }, [search, load])
 

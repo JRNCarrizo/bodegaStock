@@ -1,7 +1,11 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import {
+  AlertCircle,
+  AlertTriangle,
+  Box,
   Camera,
   Check,
+  CheckCircle2,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
@@ -32,6 +36,7 @@ import { Card, CardBody } from '@/components/ui/Card'
 import { ProductImage } from '@/components/ProductImage'
 import { formatCantidad, formatDayTabLabel, formatTotalCajas, todayIsoDate } from '@/lib/desglose'
 import { downloadApiFile } from '@/lib/downloadFile'
+import { searchDelayMs } from '@/lib/searchDelay'
 import { api, cn } from '@/lib/utils'
 import { codigoProductoExacto } from '@/lib/productoSearch'
 import type {
@@ -47,6 +52,7 @@ import type {
 } from '@/types'
 import { useAuth } from '@/context/AuthContext'
 import { useEscHandler } from '@/hooks/useEscHandler'
+import { useProductoQuickSearch } from '@/hooks/useProductoQuickSearch'
 import { useRegistroListKeyboard } from '@/hooks/useRegistroListKeyboard'
 
 const ESTADOS_CONDICION: { value: RetornoEstadoCondicion; label: string }[] = [
@@ -94,23 +100,42 @@ function filaRetornoClass(estado: 'PENDIENTE' | 'VERIFICADO') {
 function badgeCondicion(condicion: RetornoEstadoCondicion) {
   if (condicion === 'BUEN_ESTADO') {
     return (
-      <span className="inline-flex items-center rounded-full bg-green-50 px-2.5 py-0.5 text-xs font-medium text-green-800 ring-1 ring-green-100">
+      <span className="inline-flex items-center gap-1 rounded-full bg-green-50 px-2.5 py-0.5 text-xs font-medium text-green-800 ring-1 ring-green-100">
+        <CheckCircle2 className="h-3 w-3 shrink-0" aria-hidden />
         {labelEstado(condicion)}
       </span>
     )
   }
   if (condicion === 'INCOMPLETA') {
     return (
-      <span className="inline-flex items-center rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-medium text-slate-700 ring-1 ring-surface-border">
+      <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-medium text-slate-700 ring-1 ring-surface-border">
+        <AlertCircle className="h-3 w-3 shrink-0" aria-hidden />
         {labelEstado(condicion)}
       </span>
     )
   }
   return (
-    <span className="inline-flex items-center rounded-full bg-red-50 px-2.5 py-0.5 text-xs font-medium text-red-800 ring-1 ring-red-100">
+    <span className="inline-flex items-center gap-1 rounded-full bg-red-50 px-2.5 py-0.5 text-xs font-medium text-red-800 ring-1 ring-red-100">
+      <AlertTriangle className="h-3 w-3 shrink-0" aria-hidden />
       {labelEstado(condicion)}
     </span>
   )
+}
+
+function EstadoCondicionIcon({
+  value,
+  className
+}: {
+  value: RetornoEstadoCondicion
+  className?: string
+}) {
+  if (value === 'BUEN_ESTADO') {
+    return <CheckCircle2 className={cn('text-emerald-600', className)} aria-hidden />
+  }
+  if (value === 'INCOMPLETA') {
+    return <AlertCircle className={cn('text-amber-600', className)} aria-hidden />
+  }
+  return <AlertTriangle className={cn('text-red-600', className)} aria-hidden />
 }
 
 function labelCamionero(numero: string | null | undefined, nombre: string | null | undefined): string {
@@ -212,9 +237,15 @@ export function RetornosPage() {
   const [sectores, setSectores] = useState<Sector[]>([])
 
   const [productSearch, setProductSearch] = useState('')
-  const [productResults, setProductResults] = useState<Producto[]>([])
   const [productHighlightIndex, setProductHighlightIndex] = useState(-1)
   const [selectedProduct, setSelectedProduct] = useState<Producto | null>(null)
+  const {
+    results: productResults,
+    setResults: setProductResults
+  } = useProductoQuickSearch(productSearch, {
+    enabled: !selectedProduct,
+    limit: 12
+  })
   const [cantidadCajas, setCantidadCajas] = useState('')
   const [estadoCondicion, setEstadoCondicion] = useState<RetornoEstadoCondicion>('BUEN_ESTADO')
   const [lineSectorId, setLineSectorId] = useState('')
@@ -430,7 +461,7 @@ export function RetornosPage() {
 
   useEffect(() => {
     if (view !== 'list') return
-    const timer = setTimeout(() => loadRetornos(), 300)
+    const timer = setTimeout(() => loadRetornos(), searchDelayMs(listSearch))
     return () => clearTimeout(timer)
   }, [view, loadRetornos])
 
@@ -449,24 +480,6 @@ export function RetornosPage() {
       .then((data) => setVehiculos(data.filter((v) => v.activo)))
       .catch(() => setVehiculos([]))
   }, [camioneroId])
-
-  useEffect(() => {
-    if (!productSearch.trim()) {
-      setProductResults([])
-      return
-    }
-    const timer = setTimeout(async () => {
-      try {
-        const data = await api<Producto[]>(
-          `/api/productos?q=${encodeURIComponent(productSearch.trim())}&activo=1`
-        )
-        setProductResults(data)
-      } catch {
-        setProductResults([])
-      }
-    }, 250)
-    return () => clearTimeout(timer)
-  }, [productSearch])
 
   function resetCreateForm() {
     setCreatePhase('datos')
@@ -1706,9 +1719,14 @@ export function RetornosPage() {
                     className="h-11 w-11 rounded-xl ring-1 ring-surface-border"
                   />
                   <div className="min-w-0 flex-1">
-                    <span className="inline-flex rounded-md bg-white px-2 py-0.5 font-mono text-xs font-semibold text-slate-700 ring-1 ring-surface-border">
-                      {selectedProduct.codigo_interno}
-                    </span>
+                    <div className="flex items-center gap-2">
+                      <span className="inline-flex rounded-md bg-white px-2 py-0.5 font-mono text-xs font-semibold text-slate-700 ring-1 ring-surface-border">
+                        {selectedProduct.codigo_interno}
+                      </span>
+                      <p className="ml-auto shrink-0 text-[10px] font-semibold uppercase tracking-wide text-brand-600">
+                        Nueva línea
+                      </p>
+                    </div>
                     <p className="mt-1 truncate text-sm font-semibold text-slate-900">
                       {selectedProduct.nombre}
                     </p>
@@ -1727,7 +1745,7 @@ export function RetornosPage() {
                   </button>
                 </div>
 
-                <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-5">
+                <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-5">
                   <Input
                     ref={cantidadRef}
                     label="Cant. cajas"
@@ -1741,68 +1759,107 @@ export function RetornosPage() {
                         focusField(estadoRef)
                       }
                     }}
+                    placeholder="1"
+                    leading={<Box className="h-4 w-4 text-amber-600" aria-hidden />}
                     className="[&_label]:text-xs"
                   />
-                  <div>
-                    <label className="mb-0.5 block text-xs font-medium text-slate-600">Estado</label>
-                    <select
-                      ref={estadoRef}
-                      value={estadoCondicion}
-                      onChange={(e) => setEstadoCondicion(e.target.value as RetornoEstadoCondicion)}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter') {
-                          e.preventDefault()
-                          focusField(lineSectorRef)
-                        }
-                      }}
-                      className="w-full rounded-lg border border-surface-border px-2 py-1.5 text-sm"
-                    >
-                      {ESTADOS_CONDICION.map((e) => (
-                        <option key={e.value} value={e.value}>
-                          {e.label}
-                        </option>
-                      ))}
-                    </select>
+                  <div className="space-y-1.5">
+                    <label className="flex items-center gap-1.5 text-xs font-medium text-slate-600">
+                      <EstadoCondicionIcon value={estadoCondicion} className="h-3.5 w-3.5" />
+                      Estado
+                    </label>
+                    <div className="relative">
+                      <div className="pointer-events-none absolute inset-y-0 left-0 z-[1] flex items-center pl-2.5">
+                        <EstadoCondicionIcon value={estadoCondicion} className="h-4 w-4" />
+                      </div>
+                      <select
+                        ref={estadoRef}
+                        value={estadoCondicion}
+                        onChange={(e) => setEstadoCondicion(e.target.value as RetornoEstadoCondicion)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault()
+                            focusField(lineSectorRef)
+                          }
+                        }}
+                        className={cn(
+                          'w-full rounded-lg border border-surface-border bg-white py-2 pl-9 pr-3 text-sm',
+                          'focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20',
+                          estadoCondicion === 'BUEN_ESTADO' && 'text-emerald-800',
+                          estadoCondicion === 'INCOMPLETA' && 'text-amber-800',
+                          estadoCondicion === 'MAL_ESTADO' && 'text-red-800'
+                        )}
+                      >
+                        {ESTADOS_CONDICION.map((e) => (
+                          <option key={e.value} value={e.value}>
+                            {e.label}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
                   </div>
-                  <div>
-                    <label className="mb-0.5 block text-xs font-medium text-slate-600">Sector destino</label>
-                    <select
-                      ref={lineSectorRef}
-                      value={lineSectorId || sectorDefaultParaLinea()}
-                      onChange={(e) => setLineSectorId(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter') {
-                          e.preventDefault()
-                          agregarLineaYContinuar()
-                        }
-                      }}
-                      className="w-full rounded-lg border border-surface-border px-2 py-1.5 text-sm"
-                    >
-                      {sectores.map((s) => (
-                        <option key={s.id} value={s.id}>
-                          {s.nombre}
-                        </option>
-                      ))}
-                    </select>
+                  <div className="space-y-1.5">
+                    <label className="flex items-center gap-1.5 text-xs font-medium text-slate-600">
+                      <Warehouse className="h-3.5 w-3.5 text-slate-400" aria-hidden />
+                      Sector destino
+                    </label>
+                    <div className="relative">
+                      <div className="pointer-events-none absolute inset-y-0 left-0 z-[1] flex items-center pl-2.5 text-slate-400">
+                        <Warehouse className="h-4 w-4" aria-hidden />
+                      </div>
+                      <select
+                        ref={lineSectorRef}
+                        value={lineSectorId || sectorDefaultParaLinea()}
+                        onChange={(e) => setLineSectorId(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault()
+                            agregarLineaYContinuar()
+                          }
+                        }}
+                        className="w-full rounded-lg border border-surface-border bg-white py-2 pl-9 pr-3 text-sm focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20"
+                      >
+                        {sectores.map((s) => (
+                          <option key={s.id} value={s.id}>
+                            {s.nombre}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
                   </div>
                   <div className="col-span-2 flex items-end sm:col-span-1">
                     <Button
                       type="button"
                       size="sm"
-                      className="w-full rounded-xl"
+                      className="h-[2.625rem] w-full rounded-xl"
                       onClick={agregarLineaYContinuar}
                     >
                       <Plus className="h-4 w-4" />
-                      Enter ↵
+                      Agregar ↵
                     </Button>
                   </div>
                 </div>
-                <p className="mt-3 text-xs leading-relaxed text-slate-500">
-                  Enter en el último campo agrega la línea y vuelve al buscador. Solo mercadería en{' '}
-                  <span className="font-medium text-slate-600">buen estado</span>{' '}
-                  {dobleVerificacion
-                    ? 'suma stock al verificar.'
-                    : 'suma stock al confirmar el retorno.'}
+                <p className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs leading-relaxed text-slate-500">
+                  <span className="inline-flex items-center gap-1">
+                    <Box className="h-3 w-3 text-amber-600" aria-hidden />
+                    cajas
+                  </span>
+                  <span className="inline-flex items-center gap-1">
+                    <CheckCircle2 className="h-3 w-3 text-emerald-600" aria-hidden />
+                    buen estado
+                  </span>
+                  <span className="inline-flex items-center gap-1">
+                    <Warehouse className="h-3 w-3 text-slate-400" aria-hidden />
+                    destino
+                  </span>
+                  <span className="text-slate-400">·</span>
+                  <span>
+                    Enter en el último campo agrega la línea. Solo mercadería en{' '}
+                    <span className="font-medium text-slate-600">buen estado</span>{' '}
+                    {dobleVerificacion
+                      ? 'suma stock al verificar.'
+                      : 'suma stock al confirmar el retorno.'}
+                  </span>
                 </p>
               </div>
             )}

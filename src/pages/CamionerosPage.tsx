@@ -10,6 +10,7 @@ import {
   Trash2,
   Truck
 } from 'lucide-react'
+import { searchDelayMs } from '@/lib/searchDelay'
 import { api, cn } from '@/lib/utils'
 import type { Camionero, CamioneroForm, CamioneroVehiculo } from '@/types'
 import { useAuth } from '@/context/AuthContext'
@@ -392,7 +393,7 @@ export function CamionerosPage() {
   }, [])
 
   useEffect(() => {
-    const timer = setTimeout(() => load(search), 300)
+    const timer = setTimeout(() => load(search), searchDelayMs(search))
     return () => clearTimeout(timer)
   }, [search, load])
 

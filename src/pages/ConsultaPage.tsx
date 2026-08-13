@@ -23,6 +23,7 @@ import { SueltoStockHint } from '@/components/SueltoStockHint'
 import { formatCantidad } from '@/lib/desglose'
 import { downloadApiFile } from '@/lib/downloadFile'
 import { scrollElementFullyIntoView, focusAndScrollIntoView } from '@/lib/scroll'
+import { searchDelayMs } from '@/lib/searchDelay'
 import { api, cn } from '@/lib/utils'
 import type {
   ConsultaDetalle,
@@ -557,7 +558,7 @@ export function ConsultaPage() {
 
   useEffect(() => {
     if (modo !== 'producto') return
-    const timer = setTimeout(() => buscar(search), 350)
+    const timer = setTimeout(() => buscar(search), searchDelayMs(search))
     return () => clearTimeout(timer)
   }, [search, buscar, modo])
 

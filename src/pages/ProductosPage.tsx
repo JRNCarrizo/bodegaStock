@@ -19,6 +19,7 @@ import { BarcodePrintModal } from '@/components/BarcodePrintModal'
 import { BarcodeScannerModal } from '@/components/BarcodeScannerModal'
 import { downloadApiFile } from '@/lib/downloadFile'
 import { parseBotellasPorCajaFromNombre } from '@/lib/empaqueNombre'
+import { searchDelayMs } from '@/lib/searchDelay'
 import { api } from '@/lib/utils'
 import { prepareProductImage } from '@/lib/image'
 import type { Producto, ProductoForm } from '@/types'
@@ -231,7 +232,7 @@ export function ProductosPage() {
   }, [view])
 
   useEffect(() => {
-    const timer = setTimeout(() => load(search, page), 300)
+    const timer = setTimeout(() => load(search, page), searchDelayMs(search))
     return () => clearTimeout(timer)
   }, [search, page, load])
 

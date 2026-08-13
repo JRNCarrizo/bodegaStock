@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { ChevronRight, Layers, Loader2, Search, Warehouse } from 'lucide-react'
 import { formatCantidad } from '@/lib/desglose'
 import { focusAndScrollIntoView } from '@/lib/scroll'
+import { searchDelayMs } from '@/lib/searchDelay'
 import { api, cn } from '@/lib/utils'
 import type { Sector } from '@/types'
 import { SectorStockView } from '@/components/SectorStockView'
@@ -39,7 +40,7 @@ export function ConsultaPorSectorPanel({
   }, [])
 
   useEffect(() => {
-    const timer = setTimeout(() => load(search), 300)
+    const timer = setTimeout(() => load(search), searchDelayMs(search))
     return () => clearTimeout(timer)
   }, [search, load])
 

@@ -1,5 +1,5 @@
 param(
-  [string]$Version = "0.3.34"
+  [string]$Version = "0.3.35"
 )
 
 $ErrorActionPreference = "Stop"
@@ -45,7 +45,6 @@ if (-not $exePath) {
 }
 
 $exe = (Resolve-Path $exePath).Path
-$exeName = Split-Path $exe -Leaf
 
 $apkPath = Join-Path $root "release\ControlStock-$Version.apk"
 $assets = @($exe)
@@ -56,11 +55,13 @@ if (Test-Path $ymlPath) { $assets += (Resolve-Path $ymlPath).Path }
 $notes = @"
 ## ControlStock v$Version
 
-Fix: URLs de Railway se reconocen como nube (HTTPS) aunque falte ``https://``.
+UX de carga: buscadores más rápidos, iconos en formularios y teclado en movimientos/ingresos.
 
-### Corrección
-- Si pegás ``….up.railway.app`` sin ``https://``, ya no se fuerza ``:3847`` ni el mensaje de “modo servidor” local
-- Timeouts largos + reintento para cold start de Railway (como en 0.3.33)
+### Mejoras
+- Búsqueda más reactiva en planillas, ingresos, retornos, roturas, consulta, productos, sectores, camioneros e inventario
+- Iconos y layout más claro en líneas de retornos, planillas y roturas
+- Ingresos: Enter avanza Destino → Ubicación → buscador; lista de productos en una sola fila
+- Movimientos: Enter en listado crea/continúa lista; en editor Origen → ubicaciones → Destino → buscador
 
 ### Actualización
 - Desde **v0.2.7 o superior:** Configuración → Buscar actualizaciones

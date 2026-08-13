@@ -1,4 +1,4 @@
-﻿import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+﻿import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, forwardRef } from 'react'
 import {
   ArrowLeftRight,
   Box,
@@ -39,6 +39,7 @@ import {
   todayIsoDate,
   totalSueltoLineaConteo
 } from '@/lib/desglose'
+import { searchDelayMs } from '@/lib/searchDelay'
 import { api, cn } from '@/lib/utils'
 import { codigoProductoExacto } from '@/lib/productoSearch'
 import type {
@@ -187,6 +188,8 @@ export function MovimientosPage() {
   const productResultsListRef = useRef<HTMLUListElement>(null)
   const origenRef = useRef<HTMLSelectElement>(null)
   const destinoRef = useRef<HTMLSelectElement>(null)
+  const ubicacionOrigenRef = useRef<HTMLSelectElement>(null)
+  const ubicacionDestinoRef = useRef<HTMLSelectElement>(null)
 
   const lineasEditor = detalle?.lineas ?? []
   const lineasActivasEditor = useMemo(
@@ -422,7 +425,7 @@ export function MovimientosPage() {
       } finally {
         setSearchingProducts(false)
       }
-    }, 300)
+    }, searchDelayMs(productSearch))
     return () => clearTimeout(t)
   }, [view, origenId, productSearch, detalle?.movimiento.id, detalle?.lineas])
 
@@ -502,6 +505,54 @@ export function MovimientosPage() {
     listSearchRef.current?.focus({ preventScroll: true })
   }
 
+  function focusEditorOrigen() {
+    origenRef.current?.focus({ preventScroll: true })
+  }
+
+  function handleEditorOrigenKeyDown(e: React.KeyboardEvent<HTMLSelectElement>) {
+    if (e.key !== 'Enter') return
+    e.preventDefault()
+    if (!origenId) {
+      setError('Seleccioná el sector origen')
+      return
+    }
+    setError('')
+    if (sectorUsaUbicaciones(Number(origenId))) {
+      focusField(ubicacionOrigenRef)
+      return
+    }
+    focusField(destinoRef)
+  }
+
+  function handleEditorUbicacionOrigenKeyDown(e: React.KeyboardEvent<HTMLSelectElement>) {
+    if (e.key !== 'Enter') return
+    e.preventDefault()
+    setError('')
+    focusField(destinoRef)
+  }
+
+  function handleEditorDestinoKeyDown(e: React.KeyboardEvent<HTMLSelectElement>) {
+    if (e.key !== 'Enter') return
+    e.preventDefault()
+    if (!destinoId) {
+      setError('Seleccioná el sector destino')
+      return
+    }
+    setError('')
+    if (sectorUsaUbicaciones(Number(destinoId))) {
+      focusField(ubicacionDestinoRef)
+      return
+    }
+    focusProductSearch()
+  }
+
+  function handleEditorUbicacionDestinoKeyDown(e: React.KeyboardEvent<HTMLSelectElement>) {
+    if (e.key !== 'Enter') return
+    e.preventDefault()
+    setError('')
+    focusProductSearch()
+  }
+
   useEffect(() => {
     if (view !== 'list') return
     const timer = setTimeout(focusListSearch, 0)
@@ -510,7 +561,7 @@ export function MovimientosPage() {
 
   useEffect(() => {
     if (view !== 'editor') return
-    const timer = setTimeout(focusProductSearch, 0)
+    const timer = setTimeout(focusEditorOrigen, 0)
     return () => clearTimeout(timer)
   }, [view, detalle?.movimiento.id])
 
@@ -1180,10 +1231,9 @@ export function MovimientosPage() {
     enabled: view === 'list',
     items: movimientosDelDia,
     listSearchRef,
-    enterPrioritizesListNavigation: true,
-    onEnterFromSearch: () => {
-      listSearchRef.current?.blur()
-      if (hasPermiso('movimientos_internos.crear')) void abrirListaEditor()
+    canCreate: hasPermiso('movimientos_internos.crear'),
+    onCreate: () => {
+      void abrirListaEditor()
     },
     onOpenDetail: (m) => {
       void abrirDetalle(m.id)
@@ -1735,6 +1785,7 @@ export function MovimientosPage() {
                   aria-label="Origen"
                   value={origenId}
                   onChange={(e) => setOrigenId(e.target.value)}
+                  onKeyDown={handleEditorOrigenKeyDown}
                   className="min-w-0 flex-1 border-0 bg-transparent py-2 pl-2 pr-3 text-sm focus:outline-none"
                 >
                   <option value="">Elegir…</option>
@@ -1749,11 +1800,13 @@ export function MovimientosPage() {
                 <div className="flex min-w-[9.5rem] flex-1 items-center rounded-xl border border-surface-border bg-white shadow-sm focus-within:border-brand-500 focus-within:ring-2 focus-within:ring-brand-500/20">
                   <span className="shrink-0 pl-3 text-xs font-medium text-slate-400">Ub. origen</span>
                   <UbicacionOrigenSelect
+                    ref={ubicacionOrigenRef}
                     sectorId={Number(origenId)}
                     value={ubicacionOrigenId ? Number(ubicacionOrigenId) : null}
                     emptyLabel="Sin ub."
                     className="min-w-0 flex-1 border-0 bg-transparent py-2 pl-2 pr-3 text-sm shadow-none focus:outline-none"
                     onChange={(id) => setUbicacionOrigenId(id ? String(id) : '')}
+                    onKeyDown={handleEditorUbicacionOrigenKeyDown}
                   />
                 </div>
               )}
@@ -1764,6 +1817,7 @@ export function MovimientosPage() {
                   aria-label="Destino"
                   value={destinoId}
                   onChange={(e) => setDestinoId(e.target.value)}
+                  onKeyDown={handleEditorDestinoKeyDown}
                   className="min-w-0 flex-1 border-0 bg-transparent py-2 pl-2 pr-3 text-sm focus:outline-none"
                 >
                   <option value="">Elegir…</option>
@@ -1781,11 +1835,13 @@ export function MovimientosPage() {
                 <div className="flex min-w-[9.5rem] flex-1 items-center rounded-xl border border-surface-border bg-white shadow-sm focus-within:border-brand-500 focus-within:ring-2 focus-within:ring-brand-500/20">
                   <span className="shrink-0 pl-3 text-xs font-medium text-slate-400">Ub. destino</span>
                   <UbicacionDestinoSelect
+                    ref={ubicacionDestinoRef}
                     sectorId={Number(destinoId)}
                     value={ubicacionDestinoId ? Number(ubicacionDestinoId) : null}
                     emptyLabel="Sin ub."
                     className="min-w-0 flex-1 border-0 bg-transparent py-2 pl-2 pr-3 text-sm shadow-none focus:outline-none"
                     onChange={(id) => setUbicacionDestinoId(id ? String(id) : '')}
+                    onKeyDown={handleEditorUbicacionDestinoKeyDown}
                   />
                 </div>
               )}
@@ -2282,9 +2338,7 @@ export function MovimientosPage() {
         {hasPermiso('movimientos_internos.crear') && (
           <div className="flex flex-col items-stretch gap-2 sm:items-end">
             <p className="text-xs text-slate-400 sm:text-right">
-              {movimientosDelDia.length > 0
-                ? 'Enter o ↓ en movimientos · Enter abre detalle'
-                : 'Enter → abrir lista'}
+              Enter → {tieneListaAbierta ? 'continuar lista' : 'crear lista'} · ↓ navega movimientos
             </p>
             <Button
               type="button"
@@ -2485,21 +2539,29 @@ export function MovimientosPage() {
   )
 }
 
-function UbicacionDestinoSelect({
-  sectorId,
-  value,
-  disabled = false,
-  className = '',
-  emptyLabel = 'Sin ubicación',
-  onChange
-}: {
-  sectorId: number
-  value: number | null
-  disabled?: boolean
-  className?: string
-  emptyLabel?: string
-  onChange: (id: number | null) => void
-}) {
+const UbicacionDestinoSelect = forwardRef<
+  HTMLSelectElement,
+  {
+    sectorId: number
+    value: number | null
+    disabled?: boolean
+    className?: string
+    emptyLabel?: string
+    onChange: (id: number | null) => void
+    onKeyDown?: React.KeyboardEventHandler<HTMLSelectElement>
+  }
+>(function UbicacionDestinoSelect(
+  {
+    sectorId,
+    value,
+    disabled = false,
+    className = '',
+    emptyLabel = 'Sin ubicación',
+    onChange,
+    onKeyDown
+  },
+  ref
+) {
   const [opciones, setOpciones] = useState<SectorUbicacion[]>([])
 
   useEffect(() => {
@@ -2510,9 +2572,11 @@ function UbicacionDestinoSelect({
 
   return (
     <select
+      ref={ref}
       value={value ?? ''}
       disabled={disabled}
       onChange={(e) => onChange(e.target.value ? Number(e.target.value) : null)}
+      onKeyDown={onKeyDown}
       className={`rounded border border-surface-border px-2 py-1.5 text-sm disabled:cursor-not-allowed disabled:bg-slate-50 disabled:opacity-70 ${className}`}
     >
       <option value="">{emptyLabel}</option>
@@ -2523,31 +2587,19 @@ function UbicacionDestinoSelect({
       ))}
     </select>
   )
-}
+})
 
-function UbicacionOrigenSelect({
-  sectorId,
-  value,
-  disabled = false,
-  className = '',
-  emptyLabel,
-  onChange
-}: {
-  sectorId: number
-  value: number | null
-  disabled?: boolean
-  className?: string
-  emptyLabel?: string
-  onChange: (id: number | null) => void
-}) {
-  return (
-    <UbicacionDestinoSelect
-      sectorId={sectorId}
-      value={value}
-      disabled={disabled}
-      className={className}
-      emptyLabel={emptyLabel}
-      onChange={onChange}
-    />
-  )
-}
+const UbicacionOrigenSelect = forwardRef<
+  HTMLSelectElement,
+  {
+    sectorId: number
+    value: number | null
+    disabled?: boolean
+    className?: string
+    emptyLabel?: string
+    onChange: (id: number | null) => void
+    onKeyDown?: React.KeyboardEventHandler<HTMLSelectElement>
+  }
+>(function UbicacionOrigenSelect(props, ref) {
+  return <UbicacionDestinoSelect ref={ref} {...props} />
+})

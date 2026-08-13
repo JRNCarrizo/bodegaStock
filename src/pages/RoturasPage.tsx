@@ -2,6 +2,7 @@ import { useLocation } from 'react-router-dom'
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import {
   AlertTriangle,
+  Box,
   Camera,
   Check,
   ChevronDown,
@@ -15,6 +16,7 @@ import {
   Search,
   Trash2,
   User,
+  Warehouse,
   X
 } from 'lucide-react'
 import { BarcodeScannerModal } from '@/components/BarcodeScannerModal'
@@ -30,6 +32,7 @@ import { Card, CardBody } from '@/components/ui/Card'
 import { ProductImage } from '@/components/ProductImage'
 import { formatCantidad, formatDayTabLabel, formatTotalCajas, todayIsoDate } from '@/lib/desglose'
 import { downloadApiFile } from '@/lib/downloadFile'
+import { searchDelayMs } from '@/lib/searchDelay'
 import { api, cn } from '@/lib/utils'
 import type {
   Producto,
@@ -41,6 +44,7 @@ import type {
 } from '@/types'
 import { useAuth } from '@/context/AuthContext'
 import { useEscHandler } from '@/hooks/useEscHandler'
+import { useProductoQuickSearch } from '@/hooks/useProductoQuickSearch'
 import { useRegistroListKeyboard } from '@/hooks/useRegistroListKeyboard'
 
 function newTempId(): string {
@@ -68,9 +72,15 @@ export function RoturasPage() {
   const [sectores, setSectores] = useState<Sector[]>([])
 
   const [productSearch, setProductSearch] = useState('')
-  const [productResults, setProductResults] = useState<Producto[]>([])
   const [productHighlightIndex, setProductHighlightIndex] = useState(-1)
   const [selectedProduct, setSelectedProduct] = useState<Producto | null>(null)
+  const {
+    results: productResults,
+    setResults: setProductResults
+  } = useProductoQuickSearch(productSearch, {
+    enabled: !selectedProduct,
+    limit: 12
+  })
   const [cantidadCajas, setCantidadCajas] = useState('')
   const [lineSectorId, setLineSectorId] = useState('')
   const [stockDisponible, setStockDisponible] = useState<number | null>(null)
@@ -175,7 +185,7 @@ export function RoturasPage() {
 
   useEffect(() => {
     if (view !== 'list') return
-    const timer = setTimeout(() => loadRoturas(), 300)
+    const timer = setTimeout(() => loadRoturas(), searchDelayMs(listSearch))
     return () => clearTimeout(timer)
   }, [view, loadRoturas])
 
@@ -198,24 +208,6 @@ export function RoturasPage() {
   useEffect(() => {
     api<Sector[]>('/api/sectores?activo=1').then(setSectores).catch(() => {})
   }, [])
-
-  useEffect(() => {
-    if (!productSearch.trim()) {
-      setProductResults([])
-      return
-    }
-    const timer = setTimeout(async () => {
-      try {
-        const data = await api<Producto[]>(
-          `/api/productos?q=${encodeURIComponent(productSearch.trim())}&activo=1`
-        )
-        setProductResults(data)
-      } catch {
-        setProductResults([])
-      }
-    }, 250)
-    return () => clearTimeout(timer)
-  }, [productSearch])
 
   useEffect(() => {
     if (!selectedProduct || !lineSectorId) {
@@ -818,10 +810,17 @@ export function RoturasPage() {
                     className="h-11 w-11 rounded-xl ring-1 ring-surface-border"
                   />
                   <div className="min-w-0 flex-1">
-                    <span className="inline-flex rounded-md bg-white px-2 py-0.5 font-mono text-xs font-semibold text-slate-700 ring-1 ring-surface-border">
-                      {selectedProduct.codigo_interno}
-                    </span>
-                    <p className="mt-1 truncate text-sm font-semibold text-slate-900">{selectedProduct.nombre}</p>
+                    <div className="flex items-center gap-2">
+                      <span className="inline-flex rounded-md bg-white px-2 py-0.5 font-mono text-xs font-semibold text-slate-700 ring-1 ring-surface-border">
+                        {selectedProduct.codigo_interno}
+                      </span>
+                      <p className="ml-auto shrink-0 text-[10px] font-semibold uppercase tracking-wide text-red-600">
+                        Nueva línea
+                      </p>
+                    </div>
+                    <p className="mt-1 truncate text-sm font-semibold text-slate-900">
+                      {selectedProduct.nombre}
+                    </p>
                   </div>
                   <button
                     type="button"
@@ -836,55 +835,85 @@ export function RoturasPage() {
                     <X className="h-4 w-4" />
                   </button>
                 </div>
-                <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-                  <Input
-                    ref={cantidadRef}
-                    label="Cant. cajas"
-                    type="number"
-                    min="1"
-                    value={cantidadCajas}
-                    onChange={(e) => setCantidadCajas(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') {
-                        e.preventDefault()
-                        focusField(lineSectorRef)
-                      }
-                    }}
-                    className="[&_label]:text-xs"
-                  />
-                  <div>
-                    <label className="mb-0.5 block text-xs font-medium text-slate-600">Sector</label>
-                    <select
-                      ref={lineSectorRef}
-                      value={lineSectorId}
-                      onChange={(e) => setLineSectorId(e.target.value)}
+
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:gap-3">
+                  <div className="w-full sm:w-[7.75rem] sm:shrink-0">
+                    <Input
+                      ref={cantidadRef}
+                      label="Cant. cajas"
+                      type="number"
+                      min="1"
+                      value={cantidadCajas}
+                      onChange={(e) => setCantidadCajas(e.target.value)}
                       onKeyDown={(e) => {
                         if (e.key === 'Enter') {
                           e.preventDefault()
-                          agregarLineaYContinuar()
+                          focusField(lineSectorRef)
                         }
                       }}
-                      className="w-full rounded-lg border border-surface-border px-2 py-1.5 text-sm"
-                    >
-                      <option value="">Seleccionar...</option>
-                      {sectores.map((s) => (
-                        <option key={s.id} value={s.id}>
-                          {s.nombre}
-                        </option>
-                      ))}
-                    </select>
+                      placeholder="1"
+                      leading={<Box className="h-4 w-4 text-amber-600" aria-hidden />}
+                      className="[&_label]:text-xs"
+                    />
                   </div>
-                  <div className="col-span-2 flex items-end sm:col-span-1">
-                    <Button type="button" size="sm" className="w-full rounded-xl" onClick={agregarLineaYContinuar}>
+                  <div className="min-w-0 flex-1 space-y-1.5 sm:max-w-[16rem]">
+                    <label className="flex items-center gap-1.5 text-xs font-medium text-slate-600">
+                      <Warehouse className="h-3.5 w-3.5 text-slate-400" aria-hidden />
+                      Sector
+                    </label>
+                    <div className="relative">
+                      <div className="pointer-events-none absolute inset-y-0 left-0 z-[1] flex items-center pl-2.5 text-slate-400">
+                        <Warehouse className="h-4 w-4" aria-hidden />
+                      </div>
+                      <select
+                        ref={lineSectorRef}
+                        value={lineSectorId}
+                        onChange={(e) => setLineSectorId(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault()
+                            agregarLineaYContinuar()
+                          }
+                        }}
+                        className="w-full rounded-lg border border-surface-border bg-white py-2 pl-9 pr-3 text-sm focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20"
+                      >
+                        <option value="">Seleccionar...</option>
+                        {sectores.map((s) => (
+                          <option key={s.id} value={s.id}>
+                            {s.nombre}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+                  <div className="flex shrink-0 items-end sm:ml-auto">
+                    <Button
+                      type="button"
+                      size="sm"
+                      className="h-[2.625rem] w-full rounded-xl sm:w-auto sm:min-w-[7.5rem]"
+                      onClick={agregarLineaYContinuar}
+                    >
                       <Plus className="h-4 w-4" />
-                      Enter ↵
+                      Agregar ↵
                     </Button>
                   </div>
                 </div>
+
                 {stockDisponible != null && lineSectorId && (
-                  <p className="mt-3 text-xs text-slate-600">
-                    Disponible en sector:{' '}
-                    <strong className={stockDisponible <= 0 ? 'text-red-700' : 'text-slate-800'}>
+                  <p className="mt-3 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-slate-600">
+                    <span className="inline-flex items-center gap-1">
+                      <Warehouse className="h-3.5 w-3.5 text-slate-400" aria-hidden />
+                      Disponible en sector:
+                    </span>
+                    <strong
+                      className={cn(
+                        'inline-flex items-center gap-1 tabular-nums',
+                        stockDisponible <= 0 ? 'text-red-700' : 'text-slate-800'
+                      )}
+                    >
+                      {stockDisponible <= 0 && (
+                        <AlertTriangle className="h-3.5 w-3.5" aria-hidden />
+                      )}
                       {formatTotalCajas(stockDisponible)}
                     </strong>
                   </p>

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import {
+  Box,
   Check,
   ChevronDown,
   ChevronLeft,
@@ -8,12 +9,14 @@ import {
   Download,
   Eye,
   Loader2,
+  Package,
   Plus,
   Search,
   Truck,
   User,
   X
 } from 'lucide-react'
+import { BottleIcon } from '@/components/icons/BottleIcon'
 import { DayTabsRow } from '@/components/DayTabsRow'
 import {
   RegistroDetalleMetaChip,
@@ -34,6 +37,7 @@ import {
   type ModoSalidaPlanilla
 } from '@/lib/desglose'
 import { downloadApiFile } from '@/lib/downloadFile'
+import { searchDelayMs } from '@/lib/searchDelay'
 import { api, cn } from '@/lib/utils'
 import { codigoProductoExacto } from '@/lib/productoSearch'
 import type {
@@ -47,6 +51,7 @@ import type {
 } from '@/types'
 import { useAuth } from '@/context/AuthContext'
 import { useEscHandler } from '@/hooks/useEscHandler'
+import { useProductoQuickSearch } from '@/hooks/useProductoQuickSearch'
 import { useRegistroListKeyboard } from '@/hooks/useRegistroListKeyboard'
 
 function newTempId(): string {
@@ -130,9 +135,15 @@ export function PlanillasPage() {
   const [vehiculos, setVehiculos] = useState<CamioneroVehiculo[]>([])
 
   const [productSearch, setProductSearch] = useState('')
-  const [productResults, setProductResults] = useState<Producto[]>([])
   const [productHighlightIndex, setProductHighlightIndex] = useState(-1)
   const [selectedProduct, setSelectedProduct] = useState<Producto | null>(null)
+  const {
+    results: productResults,
+    setResults: setProductResults
+  } = useProductoQuickSearch(productSearch, {
+    enabled: !selectedProduct,
+    limit: 12
+  })
   const [lineas, setLineas] = useState<PlanillaLineaDraft[]>([])
 
   const [modoSalida, setModoSalida] = useState<ModoSalidaPlanilla>('CAJA')
@@ -163,7 +174,6 @@ export function PlanillasPage() {
   const observacionRef = useRef<HTMLInputElement>(null)
   const productSearchRef = useRef<HTMLInputElement>(null)
   const productResultsListRef = useRef<HTMLUListElement>(null)
-  const tipoRef = useRef<HTMLSelectElement>(null)
   const cantidadRef = useRef<HTMLInputElement>(null)
   const listScrollRef = useRef<HTMLDivElement>(null)
   const listSearchRef = useRef<HTMLInputElement>(null)
@@ -321,7 +331,7 @@ export function PlanillasPage() {
 
   useEffect(() => {
     if (view !== 'list') return
-    const timer = setTimeout(() => loadPlanillas(), 300)
+    const timer = setTimeout(() => loadPlanillas(), searchDelayMs(listSearch))
     return () => clearTimeout(timer)
   }, [view, listSearch, listFechaDesde, listFechaHasta, loadPlanillas])
 
@@ -347,24 +357,6 @@ export function PlanillasPage() {
       .then((data) => setVehiculos(data.filter((v) => v.activo)))
       .catch(() => setVehiculos([]))
   }, [camioneroId])
-
-  useEffect(() => {
-    if (!productSearch.trim()) {
-      setProductResults([])
-      return
-    }
-    const timer = setTimeout(async () => {
-      try {
-        const data = await api<Producto[]>(
-          `/api/productos?q=${encodeURIComponent(productSearch.trim())}&activo=1`
-        )
-        setProductResults(data.slice(0, 12))
-      } catch {
-        setProductResults([])
-      }
-    }, 300)
-    return () => clearTimeout(timer)
-  }, [productSearch])
 
   useEffect(() => {
     if (view === 'create' && createPhase === 'datos') {
@@ -1223,45 +1215,80 @@ export function PlanillasPage() {
                     <X className="h-4 w-4" />
                   </button>
                 </div>
-                <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-5">
-                  <div>
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:gap-3">
+                  <div className="w-full shrink-0 sm:w-[15.5rem]">
                     <label className="mb-0.5 block text-xs font-medium text-slate-600">Unidad</label>
-                    <select
-                      ref={tipoRef}
-                      value={modoSalida}
-                      onChange={(e) => handleModoSalidaChange(e.target.value as ModoSalidaPlanilla)}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter') {
-                          e.preventDefault()
-                          focusField(cantidadRef)
-                        }
-                      }}
-                      className="w-full rounded-lg border border-surface-border px-2 py-1.5 text-sm"
-                    >
-                      <option value="CAJA">Cajas</option>
-                      <option value="BOTELLA">
-                        {normalizarUnidadProducto(selectedProduct.unidad)}s
-                      </option>
-                    </select>
+                    <div className="flex rounded-xl border border-surface-border bg-slate-50 p-0.5">
+                      {(
+                        [
+                          {
+                            value: 'CAJA' as const,
+                            label: 'Cajas',
+                            Icon: Box,
+                            active:
+                              'bg-amber-600 text-white shadow-md ring-2 ring-amber-500/40',
+                            idle: 'text-amber-800/80 hover:bg-amber-50 hover:text-amber-950'
+                          },
+                          {
+                            value: 'BOTELLA' as const,
+                            label: `${normalizarUnidadProducto(selectedProduct.unidad)}s`,
+                            Icon: BottleIcon,
+                            active:
+                              'bg-emerald-600 text-white shadow-md ring-2 ring-emerald-500/40',
+                            idle: 'text-emerald-800/75 hover:bg-emerald-50 hover:text-emerald-950'
+                          }
+                        ] as const
+                      ).map((opt) => (
+                        <button
+                          key={opt.value}
+                          type="button"
+                          onPointerDown={(e) => e.preventDefault()}
+                          onClick={() => {
+                            handleModoSalidaChange(opt.value)
+                            focusField(cantidadRef)
+                          }}
+                          className={cn(
+                            'flex flex-1 items-center justify-center gap-1.5 rounded-[10px] px-2 py-2 text-sm font-semibold transition-colors',
+                            modoSalida === opt.value ? opt.active : opt.idle
+                          )}
+                        >
+                          <opt.Icon className="h-4 w-4 shrink-0 opacity-90" aria-hidden />
+                          <span className="truncate">{opt.label}</span>
+                        </button>
+                      ))}
+                    </div>
                   </div>
 
-                  <Input
-                    ref={cantidadRef}
-                    label={modoSalida === 'CAJA' ? 'Cant. cajas' : `Cant. ${normalizarUnidadProducto(selectedProduct.unidad)}s`}
-                    type="number"
-                    min="1"
-                    value={cantidad}
-                    onChange={(e) => setCantidad(e.target.value)}
-                    onKeyDown={handleLineaEnter}
-                    placeholder={modoSalida === 'CAJA' ? '2' : '1'}
-                    className="[&_label]:text-xs"
-                  />
+                  <div className="w-[7.75rem] shrink-0">
+                    <Input
+                      ref={cantidadRef}
+                      label={
+                        modoSalida === 'CAJA'
+                          ? 'Cant. cajas'
+                          : `Cant. ${normalizarUnidadProducto(selectedProduct.unidad)}s`
+                      }
+                      type="number"
+                      min="1"
+                      value={cantidad}
+                      onChange={(e) => setCantidad(e.target.value)}
+                      onKeyDown={handleLineaEnter}
+                      placeholder={modoSalida === 'CAJA' ? '2' : '1'}
+                      leading={
+                        modoSalida === 'CAJA' ? (
+                          <Box className="h-4 w-4 text-amber-600" aria-hidden />
+                        ) : (
+                          <BottleIcon className="h-4 w-4 text-emerald-600" />
+                        )
+                      }
+                      className="[&_label]:text-xs"
+                    />
+                  </div>
 
-                  <div className="col-span-2 flex items-end sm:col-span-1">
+                  <div className="flex shrink-0 items-end sm:ml-auto">
                     <Button
                       type="button"
                       size="sm"
-                      className="w-full rounded-xl"
+                      className="h-[2.625rem] w-full rounded-xl sm:w-auto sm:min-w-[7.5rem]"
                       onClick={() => void agregarLineaYContinuar()}
                     >
                       {editingLineaTempId ? (
@@ -1280,18 +1307,37 @@ export function PlanillasPage() {
                 </div>
 
                 {lineaPreview && (
-                  <div className="mt-3 rounded-lg border border-brand-100 bg-white/90 px-3 py-2.5 text-sm shadow-sm">
-                    <p className="font-medium text-brand-800">
-                      {modoSalida === 'CAJA'
-                        ? formatCantidad(lineaPreview.total)
-                        : lineaPreview.etiqueta}
-                    </p>
-                    <p className="mt-0.5 text-xs text-slate-500">
-                      Total: {formatCantidad(lineaPreview.total)}
-                      {stockDisponibleModo != null && (
-                        <> · Stock: {formatCantidad(stockDisponibleModo)}</>
+                  <div className="mt-3 flex items-start gap-2.5 rounded-lg border border-brand-100 bg-white/90 px-3 py-2.5 text-sm shadow-sm">
+                    <div
+                      className={cn(
+                        'mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg',
+                        modoSalida === 'CAJA'
+                          ? 'bg-amber-50 text-amber-700 ring-1 ring-amber-100'
+                          : 'bg-emerald-50 text-emerald-700 ring-1 ring-emerald-100'
                       )}
-                    </p>
+                    >
+                      {modoSalida === 'CAJA' ? (
+                        <Box className="h-4 w-4" aria-hidden />
+                      ) : (
+                        <BottleIcon className="h-4 w-4" />
+                      )}
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="font-medium text-brand-800">
+                        {modoSalida === 'CAJA'
+                          ? formatCantidad(lineaPreview.total)
+                          : lineaPreview.etiqueta}
+                      </p>
+                      <p className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-slate-500">
+                        <span className="inline-flex items-center gap-1">
+                          <Package className="h-3 w-3 text-slate-400" aria-hidden />
+                          Total: {formatCantidad(lineaPreview.total)}
+                        </span>
+                        {stockDisponibleModo != null && (
+                          <span>· Stock: {formatCantidad(stockDisponibleModo)}</span>
+                        )}
+                      </p>
+                    </div>
                   </div>
                 )}
               </div>

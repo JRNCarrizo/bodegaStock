@@ -90,6 +90,7 @@ import {
 } from '@/lib/inventarioTeclado'
 import { useInventarioActivo } from '@/context/InventarioActivoContext'
 import { INVENTARIO_POLL_MS, usePolling } from '@/hooks/usePolling'
+import { useProductoQuickSearch } from '@/hooks/useProductoQuickSearch'
 import { focusAndScrollIntoView, scrollProductoIntoListVisible } from '@/lib/scroll'
 import { codigoProductoExacto, textoProductoMatches } from '@/lib/productoSearch'
 import {
@@ -4774,10 +4775,16 @@ function ConteoSectorView({
   const [referenciaReconteo, setReferenciaReconteo] =
     useState<InventarioComparacionContadores | null>(null)
   const [productSearch, setProductSearch] = useState('')
-  const [productResults, setProductResults] = useState<Producto[]>([])
-  const [searchingProducts, setSearchingProducts] = useState(false)
   const [productHighlightIndex, setProductHighlightIndex] = useState(-1)
   const [selectedProduct, setSelectedProduct] = useState<Producto | null>(null)
+  const {
+    results: productResults,
+    searching: searchingProducts,
+    setResults: setProductResults
+  } = useProductoQuickSearch(productSearch, {
+    enabled: !selectedProduct,
+    limit: 12
+  })
   const [tipoBulto, setTipoBulto] = useState<TipoBulto>('PALLET')
   const [cantidadBultos, setCantidadBultos] = useState('')
   const [unidadesPorBulto, setUnidadesPorBulto] = useState('')
@@ -5032,29 +5039,6 @@ function ConteoSectorView({
       }, 80)
     }
   }, [loading, sectorInfo?.usa_ubicaciones, ubicaciones.length, ubicacionId])
-
-  useEffect(() => {
-    if (!productSearch.trim()) {
-      setProductResults([])
-      setSearchingProducts(false)
-      return
-    }
-    setSearchingProducts(true)
-    const t = setTimeout(() => {
-      void api<Producto[]>(
-        `/api/productos?q=${encodeURIComponent(productSearch)}&activo=1`
-      )
-        .then((rows) => {
-          setProductResults(rows)
-          setSearchingProducts(false)
-        })
-        .catch(() => {
-          setProductResults([])
-          setSearchingProducts(false)
-        })
-    }, 250)
-    return () => clearTimeout(t)
-  }, [productSearch])
 
   useEffect(() => {
     setProductHighlightIndex(-1)

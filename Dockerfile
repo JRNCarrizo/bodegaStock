@@ -10,7 +10,9 @@ RUN apt-get update \
 WORKDIR /app
 
 COPY package.json package-lock.json ./
-RUN npm ci
+# Ignorar postinstall (electron-builder → ABI Electron). Rebuild nativo para Node del contenedor.
+RUN npm ci --ignore-scripts \
+  && npm rebuild better-sqlite3
 
 COPY server ./server
 COPY tsconfig.node.json ./

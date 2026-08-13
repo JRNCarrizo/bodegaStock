@@ -1,8 +1,58 @@
 # Servidor en la nube (Railway) — plan futuro
 
-> **Estado: NO implementado.** Documento de planeamiento (agosto 2026).  
-> **No tocar código** hasta priorizar esta feature.  
+> **Estado: EN PROGRESO (agosto 2026).** Slice 1 hecho: API standalone + Docker/Railway.  
+> Modo local Electron+SQLite **se conserva**. Postgres + migrador: siguientes slices.  
 > Complementa [ESPECIFICACION.md](ESPECIFICACION.md) §2 (arquitectura LAN + SQLite).
+
+---
+
+## 0. Slice 1 — API sin Electron (listo para probar en Railway)
+
+### Qué hay en el repo
+
+| Pieza | Archivo |
+|--------|---------|
+| Entry API | `server/standalone.ts` |
+| Paths / JWT sin Electron | `server/runtime-env.ts` |
+| Docker | `Dockerfile` |
+| Railway | `railway.toml` |
+| Env ejemplo | `.env.example` |
+| Scripts | `npm run start:api` / `npm run dev:api` |
+
+### Probar en casa (sin Railway)
+
+```bash
+npm install
+# Si better-sqlite3 falla por versión de Node (vs Electron):
+npm rebuild better-sqlite3
+npm run start:api
+# Al volver a Electron: npx electron-builder install-app-deps
+```
+
+Abrí `http://127.0.0.1:3847/api/health` → `{ ok: true, ... }`.  
+Login: `admin` / `admin123` (base SQLite nueva en `./data` o `BODEGA_DATA_DIR`).
+
+> **Nota:** Electron y `start:api` usan el mismo `better-sqlite3` nativo. Rebuild para Node del sistema al probar la API; `install-app-deps` otra vez antes de `npm run dev`. En **Docker/Railway** no hay conflicto (compila para Node del contenedor).
+
+### Subir a Railway (cuenta tuya de prueba)
+
+1. En [railway.com](https://railway.com): **New Project** → **Deploy from GitHub** → repo `bodegaStock`.
+2. En el servicio: Variables:
+   - `JWT_SECRET` = una clave larga al azar
+   - `BODEGA_DATA_DIR` = `/data` (ya es default en el Dockerfile)
+3. **Volumes** → montar volumen en `/data` (para que el SQLite no se borre en cada deploy).
+4. **Settings** → Generate Domain (HTTPS).
+5. Probar: `https://TU-DOMINIO.up.railway.app/api/health`
+
+> Esta fase usa **SQLite en el volumen** solo para aprender el deploy. La base productiva en la nube será **Postgres** (slice siguiente). El laburo diario en la empresa sigue en **modo local**.
+
+### Orden de slices
+
+1. ~~API standalone + Docker + Railway smoke~~ ← acá
+2. Postgres + port del esquema / queries
+3. Migrador SQLite → Postgres (asistente en Configuración)
+4. UI: modo local vs URL nube (desktop + APK)
+5. Piloto y corte en planta
 
 ---
 

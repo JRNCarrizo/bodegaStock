@@ -1,9 +1,9 @@
-import { app } from 'electron'
 import { existsSync, mkdirSync, writeFileSync, unlinkSync } from 'fs'
 import { join, extname } from 'path'
+import { getUserDataDir } from '../runtime-env'
 
 export function getProductImagesDir(): string {
-  const dir = join(app.getPath('userData'), 'images', 'productos')
+  const dir = join(getUserDataDir(), 'images', 'productos')
   if (!existsSync(dir)) mkdirSync(dir, { recursive: true })
   return dir
 }

@@ -1,17 +1,17 @@
 import bcrypt from 'bcryptjs'
 import Database from 'better-sqlite3'
-import { app } from 'electron'
 import { existsSync, mkdirSync, rmSync, unlinkSync } from 'fs'
 import { join } from 'path'
 import { SCHEMA_SQL } from './schema'
 import { runMigrations } from './migrate'
 import { ensureSystemRoles } from './roles-seed'
+import { getUserDataDir } from '../runtime-env'
 import { recalcStockTotalsEnCajas, syncAllUnidadesPorCajaDefaultsFromStock, normalizeCajaStockLineaTotales } from '../utils/stock'
 
 let db: Database.Database | null = null
 
 export function getDbPath(): string {
-  const userData = app.getPath('userData')
+  const userData = getUserDataDir()
   const dbDir = join(userData, 'data')
   if (!existsSync(dbDir)) mkdirSync(dbDir, { recursive: true })
   return join(dbDir, 'bodegastock.db')
@@ -57,7 +57,7 @@ export function wipeDatabaseFiles(): void {
     if (existsSync(path)) unlinkSync(path)
   }
 
-  const imagesDir = join(app.getPath('userData'), 'images', 'productos')
+  const imagesDir = join(getUserDataDir(), 'images', 'productos')
   if (existsSync(imagesDir)) {
     rmSync(imagesDir, { recursive: true, force: true })
   }

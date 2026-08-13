@@ -1,9 +1,8 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
 import jwt from 'jsonwebtoken'
 import { getDb } from '../db'
+import { getJwtSecret } from '../runtime-env'
 import { getPermisosForUser, getRolNombre, getSeccionesForUser, isAdministradorRol } from '../utils/secciones'
-
-const JWT_SECRET = 'bodegastock-dev-secret-change-in-production'
 
 export interface AuthUser {
   id: number
@@ -22,7 +21,7 @@ declare module 'fastify' {
 export function signToken(user: AuthUser): string {
   return jwt.sign(
     { id: user.id, username: user.username, nombre: user.nombre, rol_id: user.rol_id },
-    JWT_SECRET,
+    getJwtSecret(),
     { expiresIn: '12h' }
   )
 }
@@ -73,7 +72,7 @@ export function registerAuthHook(app: FastifyInstance): void {
     }
 
     try {
-      const payload = jwt.verify(header.slice(7), JWT_SECRET) as {
+      const payload = jwt.verify(header.slice(7), getJwtSecret()) as {
         id: number
         username: string
         nombre: string

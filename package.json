@@ -40,10 +40,12 @@
     "jsbarcode": "^3.12.3",
     "jsonwebtoken": "^9.0.2",
     "lucide-react": "^0.469.0",
+    "pg": "^8.23.0",
     "qrcode": "^1.5.4",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-router-dom": "^7.1.1",
+    "synckit": "^0.11.13",
     "tailwind-merge": "^2.6.0"
   },
   "devDependencies": {
@@ -51,6 +53,7 @@
     "@types/bcryptjs": "^2.4.6",
     "@types/better-sqlite3": "^7.6.12",
     "@types/jsonwebtoken": "^9.0.7",
+    "@types/pg": "^8.21.0",
     "@types/react": "^18.3.18",
     "@types/react-dom": "^18.3.5",
     "@vitejs/plugin-react": "^4.3.4",

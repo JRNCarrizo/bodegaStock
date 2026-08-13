@@ -1,7 +1,7 @@
 # Servidor en la nube (Railway) — plan futuro
 
-> **Estado: EN PROGRESO (agosto 2026).** Slice 1 hecho: API standalone + Docker/Railway.  
-> Modo local Electron+SQLite **se conserva**. Postgres + migrador: siguientes slices.  
+> **Estado: EN PROGRESO (agosto 2026).** Slice 1 OK (API en Railway). Slice 2: Postgres via `DATABASE_URL`.  
+> Modo local Electron+SQLite **se conserva**. Migrador SQLite→PG y UI local/cloud: siguientes.  
 > Complementa [ESPECIFICACION.md](ESPECIFICACION.md) §2 (arquitectura LAN + SQLite).
 
 ---
@@ -46,10 +46,20 @@ Login: `admin` / `admin123` (base SQLite nueva en `./data` o `BODEGA_DATA_DIR`).
 
 > Esta fase usa **SQLite en el volumen** solo para aprender el deploy. La base productiva en la nube será **Postgres** (slice siguiente). El laburo diario en la empresa sigue en **modo local**.
 
+### Slice 2 — Postgres (`DATABASE_URL`)
+
+1. En Railway: **New** → **Database** → **PostgreSQL** (en el mismo proyecto).
+2. En el servicio de la API → **Variables** → **Add reference** / conectar `DATABASE_URL` del Postgres (Railway lo suele inyectar al linkear).
+3. Redeploy de la API. En logs deberías ver: `DB: Postgres (DATABASE_URL)`.
+4. Health: `https://TU-DOMINIO.up.railway.app/api/health`
+5. Login de prueba: `admin` / `admin123` (base vacía nueva en Postgres).
+
+La app Electron **no** usa `DATABASE_URL`; sigue en SQLite local. El volumen `/data` queda para imágenes u otros archivos, no para la DB principal.
+
 ### Orden de slices
 
-1. ~~API standalone + Docker + Railway smoke~~ ← acá
-2. Postgres + port del esquema / queries
+1. ~~API standalone + Docker + Railway smoke~~
+2. ~~Postgres + schema (API lee `DATABASE_URL`)~~ ← acá
 3. Migrador SQLite → Postgres (asistente en Configuración)
 4. UI: modo local vs URL nube (desktop + APK)
 5. Piloto y corte en planta

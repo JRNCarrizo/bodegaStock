@@ -687,6 +687,28 @@ export function IngresosPage() {
     }
   }
 
+  function handleCargaSectorKeyDown(e: React.KeyboardEvent<HTMLSelectElement>) {
+    if (e.key !== 'Enter') return
+    e.preventDefault()
+    if (!sectorId) {
+      setError('Seleccioná el sector destino')
+      return
+    }
+    setError('')
+    if (sectorSeleccionado?.usa_ubicaciones) {
+      focusField(ubicacionRef)
+      return
+    }
+    focusField(productSearchRef)
+  }
+
+  function handleCargaUbicacionKeyDown(e: React.KeyboardEvent<HTMLSelectElement>) {
+    if (e.key !== 'Enter') return
+    e.preventDefault()
+    setError('')
+    focusField(productSearchRef)
+  }
+
   function pickProductFromSearch() {
     if (!productSearch.trim()) return
     const term = productSearch.trim()
@@ -1243,6 +1265,7 @@ export function IngresosPage() {
                     setSectorId(e.target.value)
                     setUbicacionId('')
                   }}
+                  onKeyDown={handleCargaSectorKeyDown}
                   className="min-w-0 flex-1 border-0 bg-transparent py-2 pl-2 pr-3 text-sm focus:outline-none"
                 >
                   <option value="">Elegir sector…</option>
@@ -1260,6 +1283,7 @@ export function IngresosPage() {
                     ref={ubicacionRef}
                     value={ubicacionId}
                     onChange={(e) => setUbicacionId(e.target.value)}
+                    onKeyDown={handleCargaUbicacionKeyDown}
                     className="min-w-0 flex-1 border-0 bg-transparent py-2 pl-2 pr-3 text-sm focus:outline-none"
                   >
                     <option value="">Sin ub.</option>
@@ -1272,6 +1296,9 @@ export function IngresosPage() {
                 </div>
               )}
             </div>
+            <p className="text-[11px] text-slate-400">
+              ↑↓ eligen · Enter avanza (destino → ubicación → buscador)
+            </p>
 
             <div className="relative flex flex-col gap-2 overflow-visible sm:flex-row">
               <div className="relative z-30 min-w-0 flex-1">

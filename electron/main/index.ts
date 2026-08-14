@@ -3,6 +3,7 @@ import { join } from 'path'
 import { getAppIcon } from './icon'
 import { bootstrapNetworkServer, setupNetworkIpc, shutdownNetworkServer } from './network'
 import { setupMigracionIpc } from './migracion'
+import { setupHelpPdfIpc } from './helpPdf'
 import { setupAutoUpdater } from './updater'
 
 const isDev = !app.isPackaged
@@ -65,6 +66,7 @@ function createWindow(): void {
 app.whenReady().then(async () => {
   setupNetworkIpc()
   setupMigracionIpc()
+  setupHelpPdfIpc()
   setupAutoUpdater(() => mainWindow)
   await bootstrapNetworkServer()
   createWindow()

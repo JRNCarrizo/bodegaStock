@@ -22,6 +22,7 @@ import { BottleIcon } from '@/components/icons/BottleIcon'
 import { BarcodeScannerModal } from '@/components/BarcodeScannerModal'
 import { DayTabsRow } from '@/components/DayTabsRow'
 import { ProductQuickCreateModal } from '@/components/ProductQuickCreateModal'
+import { SectionHelpButton } from '@/components/SectionHelpButton'
 import { ProductImage } from '@/components/ProductImage'
 import { SwipeableConteoLinea } from '@/components/SwipeableConteoLinea'
 import {
@@ -1665,9 +1666,12 @@ export function IngresosPage() {
           <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">
             Movimientos
           </p>
-          <h1 className="mt-1 text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">
-            Ingresos
-          </h1>
+          <div className="mt-1 flex items-center gap-1.5">
+            <h1 className="text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">
+              Ingresos
+            </h1>
+            <SectionHelpButton guideId="ingresos" />
+          </div>
           <p className="mt-2 max-w-xl text-sm leading-relaxed text-slate-500">
             Entrada de mercadería archivada por día, con remito y destinos por línea.
           </p>

@@ -34,6 +34,7 @@ import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { Card, CardBody } from '@/components/ui/Card'
 import { ProductImage } from '@/components/ProductImage'
+import { SectionHelpButton } from '@/components/SectionHelpButton'
 import { formatCantidad, formatDayTabLabel, formatTotalCajas, todayIsoDate } from '@/lib/desglose'
 import { downloadApiFile } from '@/lib/downloadFile'
 import { searchDelayMs } from '@/lib/searchDelay'
@@ -1931,9 +1932,12 @@ export function RetornosPage() {
           <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">
             Movimientos
           </p>
-          <h1 className="mt-1 text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">
-            Retornos
-          </h1>
+          <div className="mt-1 flex items-center gap-1.5">
+            <h1 className="text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">
+              Retornos
+            </h1>
+            <SectionHelpButton guideId="retornos" />
+          </div>
           <p className="mt-2 max-w-xl text-sm leading-relaxed text-slate-500">
             {dobleVerificacion
               ? 'Mercadería que vuelve a bodega — sin verificar hasta segunda revisión por otro usuario.'

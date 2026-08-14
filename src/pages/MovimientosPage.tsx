@@ -24,6 +24,7 @@ import {
   RegistroDetallePanel
 } from '@/components/RegistroDetallePanel'
 import { SwipeableConteoLinea } from '@/components/SwipeableConteoLinea'
+import { SectionHelpButton } from '@/components/SectionHelpButton'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { Card, CardBody } from '@/components/ui/Card'
@@ -2326,9 +2327,12 @@ export function MovimientosPage() {
       <section className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">Movimientos</p>
-          <h1 className="mt-1 text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">
-            Movimientos internos
-          </h1>
+          <div className="mt-1 flex items-center gap-1.5">
+            <h1 className="text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">
+              Movimientos internos
+            </h1>
+            <SectionHelpButton guideId="movimientos" />
+          </div>
           <p className="mt-2 max-w-xl text-sm leading-relaxed text-slate-500">
             {dobleVerificacion
               ? 'Lista abierta compartida: cargá líneas, salí y volvé cuando quieras; tildá y finalizá para mover el stock.'

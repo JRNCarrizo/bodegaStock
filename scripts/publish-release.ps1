@@ -1,5 +1,5 @@
 param(
-  [string]$Version = "0.3.35"
+  [string]$Version = "0.3.36"
 )
 
 $ErrorActionPreference = "Stop"
@@ -55,13 +55,12 @@ if (Test-Path $ymlPath) { $assets += (Resolve-Path $ymlPath).Path }
 $notes = @"
 ## ControlStock v$Version
 
-UX de carga: buscadores más rápidos, iconos en formularios y teclado en movimientos/ingresos.
+Guías de ayuda por sección (botón ?) con descarga en PDF, orientadas a uso diario.
 
-### Mejoras
-- Búsqueda más reactiva en planillas, ingresos, retornos, roturas, consulta, productos, sectores, camioneros e inventario
-- Iconos y layout más claro en líneas de retornos, planillas y roturas
-- Ingresos: Enter avanza Destino → Ubicación → buscador; lista de productos en una sola fila
-- Movimientos: Enter en listado crea/continúa lista; en editor Origen → ubicaciones → Destino → buscador
+### Nuevo
+- Ayuda en Ingresos, Planillas, Retornos, Roturas, Movimientos e Inventario
+- Descarga PDF de cada guía (en escritorio se genera el archivo directo)
+- Inventario: pasos claros de Offline (descargar paquete, conectar celulares, importar al PC)
 
 ### Actualización
 - Desde **v0.2.7 o superior:** Configuración → Buscar actualizaciones

@@ -63,6 +63,9 @@ interface Window {
     testNetworkConnection?: (host: string, port: number) => Promise<NetworkTestResult>
     applyNetworkConfig?: (config: NetworkConfig) => Promise<{ ok: boolean; apiUrl?: string }>
     exportLocalDatabase?: () => Promise<MigrationExportResult>
+    htmlToPdf?: (
+      html: string
+    ) => Promise<{ ok: true; pdfBase64: string } | { ok: false; message?: string }>
     getAppInfo?: () => Promise<AppInfo>
     resetDatabase?: (
       confirmacion: string

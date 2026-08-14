@@ -47,6 +47,7 @@ import {
 } from '@/components/RegistroDetallePanel'
 import { ScrollableProductName } from '@/components/ScrollableProductName'
 import { SwipeableConteoLinea } from '@/components/SwipeableConteoLinea'
+import { SectionHelpButton } from '@/components/SectionHelpButton'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { Badge, Card, CardBody } from '@/components/ui/Card'
@@ -3658,9 +3659,12 @@ export function InventarioPage() {
           <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">
             Inventario
           </p>
-          <h1 className="mt-1 text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">
-            Inventario
-          </h1>
+          <div className="mt-1 flex items-center gap-1.5">
+            <h1 className="text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">
+              Inventario
+            </h1>
+            <SectionHelpButton guideId="inventario" />
+          </div>
           <p className="mt-2 max-w-xl text-sm leading-relaxed text-slate-500">
             Conteo físico con doble verificación
           </p>

@@ -23,14 +23,15 @@ Toda la especificación del proyecto está en la carpeta [`docs/`](docs/):
 
 ## Estado del proyecto
 
-**v0.3.31** — Ajuste de stock, UX de conteo/movimientos/ingresos/planillas y permiso de ajustes.
+**v0.3.36** — Guías de ayuda por sección con descarga PDF (incluye pasos Offline de inventario).
 
 ### Reciente (resumen)
 
+- **v0.3.36:** ayuda (?) en Ingresos, Planillas, Retornos, Roturas, Movimientos e Inventario; PDF descargable.
+- **v0.3.35:** búsqueda más rápida; iconos en formularios; teclado en ingresos/movimientos.
 - **v0.3.31:** ajuste de stock en Consulta; empaque desde nombre; íconos de tipo; swipe editar/borrar en ingresos/planillas; permiso Ajustes de stock.
 - **v0.3.30:** lista abierta de movimientos (sueltos, tilde configurable); ingresos con varios destinos y borrador; borradores en planillas/retornos.
 - **v0.3.29:** al unirse al sync por IP, solo se edita la IP; puerto **3850** fijo.
-- **v0.3.28:** verificación **Simple** / **Doble** por sector en inventario.
 
 ### Futuro documentado (no hecho)
 

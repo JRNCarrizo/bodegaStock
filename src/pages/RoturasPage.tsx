@@ -30,6 +30,7 @@ import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { Card, CardBody } from '@/components/ui/Card'
 import { ProductImage } from '@/components/ProductImage'
+import { SectionHelpButton } from '@/components/SectionHelpButton'
 import { formatCantidad, formatDayTabLabel, formatTotalCajas, todayIsoDate } from '@/lib/desglose'
 import { downloadApiFile } from '@/lib/downloadFile'
 import { searchDelayMs } from '@/lib/searchDelay'
@@ -965,9 +966,12 @@ export function RoturasPage() {
       <section className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">Movimientos</p>
-          <h1 className="mt-1 text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">
-            Roturas y pérdidas
-          </h1>
+          <div className="mt-1 flex items-center gap-1.5">
+            <h1 className="text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">
+              Roturas y pérdidas
+            </h1>
+            <SectionHelpButton guideId="roturas" />
+          </div>
           <p className="mt-2 max-w-xl text-sm leading-relaxed text-slate-500">
             Descuenta stock por cajas rotas o perdidas, con registro por día.
           </p>

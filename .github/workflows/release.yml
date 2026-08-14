@@ -9,7 +9,7 @@ on:
       version:
         description: 'Versión sin v (ej. 0.1.0)'
         required: true
-        default: '0.3.29'
+        default: '0.3.36'
 
 permissions:
   contents: write
@@ -68,10 +68,11 @@ jobs:
           body: |
             ## ControlStock ${{ steps.tag.outputs.name }}
 
-            Sync offline: carga manual con puerto fijo.
+            Guías de ayuda por sección con descarga PDF.
 
             ### Nuevo / mejorado
-            - Al unirse por IP al sync entre celulares: solo se edita la IP; el puerto queda fijo en 3850
+            - Ayuda (?) en Ingresos, Planillas, Retornos, Roturas, Movimientos e Inventario
+            - Inventario: pasos Offline (paquete, sync entre celulares, importar al PC)
 
             ### Actualización
             - Desde **v0.2.7 o superior:** Configuración → Buscar actualizaciones

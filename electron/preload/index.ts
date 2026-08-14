@@ -6,6 +6,7 @@ contextBridge.exposeInMainWorld('bodegaStock', {
     ipcRenderer.invoke('network:test-connection', { host, port }),
   applyNetworkConfig: (config: unknown) => ipcRenderer.invoke('network:apply-config', config),
   exportLocalDatabase: () => ipcRenderer.invoke('migracion:export-local'),
+  htmlToPdf: (html: string) => ipcRenderer.invoke('help:html-to-pdf', html),
   getAppInfo: () => ipcRenderer.invoke('app:get-info'),
   resetDatabase: (confirmacion: string) =>
     ipcRenderer.invoke('app:reset-database', { confirmacion }),

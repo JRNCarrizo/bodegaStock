@@ -24,6 +24,7 @@ import {
   RegistroDetallePanel
 } from '@/components/RegistroDetallePanel'
 import { ProductImage } from '@/components/ProductImage'
+import { SectionHelpButton } from '@/components/SectionHelpButton'
 import { SwipeableConteoLinea } from '@/components/SwipeableConteoLinea'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
@@ -1505,9 +1506,12 @@ export function PlanillasPage() {
           <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">
             Movimientos
           </p>
-          <h1 className="mt-1 text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">
-            Carga de planillas
-          </h1>
+          <div className="mt-1 flex items-center gap-1.5">
+            <h1 className="text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">
+              Carga de planillas
+            </h1>
+            <SectionHelpButton guideId="planillas" />
+          </div>
           <p className="mt-2 max-w-xl text-sm leading-relaxed text-slate-500">
             Salidas de mercadería con descuento automático de stock por camionero y vehículo.
           </p>

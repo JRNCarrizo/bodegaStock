@@ -19,10 +19,11 @@ const config: CapacitorConfig = {
   android: {
     allowMixedContent: true
   },
-  // Fetch nativo: evita bloqueos del WebView al hablar con Railway (HTTPS)
+  // No parchear window.fetch globalmente: rompe POST JSON al PC local (415).
+  // Para Railway (HTTPS) usamos CapacitorHttp.request() solo en api() / appFetch().
   plugins: {
     CapacitorHttp: {
-      enabled: true
+      enabled: false
     }
   }
 }

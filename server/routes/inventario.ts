@@ -12,7 +12,6 @@ import {
 } from '../utils/excel-export'
 import {
   aplicarCierreInventario,
-  asegurarPrecargaReconteo,
   assertContadorEnSector,
   assertSectorEditable,
   assertSectorFinalizable,
@@ -1147,9 +1146,6 @@ export async function inventarioRoutes(app: FastifyInstance): Promise<void> {
       const c1 = Number(sector.contador_1_id)
       const c2 = sector.contador_2_id == null ? null : Number(sector.contador_2_id)
       const simple = esVerificacionSimple(sector)
-
-      asegurarPrecargaReconteo(db, inventarioSectorId)
-      sector = getInventarioSector(db, inventarioSectorId)
 
       const lineas = db.prepare(`
         SELECT icl.*, p.codigo_interno, p.nombre, p.unidad

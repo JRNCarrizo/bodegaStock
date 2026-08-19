@@ -1,4 +1,4 @@
-import { Capacitor } from '@capacitor/core'
+import { CapacitorHttp } from '@capacitor/core'
 import { Preferences } from '@capacitor/preferences'
 
 /** Clave de Preferences / localStorage para la URL del PC servidor o nube. */
@@ -89,6 +89,83 @@ export async function clearServerUrl(): Promise<void> {
   localStorage.removeItem(SERVER_URL_KEY)
 }
 
+/**
+ * Fetch de la app. En APK/iOS contra HTTPS (nube) usa HTTP nativo (Railway).
+ * En LAN http:// usa el fetch del WebView — compatible con el PC local (v0.3.29).
+ */
+export async function appFetch(
+  url: string,
+  init: RequestInit & { timeoutMs?: number } = {}
+): Promise<Response> {
+  const { timeoutMs = 12000, signal, ...fetchInit } = init
+  const headers: Record<string, string> = {
+    ...((fetchInit.headers as Record<string, string> | undefined) ?? {})
+  }
+
+  const useNativeHttp = isNativeApp() && url.startsWith('https://')
+  if (!useNativeHttp) {
+    return fetch(url, { ...fetchInit, headers, signal })
+  }
+
+  if (signal?.aborted) {
+    throw new DOMException('The operation was aborted.', 'AbortError')
+  }
+
+  const method = (fetchInit.method ?? 'GET').toUpperCase()
+  let data: unknown = undefined
+  const body = fetchInit.body
+  if (body !== undefined && body !== null && body !== '') {
+    if (typeof body === 'string') {
+      try {
+        data = JSON.parse(body)
+      } catch {
+        data = body
+      }
+    } else {
+      data = body
+    }
+  }
+
+  const requestPromise = CapacitorHttp.request({
+    url,
+    method,
+    headers,
+    data,
+    connectTimeout: timeoutMs,
+    readTimeout: timeoutMs
+  })
+
+  const abortPromise =
+    signal &&
+    new Promise<never>((_, reject) => {
+      if (signal.aborted) {
+        reject(new DOMException('The operation was aborted.', 'AbortError'))
+        return
+      }
+      signal.addEventListener(
+        'abort',
+        () => reject(new DOMException('The operation was aborted.', 'AbortError')),
+        { once: true }
+      )
+    })
+
+  const res = abortPromise
+    ? await Promise.race([requestPromise, abortPromise])
+    : await requestPromise
+
+  const payload =
+    res.status === 204
+      ? null
+      : typeof res.data === 'object' && res.data !== null
+        ? JSON.stringify(res.data)
+        : String(res.data ?? '')
+
+  return new Response(payload, {
+    status: res.status,
+    headers: res.headers as Record<string, string>
+  })
+}
+
 /** Prueba GET /api/health contra la URL base. */
 export async function testServerConnection(
   rawUrl: string
@@ -110,9 +187,10 @@ export async function testServerConnection(
     const controller = new AbortController()
     const timer = setTimeout(() => controller.abort(), timeoutMs)
     try {
-      const res = await fetch(`${base}/api/health`, {
+      const res = await appFetch(`${base}/api/health`, {
         signal: controller.signal,
         cache: 'no-store',
+        timeoutMs
       })
       if (!res.ok) {
         return { ok: false, message: `El servidor respondió con error (${res.status})` }

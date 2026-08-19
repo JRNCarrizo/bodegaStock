@@ -1,6 +1,6 @@
 import { clsx, type ClassValue } from 'clsx'
 import { twMerge } from 'tailwind-merge'
-import { isNativeApp, loadConnectionMode, loadSavedServerUrl } from '@/lib/nativeServer'
+import { appFetch, isNativeApp, loadConnectionMode, loadSavedServerUrl } from '@/lib/nativeServer'
 
 export function cn(...inputs: ClassValue[]): string {
   return twMerge(clsx(inputs))
@@ -85,10 +85,11 @@ export async function api<T>(
 
   let res: Response
   try {
-    res = await fetch(`${getApiUrl()}${path}`, {
+    res = await appFetch(`${getApiUrl()}${path}`, {
       ...fetchOptions,
       headers,
-      signal: controller.signal
+      signal: controller.signal,
+      timeoutMs
     })
   } catch (e) {
     const aborted =

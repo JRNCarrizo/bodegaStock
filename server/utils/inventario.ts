@@ -520,27 +520,6 @@ function copiarLineasReconteoContador(
   return lineasCopiadas
 }
 
-/** Si el sector está en reconteo pero faltan líneas precargadas, las copia desde la ronda anterior. */
-export function asegurarPrecargaReconteo(db: Database.Database, inventarioSectorId: number): void {
-  const sector = getInventarioSector(db, inventarioSectorId)
-  const ronda = Number(sector.ronda_actual)
-  if (ronda <= 1 || String(sector.estado) !== 'EN_CONTEO') return
-
-  const rondaAnterior = ronda - 1
-  const resultado = compararContadores(db, inventarioSectorId, rondaAnterior)
-  const productoIds = resultado.diferencias.map((d) => d.producto_id)
-  if (productoIds.length === 0) return
-
-  const c1 = Number(sector.contador_1_id)
-  const c2 = Number(sector.contador_2_id)
-
-  const tx = db.transaction(() => {
-    copiarLineasReconteoContador(db, inventarioSectorId, c1, ronda, rondaAnterior, productoIds)
-    copiarLineasReconteoContador(db, inventarioSectorId, c2, ronda, rondaAnterior, productoIds)
-  })
-  tx()
-}
-
 export function iniciarReconteoSector(db: Database.Database, inventarioSectorId: number): {
   ronda: number
   productos_precargados: number

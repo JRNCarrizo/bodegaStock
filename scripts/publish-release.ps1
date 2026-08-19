@@ -1,5 +1,5 @@
 param(
-  [string]$Version = "0.3.36"
+  [string]$Version = "0.3.37"
 )
 
 $ErrorActionPreference = "Stop"
@@ -55,16 +55,16 @@ if (Test-Path $ymlPath) { $assets += (Resolve-Path $ymlPath).Path }
 $notes = @"
 ## ControlStock v$Version
 
-Guías de ayuda por sección (botón ?) con descarga en PDF, orientadas a uso diario.
+Corrección de importación offline al PC local en la APK (v0.3.33–0.3.36).
 
-### Nuevo
-- Ayuda en Ingresos, Planillas, Retornos, Roturas, Movimientos e Inventario
-- Descarga PDF de cada guía (en escritorio se genera el archivo directo)
-- Inventario: pasos claros de Offline (descargar paquete, conectar celulares, importar al PC)
+### Nuevo / corregido
+- Fix: **Importar al PC** en inventario offline con servidor local (error 415 Unsupported Media Type)
+- Modo nube (Railway) sigue usando HTTP nativo; LAN vuelve al comportamiento de la v0.3.29
+- Inventario online: reconteo a cero ya no se reprecarga al recargar la pantalla
 
 ### Actualización
-- Desde **v0.2.7 o superior:** Configuración → Buscar actualizaciones
-- O instalá Setup / APK de este release
+- **APK:** instalá ``ControlStock-$Version.apk`` en los celulares
+- **Windows:** Configuración → Buscar actualizaciones, o Setup de este release
 
 Login inicial (base vacía): **admin** / **admin123**
 "@

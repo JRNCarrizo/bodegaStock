@@ -5433,7 +5433,28 @@ function ConteoSectorView({
   }
 
   async function finalizarSector() {
-    if (!confirm('¿Finalizaste el conteo de este sector?')) return
+    const productosEnCero = enReconteo
+      ? lineasPorProducto.filter((g) => g.lineas.length === 0)
+      : []
+    if (enReconteo && misLineas.length === 0) {
+      if (
+        !confirm(
+          'No cargaste líneas en esta ronda: los productos del reconteo quedan en 0. ¿Finalizar así?'
+        )
+      ) {
+        return
+      }
+    } else if (productosEnCero.length > 0) {
+      if (
+        !confirm(
+          `Hay ${productosEnCero.length} producto(s) sin líneas en este reconteo: quedan en 0. ¿Finalizar así?`
+        )
+      ) {
+        return
+      }
+    } else if (!confirm('¿Finalizaste el conteo de este sector?')) {
+      return
+    }
     try {
       const res = await api<{ comparacion: typeof comparacion }>(
         `/api/inventario/sectores/${inventarioSectorId}/finalizar`,

@@ -4,7 +4,7 @@ Sistema de gestión de stock para bodega con aplicación de escritorio (Electron
 
 ## Estado del proyecto
 
-**v0.3.38** — [Release en GitHub](https://github.com/JRNCarrizo/bodegaStock/releases/tag/v0.3.38)
+**v0.3.42** — [Release en GitHub](https://github.com/JRNCarrizo/bodegaStock/releases/tag/v0.3.42)
 
 | En planta hoy | Preparado para más adelante |
 |---------------|----------------------------|
@@ -16,8 +16,9 @@ Sistema de gestión de stock para bodega con aplicación de escritorio (Electron
 
 ### Reciente (resumen)
 
-- **v0.3.38:** permiso Configuración operativo; sector por defecto en ingresos; alias vehículo en planillas; catálogo legible sin menú Productos/Sectores/Camioneros.
-- **v0.3.38:** permiso Configuración operativo; sector por defecto en ingresos; alias vehículo en planillas; catálogo legible sin menú Productos/Sectores/Camioneros.
+- **v0.3.42:** agenda de turnos (insumos); update APK in-app; Descargar APK desde PC; Configuración plegable.
+- **v0.3.41:** instalador Windows visible al actualizar (Setup NSIS con progreso).
+- **v0.3.38:** permiso Configuración operativo; sector por defecto en ingresos; alias vehículo en planillas.
 - **v0.3.37:** fix importación inventario offline → PC local en APK; reconteo a cero online.
 - **v0.3.36:** guías de ayuda (`?`) en Ingresos, Planillas, Retornos, Roturas, Movimientos e Inventario; PDF descargable.
 - **v0.3.35:** búsqueda más rápida; iconos en formularios; teclado en ingresos/movimientos.

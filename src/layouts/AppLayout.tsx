@@ -13,6 +13,16 @@ import type { NavItem } from '@/types'
 
 const SIDEBAR_COLLAPSED_KEY = 'sidebar-collapsed'
 const RETORNOS_PENDIENTES_EVENT = 'retornos-pendientes-changed'
+export const AGENDA_PENDIENTES_EVENT = 'agenda-turnos-pendientes-changed'
+
+function navNotification(itemId: string, retornos: number, agenda: number): {
+  count: number
+  phrase: string
+} {
+  if (itemId === 'retornos') return { count: retornos, phrase: 'sin verificar' }
+  if (itemId === 'agenda_turnos') return { count: agenda, phrase: 'sin confirmar' }
+  return { count: 0, phrase: 'pendientes' }
+}
 
 function userInitials(name?: string): string {
   if (!name?.trim()) return '?'
@@ -149,7 +159,9 @@ function AppLayoutShell({
 
   const groups = [...new Set(visibleItems.map((i) => i.group))]
   const canViewRetornos = visibleItems.some((item) => item.id === 'retornos')
+  const canViewAgenda = visibleItems.some((item) => item.id === 'agenda_turnos')
   const [retornosPendientesCount, setRetornosPendientesCount] = useState(0)
+  const [agendaPendientesCount, setAgendaPendientesCount] = useState(0)
 
   const refreshRetornosPendientes = useCallback(async () => {
     if (!canViewRetornos) {
@@ -164,6 +176,19 @@ function AppLayoutShell({
       // Si falla el refresco del aviso, no bloquea la navegación.
     }
   }, [canViewRetornos])
+
+  const refreshAgendaPendientes = useCallback(async () => {
+    if (!canViewAgenda) {
+      setAgendaPendientesCount(0)
+      return
+    }
+    try {
+      const data = await api<{ count: number }>('/api/agenda-turnos/pendientes-count')
+      setAgendaPendientesCount(data.count)
+    } catch {
+      /* ignore */
+    }
+  }, [canViewAgenda])
 
   useEffect(() => {
     if (!canViewRetornos) {
@@ -192,6 +217,29 @@ function AppLayoutShell({
     if (!canViewRetornos) return
     void refreshRetornosPendientes()
   }, [user?.logistica_activa_id, canViewRetornos, refreshRetornosPendientes])
+
+  useEffect(() => {
+    if (!canViewAgenda) {
+      setAgendaPendientesCount(0)
+      return
+    }
+
+    void refreshAgendaPendientes()
+    const interval = window.setInterval(() => {
+      void refreshAgendaPendientes()
+    }, 30_000)
+    const handleRefresh = () => {
+      void refreshAgendaPendientes()
+    }
+
+    window.addEventListener('focus', handleRefresh)
+    window.addEventListener(AGENDA_PENDIENTES_EVENT, handleRefresh)
+    return () => {
+      window.clearInterval(interval)
+      window.removeEventListener('focus', handleRefresh)
+      window.removeEventListener(AGENDA_PENDIENTES_EVENT, handleRefresh)
+    }
+  }, [canViewAgenda, refreshAgendaPendientes])
 
   return (
     <div className="flex h-screen bg-surface-muted">
@@ -231,7 +279,14 @@ function AppLayoutShell({
                         index={index}
                         collapsed={collapsed}
                         end={item.path === '/'}
-                        notificationCount={item.id === 'retornos' ? retornosPendientesCount : 0}
+                        notificationCount={
+                          navNotification(item.id, retornosPendientesCount, agendaPendientesCount)
+                            .count
+                        }
+                        notificationPhrase={
+                          navNotification(item.id, retornosPendientesCount, agendaPendientesCount)
+                            .phrase
+                        }
                         onNavigate={() => setMobileOpen(false)}
                       />
                     ))}
@@ -304,7 +359,20 @@ function AppLayoutShell({
                             item={item}
                             index={index}
                             end={item.path === '/'}
-                            notificationCount={item.id === 'retornos' ? retornosPendientesCount : 0}
+                            notificationCount={
+                              navNotification(
+                                item.id,
+                                retornosPendientesCount,
+                                agendaPendientesCount
+                              ).count
+                            }
+                            notificationPhrase={
+                              navNotification(
+                                item.id,
+                                retornosPendientesCount,
+                                agendaPendientesCount
+                              ).phrase
+                            }
                             onNavigate={() => setMobileOpen(false)}
                             mobile
                           />
@@ -391,6 +459,7 @@ function SidebarNavItem({
   end,
   onNavigate,
   notificationCount = 0,
+  notificationPhrase = 'pendientes',
   mobile = false,
   collapsed = false
 }: {
@@ -399,6 +468,7 @@ function SidebarNavItem({
   end?: boolean
   onNavigate?: () => void
   notificationCount?: number
+  notificationPhrase?: string
   mobile?: boolean
   collapsed?: boolean
 }) {
@@ -408,15 +478,15 @@ function SidebarNavItem({
   const keyboardFocused = isNavItemHighlighted(index)
   const hasNotification = notificationCount > 0
   const notificationTitle = hasNotification
-    ? `${item.label}: ${notificationCount} sin verificar`
-    : item.label
+    ? `${item.label}: ${notificationCount} ${notificationPhrase}`
+    : item.description || item.label
 
   const link = (
     <NavLink
       ref={(node) => setNavLinkRef(index, node)}
       to={item.disabled ? '#' : item.path}
       end={end}
-      title={collapsed && !mobile ? notificationTitle : undefined}
+      title={notificationTitle}
       onClick={(e) => {
         if (item.disabled) {
           e.preventDefault()
@@ -464,8 +534,8 @@ function SidebarNavItem({
           {hasNotification && (
             <span
               className="ml-auto inline-flex h-2.5 w-2.5 shrink-0 rounded-full bg-amber-500"
-              title={`${notificationCount} sin verificar`}
-              aria-label={`${notificationCount} sin verificar`}
+              title={`${notificationCount} ${notificationPhrase}`}
+              aria-label={`${notificationCount} ${notificationPhrase}`}
             />
           )}
           {item.disabled && (

@@ -5,6 +5,7 @@ import { bootstrapNetworkServer, setupNetworkIpc, shutdownNetworkServer } from '
 import { setupMigracionIpc } from './migracion'
 import { setupHelpPdfIpc } from './helpPdf'
 import { setupAutoUpdater, isInstallingUpdate } from './updater'
+import { setupApkDownloadIpc } from './apkDownload'
 
 const isDev = !app.isPackaged
 
@@ -73,6 +74,7 @@ app.whenReady().then(async () => {
   setupMigracionIpc()
   setupHelpPdfIpc()
   setupAutoUpdater(() => mainWindow)
+  setupApkDownloadIpc(() => mainWindow)
   await bootstrapNetworkServer()
   createWindow()
 

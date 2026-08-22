@@ -14,6 +14,7 @@ export const SECCIONES_ASIGNABLES = [
   { id: 'inventario', label: 'Inventario (conteo)' },
   { id: 'ajustes', label: 'Ajustes de stock' },
   { id: 'camioneros', label: 'Camioneros' },
+  { id: 'agenda_turnos', label: 'Agenda de turnos' },
   { id: 'reportes', label: 'Movimientos del día' },
   { id: 'usuarios', label: 'Usuarios' },
   { id: 'configuracion', label: 'Configuración' }
@@ -33,6 +34,7 @@ const SECCION_PERMISOS: Record<SeccionId, readonly string[]> = {
   inventario: ['inventario.contar'],
   ajustes: ['ajustes.crear'],
   camioneros: ['camioneros.ver', 'camioneros.crear', 'camioneros.editar'],
+  agenda_turnos: ['agenda_turnos.ver', 'agenda_turnos.crear', 'agenda_turnos.editar'],
   reportes: ['reportes.ver', 'reportes.exportar'],
   usuarios: ['usuarios.ver', 'usuarios.crear', 'usuarios.editar'],
   configuracion: ['configuracion.ver']

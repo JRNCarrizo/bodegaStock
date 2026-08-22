@@ -10,6 +10,7 @@ export const ALL_PERMISOS = [
   'sectores.ver', 'sectores.crear', 'sectores.editar',
   'movimientos_internos.ver', 'movimientos_internos.crear',
   'camioneros.ver', 'camioneros.crear', 'camioneros.editar',
+  'agenda_turnos.ver', 'agenda_turnos.crear', 'agenda_turnos.editar',
   'reportes.ver', 'reportes.exportar',
   'inventario.ver', 'inventario.crear_sesion', 'inventario.contar', 'inventario.supervisar', 'inventario.cerrar',
   'usuarios.ver', 'usuarios.crear', 'usuarios.editar',

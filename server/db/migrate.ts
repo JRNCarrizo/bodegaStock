@@ -938,4 +938,70 @@ function migrateMultiLogistica(db: Database.Database): void {
       applied_at TEXT NOT NULL DEFAULT (datetime('now'))
     )
   `)
+
+  if (!tableExists(db, 'insumos_transportistas')) {
+    db.exec(`
+      CREATE TABLE insumos_transportistas (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        nombre TEXT NOT NULL,
+        activo INTEGER NOT NULL DEFAULT 1,
+        created_at TEXT NOT NULL DEFAULT (datetime('now'))
+      )
+    `)
+  }
+
+  if (!tableExists(db, 'agenda_turnos')) {
+    db.exec(`
+      CREATE TABLE agenda_turnos (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        fecha TEXT NOT NULL,
+        descripcion TEXT NOT NULL,
+        cantidad REAL,
+        unidad TEXT NOT NULL CHECK (unidad IN ('PALLETS', 'CAJAS', 'BULTOS')),
+        transportista_id INTEGER NOT NULL REFERENCES insumos_transportistas(id),
+        notas TEXT,
+        estado TEXT NOT NULL DEFAULT 'SOLICITADO'
+          CHECK (estado IN ('SOLICITADO', 'CONFIRMADO', 'CANCELADO')),
+        creado_por_id INTEGER REFERENCES usuarios(id),
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+      CREATE INDEX IF NOT EXISTS idx_agenda_turnos_fecha ON agenda_turnos(fecha);
+    `)
+  } else if (columnNotNull(db, 'agenda_turnos', 'cantidad')) {
+    db.pragma('foreign_keys = OFF')
+    try {
+      db.exec(`
+        CREATE TABLE agenda_turnos_flexible (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          fecha TEXT NOT NULL,
+          descripcion TEXT NOT NULL,
+          cantidad REAL,
+          unidad TEXT NOT NULL CHECK (unidad IN ('PALLETS', 'CAJAS', 'BULTOS')),
+          transportista_id INTEGER NOT NULL REFERENCES insumos_transportistas(id),
+          notas TEXT,
+          estado TEXT NOT NULL DEFAULT 'SOLICITADO'
+            CHECK (estado IN ('SOLICITADO', 'CONFIRMADO', 'CANCELADO')),
+          creado_por_id INTEGER REFERENCES usuarios(id),
+          created_at TEXT NOT NULL DEFAULT (datetime('now')),
+          updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+        )
+      `)
+      db.exec(`
+        INSERT INTO agenda_turnos_flexible (
+          id, fecha, descripcion, cantidad, unidad, transportista_id, notas, estado,
+          creado_por_id, created_at, updated_at
+        )
+        SELECT
+          id, fecha, descripcion, cantidad, unidad, transportista_id, notas, estado,
+          creado_por_id, created_at, updated_at
+        FROM agenda_turnos
+      `)
+      db.exec('DROP TABLE agenda_turnos')
+      db.exec('ALTER TABLE agenda_turnos_flexible RENAME TO agenda_turnos')
+      db.exec('CREATE INDEX IF NOT EXISTS idx_agenda_turnos_fecha ON agenda_turnos(fecha)')
+    } finally {
+      db.pragma('foreign_keys = ON')
+    }
+  }
 }

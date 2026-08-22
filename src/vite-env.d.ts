@@ -58,6 +58,10 @@ export type MigrationExportResult =
     }
   | { ok: false; message?: string }
 
+export type ApkDownloadResult =
+  | { ok: true; version: string; path: string; filename: string }
+  | { ok: false; cancelled?: true; message?: string }
+
 interface Window {
   bodegaStock?: {
     getNetworkInfo?: () => Promise<NetworkRuntimeInfo>
@@ -74,6 +78,7 @@ interface Window {
     checkForUpdates?: () => Promise<UpdateCheckResult>
     downloadUpdate?: () => Promise<UpdateActionResult>
     installUpdate?: () => Promise<UpdateActionResult>
+    downloadLatestApk?: () => Promise<ApkDownloadResult>
     onUpdateStatus?: (callback: (status: UpdateStatusPayload) => void) => () => void
   }
 }

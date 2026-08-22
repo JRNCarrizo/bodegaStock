@@ -182,7 +182,9 @@ export function attachLogisticaToRequest(
     '/api/roles',
     '/api/secciones',
     '/api/configuracion',
-    '/api/migracion'
+    '/api/migracion',
+    '/api/agenda-turnos',
+    '/api/insumos-transportistas'
   ]
   if (skip.some((r) => request.url.startsWith(r))) return
 

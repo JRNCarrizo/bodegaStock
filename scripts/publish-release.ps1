@@ -1,5 +1,5 @@
 param(
-  [string]$Version = "0.3.41"
+  [string]$Version = "0.3.42"
 )
 
 $ErrorActionPreference = "Stop"
@@ -55,16 +55,20 @@ if (Test-Path $ymlPath) { $assets += (Resolve-Path $ymlPath).Path }
 $notes = @"
 ## ControlStock v$Version
 
-Instalación de updates **visible**: ya no solo el cursor de espera.
+Agenda de turnos (insumos), actualización APK y Configuración más ordenada.
 
 ### Nuevo / Mejorado
-- **Instalar y reiniciar** abre el **Setup de Windows completo** (bienvenida + barra de progreso), no el modo silencioso de electron-updater
-- Splash breve “Abriendo el instalador…” antes de cerrar la app
-- Pantalla de bienvenida del NSIS para que quede claro que la instalación está en curso
+- **Agenda de turnos**: vista semanal, estados Solicitado/Confirmado/Cancelado, historial y badge de pendientes
+- Cantidad del producto **opcional** al crear/editar turnos
+- **APK Android**: buscar / descargar / instalar actualización desde Configuración
+- **Escritorio**: botón **Descargar APK** para repartir a celulares
+- Configuración con secciones **plegables** (red, verificación, actualizaciones)
+- Mensaje más claro si GitHub limita el chequeo de updates (HTTP 429)
 
 ### Actualización
-- **APK:** instalá ``ControlStock-$Version.apk`` en los celulares
-- **Windows:** Configuración → Buscar actualizaciones, o Setup de este release
+- **Windows:** Configuración → Buscar actualizaciones, o instalá el Setup de este release
+- **APK:** instalá ``ControlStock-$Version.apk`` una vez (después podés actualizar desde la app)
+- En PC también podés Configuración → Descargar APK para los celulares
 
 Login inicial (base vacía): **admin** / **admin123**
 "@

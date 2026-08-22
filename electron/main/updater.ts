@@ -61,12 +61,21 @@ function friendlyUpdateError(err: unknown): string {
     return 'Esta versión no incluye actualizaciones automáticas. Descargá la última versión desde GitHub Releases e instalá manualmente.'
   }
 
+  if (/429|Too Many Requests|rate limit/i.test(message)) {
+    return 'GitHub limitó las consultas por unos minutos (demasiados intentos). Esperá 10–30 min y volvé a buscar, o instalá el Setup a mano desde Releases.'
+  }
+
   if (message.includes('404') || message.includes('Not Found')) {
     return 'No se encontró un release compatible en GitHub. Descargá el instalador manualmente desde Releases.'
   }
 
   if (/ERR_HTTP2|HTTP2_PROTOCOL|net::ERR_/i.test(message)) {
     return 'Falló la descarga automática (red/GitHub). Probá de nuevo o instalá manualmente el Setup desde GitHub Releases.'
+  }
+
+  // Evitar pegar HTML completo de GitHub en la UI.
+  if (message.includes('<!DOCTYPE html>') || message.length > 280) {
+    return 'No se pudo consultar actualizaciones en GitHub. Probá más tarde o instalá el Setup desde Releases.'
   }
 
   return message
@@ -149,9 +158,7 @@ export function setupAutoUpdater(getWindow: () => BrowserWindow | null) {
   autoUpdater.autoDownload = false
   // Evitar instalación silenciosa al cerrar: el usuario elige “Instalar” y ve el Setup.
   autoUpdater.autoInstallOnAppQuit = false
-  autoUpdater.requestHeaders = {
-    'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0'
-  }
+  // Sin Cache-Control agresivo: fuerza más hits a GitHub y dispara rate limit (429).
 
   autoUpdater.on('checking-for-update', () => {
     sendStatus(getWindow(), { type: 'checking' })

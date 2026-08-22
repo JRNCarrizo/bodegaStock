@@ -35,6 +35,8 @@ export const MIGRATION_TABLES = [
   'inventario_snapshot_lineas',
   'inventario_diferencias',
   'inventario_reportes',
+  'insumos_transportistas',
+  'agenda_turnos',
 ] as const
 
 export type MigrationTableName = (typeof MIGRATION_TABLES)[number]

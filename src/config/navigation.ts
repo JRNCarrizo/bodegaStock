@@ -3,6 +3,7 @@ import {
   AlertTriangle,
   BarChart3,
   Boxes,
+  CalendarDays,
   ClipboardCheck,
   ClipboardList,
   LayoutDashboard,
@@ -36,6 +37,14 @@ export const NAV_ITEMS: NavItem[] = [
   { id: 'movimientos', label: 'Movimientos', path: '/movimientos', permiso: 'movimientos_internos.ver', group: 'Movimientos' },
   { id: 'inventario', label: 'Inventario', path: '/inventario', permisos: ['inventario.ver', 'inventario.contar'], group: 'Inventario' },
   { id: 'camioneros', label: 'Camioneros', path: '/camioneros', permiso: 'camioneros.ver', group: 'Administración' },
+  {
+    id: 'agenda_turnos',
+    label: 'Agenda de turnos',
+    path: '/agenda-turnos',
+    description: 'Insumos',
+    permiso: 'agenda_turnos.ver',
+    group: 'Administración'
+  },
   { id: 'usuarios', label: 'Usuarios', path: '/usuarios', permiso: 'usuarios.ver', group: 'Administración' },
   { id: 'reportes', label: 'Movimientos del día', path: '/reportes', permiso: 'reportes.ver', group: 'Reportes' }
 ]
@@ -52,6 +61,7 @@ export const NAV_ICONS: Record<string, typeof LayoutDashboard> = {
   movimientos: ArrowLeftRight,
   inventario: ClipboardCheck,
   camioneros: Truck,
+  agenda_turnos: CalendarDays,
   reportes: BarChart3,
   usuarios: Users,
   configuracion: Settings

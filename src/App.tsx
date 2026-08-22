@@ -2,6 +2,7 @@ import { Navigate, Route, Routes } from 'react-router-dom'
 import { AuthProvider, useAuth } from '@/context/AuthContext'
 import { InventarioActivoProvider } from '@/context/InventarioActivoContext'
 import { PermisoRoute } from '@/components/PermisoRoute'
+import { AgendaTurnosPage } from '@/pages/AgendaTurnosPage'
 import { CamionerosPage } from '@/pages/CamionerosPage'
 import { ConfiguracionPage } from '@/pages/ConfiguracionPage'
 import { ConsultaPage } from '@/pages/ConsultaPage'
@@ -41,6 +42,14 @@ function AppRoutes() {
       <Route path="/productos" element={<PermisoRoute permiso="productos.ver"><ProductosPage /></PermisoRoute>} />
       <Route path="/sectores" element={<PermisoRoute permiso="sectores.ver"><SectoresPage /></PermisoRoute>} />
       <Route path="/camioneros" element={<PermisoRoute permiso="camioneros.ver"><CamionerosPage /></PermisoRoute>} />
+      <Route
+        path="/agenda-turnos"
+        element={
+          <PermisoRoute permiso="agenda_turnos.ver">
+            <AgendaTurnosPage />
+          </PermisoRoute>
+        }
+      />
       <Route path="/ingresos" element={<PermisoRoute permiso="ingresos.ver"><IngresosPage /></PermisoRoute>} />
       <Route path="/planillas" element={<PermisoRoute permiso="planillas.ver"><PlanillasPage /></PermisoRoute>} />
       <Route path="/retornos" element={<PermisoRoute permiso="retornos.ver"><RetornosPage /></PermisoRoute>} />

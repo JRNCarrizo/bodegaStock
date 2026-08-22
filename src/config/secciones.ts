@@ -11,6 +11,7 @@ export const SECCIONES_ASIGNABLES = [
   { id: 'inventario', label: 'Inventario (conteo)', group: 'Inventario' },
   { id: 'ajustes', label: 'Ajustes de stock', group: 'Inventario' },
   { id: 'camioneros', label: 'Camioneros', group: 'Administración' },
+  { id: 'agenda_turnos', label: 'Agenda de turnos', group: 'Administración' },
   { id: 'reportes', label: 'Movimientos del día', group: 'Reportes' },
   { id: 'usuarios', label: 'Usuarios', group: 'Administración' },
   { id: 'configuracion', label: 'Configuración', group: 'Administración' }

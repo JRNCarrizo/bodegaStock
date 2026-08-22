@@ -13,6 +13,7 @@ contextBridge.exposeInMainWorld('bodegaStock', {
   checkForUpdates: () => ipcRenderer.invoke('update:check'),
   downloadUpdate: () => ipcRenderer.invoke('update:download'),
   installUpdate: () => ipcRenderer.invoke('update:install'),
+  downloadLatestApk: () => ipcRenderer.invoke('apk:download-latest'),
   onUpdateStatus: (callback: (status: unknown) => void) => {
     const listener = (_event: Electron.IpcRendererEvent, status: unknown) => callback(status)
     ipcRenderer.on('update-status', listener)

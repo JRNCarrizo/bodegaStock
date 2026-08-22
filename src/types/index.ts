@@ -182,6 +182,42 @@ export interface CamioneroForm {
   activo: boolean
 }
 
+export type AgendaTurnoEstado = 'SOLICITADO' | 'CONFIRMADO' | 'CANCELADO'
+export type AgendaTurnoUnidad = 'PALLETS' | 'CAJAS' | 'BULTOS'
+
+export interface InsumoTransportista {
+  id: number
+  nombre: string
+  activo: number
+  created_at: string
+}
+
+export interface AgendaTurno {
+  id: number
+  fecha: string
+  descripcion: string
+  cantidad: number | null
+  unidad: AgendaTurnoUnidad
+  transportista_id: number
+  transportista_nombre: string
+  notas: string | null
+  estado: AgendaTurnoEstado
+  creado_por_id: number | null
+  creado_por_nombre: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface AgendaTurnoForm {
+  fecha: string
+  descripcion: string
+  cantidad: string
+  unidad: AgendaTurnoUnidad
+  transportista_id: number | ''
+  notas: string
+  estado: AgendaTurnoEstado
+}
+
 export interface Producto {
   id: number
   codigo_interno: string
@@ -693,6 +729,8 @@ export interface NavItem {
   id: string
   label: string
   path: string
+  /** Texto del tooltip al pasar el cursor (si no hay, usa label). */
+  description?: string
   /** Requiere este permiso (si no hay `permisos`). */
   permiso?: string
   /** Visible si el usuario tiene al menos uno de estos permisos. */

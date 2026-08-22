@@ -1,4 +1,4 @@
-import { CapacitorHttp } from '@capacitor/core'
+import { Capacitor, CapacitorHttp } from '@capacitor/core'
 import { Preferences } from '@capacitor/preferences'
 
 /** Clave de Preferences / localStorage para la URL del PC servidor o nube. */

@@ -25,6 +25,7 @@ import {
   type ReorganizarDesgloseInput
 } from '../utils/stock'
 import { sqlProductoSearchClause } from '../utils/productoSearch'
+import { requireRequestLogistica } from '../utils/logisticas'
 
 interface StockLineaRow {
   id: number
@@ -78,7 +79,7 @@ function formatLineaEtiqueta(row: StockLineaRow, unidadProducto: string): string
   )
 }
 
-function getStockDetalle(db: ReturnType<typeof getDb>, productoId: number) {
+function getStockDetalle(db: ReturnType<typeof getDb>, productoId: number, logisticaId: number) {
   const unidadProducto = getProductoUnidad(db, productoId)
   const { botellasPorCaja } = getProductoDefaults(db, productoId)
   const sectores = db.prepare(`
@@ -90,9 +91,9 @@ function getStockDetalle(db: ReturnType<typeof getDb>, productoId: number) {
       s.nombre AS sector_nombre
     FROM stock_sector ss
     JOIN sectores s ON s.id = ss.sector_id
-    WHERE ss.producto_id = ? AND ${STOCK_SECTOR_VISIBLE_SQL}
+    WHERE ss.producto_id = ? AND ${STOCK_SECTOR_VISIBLE_SQL} AND s.logistica_id = ?
     ORDER BY s.nombre COLLATE NOCASE ASC
-  `).all(productoId) as {
+  `).all(productoId, logisticaId) as {
     stock_sector_id: number
     cantidad_total: number
     sector_id: number
@@ -166,22 +167,66 @@ const SUELTO_TOTAL_PRODUCTO_SQL = `
     SELECT SUM(${STOCK_LINEA_SUELTO_SQL})
     FROM stock_lineas sl
     JOIN stock_sector ss2 ON ss2.id = sl.stock_sector_id
-    WHERE ss2.producto_id = p.id
+    JOIN sectores s_suelto ON s_suelto.id = ss2.sector_id
+    WHERE ss2.producto_id = p.id AND s_suelto.logistica_id = ?
   ), 0)
 `
+
+function stockTotalProductoSql(): string {
+  return `
+    COALESCE((
+      SELECT SUM(ss.cantidad_total) FROM stock_sector ss
+      JOIN sectores s_tot ON s_tot.id = ss.sector_id
+      WHERE ss.producto_id = p.id AND s_tot.logistica_id = ?
+    ), 0)
+  `
+}
+
+function assertStockSectorEnLogistica(
+  db: ReturnType<typeof getDb>,
+  stockSectorId: number,
+  logisticaId: number
+): number {
+  const row = db.prepare(`
+    SELECT ss.sector_id
+    FROM stock_sector ss
+    JOIN sectores s ON s.id = ss.sector_id
+    WHERE ss.id = ? AND s.logistica_id = ?
+  `).get(stockSectorId, logisticaId) as { sector_id: number } | undefined
+  if (!row) throw new Error('El stock no pertenece a la logística activa')
+  return row.sector_id
+}
+
+function assertStockLineEnLogistica(
+  db: ReturnType<typeof getDb>,
+  lineaId: number,
+  logisticaId: number
+): void {
+  const row = db.prepare(`
+    SELECT sl.id
+    FROM stock_lineas sl
+    JOIN stock_sector ss ON ss.id = sl.stock_sector_id
+    JOIN sectores s ON s.id = ss.sector_id
+    WHERE sl.id = ? AND s.logistica_id = ?
+  `).get(lineaId, logisticaId)
+  if (!row) throw new Error('La línea no pertenece a la logística activa')
+}
 
 export async function consultaRoutes(app: FastifyInstance): Promise<void> {
   app.get('/api/consulta/export/stock-productos', {
     preHandler: requirePermiso('consulta.ver')
   }, async (request, reply) => {
     const db = getDb()
+    const logisticaId = requireRequestLogistica(request)
     const { incluir_cero } = request.query as { incluir_cero?: string }
     const incluirCero = incluir_cero === '1' || incluir_cero === 'true'
-    const stockTotalSql = `
-      COALESCE((
-        SELECT SUM(ss.cantidad_total) FROM stock_sector ss WHERE ss.producto_id = p.id
-      ), 0)
-    `
+    const stockTotalSql = stockTotalProductoSql()
+    const exportParams: number[] = [logisticaId, logisticaId]
+    let exportWhere = ''
+    if (!incluirCero) {
+      exportWhere = `AND (${stockTotalSql} > 0 OR ${SUELTO_TOTAL_PRODUCTO_SQL} > 0)`
+      exportParams.push(logisticaId, logisticaId)
+    }
     const rows = db.prepare(`
       SELECT
         p.codigo_interno,
@@ -190,13 +235,9 @@ export async function consultaRoutes(app: FastifyInstance): Promise<void> {
         ${SUELTO_TOTAL_PRODUCTO_SQL} AS botellas
       FROM productos p
       WHERE p.activo = 1
-        ${
-          incluirCero
-            ? ''
-            : `AND (${stockTotalSql} > 0 OR ${SUELTO_TOTAL_PRODUCTO_SQL} > 0)`
-        }
+        ${exportWhere}
       ORDER BY p.codigo_interno COLLATE NOCASE ASC, p.nombre COLLATE NOCASE ASC
-    `).all() as Array<{
+    `).all(...exportParams) as Array<{
       codigo_interno: string
       nombre: string
       cajas: number
@@ -226,6 +267,7 @@ export async function consultaRoutes(app: FastifyInstance): Promise<void> {
     preHandler: requirePermiso('consulta.ver')
   }, async (request, reply) => {
     const db = getDb()
+    const logisticaId = requireRequestLogistica(request)
     const { incluir_cero } = request.query as { incluir_cero?: string }
     const incluirCeros = incluir_cero === '1' || incluir_cero === 'true'
 
@@ -245,9 +287,9 @@ export async function consultaRoutes(app: FastifyInstance): Promise<void> {
       FROM stock_sector ss
       JOIN productos p ON p.id = ss.producto_id
       JOIN sectores s ON s.id = ss.sector_id
-      WHERE p.activo = 1
+      WHERE p.activo = 1 AND s.logistica_id = ?
       ORDER BY p.codigo_interno COLLATE NOCASE ASC
-    `).all() as Array<{
+    `).all(logisticaId) as Array<{
       producto_id: number
       codigo_interno: string
       nombre: string
@@ -317,8 +359,12 @@ export async function consultaRoutes(app: FastifyInstance): Promise<void> {
         SELECT p.id AS producto_id, p.codigo_interno, p.nombre
         FROM productos p
         WHERE p.activo = 1
-          AND NOT EXISTS (SELECT 1 FROM stock_sector ss WHERE ss.producto_id = p.id)
-      `).all() as Array<{ producto_id: number; codigo_interno: string; nombre: string }>
+          AND NOT EXISTS (
+            SELECT 1 FROM stock_sector ss
+            JOIN sectores s ON s.id = ss.sector_id
+            WHERE ss.producto_id = p.id AND s.logistica_id = ?
+          )
+      `).all(logisticaId) as Array<{ producto_id: number; codigo_interno: string; nombre: string }>
 
       for (const p of sinStock) {
         if (productos.has(p.producto_id)) continue
@@ -416,12 +462,17 @@ export async function consultaRoutes(app: FastifyInstance): Promise<void> {
     preHandler: requirePermiso('consulta.ver')
   }, async (request) => {
     const db = getDb()
-    const { page, limit } = request.query as { page?: string; limit?: string }
-    const stockTotalSql = `
-      COALESCE((
-        SELECT SUM(ss.cantidad_total) FROM stock_sector ss WHERE ss.producto_id = p.id
-      ), 0)
-    `
+    const logisticaId = requireRequestLogistica(request)
+    const { page, limit, incluir_cero } = request.query as {
+      page?: string
+      limit?: string
+      incluir_cero?: string
+    }
+    const incluirCero = incluir_cero === '1' || incluir_cero === 'true'
+    const stockTotalSql = stockTotalProductoSql()
+    const stockWhere = incluirCero
+      ? ''
+      : `AND (${stockTotalSql} > 0 OR ${SUELTO_TOTAL_PRODUCTO_SQL} > 0)`
     const selectSql = `
       SELECT
         p.id, p.codigo_interno, p.codigo_barras, p.nombre, p.descripcion,
@@ -431,30 +482,38 @@ export async function consultaRoutes(app: FastifyInstance): Promise<void> {
         COALESCE((
           SELECT COUNT(DISTINCT ss.sector_id)
           FROM stock_sector ss
-          WHERE ss.producto_id = p.id AND ${STOCK_SECTOR_VISIBLE_SQL}
+          JOIN sectores s_cnt ON s_cnt.id = ss.sector_id
+          WHERE ss.producto_id = p.id AND ${STOCK_SECTOR_VISIBLE_SQL} AND s_cnt.logistica_id = ?
         ), 0) AS sectores_con_stock
       FROM productos p
       WHERE p.activo = 1
-        AND ${stockTotalSql} > 0
+        ${stockWhere}
       ORDER BY p.codigo_interno COLLATE NOCASE ASC, p.nombre COLLATE NOCASE ASC
     `
 
+    // stock_total + suelto + sectores_con_stock (+ stock/suelto en WHERE si aplica)
+    const listParams = incluirCero
+      ? [logisticaId, logisticaId, logisticaId]
+      : [logisticaId, logisticaId, logisticaId, logisticaId, logisticaId]
+
     if (page == null) {
-      return db.prepare(selectSql).all()
+      return db.prepare(selectSql).all(...listParams)
     }
 
     const requestedPage = Math.max(1, Number.parseInt(page, 10) || 1)
     const pageSize = Math.min(100, Math.max(1, Number.parseInt(limit ?? '50', 10) || 50))
+    const countParams = incluirCero ? [] : [logisticaId, logisticaId]
     const totalRow = db.prepare(`
       SELECT COUNT(*) AS total
       FROM productos p
-      WHERE p.activo = 1 AND ${stockTotalSql} > 0
-    `).get() as { total: number }
+      WHERE p.activo = 1
+        ${stockWhere}
+    `).get(...countParams) as { total: number }
     const total = Number(totalRow.total)
     const totalPages = Math.max(1, Math.ceil(total / pageSize))
     const currentPage = Math.min(requestedPage, totalPages)
     const offset = (currentPage - 1) * pageSize
-    const items = db.prepare(`${selectSql} LIMIT ? OFFSET ?`).all(pageSize, offset)
+    const items = db.prepare(`${selectSql} LIMIT ? OFFSET ?`).all(...listParams, pageSize, offset)
 
     return {
       items,
@@ -468,37 +527,47 @@ export async function consultaRoutes(app: FastifyInstance): Promise<void> {
   app.get('/api/consulta', {
     preHandler: requirePermiso('consulta.ver')
   }, async (request, reply) => {
-    const { q } = request.query as { q?: string }
+    const { q, incluir_cero } = request.query as { q?: string; incluir_cero?: string }
 
     if (!q?.trim()) {
       return reply.status(400).send({ error: 'Ingresá un término de búsqueda' })
     }
 
     const db = getDb()
+    const logisticaId = requireRequestLogistica(request)
+    const incluirCero = incluir_cero === '1' || incluir_cero === 'true'
     const search = sqlProductoSearchClause(q, { prefix: 'p.' })
     if (!search) {
       return reply.status(400).send({ error: 'Ingresá un término de búsqueda' })
     }
 
+    const stockTotalSql = stockTotalProductoSql()
+    const stockWhere = incluirCero
+      ? ''
+      : `AND (${stockTotalSql} > 0 OR ${SUELTO_TOTAL_PRODUCTO_SQL} > 0)`
     const productos = db.prepare(`
       SELECT
         p.id, p.codigo_interno, p.codigo_barras, p.nombre, p.descripcion,
         p.imagen_path, p.activo, p.unidad,
-        COALESCE((
-          SELECT SUM(ss.cantidad_total) FROM stock_sector ss WHERE ss.producto_id = p.id
-        ), 0) AS stock_total,
+        ${stockTotalSql} AS stock_total,
         ${SUELTO_TOTAL_PRODUCTO_SQL} AS suelto_total,
         COALESCE((
           SELECT COUNT(DISTINCT ss.sector_id)
           FROM stock_sector ss
-          WHERE ss.producto_id = p.id AND ${STOCK_SECTOR_VISIBLE_SQL}
+          JOIN sectores s_cnt ON s_cnt.id = ss.sector_id
+          WHERE ss.producto_id = p.id AND ${STOCK_SECTOR_VISIBLE_SQL} AND s_cnt.logistica_id = ?
         ), 0) AS sectores_con_stock
       FROM productos p
       WHERE p.activo = 1
         AND ${search.sql}
+        ${stockWhere}
       ORDER BY p.nombre COLLATE NOCASE ASC
       LIMIT 25
-    `).all(...search.params)
+    `).all(
+      ...(incluirCero
+        ? [logisticaId, logisticaId, logisticaId, ...search.params]
+        : [logisticaId, logisticaId, logisticaId, ...search.params, logisticaId, logisticaId])
+    )
 
     return productos
   })
@@ -508,6 +577,7 @@ export async function consultaRoutes(app: FastifyInstance): Promise<void> {
   }, async (request, reply) => {
     const id = Number((request.params as { id: string }).id)
     const db = getDb()
+    const logisticaId = requireRequestLogistica(request)
 
     const producto = db.prepare(`
       SELECT id, codigo_interno, codigo_barras, nombre, descripcion, imagen_path, activo, unidad
@@ -518,7 +588,7 @@ export async function consultaRoutes(app: FastifyInstance): Promise<void> {
       return reply.status(404).send({ error: 'Producto no encontrado' })
     }
 
-    const sectores = getStockDetalle(db, id)
+    const sectores = getStockDetalle(db, id, logisticaId)
     const stock_total = sectores.reduce((sum, s) => sum + s.cantidad_total, 0)
     const suelto_total = sectores.reduce((sum, s) => sum + s.suelto_total, 0)
 
@@ -540,6 +610,7 @@ export async function consultaRoutes(app: FastifyInstance): Promise<void> {
 
     const db = getDb()
     const user = request.user!
+    const logisticaId = requireRequestLogistica(request)
 
     const body = (request.body ?? {}) as Partial<ReorganizarDesgloseInput>
     const bultos = Array.isArray(body.bultos) ? body.bultos : []
@@ -556,6 +627,8 @@ export async function consultaRoutes(app: FastifyInstance): Promise<void> {
     }
 
     try {
+      assertStockLineEnLogistica(db, lineaId, logisticaId)
+
       const lineaRow = db.prepare(`
         SELECT ss.producto_id
         FROM stock_lineas sl
@@ -574,7 +647,7 @@ export async function consultaRoutes(app: FastifyInstance): Promise<void> {
         FROM productos WHERE id = ?
       `).get(lineaRow.producto_id)
 
-      const sectores = getStockDetalle(db, lineaRow.producto_id)
+      const sectores = getStockDetalle(db, lineaRow.producto_id, logisticaId)
       const stock_total = sectores.reduce((sum, s) => sum + s.cantidad_total, 0)
       const suelto_total = sectores.reduce((sum, s) => sum + s.suelto_total, 0)
 
@@ -599,6 +672,7 @@ export async function consultaRoutes(app: FastifyInstance): Promise<void> {
 
     const db = getDb()
     const user = request.user!
+    const logisticaId = requireRequestLogistica(request)
 
     const body = (request.body ?? {}) as Partial<ReorganizarDesgloseInput> & {
       ubicacion_id?: number | null
@@ -623,22 +697,16 @@ export async function consultaRoutes(app: FastifyInstance): Promise<void> {
     }
 
     try {
-      const sectorRow = db.prepare(`
-        SELECT producto_id FROM stock_sector WHERE id = ?
-      `).get(stockSectorId) as { producto_id: number } | undefined
-
-      if (!sectorRow) {
-        return reply.status(404).send({ error: 'Stock del sector no encontrado' })
-      }
+      const productoId = assertStockSectorEnLogistica(db, stockSectorId, logisticaId)
 
       const result = reorganizeStockSector(db, stockSectorId, user.id, desglose, scope)
 
       const producto = db.prepare(`
         SELECT id, codigo_interno, codigo_barras, nombre, descripcion, imagen_path, activo, unidad
         FROM productos WHERE id = ?
-      `).get(sectorRow.producto_id)
+      `).get(productoId)
 
-      const sectores = getStockDetalle(db, sectorRow.producto_id)
+      const sectores = getStockDetalle(db, productoId, logisticaId)
       const stock_total = sectores.reduce((sum, s) => sum + s.cantidad_total, 0)
       const suelto_total = sectores.reduce((sum, s) => sum + s.suelto_total, 0)
 
@@ -663,6 +731,7 @@ export async function consultaRoutes(app: FastifyInstance): Promise<void> {
 
     const db = getDb()
     const user = request.user!
+    const logisticaId = requireRequestLogistica(request)
     const body = (request.body ?? {}) as {
       motivo?: string
       lineas?: AjusteStockLineaInput[]
@@ -684,21 +753,16 @@ export async function consultaRoutes(app: FastifyInstance): Promise<void> {
     }))
 
     try {
-      const sectorMeta = db
-        .prepare(`SELECT producto_id FROM stock_sector WHERE id = ?`)
-        .get(stockSectorId) as { producto_id: number } | undefined
-      if (!sectorMeta) {
-        return reply.status(404).send({ error: 'Stock por sector no encontrado' })
-      }
+      const productoId = assertStockSectorEnLogistica(db, stockSectorId, logisticaId)
 
       const result = ajustarStockSector(db, stockSectorId, user.id, lineas, motivo)
 
       const producto = db.prepare(`
         SELECT id, codigo_interno, codigo_barras, nombre, descripcion, imagen_path, activo, unidad
         FROM productos WHERE id = ?
-      `).get(sectorMeta.producto_id)
+      `).get(productoId)
 
-      const sectores = getStockDetalle(db, sectorMeta.producto_id)
+      const sectores = getStockDetalle(db, productoId, logisticaId)
       const stock_total = sectores.reduce((sum, s) => sum + s.cantidad_total, 0)
       const suelto_total = sectores.reduce((sum, s) => sum + s.suelto_total, 0)
 

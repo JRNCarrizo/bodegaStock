@@ -3,6 +3,7 @@ import jwt from 'jsonwebtoken'
 import { getDb } from '../db'
 import { getJwtSecret } from '../runtime-env'
 import { getPermisosForUser, getRolNombre, getSeccionesForUser, isAdministradorRol } from '../utils/secciones'
+import { attachLogisticaToRequest, buildAuthLogisticaPayload } from '../utils/logisticas'
 
 export interface AuthUser {
   id: number
@@ -52,7 +53,8 @@ export function authUserResponse(user: AuthUser) {
     rol_nombre: rolNombre,
     es_admin: esAdmin,
     secciones,
-    permisos: user.permisos
+    permisos: user.permisos,
+    ...buildAuthLogisticaPayload(db, user)
   }
 }
 
@@ -82,6 +84,8 @@ export function registerAuthHook(app: FastifyInstance): void {
     } catch {
       return reply.status(401).send({ error: 'Token inválido o expirado' })
     }
+
+    attachLogisticaToRequest(request, reply)
   })
 }
 

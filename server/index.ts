@@ -27,6 +27,7 @@ import { productosRoutes } from './routes/productos'
 import { sectoresRoutes } from './routes/sectores'
 import { usuariosRoutes } from './routes/usuarios'
 import { migracionRoutes } from './routes/migracion'
+import { logisticasRoutes } from './routes/logisticas'
 
 function resolveRendererDir(): string | null {
   const candidates = [
@@ -140,6 +141,7 @@ export async function startServer(options: StartServerOptions = {}): Promise<voi
   await server.register(reportesRoutes)
   await server.register(inventarioRoutes)
   await server.register(migracionRoutes)
+  await server.register(logisticasRoutes)
 
   const rendererDir = resolveRendererDir()
   if (rendererDir) {

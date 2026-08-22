@@ -9,6 +9,15 @@ export function cn(...inputs: ClassValue[]): string {
 const DEFAULT_API_URL = 'http://127.0.0.1:3847'
 
 let apiUrl = DEFAULT_API_URL
+let activeLogisticaId: number | null = null
+
+export function setActiveLogisticaId(id: number | null): void {
+  activeLogisticaId = id && id > 0 ? id : null
+}
+
+export function getActiveLogisticaId(): number | null {
+  return activeLogisticaId
+}
 
 export function getApiUrl(): string {
   return apiUrl
@@ -72,6 +81,10 @@ export async function api<T>(
 
   if (token) {
     headers['Authorization'] = `Bearer ${token}`
+  }
+
+  if (activeLogisticaId) {
+    headers['X-Logistica-Id'] = String(activeLogisticaId)
   }
 
   const controller = new AbortController()

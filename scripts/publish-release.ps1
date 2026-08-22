@@ -1,5 +1,5 @@
 param(
-  [string]$Version = "0.3.38"
+  [string]$Version = "0.3.39"
 )
 
 $ErrorActionPreference = "Stop"
@@ -55,18 +55,14 @@ if (Test-Path $ymlPath) { $assets += (Resolve-Path $ymlPath).Path }
 $notes = @"
 ## ControlStock v$Version
 
-Permisos operativos, sector por defecto en ingresos y mejoras en planillas/camioneros.
+Multi-logística Esmeralda + NAKBE, consulta con productos en cero y mejoras de sesión.
 
 ### Nuevo
-- **Configuración** accesible con permiso ``configuracion.ver`` (red, actualizaciones, toggles) sin ser admin
-- **Sector destino por defecto en ingresos**: checkbox en Sectores; preselección editable al cargar ingresos
-- **Planillas**: alias del vehículo en selector, banner de carga y listado
-- Operadores de ingresos/planillas/retornos/roturas/movimientos pueden **listar sectores, productos y camioneros** sin tener las secciones de catálogo en el menú
-- Documentación: multi-logística Esmeralda + **NAKBE** (planificado)
-
-### Corregido
-- Preselección del sector por defecto en ingresos (select y borradores)
-- Mejoras en pantalla **Camioneros** (vehículos, alias)
+- **Dos logísticas** en el mismo sistema: Esmeralda y NAKBE (stock, sectores, camioneros, documentos e inventarios independientes)
+- **Admin**: selector en el menú para cambiar de logística **sin cerrar sesión**
+- **Operadores**: asignados a una sola logística; ven solo esa empresa (sin desplegable)
+- **Consulta**: el checkbox «Incluir productos en cero» también aplica al listado y la búsqueda (no solo al Excel)
+- Borradores de ingresos/planillas/retornos separados por logística
 
 ### Actualización
 - **APK:** instalá ``ControlStock-$Version.apk`` en los celulares
@@ -92,10 +88,7 @@ if ($LASTEXITCODE -eq 0 -and $existing) {
 }
 
 if ($LASTEXITCODE -eq 0) {
-  $url = gh release view $tag --json url -q .url
-  Write-Host ""
-  Write-Host "Release publicado:" -ForegroundColor Green
-  Write-Host $url -ForegroundColor Cyan
+  Write-Host "Listo: https://github.com/JRNCarrizo/bodegaStock/releases/tag/$tag" -ForegroundColor Green
 } else {
-  Write-Error "No se pudo publicar el release."
+  exit $LASTEXITCODE
 }

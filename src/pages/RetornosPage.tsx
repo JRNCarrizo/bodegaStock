@@ -39,6 +39,7 @@ import { formatCantidad, formatDayTabLabel, formatTotalCajas, todayIsoDate } fro
 import { downloadApiFile } from '@/lib/downloadFile'
 import { labelVehiculoDetalle, labelVehiculoOperativo } from '@/lib/camioneros'
 import { searchDelayMs } from '@/lib/searchDelay'
+import { clearDraft, readDraft, writeDraft } from '@/lib/draftStorage'
 import { api, cn } from '@/lib/utils'
 import { codigoProductoExacto } from '@/lib/productoSearch'
 import type {
@@ -168,31 +169,17 @@ type RetornoDraftStored = {
 }
 
 function readRetornoDraft(): RetornoDraftStored | null {
-  try {
-    const raw = localStorage.getItem(RETORNO_DRAFT_KEY)
-    if (!raw) return null
-    const parsed = JSON.parse(raw) as RetornoDraftStored
-    if (!parsed || !Array.isArray(parsed.lineas)) return null
-    return parsed
-  } catch {
-    return null
-  }
+  const parsed = readDraft<RetornoDraftStored>(RETORNO_DRAFT_KEY)
+  if (!parsed || !Array.isArray(parsed.lineas)) return null
+  return parsed
 }
 
 function writeRetornoDraft(draft: RetornoDraftStored): void {
-  try {
-    localStorage.setItem(RETORNO_DRAFT_KEY, JSON.stringify(draft))
-  } catch {
-    /* quota / private mode */
-  }
+  writeDraft(RETORNO_DRAFT_KEY, draft)
 }
 
 function clearRetornoDraft(): void {
-  try {
-    localStorage.removeItem(RETORNO_DRAFT_KEY)
-  } catch {
-    /* ignore */
-  }
+  clearDraft(RETORNO_DRAFT_KEY)
 }
 
 function retornoDraftTieneContenido(d: {

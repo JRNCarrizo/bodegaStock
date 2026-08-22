@@ -3,6 +3,7 @@ import { ensureSystemRoles } from './roles-seed'
 import { migrateLegacyUsersToSecciones } from '../utils/secciones'
 import { syncUnidadesPorCajaFromNombres } from '../utils/empaqueNombre'
 import { recalcStockTotalsEnCajas } from '../utils/stock'
+import { ensureLogisticasSeed, getLogisticaEsmeraldaId } from '../utils/logisticas'
 
 function columnExists(db: Database.Database, table: string, column: string): boolean {
   const cols = db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[]
@@ -842,4 +843,99 @@ export function runMigrations(db: Database.Database): void {
       )
     `)
   }
+
+  migrateMultiLogistica(db)
+}
+
+function migrateMultiLogistica(db: Database.Database): void {
+  if (tableExists(db, '_migration_multi_logistica')) return
+
+  ensureLogisticasSeed(db)
+  const esmeraldaId = getLogisticaEsmeraldaId(db)
+
+  const tables: Array<{ name: string; backfillSql?: string }> = [
+    { name: 'sectores' },
+    {
+      name: 'camioneros',
+      backfillSql: `UPDATE camioneros SET logistica_id = ${esmeraldaId} WHERE logistica_id IS NULL`
+    },
+    { name: 'usuarios' },
+    {
+      name: 'inventario_sesiones',
+      backfillSql: `UPDATE inventario_sesiones SET logistica_id = ${esmeraldaId} WHERE logistica_id IS NULL`
+    },
+    {
+      name: 'planillas',
+      backfillSql: `
+        UPDATE planillas SET logistica_id = (
+          SELECT logistica_id FROM camioneros c WHERE c.id = planillas.camionero_id
+        )
+        WHERE logistica_id IS NULL
+      `
+    },
+    {
+      name: 'ingresos',
+      backfillSql: `
+        UPDATE ingresos SET logistica_id = (
+          SELECT logistica_id FROM sectores s WHERE s.id = ingresos.sector_id
+        )
+        WHERE logistica_id IS NULL
+      `
+    },
+    {
+      name: 'retornos',
+      backfillSql: `
+        UPDATE retornos SET logistica_id = COALESCE(
+          (SELECT logistica_id FROM camioneros c WHERE c.id = retornos.camionero_id),
+          (SELECT logistica_id FROM sectores s WHERE s.id = retornos.sector_id),
+          ${esmeraldaId}
+        )
+        WHERE logistica_id IS NULL
+      `
+    },
+    {
+      name: 'roturas',
+      backfillSql: `
+        UPDATE roturas SET logistica_id = COALESCE(
+          (
+            SELECT s.logistica_id FROM rotura_lineas rl
+            JOIN sectores s ON s.id = rl.sector_id
+            WHERE rl.rotura_id = roturas.id
+            LIMIT 1
+          ),
+          ${esmeraldaId}
+        )
+        WHERE logistica_id IS NULL
+      `
+    },
+    {
+      name: 'movimientos_internos',
+      backfillSql: `
+        UPDATE movimientos_internos SET logistica_id = COALESCE(
+          (SELECT logistica_id FROM sectores s WHERE s.id = movimientos_internos.sector_origen_id),
+          (SELECT logistica_id FROM sectores s WHERE s.id = movimientos_internos.sector_destino_id),
+          ${esmeraldaId}
+        )
+        WHERE logistica_id IS NULL
+      `
+    }
+  ]
+
+  for (const t of tables) {
+    if (!tableExists(db, t.name)) continue
+    if (!columnExists(db, t.name, 'logistica_id')) {
+      db.exec(`ALTER TABLE ${t.name} ADD COLUMN logistica_id INTEGER REFERENCES logisticas(id)`)
+    }
+    if (t.name === 'sectores') {
+      db.exec(`UPDATE sectores SET logistica_id = ${esmeraldaId} WHERE logistica_id IS NULL`)
+    } else if (t.backfillSql) {
+      db.exec(t.backfillSql)
+    }
+  }
+
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS _migration_multi_logistica (
+      applied_at TEXT NOT NULL DEFAULT (datetime('now'))
+    )
+  `)
 }

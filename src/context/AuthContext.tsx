@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from 'react'
-import { api } from '@/lib/utils'
+import { api, setActiveLogisticaId } from '@/lib/utils'
 import {
   loadOfflineAuth,
   saveOfflineAuth,
@@ -19,6 +19,8 @@ interface AuthContextValue {
   logout: () => void
   refreshUser: () => Promise<void>
   hasPermiso: (codigo: string) => boolean
+  setLogisticaActiva: (logisticaId: number) => Promise<void>
+  logisticaActivaNombre: string | null
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null)
@@ -36,6 +38,19 @@ function isCredentialError(message: string): boolean {
   return /usuario|clave|contrase|credencial|inválid|incorrect|no autorizado|401/i.test(message)
 }
 
+function applyLogisticaFromUser(u: Usuario | null): void {
+  if (!u?.logistica_activa_id) {
+    setActiveLogisticaId(null)
+    return
+  }
+  setActiveLogisticaId(u.logistica_activa_id)
+}
+
+function logisticaLabel(u: Usuario | null): string | null {
+  if (!u?.logistica_activa_id || !u.logisticas?.length) return null
+  return u.logisticas.find((l) => l.id === u.logistica_activa_id)?.nombre ?? null
+}
+
 function applyOfflineSession(
   cached: { token: string; usuario: Usuario },
   setUser: (u: Usuario) => void,
@@ -43,6 +58,7 @@ function applyOfflineSession(
 ): LoginMode {
   localStorage.setItem('token', cached.token)
   setUser(cached.usuario)
+  applyLogisticaFromUser(cached.usuario)
   setOfflineSession(true)
   return 'offline'
 }
@@ -63,12 +79,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       const data = await api<Usuario>('/api/auth/me', { timeoutMs: ME_TIMEOUT_MS })
       setUser(data)
+      applyLogisticaFromUser(data)
       setOfflineSession(false)
       await updateOfflineAuthUsuario(data, token)
     } catch {
       const cached = await loadOfflineAuth()
       if (cached && cached.token === token) {
         setUser(cached.usuario)
+        applyLogisticaFromUser(cached.usuario)
         setOfflineSession(true)
         return
       }
@@ -140,6 +158,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       })
       localStorage.setItem('token', data.token)
       setUser(data.usuario)
+      applyLogisticaFromUser(data.usuario)
       setOfflineSession(false)
       await saveOfflineAuth(data.token, data.usuario, username, password)
       return 'online'
@@ -169,16 +188,51 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   function logout() {
     localStorage.removeItem('token')
     setUser(null)
+    setActiveLogisticaId(null)
     setOfflineSession(false)
+  }
+
+  async function setLogisticaActiva(logisticaId: number) {
+    const data = await api<Usuario & { ok?: boolean }>('/api/logisticas/activa', {
+      method: 'PUT',
+      body: JSON.stringify({ logistica_id: logisticaId })
+    })
+    const nextId = data.logistica_activa_id ?? logisticaId
+    setActiveLogisticaId(nextId)
+    setUser((prev) => {
+      if (!prev) return prev
+      const next: Usuario = {
+        ...prev,
+        logistica_activa_id: nextId,
+        logisticas: data.logisticas ?? prev.logisticas,
+        logistica_asignada_id: data.logistica_asignada_id ?? prev.logistica_asignada_id,
+        puede_cambiar_logistica: data.puede_cambiar_logistica ?? prev.puede_cambiar_logistica
+      }
+      const token = localStorage.getItem('token')
+      if (token) void updateOfflineAuthUsuario(next, token)
+      return next
+    })
   }
 
   function hasPermiso(codigo: string) {
     return user?.permisos.includes(codigo) ?? false
   }
 
+  const logisticaActivaNombre = logisticaLabel(user)
+
   return (
     <AuthContext.Provider
-      value={{ user, loading, offlineSession, login, logout, refreshUser, hasPermiso }}
+      value={{
+        user,
+        loading,
+        offlineSession,
+        login,
+        logout,
+        refreshUser,
+        hasPermiso,
+        setLogisticaActiva,
+        logisticaActivaNombre
+      }}
     >
       {children}
     </AuthContext.Provider>

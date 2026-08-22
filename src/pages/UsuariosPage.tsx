@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Loader2, Pencil, Plus, Search, Shield, UserCog, X } from 'lucide-react'
 import { api, cn } from '@/lib/utils'
-import type { Rol, UsuarioListItem } from '@/types'
+import type { LogisticaOption, Rol, UsuarioListItem } from '@/types'
 import { useAuth } from '@/context/AuthContext'
 import { SECCIONES_ASIGNABLES, SECCION_GROUPS, SECCION_LABELS, type SeccionId } from '@/config/secciones'
 import { useEscHandler } from '@/hooks/useEscHandler'
@@ -21,8 +21,72 @@ function emptyCreateForm(defaultRolId = '') {
     password: '',
     nombre: '',
     rol_id: defaultRolId,
-    secciones: [] as SeccionId[]
+    secciones: [] as SeccionId[],
+    logistica_id: '' as '' | string
   }
+}
+
+function logisticaAsignadaLabel(
+  logisticaId: number | null,
+  logisticas: LogisticaOption[],
+  rolNombre: string | null
+): string {
+  if (rolNombre === ROL_ADMIN) return 'Esmeralda y NAKBE'
+  if (logisticaId == null) return 'Esmeralda'
+  return logisticas.find((l) => l.id === logisticaId)?.nombre ?? 'Logística'
+}
+
+function rolIdEsAdministrador(roles: Rol[], rolId: string): boolean {
+  if (!rolId) return false
+  return roles.find((r) => String(r.id) === rolId)?.nombre === ROL_ADMIN
+}
+
+function LogisticaSelect({
+  value,
+  onChange,
+  logisticas,
+  disabled,
+  esAdministrador
+}: {
+  value: string
+  onChange: (next: string) => void
+  logisticas: LogisticaOption[]
+  disabled?: boolean
+  esAdministrador?: boolean
+}) {
+  if (esAdministrador) {
+    return (
+      <div className="rounded-xl border border-surface-border bg-slate-50 px-4 py-3 text-sm text-slate-600">
+        <p className="font-medium text-slate-800">Logística</p>
+        <p className="mt-1 text-xs leading-relaxed text-slate-500">
+          Los administradores operan en Esmeralda y NAKBE y cambian desde el menú lateral.
+        </p>
+      </div>
+    )
+  }
+
+  return (
+    <div className="space-y-1.5">
+      <label className="block text-sm font-medium text-slate-700">Logística *</label>
+      <select
+        className={selectClass}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        disabled={disabled}
+        required
+      >
+        <option value="">Seleccionar logística...</option>
+        {logisticas.map((l) => (
+          <option key={l.id} value={l.id}>
+            {l.nombre}
+          </option>
+        ))}
+      </select>
+      <p className="text-xs text-slate-500">
+        El operador verá solo esta empresa al iniciar sesión (sin selector en el menú).
+      </p>
+    </div>
+  )
 }
 
 function rolIdEsUsuario(roles: Rol[], rolId: string): boolean {
@@ -99,6 +163,14 @@ function pillActivo(activo: boolean) {
   )
 }
 
+function pillLogistica(label: string) {
+  return (
+    <span className="inline-flex items-center rounded-full bg-violet-50 px-2.5 py-0.5 text-xs font-medium text-violet-800 ring-1 ring-violet-100">
+      {label}
+    </span>
+  )
+}
+
 function pillRol(rolNombre: string | null) {
   if (!rolNombre) {
     return (
@@ -128,7 +200,8 @@ function EditarUsuarioModal({
   saving,
   error,
   onClose,
-  onSubmit
+  onSubmit,
+  logisticas
 }: {
   open: boolean
   usuario: UsuarioListItem | null
@@ -140,6 +213,7 @@ function EditarUsuarioModal({
     activo: boolean
     password: string
     secciones: SeccionId[]
+    logistica_id: string
   }
   setEditForm: React.Dispatch<
     React.SetStateAction<{
@@ -148,8 +222,10 @@ function EditarUsuarioModal({
       activo: boolean
       password: string
       secciones: SeccionId[]
+      logistica_id: string
     }>
   >
+  logisticas: LogisticaOption[]
   saving: boolean
   error: string
   onClose: () => void
@@ -213,7 +289,10 @@ function EditarUsuarioModal({
                   setEditForm({
                     ...editForm,
                     rol_id: e.target.value,
-                    secciones: rolIdEsUsuario(roles, e.target.value) ? editForm.secciones : []
+                    secciones: rolIdEsUsuario(roles, e.target.value) ? editForm.secciones : [],
+                    logistica_id: rolIdEsAdministrador(roles, e.target.value)
+                      ? ''
+                      : editForm.logistica_id || (logisticas[0] ? String(logisticas[0].id) : '')
                   })
                 }
                 required
@@ -233,6 +312,13 @@ function EditarUsuarioModal({
                 onChange={(secciones) => setEditForm({ ...editForm, secciones })}
               />
             )}
+            <LogisticaSelect
+              value={editForm.logistica_id}
+              onChange={(logistica_id) => setEditForm({ ...editForm, logistica_id })}
+              logisticas={logisticas}
+              disabled={saving}
+              esAdministrador={rolIdEsAdministrador(roles, editForm.rol_id)}
+            />
             <Input
               label="Nueva contraseña"
               type="password"
@@ -269,6 +355,7 @@ export function UsuariosPage() {
   const { hasPermiso } = useAuth()
   const [usuarios, setUsuarios] = useState<UsuarioListItem[]>([])
   const [roles, setRoles] = useState<Rol[]>([])
+  const [logisticas, setLogisticas] = useState<LogisticaOption[]>([])
   const [search, setSearch] = useState('')
   const [loading, setLoading] = useState(true)
   const [showForm, setShowForm] = useState(false)
@@ -282,7 +369,8 @@ export function UsuariosPage() {
     rol_id: '',
     activo: true,
     password: '',
-    secciones: [] as SeccionId[]
+    secciones: [] as SeccionId[],
+    logistica_id: ''
   })
   const searchRef = useRef<HTMLInputElement>(null)
 
@@ -318,12 +406,14 @@ export function UsuariosPage() {
   async function load() {
     setLoading(true)
     try {
-      const [u, r] = await Promise.all([
+      const [u, r, l] = await Promise.all([
         api<UsuarioListItem[]>('/api/usuarios'),
-        api<Rol[]>('/api/roles')
+        api<Rol[]>('/api/roles'),
+        api<LogisticaOption[]>('/api/logisticas')
       ])
       setUsuarios(u)
       setRoles(r)
+      setLogisticas(l)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error al cargar')
     } finally {
@@ -356,7 +446,8 @@ export function UsuariosPage() {
       rol_id: u.rol_id ? String(u.rol_id) : defaultRolId,
       activo: !!u.activo,
       password: '',
-      secciones: (u.secciones ?? []) as SeccionId[]
+      secciones: (u.secciones ?? []) as SeccionId[],
+      logistica_id: u.logistica_id != null ? String(u.logistica_id) : ''
     })
     setEditError('')
     setError('')
@@ -364,7 +455,7 @@ export function UsuariosPage() {
 
   function cancelarEditar() {
     setEditingId(null)
-    setEditForm({ nombre: '', rol_id: '', activo: true, password: '', secciones: [] })
+    setEditForm({ nombre: '', rol_id: '', activo: true, password: '', secciones: [], logistica_id: '' })
     setEditError('')
   }
 
@@ -401,6 +492,10 @@ export function UsuariosPage() {
       setError('Seleccioná al menos una sección para el usuario')
       return
     }
+    if (rolIdEsUsuario(roles, form.rol_id) && !form.logistica_id) {
+      setError('Seleccioná la logística del operador')
+      return
+    }
     setSaving(true)
     setError('')
     try {
@@ -411,7 +506,12 @@ export function UsuariosPage() {
           password: form.password,
           nombre: form.nombre,
           rol_id: Number(form.rol_id),
-          secciones: rolIdEsUsuario(roles, form.rol_id) ? form.secciones : []
+          secciones: rolIdEsUsuario(roles, form.rol_id) ? form.secciones : [],
+          logistica_id: rolIdEsAdministrador(roles, form.rol_id)
+            ? null
+            : form.logistica_id
+              ? Number(form.logistica_id)
+              : null
         })
       })
       setForm(emptyCreateForm(defaultRolId))
@@ -435,6 +535,10 @@ export function UsuariosPage() {
       setEditError('Seleccioná al menos una sección para el usuario')
       return
     }
+    if (rolIdEsUsuario(roles, editForm.rol_id) && !editForm.logistica_id) {
+      setEditError('Seleccioná la logística del operador')
+      return
+    }
     setSaving(true)
     setEditError('')
     try {
@@ -445,6 +549,11 @@ export function UsuariosPage() {
           rol_id: Number(editForm.rol_id),
           activo: editForm.activo,
           secciones: rolIdEsUsuario(roles, editForm.rol_id) ? editForm.secciones : [],
+          logistica_id: rolIdEsAdministrador(roles, editForm.rol_id)
+            ? null
+            : editForm.logistica_id
+              ? Number(editForm.logistica_id)
+              : null,
           ...(editForm.password.trim() ? { password: editForm.password } : {})
         })
       })
@@ -549,7 +658,10 @@ export function UsuariosPage() {
                     setForm({
                       ...form,
                       rol_id: e.target.value,
-                      secciones: rolIdEsUsuario(roles, e.target.value) ? form.secciones : []
+                      secciones: rolIdEsUsuario(roles, e.target.value) ? form.secciones : [],
+                      logistica_id: rolIdEsAdministrador(roles, e.target.value)
+                        ? ''
+                        : form.logistica_id || (logisticas[0] ? String(logisticas[0].id) : '')
                     })
                   }
                   required
@@ -571,6 +683,13 @@ export function UsuariosPage() {
                   onChange={(secciones) => setForm({ ...form, secciones })}
                 />
               )}
+              <LogisticaSelect
+                value={form.logistica_id}
+                onChange={(logistica_id) => setForm({ ...form, logistica_id })}
+                logisticas={logisticas}
+                disabled={saving}
+                esAdministrador={rolIdEsAdministrador(roles, form.rol_id)}
+              />
               <div className="sm:col-span-2 rounded-xl border border-brand-100 bg-brand-50/60 px-4 py-3 text-xs leading-relaxed text-slate-600">
                 Ejemplo: un usuario con sección <strong>Retornos</strong> puede cargar y verificar
                 retornos. El <strong>Administrador</strong> ve todo, incluida Configuración.
@@ -666,7 +785,10 @@ export function UsuariosPage() {
                       {pillActivo(u.activo)}
                     </div>
                     <p className="mt-1 font-mono text-sm text-slate-600">@{u.username}</p>
-                    <div className="mt-2">{pillRol(u.rol_nombre)}</div>
+                    <div className="mt-2 flex flex-wrap items-center gap-2">
+                      {pillRol(u.rol_nombre)}
+                      {pillLogistica(logisticaAsignadaLabel(u.logistica_id, logisticas, u.rol_nombre))}
+                    </div>
                     {u.rol_nombre === ROL_USUARIO && u.secciones.length > 0 && (
                       <div className="mt-2 flex flex-wrap gap-1.5">
                         {u.secciones.map((s) => (
@@ -719,6 +841,7 @@ export function UsuariosPage() {
           error={editError}
           onClose={cancelarEditar}
           onSubmit={handleUpdate}
+          logisticas={logisticas}
         />
       )}
     </div>

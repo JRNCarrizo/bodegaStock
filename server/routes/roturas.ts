@@ -2,6 +2,7 @@ import type { FastifyInstance } from 'fastify'
 import { getDb } from '../db'
 import { requirePermiso } from '../plugins/auth'
 import { blockIfInventarioActivo } from '../utils/inventario-block'
+import { assertSectorEnLogistica, requireRequestLogistica } from '../utils/logisticas'
 import {
   buildMultiSheetExcel,
   resumenSheet,
@@ -63,15 +64,21 @@ function getRoturaLineas(db: ReturnType<typeof getDb>, roturaId: number) {
   }>
 }
 
-function getRoturaHeader(db: ReturnType<typeof getDb>, id: number) {
-  return db.prepare(`
+function getRoturaHeader(db: ReturnType<typeof getDb>, id: number, logisticaId?: number) {
+  let sql = `
     SELECT
       r.id, r.fecha, r.observacion, r.usuario_id, r.created_at,
       u.nombre AS usuario_nombre
     FROM roturas r
     JOIN usuarios u ON u.id = r.usuario_id
     WHERE r.id = ?
-  `).get(id) as
+  `
+  const params: number[] = [id]
+  if (logisticaId != null) {
+    sql += ' AND r.logistica_id = ?'
+    params.push(logisticaId)
+  }
+  return db.prepare(sql).get(...params) as
     | {
         id: number
         fecha: string
@@ -93,6 +100,7 @@ export async function roturasRoutes(app: FastifyInstance): Promise<void> {
       fecha_hasta?: string
     }
     const db = getDb()
+    const logisticaId = requireRequestLogistica(request)
 
     let sql = `
       SELECT
@@ -108,7 +116,10 @@ export async function roturasRoutes(app: FastifyInstance): Promise<void> {
       JOIN usuarios u ON u.id = r.usuario_id
       WHERE 1=1
     `
-    const params: string[] = []
+    const params: (string | number)[] = []
+
+    sql += ' AND r.logistica_id = ?'
+    params.push(logisticaId)
 
     if (fecha_desde) {
       sql += ' AND r.fecha >= ?'
@@ -151,6 +162,8 @@ export async function roturasRoutes(app: FastifyInstance): Promise<void> {
     }
 
     const db = getDb()
+    const logisticaId = requireRequestLogistica(request)
+
     const productos = db.prepare(`
       SELECT
         p.id AS producto_id,
@@ -161,10 +174,10 @@ export async function roturasRoutes(app: FastifyInstance): Promise<void> {
       FROM rotura_lineas rl
       JOIN roturas r ON r.id = rl.rotura_id
       JOIN productos p ON p.id = rl.producto_id
-      WHERE r.fecha = ?
+      WHERE r.fecha = ? AND r.logistica_id = ?
       GROUP BY p.id, p.codigo_interno, p.nombre
       ORDER BY p.nombre COLLATE NOCASE ASC
-    `).all(fecha) as Array<{
+    `).all(fecha, logisticaId) as Array<{
       producto_id: number
       codigo_interno: string
       nombre: string
@@ -174,8 +187,8 @@ export async function roturasRoutes(app: FastifyInstance): Promise<void> {
 
     const total_cajas = productos.reduce((s, p) => s + p.total_cajas, 0)
     const registros = db.prepare(`
-      SELECT COUNT(*) AS c FROM roturas WHERE fecha = ?
-    `).get(fecha) as { c: number }
+      SELECT COUNT(*) AS c FROM roturas WHERE fecha = ? AND logistica_id = ?
+    `).get(fecha, logisticaId) as { c: number }
 
     return {
       fecha,
@@ -194,6 +207,7 @@ export async function roturasRoutes(app: FastifyInstance): Promise<void> {
     }
 
     const db = getDb()
+    const logisticaId = requireRequestLogistica(request)
     const lineas = db.prepare(`
       SELECT
         p.codigo_interno,
@@ -204,9 +218,9 @@ export async function roturasRoutes(app: FastifyInstance): Promise<void> {
       FROM rotura_lineas rl
       JOIN roturas r ON r.id = rl.rotura_id
       JOIN productos p ON p.id = rl.producto_id
-      WHERE r.fecha = ?
+      WHERE r.fecha = ? AND r.logistica_id = ?
       ORDER BY r.id ASC, rl.orden ASC, rl.id ASC
-    `).all(fecha) as Array<{
+    `).all(fecha, logisticaId) as Array<{
       codigo_interno: string
       nombre: string
       descripcion: string
@@ -223,7 +237,10 @@ export async function roturasRoutes(app: FastifyInstance): Promise<void> {
     }))
     const total = rows.reduce((s, r) => s + r.cantidad, 0)
     const registros = (
-      db.prepare('SELECT COUNT(*) AS c FROM roturas WHERE fecha = ?').get(fecha) as { c: number }
+      db.prepare('SELECT COUNT(*) AS c FROM roturas WHERE fecha = ? AND logistica_id = ?').get(
+        fecha,
+        logisticaId
+      ) as { c: number }
     ).c
 
     const buffer = await buildMultiSheetExcel([
@@ -263,8 +280,10 @@ export async function roturasRoutes(app: FastifyInstance): Promise<void> {
     const productoId = Number((request.params as { id: string }).id)
     const sectorId = Number((request.params as { sectorId: string }).sectorId)
     const db = getDb()
+    const logisticaId = requireRequestLogistica(request)
     assertProductoActivo(db, productoId)
     assertSectorActivo(db, sectorId)
+    assertSectorEnLogistica(db, sectorId, logisticaId)
 
     return {
       stock_disponible_cajas: getStockDisponibleCajasEnSector(db, productoId, sectorId)
@@ -276,7 +295,8 @@ export async function roturasRoutes(app: FastifyInstance): Promise<void> {
   }, async (request, reply) => {
     const id = Number((request.params as { id: string }).id)
     const db = getDb()
-    const rotura = getRoturaHeader(db, id)
+    const logisticaId = requireRequestLogistica(request)
+    const rotura = getRoturaHeader(db, id, logisticaId)
     if (!rotura) {
       return reply.status(404).send({ error: 'Registro no encontrado' })
     }
@@ -293,6 +313,7 @@ export async function roturasRoutes(app: FastifyInstance): Promise<void> {
     const body = (request.body ?? {}) as RoturaBody
     const user = request.user!
     const db = getDb()
+    const logisticaId = requireRequestLogistica(request)
 
     const fecha = body.fecha?.trim()
     if (!fecha) {
@@ -311,14 +332,15 @@ export async function roturasRoutes(app: FastifyInstance): Promise<void> {
       }
       assertProductoActivo(db, linea.producto_id)
       assertSectorActivo(db, linea.sector_id)
+      assertSectorEnLogistica(db, linea.sector_id, logisticaId)
     }
 
     try {
       const tx = db.transaction(() => {
         const result = db.prepare(`
-          INSERT INTO roturas (fecha, observacion, usuario_id)
-          VALUES (?, ?, ?)
-        `).run(fecha, body.observacion?.trim() || null, user.id)
+          INSERT INTO roturas (fecha, observacion, usuario_id, logistica_id)
+          VALUES (?, ?, ?, ?)
+        `).run(fecha, body.observacion?.trim() || null, user.id, logisticaId)
 
         const roturaId = Number(result.lastInsertRowid)
         const observacion = body.observacion?.trim() || null

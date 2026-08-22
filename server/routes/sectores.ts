@@ -9,6 +9,7 @@ import {
   STOCK_SECTOR_VISIBLE_SQL,
   totalSueltoLineaConteo
 } from '../utils/stock'
+import { requireRequestLogistica } from '../utils/logisticas'
 
 const puedeVerSectores = requirePermisoAny(
   'sectores.ver',
@@ -58,17 +59,29 @@ function slugCodigoSector(nombre: string, suffix = ''): string {
   return suffix ? `${base}-${suffix}`.slice(0, 48) : base
 }
 
+function sectoresTieneLogisticaId(db: ReturnType<typeof getDb>): boolean {
+  const cols = db.prepare('PRAGMA table_info(sectores)').all() as { name: string }[]
+  return cols.some((c) => c.name === 'logistica_id')
+}
+
 function nombreSectorDuplicado(
   db: ReturnType<typeof getDb>,
   nombre: string,
-  excludeId?: number
+  excludeId?: number,
+  logisticaId?: number
 ): boolean {
-  const row = db.prepare(`
+  let sql = `
     SELECT id FROM sectores
     WHERE LOWER(TRIM(nombre)) = LOWER(TRIM(?))
       AND (? IS NULL OR id != ?)
-    LIMIT 1
-  `).get(nombre, excludeId ?? null, excludeId ?? null) as { id: number } | undefined
+  `
+  const params: unknown[] = [nombre, excludeId ?? null, excludeId ?? null]
+  if (logisticaId != null && sectoresTieneLogisticaId(db)) {
+    sql += ' AND logistica_id = ?'
+    params.push(logisticaId)
+  }
+  sql += ' LIMIT 1'
+  const row = db.prepare(sql).get(...params) as { id: number } | undefined
   return !!row
 }
 
@@ -104,10 +117,20 @@ function getSectorOr404(db: ReturnType<typeof getDb>, id: number) {
     | undefined
 }
 
-/** Solo un sector activo puede ser destino por defecto en ingresos. */
+/** Solo un sector activo puede ser destino por defecto en ingresos (por logística). */
 function setIngresoPorDefecto(db: ReturnType<typeof getDb>, sectorId: number): void {
+  const sector = db.prepare(`
+    SELECT logistica_id FROM sectores WHERE id = ?
+  `).get(sectorId) as { logistica_id: number | null } | undefined
+
   db.transaction(() => {
-    db.prepare('UPDATE sectores SET ingreso_por_defecto = 0').run()
+    if (sector?.logistica_id != null && sectoresTieneLogisticaId(db)) {
+      db.prepare(`
+        UPDATE sectores SET ingreso_por_defecto = 0 WHERE logistica_id = ?
+      `).run(sector.logistica_id)
+    } else {
+      db.prepare('UPDATE sectores SET ingreso_por_defecto = 0').run()
+    }
     db.prepare(`
       UPDATE sectores SET ingreso_por_defecto = 1
       WHERE id = ? AND activo = 1
@@ -307,6 +330,7 @@ export async function sectoresRoutes(app: FastifyInstance): Promise<void> {
   }, async (request) => {
     const { q, activo } = request.query as { q?: string; activo?: string }
     const db = getDb()
+    const logisticaId = requireRequestLogistica(request)
 
     let sql = `
       SELECT
@@ -333,6 +357,9 @@ export async function sectoresRoutes(app: FastifyInstance): Promise<void> {
     `
     const params: unknown[] = []
 
+    sql += ' AND s.logistica_id = ?'
+    params.push(logisticaId)
+
     if (activo === '1') sql += ' AND s.activo = 1'
     else if (activo === '0') sql += ' AND s.activo = 0'
 
@@ -356,11 +383,12 @@ export async function sectoresRoutes(app: FastifyInstance): Promise<void> {
   }, async (request, reply) => {
     const id = Number((request.params as { id: string }).id)
     const db = getDb()
+    const logisticaId = requireRequestLogistica(request)
     const sector = db.prepare(`
       SELECT id, codigo, nombre, descripcion, es_sector_descuento,
              prioridad_descuento, usa_ubicaciones, ingreso_por_defecto, activo, created_at
-      FROM sectores WHERE id = ?
-    `).get(id)
+      FROM sectores WHERE id = ? AND logistica_id = ?
+    `).get(id, logisticaId)
 
     if (!sector) return reply.status(404).send({ error: 'Sector no encontrado' })
     return sector
@@ -546,8 +574,9 @@ export async function sectoresRoutes(app: FastifyInstance): Promise<void> {
 
     const nombre = body.nombre.trim()
     const db = getDb()
+    const logisticaId = requireRequestLogistica(request)
 
-    if (nombreSectorDuplicado(db, nombre)) {
+    if (nombreSectorDuplicado(db, nombre, undefined, logisticaId)) {
       return reply.status(409).send({ error: 'Ya existe un sector con ese nombre' })
     }
 
@@ -582,8 +611,8 @@ export async function sectoresRoutes(app: FastifyInstance): Promise<void> {
       const result = db.prepare(`
         INSERT INTO sectores (
           codigo, nombre, descripcion, es_sector_descuento, prioridad_descuento,
-          usa_ubicaciones, activo
-        ) VALUES (?, ?, ?, ?, ?, ?, ?)
+          usa_ubicaciones, activo, logistica_id
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
       `).run(
         codigo,
         nombre,
@@ -591,7 +620,8 @@ export async function sectoresRoutes(app: FastifyInstance): Promise<void> {
         esDescuento ? 1 : 0,
         prioridad,
         body.usa_ubicaciones === true ? 1 : 0,
-        body.activo === false ? 0 : 1
+        body.activo === false ? 0 : 1,
+        logisticaId
       )
 
       const sectorId = Number(result.lastInsertRowid)
@@ -611,14 +641,17 @@ export async function sectoresRoutes(app: FastifyInstance): Promise<void> {
     const id = Number((request.params as { id: string }).id)
     const body = request.body as SectorBody
     const db = getDb()
+    const logisticaId = requireRequestLogistica(request)
 
-    const existing = db.prepare('SELECT id, activo FROM sectores WHERE id = ?').get(id) as
+    const existing = db.prepare(`
+      SELECT id, activo FROM sectores WHERE id = ? AND logistica_id = ?
+    `).get(id, logisticaId) as
       | { id: number; activo: number }
       | undefined
     if (!existing) return reply.status(404).send({ error: 'Sector no encontrado' })
 
     const nombre = body.nombre?.trim()
-    if (nombre && nombreSectorDuplicado(db, nombre, id)) {
+    if (nombre && nombreSectorDuplicado(db, nombre, id, logisticaId)) {
       return reply.status(409).send({ error: 'Ya existe un sector con ese nombre' })
     }
 

@@ -36,6 +36,7 @@ import { downloadApiFile } from '@/lib/downloadFile'
 import { searchDelayMs } from '@/lib/searchDelay'
 import { api, cn } from '@/lib/utils'
 import { codigoProductoExacto } from '@/lib/productoSearch'
+import { clearDraft, readDraft, writeDraft } from '@/lib/draftStorage'
 import { resolveSectorIdParaIngreso, sortSectoresParaIngreso } from '@/lib/sectores'
 import type {
   IngresoDetalle,
@@ -67,31 +68,17 @@ type IngresoDraftStored = {
 }
 
 function readIngresoDraft(): IngresoDraftStored | null {
-  try {
-    const raw = localStorage.getItem(INGRESO_DRAFT_KEY)
-    if (!raw) return null
-    const parsed = JSON.parse(raw) as IngresoDraftStored
-    if (!parsed || !Array.isArray(parsed.lineas)) return null
-    return parsed
-  } catch {
-    return null
-  }
+  const parsed = readDraft<IngresoDraftStored>(INGRESO_DRAFT_KEY)
+  if (!parsed || !Array.isArray(parsed.lineas)) return null
+  return parsed
 }
 
 function writeIngresoDraft(draft: IngresoDraftStored): void {
-  try {
-    localStorage.setItem(INGRESO_DRAFT_KEY, JSON.stringify(draft))
-  } catch {
-    /* quota / private mode */
-  }
+  writeDraft(INGRESO_DRAFT_KEY, draft)
 }
 
 function clearIngresoDraft(): void {
-  try {
-    localStorage.removeItem(INGRESO_DRAFT_KEY)
-  } catch {
-    /* ignore */
-  }
+  clearDraft(INGRESO_DRAFT_KEY)
 }
 
 function ingresoDraftTieneContenido(d: {

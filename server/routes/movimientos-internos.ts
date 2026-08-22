@@ -3,6 +3,7 @@ import { getDb } from '../db'
 import { requirePermiso } from '../plugins/auth'
 import { blockIfInventarioActivo } from '../utils/inventario-block'
 import { getMovimientosDobleVerificacion } from '../utils/app-settings'
+import { assertSectorEnLogistica, requireRequestLogistica } from '../utils/logisticas'
 import {
   applyMovimientoInternoDespachoLine,
   applyMovimientoInternoRecepcionLine,
@@ -260,8 +261,8 @@ function getMovimientoLineas(db: ReturnType<typeof getDb>, movimientoId: number,
   }>
 }
 
-function getMovimientoHeader(db: ReturnType<typeof getDb>, id: number) {
-  return db.prepare(`
+function getMovimientoHeader(db: ReturnType<typeof getDb>, id: number, logisticaId?: number) {
+  let sql = `
     SELECT
       m.id, m.fecha, m.tipo, m.estado, m.observacion, m.created_at, m.ingreso_directo,
       m.sector_origen_id, so.nombre AS sector_origen_nombre,
@@ -277,7 +278,13 @@ function getMovimientoHeader(db: ReturnType<typeof getDb>, id: number) {
     LEFT JOIN usuarios ur ON ur.id = m.recibido_por_id
     LEFT JOIN usuarios uca ON uca.id = m.cancelado_por_id
     WHERE m.id = ?
-  `).get(id) as
+  `
+  const params: number[] = [id]
+  if (logisticaId != null) {
+    sql += ' AND m.logistica_id = ?'
+    params.push(logisticaId)
+  }
+  return db.prepare(sql).get(...params) as
     | {
         id: number
         fecha: string
@@ -430,7 +437,9 @@ export async function movimientosInternosRoutes(app: FastifyInstance): Promise<v
     }
 
     const db = getDb()
+    const logisticaId = requireRequestLogistica(request)
     assertSectorActivo(db, sectorId, 'Sector')
+    assertSectorEnLogistica(db, sectorId, logisticaId)
 
     const search = q?.trim() ? sqlProductoSearchClause(q, { prefix: 'p.' }) : null
     let sql: string
@@ -520,6 +529,7 @@ export async function movimientosInternosRoutes(app: FastifyInstance): Promise<v
     const { excluir_sector_id } = request.query as { excluir_sector_id?: string }
     const excluirId = excluir_sector_id ? Number(excluir_sector_id) : null
     const db = getDb()
+    const logisticaId = requireRequestLogistica(request)
     assertProductoActivo(db, productoId)
 
     let sql = `
@@ -528,10 +538,10 @@ export async function movimientosInternosRoutes(app: FastifyInstance): Promise<v
         s.nombre AS sector_nombre,
         ss.cantidad_total AS stock_cajas
       FROM stock_sector ss
-      JOIN sectores s ON s.id = ss.sector_id AND s.activo = 1
+      JOIN sectores s ON s.id = ss.sector_id AND s.activo = 1 AND s.logistica_id = ?
       WHERE ss.producto_id = ? AND ss.cantidad_total > 0
     `
-    const params: number[] = [productoId]
+    const params: number[] = [logisticaId, productoId]
     if (excluirId) {
       sql += ' AND ss.sector_id != ?'
       params.push(excluirId)
@@ -557,8 +567,10 @@ export async function movimientosInternosRoutes(app: FastifyInstance): Promise<v
       excluir_linea_id?: string
     }
     const db = getDb()
+    const logisticaId = requireRequestLogistica(request)
     assertProductoActivo(db, productoId)
     assertSectorActivo(db, sectorId, 'Sector')
+    assertSectorEnLogistica(db, sectorId, logisticaId)
 
     let ubicacionFilter: { ubicacion_id: number | null } | null = null
     if (sin_ubicacion === '1') {
@@ -613,6 +625,7 @@ export async function movimientosInternosRoutes(app: FastifyInstance): Promise<v
     }
 
     const db = getDb()
+    const logisticaId = requireRequestLogistica(request)
     let sql = `
       SELECT
         m.id, m.fecha, m.tipo, m.estado, m.observacion, m.created_at, m.ingreso_directo,
@@ -635,7 +648,10 @@ export async function movimientosInternosRoutes(app: FastifyInstance): Promise<v
       LEFT JOIN usuarios ur ON ur.id = m.recibido_por_id
       WHERE 1=1
     `
-    const params: string[] = []
+    const params: (string | number)[] = []
+
+    sql += ' AND m.logistica_id = ?'
+    params.push(logisticaId)
 
     if (fecha_desde) {
       sql += ' AND m.fecha >= ?'
@@ -694,18 +710,19 @@ export async function movimientosInternosRoutes(app: FastifyInstance): Promise<v
 
   app.get('/api/movimientos-internos/abierto', {
     preHandler: requirePermiso('movimientos_internos.ver')
-  }, async () => {
+  }, async (request) => {
     const db = getDb()
+    const logisticaId = requireRequestLogistica(request)
     const row = db
       .prepare(
         `
       SELECT id FROM movimientos_internos
-      WHERE estado = 'ABIERTA' AND tipo = 'LISTA'
+      WHERE estado = 'ABIERTA' AND tipo = 'LISTA' AND logistica_id = ?
       ORDER BY id DESC
       LIMIT 1
     `
       )
-      .get() as { id: number } | undefined
+      .get(logisticaId) as { id: number } | undefined
     if (!row) return { abierto: null }
     return { abierto: buildDetalle(db, row.id) }
   })
@@ -715,16 +732,17 @@ export async function movimientosInternosRoutes(app: FastifyInstance): Promise<v
   }, async (request, reply) => {
     const user = request.user!
     const db = getDb()
+    const logisticaId = requireRequestLogistica(request)
     const existing = db
       .prepare(
         `
       SELECT id FROM movimientos_internos
-      WHERE estado = 'ABIERTA' AND tipo = 'LISTA'
+      WHERE estado = 'ABIERTA' AND tipo = 'LISTA' AND logistica_id = ?
       ORDER BY id DESC
       LIMIT 1
     `
       )
-      .get() as { id: number } | undefined
+      .get(logisticaId) as { id: number } | undefined
     if (existing) {
       return buildDetalle(db, existing.id)
     }
@@ -735,11 +753,11 @@ export async function movimientosInternosRoutes(app: FastifyInstance): Promise<v
           `
         INSERT INTO movimientos_internos (
           fecha, tipo, sector_origen_id, sector_destino_id, observacion,
-          estado, creado_por_id, ingreso_directo
-        ) VALUES (?, 'LISTA', NULL, NULL, NULL, 'ABIERTA', ?, 0)
+          estado, creado_por_id, ingreso_directo, logistica_id
+        ) VALUES (?, 'LISTA', NULL, NULL, NULL, 'ABIERTA', ?, 0, ?)
       `
         )
-        .run(todayIsoDateServer(), user.id)
+        .run(todayIsoDateServer(), user.id, logisticaId)
       return buildDetalle(db, Number(result.lastInsertRowid))
     } catch (err) {
       return reply
@@ -752,8 +770,13 @@ export async function movimientosInternosRoutes(app: FastifyInstance): Promise<v
     preHandler: requirePermiso('movimientos_internos.ver')
   }, async (request, reply) => {
     const id = Number((request.params as { id: string }).id)
+    const logisticaId = requireRequestLogistica(request)
     const detalle = buildDetalle(getDb(), id)
     if (!detalle) {
+      return reply.status(404).send({ error: 'Registro no encontrado' })
+    }
+    const mov = getMovimientoHeader(getDb(), id, logisticaId)
+    if (!mov) {
       return reply.status(404).send({ error: 'Registro no encontrado' })
     }
     return detalle
@@ -765,6 +788,7 @@ export async function movimientosInternosRoutes(app: FastifyInstance): Promise<v
     const body = (request.body ?? {}) as MovimientoBody
     const user = request.user!
     const db = getDb()
+    const logisticaId = requireRequestLogistica(request)
 
     const tipo = body.tipo
     if (tipo !== 'ENVIAR' && tipo !== 'RECIBIR') {
@@ -783,6 +807,7 @@ export async function movimientosInternosRoutes(app: FastifyInstance): Promise<v
 
     try {
       assertSectorActivo(db, sectorContextoId, 'Sector')
+      assertSectorEnLogistica(db, sectorContextoId, logisticaId)
     } catch (err) {
       return reply.status(400).send({ error: err instanceof Error ? err.message : 'Sector inválido' })
     }
@@ -805,6 +830,8 @@ export async function movimientosInternosRoutes(app: FastifyInstance): Promise<v
         assertProductoActivo(db, linea.producto_id)
         assertSectorActivo(db, origenId, 'Origen')
         assertSectorActivo(db, destinoId, 'Destino')
+        assertSectorEnLogistica(db, origenId, logisticaId)
+        assertSectorEnLogistica(db, destinoId, logisticaId)
       } catch (err) {
         return reply.status(400).send({ error: err instanceof Error ? err.message : 'Datos inválidos' })
       }
@@ -850,11 +877,12 @@ export async function movimientosInternosRoutes(app: FastifyInstance): Promise<v
         const result = db.prepare(`
           INSERT INTO movimientos_internos (
             fecha, tipo, sector_origen_id, sector_destino_id, observacion,
-            estado, creado_por_id, recibido_por_id, ingreso_directo, recibido_at
+            estado, creado_por_id, recibido_por_id, ingreso_directo, recibido_at, logistica_id
           ) VALUES (
             ?, ?, ?, ?, ?,
             ?, ?, ?, ?,
-            CASE WHEN ? = 1 THEN datetime('now') ELSE NULL END
+            CASE WHEN ? = 1 THEN datetime('now') ELSE NULL END,
+            ?
           )
         `).run(
           fecha,
@@ -866,7 +894,8 @@ export async function movimientosInternosRoutes(app: FastifyInstance): Promise<v
           user.id,
           dobleVerificacion ? null : user.id,
           dobleVerificacion ? 0 : 1,
-          dobleVerificacion ? 0 : 1
+          dobleVerificacion ? 0 : 1,
+          logisticaId
         )
 
         const movimientoId = Number(result.lastInsertRowid)
@@ -947,9 +976,10 @@ export async function movimientosInternosRoutes(app: FastifyInstance): Promise<v
   }, async (request, reply) => {
     const id = Number((request.params as { id: string }).id)
     const db = getDb()
+    const logisticaId = requireRequestLogistica(request)
     const body = (request.body ?? {}) as { lineas?: LineaUpdateBody[] }
 
-    const movimiento = getMovimientoHeader(db, id)
+    const movimiento = getMovimientoHeader(db, id, logisticaId)
     if (!movimiento) {
       return reply.status(404).send({ error: 'Registro no encontrado' })
     }
@@ -1002,6 +1032,7 @@ export async function movimientosInternosRoutes(app: FastifyInstance): Promise<v
           if (upd.sector_origen_id !== undefined) {
             origenId = Number(upd.sector_origen_id)
             assertSectorActivo(db, origenId, 'Origen')
+            assertSectorEnLogistica(db, origenId, logisticaId)
             if (movimiento.tipo === 'RECIBIR') {
               const stock = getStockDisponibleCajasEnSector(db, linea.producto_id, origenId)
               if (stock <= 0) throw new Error(`Sin stock en ${origenId} para el producto`)
@@ -1013,6 +1044,7 @@ export async function movimientosInternosRoutes(app: FastifyInstance): Promise<v
           if (upd.sector_destino_id !== undefined) {
             destinoId = Number(upd.sector_destino_id)
             assertSectorActivo(db, destinoId, 'Destino')
+            assertSectorEnLogistica(db, destinoId, logisticaId)
             if (upd.ubicacion_destino_id === undefined) {
               ubicacionDestinoId = null
             }
@@ -1177,9 +1209,10 @@ export async function movimientosInternosRoutes(app: FastifyInstance): Promise<v
   }, async (request, reply) => {
     const id = Number((request.params as { id: string }).id)
     const db = getDb()
+    const logisticaId = requireRequestLogistica(request)
     const body = (request.body ?? {}) as LineaBody
 
-    const movimiento = getMovimientoHeader(db, id)
+    const movimiento = getMovimientoHeader(db, id, logisticaId)
     if (!movimiento) {
       return reply.status(404).send({ error: 'Registro no encontrado' })
     }
@@ -1212,6 +1245,8 @@ export async function movimientosInternosRoutes(app: FastifyInstance): Promise<v
       assertProductoActivo(db, body.producto_id)
       assertSectorActivo(db, origenId, 'Origen')
       assertSectorActivo(db, destinoId, 'Destino')
+      assertSectorEnLogistica(db, origenId, logisticaId)
+      assertSectorEnLogistica(db, destinoId, logisticaId)
       const ubicacionDestinoId = resolveUbicacionDestino(db, destinoId, body.ubicacion_destino_id)
       const ubicacionOrigenId = resolveUbicacionOrigen(db, origenId, body.ubicacion_origen_id)
       assertMovimientoLineaSectoresOk(db, origenId, destinoId, ubicacionOrigenId, ubicacionDestinoId)
@@ -1327,7 +1362,8 @@ export async function movimientosInternosRoutes(app: FastifyInstance): Promise<v
     const id = Number((request.params as { id: string }).id)
     const lineaId = Number((request.params as { lineaId: string }).lineaId)
     const db = getDb()
-    const movimiento = getMovimientoHeader(db, id)
+    const logisticaId = requireRequestLogistica(request)
+    const movimiento = getMovimientoHeader(db, id, logisticaId)
     if (!movimiento) {
       return reply.status(404).send({ error: 'Registro no encontrado' })
     }
@@ -1354,8 +1390,9 @@ export async function movimientosInternosRoutes(app: FastifyInstance): Promise<v
     const id = Number((request.params as { id: string }).id)
     const user = request.user!
     const db = getDb()
+    const logisticaId = requireRequestLogistica(request)
 
-    const movimiento = getMovimientoHeader(db, id)
+    const movimiento = getMovimientoHeader(db, id, logisticaId)
     if (!movimiento) {
       return reply.status(404).send({ error: 'Registro no encontrado' })
     }
@@ -1418,8 +1455,9 @@ export async function movimientosInternosRoutes(app: FastifyInstance): Promise<v
     const id = Number((request.params as { id: string }).id)
     const user = request.user!
     const db = getDb()
+    const logisticaId = requireRequestLogistica(request)
 
-    const movimiento = getMovimientoHeader(db, id)
+    const movimiento = getMovimientoHeader(db, id, logisticaId)
     if (!movimiento) {
       return reply.status(404).send({ error: 'Registro no encontrado' })
     }
@@ -1454,8 +1492,9 @@ export async function movimientosInternosRoutes(app: FastifyInstance): Promise<v
     const id = Number((request.params as { id: string }).id)
     const user = request.user!
     const db = getDb()
+    const logisticaId = requireRequestLogistica(request)
 
-    const movimiento = getMovimientoHeader(db, id)
+    const movimiento = getMovimientoHeader(db, id, logisticaId)
     if (!movimiento) {
       return reply.status(404).send({ error: 'Registro no encontrado' })
     }

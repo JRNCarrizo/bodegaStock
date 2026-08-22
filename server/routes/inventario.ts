@@ -3,6 +3,7 @@ import bcrypt from 'bcryptjs'
 import { getDb } from '../db'
 import { requirePermiso, requirePermisoAny } from '../plugins/auth'
 import { getInventarioActivo, inventarioActivoErrorPayload } from '../utils/inventario-block'
+import { assertSectorEnLogistica, requireRequestLogistica } from '../utils/logisticas'
 import { isAdministradorRol } from '../utils/secciones'
 import {
   buildMultiSheetExcel,
@@ -357,13 +358,15 @@ function sueltoExportItem(item: Record<string, unknown>): number {
 
 function stockSistemaSectoresNoInventariados(
   db: ReturnType<typeof getDb>,
-  sectoresInventariadosIds: number[]
+  sectoresInventariadosIds: number[],
+  logisticaId?: number
 ): StockPorSectorItem[] {
   const inventariados = [...new Set(sectoresInventariadosIds.filter((id) => id > 0))]
   const notInClause =
     inventariados.length > 0
       ? `AND s.id NOT IN (${inventariados.map(() => '?').join(',')})`
       : ''
+  const logisticaClause = logisticaId != null ? ' AND s.logistica_id = ? ' : ''
 
   const rows = db
     .prepare(
@@ -385,6 +388,7 @@ function stockSistemaSectoresNoInventariados(
       JOIN sectores s ON s.id = ss.sector_id
       WHERE p.activo = 1
         ${notInClause}
+        ${logisticaClause}
         AND (
           ss.cantidad_total > 0
           OR EXISTS (
@@ -393,7 +397,7 @@ function stockSistemaSectoresNoInventariados(
         )
     `
     )
-    .all(...inventariados) as Array<{
+    .all(...inventariados, ...(logisticaId != null ? [logisticaId] : [])) as Array<{
     producto_id: number
     codigo_interno: string
     nombre: string
@@ -416,9 +420,10 @@ function stockSistemaSectoresNoInventariados(
 
 export async function inventarioRoutes(app: FastifyInstance): Promise<void> {
   /** Visible para cualquier usuario autenticado (banner global). */
-  app.get('/api/inventario/activo-banner', async () => {
+  app.get('/api/inventario/activo-banner', async (request) => {
     const db = getDb()
-    const activo = getInventarioActivo(db)
+    const logisticaId = request.logisticaId
+    const activo = getInventarioActivo(db, logisticaId)
     if (!activo) return { activo: null }
 
     const counts = db.prepare(`
@@ -439,9 +444,10 @@ export async function inventarioRoutes(app: FastifyInstance): Promise<void> {
     }
   })
 
-  app.get('/api/inventario/activo', { preHandler: requirePermiso('inventario.ver') }, async () => {
+  app.get('/api/inventario/activo', { preHandler: requirePermiso('inventario.ver') }, async (request) => {
     const db = getDb()
-    return { activo: getInventarioActivo(db) }
+    const logisticaId = requireRequestLogistica(request)
+    return { activo: getInventarioActivo(db, logisticaId) }
   })
 
   app.get<{ Querystring: { archivadas?: string } }>(
@@ -449,6 +455,7 @@ export async function inventarioRoutes(app: FastifyInstance): Promise<void> {
     { preHandler: requirePermiso('inventario.ver') },
     async (req) => {
       const db = getDb()
+      const logisticaId = requireRequestLogistica(req)
       const incluirArchivadas = String(req.query.archivadas ?? '').toLowerCase() === '1'
       const rows = db
         .prepare(
@@ -460,11 +467,12 @@ export async function inventarioRoutes(app: FastifyInstance): Promise<void> {
         (SELECT COUNT(*) FROM inventario_sectores WHERE sesion_id = s.id AND estado = 'CERRADO_OK') AS sectores_ok
       FROM inventario_sesiones s
       JOIN usuarios u ON u.id = s.creado_por_id
-      WHERE ${incluirArchivadas ? 'COALESCE(s.archivada, 0) = 1' : 'COALESCE(s.archivada, 0) = 0'}
+      WHERE s.logistica_id = ?
+        AND ${incluirArchivadas ? 'COALESCE(s.archivada, 0) = 1' : 'COALESCE(s.archivada, 0) = 0'}
       ORDER BY s.id DESC
     `
         )
-        .all() as Array<Record<string, unknown>>
+        .all(logisticaId) as Array<Record<string, unknown>>
       return rows.map(mapSesionListItem)
     }
   )
@@ -753,7 +761,8 @@ export async function inventarioRoutes(app: FastifyInstance): Promise<void> {
       if (incluirSectoresNoContados) {
         const extras = stockSistemaSectoresNoInventariados(
           db,
-          sectoresSesion.map((s) => s.sector_id)
+          sectoresSesion.map((s) => s.sector_id),
+          requireRequestLogistica(req)
         )
         rawItems = [...rawItems, ...extras]
         const nombresExtras = new Map<number, string>()
@@ -853,12 +862,13 @@ export async function inventarioRoutes(app: FastifyInstance): Promise<void> {
     { preHandler: requirePermiso('inventario.crear_sesion') },
     async (req, reply) => {
       const db = getDb()
-      if (getInventarioActivo(db)) {
+      if (getInventarioActivo(db, requireRequestLogistica(req))) {
         return reply.status(409).send({ error: 'Ya hay un inventario en curso' })
       }
 
       const nombre = req.body.nombre?.trim()
       const sectores = req.body.sectores ?? []
+      const logisticaId = requireRequestLogistica(req)
       if (!nombre) return reply.status(400).send({ error: 'Nombre requerido' })
       if (sectores.length === 0) return reply.status(400).send({ error: 'Seleccioná al menos un sector' })
 
@@ -885,6 +895,13 @@ export async function inventarioRoutes(app: FastifyInstance): Promise<void> {
         if (s.modo_verificacion && !['DOBLE', 'SIMPLE'].includes(s.modo_verificacion)) {
           return reply.status(400).send({ error: 'modo_verificacion inválido' })
         }
+        try {
+          assertSectorEnLogistica(db, s.sector_id, logisticaId)
+        } catch (e) {
+          return reply.status(400).send({
+            error: e instanceof Error ? e.message : `Sector ${s.sector_id} no válido`
+          })
+        }
         const sector = db.prepare('SELECT id FROM sectores WHERE id = ? AND activo = 1').get(s.sector_id)
         if (!sector) return reply.status(400).send({ error: `Sector ${s.sector_id} no válido` })
       }
@@ -892,9 +909,9 @@ export async function inventarioRoutes(app: FastifyInstance): Promise<void> {
       const userId = req.user!.id
       const tx = db.transaction(() => {
         const result = db.prepare(`
-          INSERT INTO inventario_sesiones (nombre, observacion, creado_por_id, estado)
-          VALUES (?, ?, ?, 'ABIERTA')
-        `).run(nombre, req.body.observacion ?? null, userId)
+          INSERT INTO inventario_sesiones (nombre, observacion, creado_por_id, estado, logistica_id)
+          VALUES (?, ?, ?, 'ABIERTA', ?)
+        `).run(nombre, req.body.observacion ?? null, userId, logisticaId)
         const sesionId = Number(result.lastInsertRowid)
 
         const insertSec = db.prepare(`
@@ -933,7 +950,7 @@ export async function inventarioRoutes(app: FastifyInstance): Promise<void> {
       if (String(sesion.estado) !== 'ABIERTA') {
         return reply.status(400).send({ error: 'La sesión no está en estado ABIERTA' })
       }
-      if (getInventarioActivo(db)) {
+      if (getInventarioActivo(db, requireRequestLogistica(req))) {
         return reply.status(409).send({ error: 'Ya hay un inventario en curso' })
       }
 
@@ -1062,7 +1079,8 @@ export async function inventarioRoutes(app: FastifyInstance): Promise<void> {
     async (req) => {
       const db = getDb()
       const userId = req.user!.id
-      const activo = getInventarioActivo(db)
+      const logisticaId = requireRequestLogistica(req)
+      const activo = getInventarioActivo(db, logisticaId)
       if (!activo) return { activo: null, sectores: [] }
 
       const sectores = db.prepare(`
@@ -1078,9 +1096,10 @@ export async function inventarioRoutes(app: FastifyInstance): Promise<void> {
         JOIN usuarios u1 ON u1.id = isec.contador_1_id
         LEFT JOIN usuarios u2 ON u2.id = isec.contador_2_id
         WHERE ses.estado = 'EN_PROGRESO'
+          AND ses.logistica_id = ?
           AND (isec.contador_1_id = ? OR isec.contador_2_id = ?)
         ORDER BY s.nombre
-      `).all(userId, userId) as Array<Record<string, unknown>>
+      `).all(logisticaId, userId, userId) as Array<Record<string, unknown>>
 
       return {
         activo,

@@ -4,6 +4,11 @@ import { requirePermiso } from '../plugins/auth'
 import { blockIfInventarioActivo } from '../utils/inventario-block'
 import { getRetornosDobleVerificacion } from '../utils/app-settings'
 import {
+  assertCamioneroEnLogistica,
+  assertSectorEnLogistica,
+  requireRequestLogistica
+} from '../utils/logisticas'
+import {
   buildMultiSheetExcel,
   PRODUCTO_LISTADO_COLUMNS,
   resumenSheet,
@@ -127,8 +132,8 @@ function getRetornoLineas(db: ReturnType<typeof getDb>, retornoId: number) {
   `).all(retornoId) as Parameters<typeof mapLineaRow>[0][]
 }
 
-function getRetornoHeader(db: ReturnType<typeof getDb>, id: number) {
-  return db.prepare(`
+function getRetornoHeader(db: ReturnType<typeof getDb>, id: number, logisticaId?: number) {
+  let sql = `
     SELECT
       r.id, r.fecha, r.numero_planilla, r.observacion, r.sector_id, r.estado,
       r.camionero_id, r.vehiculo_id, r.cargado_por_id, r.verificado_por_id,
@@ -150,7 +155,13 @@ function getRetornoHeader(db: ReturnType<typeof getDb>, id: number) {
     JOIN usuarios uc ON uc.id = r.cargado_por_id
     LEFT JOIN usuarios uv ON uv.id = r.verificado_por_id
     WHERE r.id = ?
-  `).get(id) as {
+  `
+  const params: number[] = [id]
+  if (logisticaId != null) {
+    sql += ' AND r.logistica_id = ?'
+    params.push(logisticaId)
+  }
+  return db.prepare(sql).get(...params) as {
     id: number
     fecha: string
     numero_planilla: string | null
@@ -181,13 +192,14 @@ function getRetornoHeader(db: ReturnType<typeof getDb>, id: number) {
 export async function retornosRoutes(app: FastifyInstance): Promise<void> {
   app.get('/api/retornos/pendientes-count', {
     preHandler: requirePermiso('retornos.ver')
-  }, async () => {
+  }, async (request) => {
     const db = getDb()
+    const logisticaId = requireRequestLogistica(request)
     const row = db.prepare(`
       SELECT COUNT(*) AS count
       FROM retornos
-      WHERE estado = 'PENDIENTE'
-    `).get() as { count: number } | undefined
+      WHERE estado = 'PENDIENTE' AND logistica_id = ?
+    `).get(logisticaId) as { count: number } | undefined
 
     return { count: row?.count ?? 0 }
   })
@@ -202,6 +214,7 @@ export async function retornosRoutes(app: FastifyInstance): Promise<void> {
       estado?: string
     }
     const db = getDb()
+    const logisticaId = requireRequestLogistica(request)
 
     let sql = `
       SELECT
@@ -235,6 +248,9 @@ export async function retornosRoutes(app: FastifyInstance): Promise<void> {
     `
     const params: unknown[] = []
 
+    sql += ' AND r.logistica_id = ?'
+    params.push(logisticaId)
+
     if (q?.trim()) {
       sql += ` AND (
         c.nombre LIKE ? OR c.numero_interno LIKE ? OR r.numero_planilla LIKE ?
@@ -264,7 +280,8 @@ export async function retornosRoutes(app: FastifyInstance): Promise<void> {
   }, async (request, reply) => {
     const { id } = request.params as { id: string }
     const db = getDb()
-    const header = getRetornoHeader(db, Number(id))
+    const logisticaId = requireRequestLogistica(request)
+    const header = getRetornoHeader(db, Number(id), logisticaId)
     if (!header) return reply.status(404).send({ error: 'Retorno no encontrado' })
 
     const lineas = getRetornoLineas(db, Number(id)).map(mapLineaRow)
@@ -286,7 +303,8 @@ export async function retornosRoutes(app: FastifyInstance): Promise<void> {
   }, async (request, reply) => {
     const id = Number((request.params as { id: string }).id)
     const db = getDb()
-    const header = getRetornoHeader(db, id)
+    const logisticaId = requireRequestLogistica(request)
+    const header = getRetornoHeader(db, id, logisticaId)
     if (!header) return reply.status(404).send({ error: 'Retorno no encontrado' })
 
     const productos = db.prepare(`
@@ -357,12 +375,20 @@ export async function retornosRoutes(app: FastifyInstance): Promise<void> {
     }
 
     const db = getDb()
+    const logisticaId = requireRequestLogistica(request)
     const dobleVerificacion = getRetornosDobleVerificacion(db)
 
     if (body.camionero_id) {
+      try {
+        assertCamioneroEnLogistica(db, body.camionero_id, logisticaId)
+      } catch (err) {
+        return reply.status(400).send({
+          error: err instanceof Error ? err.message : 'Camionero no válido'
+        })
+      }
       const camionero = db.prepare(`
-        SELECT id FROM camioneros WHERE id = ? AND activo = 1
-      `).get(body.camionero_id)
+        SELECT id FROM camioneros WHERE id = ? AND activo = 1 AND logistica_id = ?
+      `).get(body.camionero_id, logisticaId)
       if (!camionero) {
         return reply.status(400).send({ error: 'Camionero no válido' })
       }
@@ -382,6 +408,7 @@ export async function retornosRoutes(app: FastifyInstance): Promise<void> {
 
     if (body.sector_id) {
       try {
+        assertSectorEnLogistica(db, body.sector_id, logisticaId)
         assertSectorActivo(db, body.sector_id, 'Sector default')
       } catch (err) {
         return reply.status(400).send({ error: err instanceof Error ? err.message : 'Sector default inválido' })
@@ -407,6 +434,7 @@ export async function retornosRoutes(app: FastifyInstance): Promise<void> {
         return reply.status(400).send({ error: `Línea ${i + 1}: producto no válido` })
       }
       try {
+        assertSectorEnLogistica(db, linea.sector_id, logisticaId)
         assertSectorActivo(db, linea.sector_id, `Línea ${i + 1}`)
       } catch (err) {
         return reply.status(400).send({ error: err instanceof Error ? err.message : 'Sector inválido' })
@@ -423,10 +451,11 @@ export async function retornosRoutes(app: FastifyInstance): Promise<void> {
           INSERT INTO retornos (
             fecha, numero_planilla, observacion, camionero_id, vehiculo_id,
             sector_id, estado, cargado_por_id, verificado_por_id,
-            observacion_verificacion, ingreso_directo, verificado_at
+            observacion_verificacion, ingreso_directo, verificado_at, logistica_id
           ) VALUES (
             ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-            CASE WHEN ? = 1 THEN datetime('now') ELSE NULL END
+            CASE WHEN ? = 1 THEN datetime('now') ELSE NULL END,
+            ?
           )
         `).run(
           body.fecha!.trim(),
@@ -440,7 +469,8 @@ export async function retornosRoutes(app: FastifyInstance): Promise<void> {
           dobleVerificacion ? null : user.id,
           dobleVerificacion ? null : obsDirecto,
           dobleVerificacion ? 0 : 1,
-          dobleVerificacion ? 0 : 1
+          dobleVerificacion ? 0 : 1,
+          logisticaId
         )
 
         const retornoId = Number(result.lastInsertRowid)
@@ -518,10 +548,11 @@ export async function retornosRoutes(app: FastifyInstance): Promise<void> {
     const body = request.body as VerificarLineaBody
     const user = request.user!
     const db = getDb()
+    const logisticaId = requireRequestLogistica(request)
 
     const retorno = db.prepare(`
-      SELECT id, estado, cargado_por_id FROM retornos WHERE id = ?
-    `).get(Number(id)) as { id: number; estado: string; cargado_por_id: number } | undefined
+      SELECT id, estado, cargado_por_id FROM retornos WHERE id = ? AND logistica_id = ?
+    `).get(Number(id), logisticaId) as { id: number; estado: string; cargado_por_id: number } | undefined
 
     if (!retorno) return reply.status(404).send({ error: 'Retorno no encontrado' })
     if (retorno.estado !== 'PENDIENTE') {
@@ -555,6 +586,7 @@ export async function retornosRoutes(app: FastifyInstance): Promise<void> {
       return reply.status(400).send({ error: 'Estado inválido' })
     }
     try {
+      assertSectorEnLogistica(db, sectorId, logisticaId)
       assertSectorActivo(db, sectorId, 'Línea')
     } catch (err) {
       return reply.status(400).send({ error: err instanceof Error ? err.message : 'Sector inválido' })
@@ -581,8 +613,9 @@ export async function retornosRoutes(app: FastifyInstance): Promise<void> {
     const body = request.body as { observacion?: string | null }
     const user = request.user!
     const db = getDb()
+    const logisticaId = requireRequestLogistica(request)
 
-    const retorno = getRetornoHeader(db, Number(id))
+    const retorno = getRetornoHeader(db, Number(id), logisticaId)
     if (!retorno) return reply.status(404).send({ error: 'Retorno no encontrado' })
     if (retorno.estado !== 'PENDIENTE') {
       return reply.status(400).send({ error: 'El retorno ya fue verificado' })

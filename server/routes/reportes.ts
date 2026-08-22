@@ -1,6 +1,7 @@
 import type { FastifyInstance } from 'fastify'
 import { getDb } from '../db'
 import { requirePermiso } from '../plugins/auth'
+import { requireRequestLogistica } from '../utils/logisticas'
 import {
   getMovimientosDiaReport,
   getReporteDetalle,
@@ -30,10 +31,11 @@ export async function reportesRoutes(app: FastifyInstance): Promise<void> {
     }
 
     const db = getDb()
+    const logisticaId = requireRequestLogistica(request)
     try {
       const desde = fecha_desde ?? fecha
       const hasta = fecha_hasta ?? fecha
-      return getMovimientosDiaReport(db, desde, hasta)
+      return getMovimientosDiaReport(db, desde, hasta, logisticaId)
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Parámetros inválidos'
       return reply.status(400).send({ error: message })
@@ -55,10 +57,11 @@ export async function reportesRoutes(app: FastifyInstance): Promise<void> {
     }
 
     const db = getDb()
+    const logisticaId = requireRequestLogistica(request)
     try {
       const desde = fecha_desde ?? fecha
       const hasta = fecha_hasta ?? fecha
-      return getReporteDetalle(db, tipo as ReporteDetalleTipo, desde, hasta)
+      return getReporteDetalle(db, tipo as ReporteDetalleTipo, desde, hasta, logisticaId)
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Parámetros inválidos'
       return reply.status(400).send({ error: message })
@@ -75,11 +78,12 @@ export async function reportesRoutes(app: FastifyInstance): Promise<void> {
     }
 
     const db = getDb()
+    const logisticaId = requireRequestLogistica(request)
     try {
       const desde = fecha_desde ?? fecha
       const hasta = fecha_hasta ?? fecha
       const range = resolveReporteDateRange(desde, hasta)
-      const items = getRetornosPerdidosDia(db, range.desde, range.hasta)
+      const items = getRetornosPerdidosDia(db, range.desde, range.hasta, logisticaId)
       return {
         fecha_desde: range.desde,
         fecha_hasta: range.hasta,

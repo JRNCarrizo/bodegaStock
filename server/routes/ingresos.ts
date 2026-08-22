@@ -2,6 +2,7 @@ import type { FastifyInstance } from 'fastify'
 import { getDb } from '../db'
 import { requirePermiso } from '../plugins/auth'
 import { blockIfInventarioActivo } from '../utils/inventario-block'
+import { assertSectorEnLogistica, requireRequestLogistica } from '../utils/logisticas'
 import {
   buildMultiSheetExcel,
   PRODUCTO_LISTADO_COLUMNS,
@@ -139,6 +140,7 @@ export async function ingresosRoutes(app: FastifyInstance): Promise<void> {
       fecha_hasta?: string
     }
     const db = getDb()
+    const logisticaId = requireRequestLogistica(request)
 
     let sql = `
       SELECT
@@ -170,6 +172,9 @@ export async function ingresosRoutes(app: FastifyInstance): Promise<void> {
       WHERE 1=1
     `
     const params: unknown[] = []
+
+    sql += ' AND i.logistica_id = ?'
+    params.push(logisticaId)
 
     if (q?.trim()) {
       sql += ` AND (
@@ -208,6 +213,7 @@ export async function ingresosRoutes(app: FastifyInstance): Promise<void> {
   }, async (request, reply) => {
     const id = Number((request.params as { id: string }).id)
     const db = getDb()
+    const logisticaId = requireRequestLogistica(request)
 
     const ingreso = db.prepare(`
       SELECT
@@ -217,8 +223,8 @@ export async function ingresosRoutes(app: FastifyInstance): Promise<void> {
       FROM ingresos i
       JOIN sectores s ON s.id = i.sector_id
       JOIN usuarios u ON u.id = i.usuario_id
-      WHERE i.id = ?
-    `).get(id)
+      WHERE i.id = ? AND i.logistica_id = ?
+    `).get(id, logisticaId)
 
     if (!ingreso) return reply.status(404).send({ error: 'Ingreso no encontrado' })
 
@@ -253,12 +259,13 @@ export async function ingresosRoutes(app: FastifyInstance): Promise<void> {
   }, async (request, reply) => {
     const id = Number((request.params as { id: string }).id)
     const db = getDb()
+    const logisticaId = requireRequestLogistica(request)
 
     const ingreso = db.prepare(`
       SELECT id, fecha, numero_remito, observacion
       FROM ingresos
-      WHERE id = ?
-    `).get(id) as
+      WHERE id = ? AND logistica_id = ?
+    `).get(id, logisticaId) as
       | {
           id: number
           fecha: string
@@ -333,6 +340,7 @@ export async function ingresosRoutes(app: FastifyInstance): Promise<void> {
     }
 
     const db = getDb()
+    const logisticaId = requireRequestLogistica(request)
 
     for (let i = 0; i < body.lineas.length; i++) {
       const linea = body.lineas[i]
@@ -351,6 +359,14 @@ export async function ingresosRoutes(app: FastifyInstance): Promise<void> {
       `).get(linea.producto_id)
       if (!producto) {
         return reply.status(400).send({ error: `Línea ${i + 1}: producto no válido` })
+      }
+
+      try {
+        assertSectorEnLogistica(db, sectorId, logisticaId)
+      } catch (e) {
+        return reply.status(400).send({
+          error: `Línea ${i + 1}: ${e instanceof Error ? e.message : 'sector no válido'}`
+        })
       }
 
       const sector = db.prepare(`
@@ -391,14 +407,15 @@ export async function ingresosRoutes(app: FastifyInstance): Promise<void> {
     try {
       const ingresoId = db.transaction(() => {
         const result = db.prepare(`
-          INSERT INTO ingresos (fecha, numero_remito, observacion, sector_id, usuario_id)
-          VALUES (?, ?, ?, ?, ?)
+          INSERT INTO ingresos (fecha, numero_remito, observacion, sector_id, usuario_id, logistica_id)
+          VALUES (?, ?, ?, ?, ?, ?)
         `).run(
           body.fecha!.trim(),
           body.numero_remito!.trim(),
           observacion,
           headerSectorId,
-          user.id
+          user.id,
+          logisticaId
         )
 
         const ingresoId = Number(result.lastInsertRowid)

@@ -2,6 +2,7 @@ import type { FastifyInstance } from 'fastify'
 import { getDb } from '../db'
 import { requirePermiso } from '../plugins/auth'
 import { blockIfInventarioActivo } from '../utils/inventario-block'
+import { assertCamioneroEnLogistica, requireRequestLogistica } from '../utils/logisticas'
 import {
   buildMultiSheetExcel,
   PRODUCTO_LISTADO_COLUMNS,
@@ -165,6 +166,7 @@ export async function planillasRoutes(app: FastifyInstance): Promise<void> {
       fecha_hasta?: string
     }
     const db = getDb()
+    const logisticaId = requireRequestLogistica(request)
 
     let sql = `
       SELECT
@@ -188,6 +190,9 @@ export async function planillasRoutes(app: FastifyInstance): Promise<void> {
       WHERE 1=1
     `
     const params: unknown[] = []
+
+    sql += ' AND p.logistica_id = ?'
+    params.push(logisticaId)
 
     if (q?.trim()) {
       sql += ' AND (p.numero LIKE ? OR p.observacion LIKE ? OR c.nombre LIKE ? OR c.numero_interno LIKE ?)'
@@ -219,6 +224,7 @@ export async function planillasRoutes(app: FastifyInstance): Promise<void> {
   }, async (request, reply) => {
     const id = Number((request.params as { id: string }).id)
     const db = getDb()
+    const logisticaId = requireRequestLogistica(request)
 
     const planilla = db.prepare(`
       SELECT
@@ -235,8 +241,8 @@ export async function planillasRoutes(app: FastifyInstance): Promise<void> {
       JOIN camioneros c ON c.id = p.camionero_id
       JOIN usuarios u ON u.id = p.usuario_id
       LEFT JOIN camionero_vehiculos cv ON cv.id = p.vehiculo_id
-      WHERE p.id = ?
-    `).get(id)
+      WHERE p.id = ? AND p.logistica_id = ?
+    `).get(id, logisticaId)
 
     if (!planilla) return reply.status(404).send({ error: 'Planilla no encontrada' })
 
@@ -304,6 +310,7 @@ export async function planillasRoutes(app: FastifyInstance): Promise<void> {
   }, async (request, reply) => {
     const id = Number((request.params as { id: string }).id)
     const db = getDb()
+    const logisticaId = requireRequestLogistica(request)
 
     const planilla = db.prepare(`
       SELECT
@@ -315,8 +322,8 @@ export async function planillasRoutes(app: FastifyInstance): Promise<void> {
       FROM planillas p
       JOIN camioneros c ON c.id = p.camionero_id
       LEFT JOIN camionero_vehiculos cv ON cv.id = p.vehiculo_id
-      WHERE p.id = ?
-    `).get(id) as
+      WHERE p.id = ? AND p.logistica_id = ?
+    `).get(id, logisticaId) as
       | {
           id: number
           fecha: string
@@ -555,10 +562,19 @@ export async function planillasRoutes(app: FastifyInstance): Promise<void> {
     }
 
     const db = getDb()
+    const logisticaId = requireRequestLogistica(request)
+
+    try {
+      assertCamioneroEnLogistica(db, body.camionero_id!, logisticaId)
+    } catch (e) {
+      return reply.status(400).send({
+        error: e instanceof Error ? e.message : 'Camionero no válido'
+      })
+    }
 
     const camionero = db.prepare(`
-      SELECT id FROM camioneros WHERE id = ? AND activo = 1
-    `).get(body.camionero_id)
+      SELECT id FROM camioneros WHERE id = ? AND activo = 1 AND logistica_id = ?
+    `).get(body.camionero_id, logisticaId)
 
     if (!camionero) {
       return reply.status(400).send({ error: 'Camionero no válido' })
@@ -596,15 +612,16 @@ export async function planillasRoutes(app: FastifyInstance): Promise<void> {
     try {
       const planillaId = db.transaction(() => {
         const result = db.prepare(`
-          INSERT INTO planillas (fecha, numero, observacion, camionero_id, vehiculo_id, usuario_id)
-          VALUES (?, ?, ?, ?, ?, ?)
+          INSERT INTO planillas (fecha, numero, observacion, camionero_id, vehiculo_id, usuario_id, logistica_id)
+          VALUES (?, ?, ?, ?, ?, ?, ?)
         `).run(
           body.fecha.trim(),
           body.numero.trim(),
           observacion,
           body.camionero_id,
           body.vehiculo_id ?? null,
-          user.id
+          user.id,
+          logisticaId
         )
 
         const planillaId = Number(result.lastInsertRowid)

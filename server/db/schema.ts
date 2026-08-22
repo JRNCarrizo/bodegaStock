@@ -18,12 +18,21 @@ CREATE TABLE IF NOT EXISTS rol_permisos (
   PRIMARY KEY (rol_id, permiso_id)
 );
 
+CREATE TABLE IF NOT EXISTS logisticas (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  codigo TEXT NOT NULL UNIQUE,
+  nombre TEXT NOT NULL,
+  activo INTEGER NOT NULL DEFAULT 1,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
 CREATE TABLE IF NOT EXISTS usuarios (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   username TEXT NOT NULL UNIQUE,
   password_hash TEXT NOT NULL,
   nombre TEXT NOT NULL,
   rol_id INTEGER REFERENCES roles(id),
+  logistica_id INTEGER REFERENCES logisticas(id),
   activo INTEGER NOT NULL DEFAULT 1,
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   updated_at TEXT NOT NULL DEFAULT (datetime('now'))
@@ -60,6 +69,7 @@ CREATE TABLE IF NOT EXISTS sectores (
   usa_ubicaciones INTEGER NOT NULL DEFAULT 0,
   ingreso_por_defecto INTEGER NOT NULL DEFAULT 0,
   activo INTEGER NOT NULL DEFAULT 1,
+  logistica_id INTEGER REFERENCES logisticas(id),
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
@@ -104,6 +114,7 @@ CREATE TABLE IF NOT EXISTS camioneros (
   nombre TEXT NOT NULL,
   empresa TEXT NOT NULL,
   activo INTEGER NOT NULL DEFAULT 1,
+  logistica_id INTEGER REFERENCES logisticas(id),
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
@@ -125,6 +136,7 @@ CREATE TABLE IF NOT EXISTS ingresos (
   observacion TEXT,
   sector_id INTEGER NOT NULL REFERENCES sectores(id),
   usuario_id INTEGER NOT NULL REFERENCES usuarios(id),
+  logistica_id INTEGER REFERENCES logisticas(id),
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
@@ -165,6 +177,7 @@ CREATE TABLE IF NOT EXISTS planillas (
   camionero_id INTEGER NOT NULL REFERENCES camioneros(id),
   vehiculo_id INTEGER REFERENCES camionero_vehiculos(id),
   usuario_id INTEGER NOT NULL REFERENCES usuarios(id),
+  logistica_id INTEGER REFERENCES logisticas(id),
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
@@ -211,6 +224,7 @@ CREATE TABLE IF NOT EXISTS retornos (
   verificado_por_id INTEGER REFERENCES usuarios(id),
   observacion_verificacion TEXT,
   ingreso_directo INTEGER NOT NULL DEFAULT 0,
+  logistica_id INTEGER REFERENCES logisticas(id),
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   verificado_at TEXT
 );
@@ -237,6 +251,7 @@ CREATE TABLE IF NOT EXISTS roturas (
   fecha TEXT NOT NULL,
   observacion TEXT,
   usuario_id INTEGER NOT NULL REFERENCES usuarios(id),
+  logistica_id INTEGER REFERENCES logisticas(id),
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
@@ -272,6 +287,7 @@ CREATE TABLE IF NOT EXISTS movimientos_internos (
   recibido_por_id INTEGER REFERENCES usuarios(id),
   cancelado_por_id INTEGER REFERENCES usuarios(id),
   ingreso_directo INTEGER NOT NULL DEFAULT 0,
+  logistica_id INTEGER REFERENCES logisticas(id),
   recibido_at TEXT,
   cancelado_at TEXT,
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
@@ -313,6 +329,7 @@ CREATE TABLE IF NOT EXISTS inventario_sesiones (
   estado TEXT NOT NULL DEFAULT 'ABIERTA' CHECK (estado IN ('ABIERTA', 'EN_PROGRESO', 'CERRADA', 'CANCELADA')),
   creado_por_id INTEGER NOT NULL REFERENCES usuarios(id),
   cerrado_por_id INTEGER REFERENCES usuarios(id),
+  logistica_id INTEGER REFERENCES logisticas(id),
   fecha_inicio TEXT,
   fecha_cierre TEXT,
   observacion TEXT,

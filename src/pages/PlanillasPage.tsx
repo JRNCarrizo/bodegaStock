@@ -40,6 +40,7 @@ import {
 import { downloadApiFile } from '@/lib/downloadFile'
 import { labelVehiculoDetalle, labelVehiculoOperativo } from '@/lib/camioneros'
 import { searchDelayMs } from '@/lib/searchDelay'
+import { clearDraft, readDraft, writeDraft } from '@/lib/draftStorage'
 import { api, cn } from '@/lib/utils'
 import { codigoProductoExacto } from '@/lib/productoSearch'
 import type {
@@ -73,31 +74,17 @@ type PlanillaDraftStored = {
 }
 
 function readPlanillaDraft(): PlanillaDraftStored | null {
-  try {
-    const raw = localStorage.getItem(PLANILLA_DRAFT_KEY)
-    if (!raw) return null
-    const parsed = JSON.parse(raw) as PlanillaDraftStored
-    if (!parsed || !Array.isArray(parsed.lineas)) return null
-    return parsed
-  } catch {
-    return null
-  }
+  const parsed = readDraft<PlanillaDraftStored>(PLANILLA_DRAFT_KEY)
+  if (!parsed || !Array.isArray(parsed.lineas)) return null
+  return parsed
 }
 
 function writePlanillaDraft(draft: PlanillaDraftStored): void {
-  try {
-    localStorage.setItem(PLANILLA_DRAFT_KEY, JSON.stringify(draft))
-  } catch {
-    /* quota / private mode */
-  }
+  writeDraft(PLANILLA_DRAFT_KEY, draft)
 }
 
 function clearPlanillaDraft(): void {
-  try {
-    localStorage.removeItem(PLANILLA_DRAFT_KEY)
-  } catch {
-    /* ignore */
-  }
+  clearDraft(PLANILLA_DRAFT_KEY)
 }
 
 function planillaDraftTieneContenido(d: {

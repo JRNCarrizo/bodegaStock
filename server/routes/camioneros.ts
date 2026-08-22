@@ -1,6 +1,7 @@
 import type { FastifyInstance } from 'fastify'
 import { getDb } from '../db'
 import { requirePermiso, requirePermisoAny } from '../plugins/auth'
+import { assertCamioneroEnLogistica, requireRequestLogistica } from '../utils/logisticas'
 
 /** Listado para planillas/retornos sin dar acceso al ABM de camioneros. */
 const puedeListarCamioneros = requirePermisoAny(
@@ -40,6 +41,7 @@ export async function camionerosRoutes(app: FastifyInstance): Promise<void> {
   }, async (request) => {
     const { q, activo } = request.query as { q?: string; activo?: string }
     const db = getDb()
+    const logisticaId = requireRequestLogistica(request)
 
     let sql = `
       SELECT
@@ -52,6 +54,9 @@ export async function camionerosRoutes(app: FastifyInstance): Promise<void> {
       WHERE 1=1
     `
     const params: unknown[] = []
+
+    sql += ' AND c.logistica_id = ?'
+    params.push(logisticaId)
 
     if (activo === '1') sql += ' AND c.activo = 1'
     else if (activo === '0') sql += ' AND c.activo = 0'
@@ -79,10 +84,11 @@ export async function camionerosRoutes(app: FastifyInstance): Promise<void> {
   }, async (request, reply) => {
     const id = Number((request.params as { id: string }).id)
     const db = getDb()
+    const logisticaId = requireRequestLogistica(request)
     const row = db.prepare(`
       SELECT id, numero_interno, nombre, empresa, activo, created_at
-      FROM camioneros WHERE id = ?
-    `).get(id)
+      FROM camioneros WHERE id = ? AND logistica_id = ?
+    `).get(id, logisticaId)
 
     if (!row) return reply.status(404).send({ error: 'Camionero no encontrado' })
     return row
@@ -123,15 +129,17 @@ export async function camionerosRoutes(app: FastifyInstance): Promise<void> {
     }
 
     const db = getDb()
+    const logisticaId = requireRequestLogistica(request)
     try {
       const result = db.prepare(`
-        INSERT INTO camioneros (numero_interno, nombre, empresa, activo)
-        VALUES (?, ?, ?, ?)
+        INSERT INTO camioneros (numero_interno, nombre, empresa, activo, logistica_id)
+        VALUES (?, ?, ?, ?, ?)
       `).run(
         body.numero_interno.trim().toUpperCase(),
         body.nombre.trim(),
         body.empresa.trim(),
-        body.activo === false ? 0 : 1
+        body.activo === false ? 0 : 1,
+        logisticaId
       )
 
       return { id: result.lastInsertRowid }
@@ -146,12 +154,14 @@ export async function camionerosRoutes(app: FastifyInstance): Promise<void> {
     const id = Number((request.params as { id: string }).id)
     const body = request.body as CamioneroBody
     const db = getDb()
+    const logisticaId = requireRequestLogistica(request)
 
     if (!getCamioneroOr404(db, id)) {
       return reply.status(404).send({ error: 'Camionero no encontrado' })
     }
 
     try {
+      assertCamioneroEnLogistica(db, id, logisticaId)
       db.prepare(`
         UPDATE camioneros SET
           numero_interno = COALESCE(?, numero_interno),
@@ -168,7 +178,11 @@ export async function camionerosRoutes(app: FastifyInstance): Promise<void> {
       )
 
       return { ok: true }
-    } catch {
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'El número interno ya existe'
+      if (msg.includes('logística')) {
+        return reply.status(403).send({ error: msg })
+      }
       return reply.status(409).send({ error: 'El número interno ya existe' })
     }
   })

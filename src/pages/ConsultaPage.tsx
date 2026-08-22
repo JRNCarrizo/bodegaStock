@@ -293,7 +293,7 @@ export function ConsultaPage() {
   const [loading, setLoading] = useState(false)
   const [exporting, setExporting] = useState(false)
   const [exportingSectores, setExportingSectores] = useState(false)
-  const [exportIncluirCero, setExportIncluirCero] = useState(false)
+  const [incluirCero, setIncluirCero] = useState(false)
   const [error, setError] = useState('')
   const [showScanner, setShowScanner] = useState(false)
   const [imagePreview, setImagePreview] = useState<{
@@ -313,6 +313,11 @@ export function ConsultaPage() {
     setLoading(true)
     setError('')
     try {
+      const params = new URLSearchParams({
+        page: String(requestedPage),
+        limit: String(CONSULTA_PAGE_SIZE)
+      })
+      if (incluirCero) params.set('incluir_cero', '1')
       const data = await api<
         | ConsultaResumen[]
         | {
@@ -321,9 +326,7 @@ export function ConsultaPage() {
             page: number
             page_size: number
           }
-      >(
-        `/api/consulta/todos?page=${requestedPage}&limit=${CONSULTA_PAGE_SIZE}`
-      )
+      >(`/api/consulta/todos?${params.toString()}`)
       if (Array.isArray(data)) {
         const totalPages = Math.max(1, Math.ceil(data.length / CONSULTA_PAGE_SIZE))
         const currentPage = Math.min(requestedPage, totalPages)
@@ -346,7 +349,7 @@ export function ConsultaPage() {
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [incluirCero])
 
   useEffect(() => {
     if (modo !== 'todos') return
@@ -358,7 +361,7 @@ export function ConsultaPage() {
     setError('')
     try {
       const params = new URLSearchParams()
-      if (exportIncluirCero) params.set('incluir_cero', '1')
+      if (incluirCero) params.set('incluir_cero', '1')
       const qs = params.toString()
       await downloadApiFile(
         `/api/consulta/export/stock-productos${qs ? `?${qs}` : ''}`,
@@ -376,7 +379,7 @@ export function ConsultaPage() {
     setError('')
     try {
       const params = new URLSearchParams()
-      if (exportIncluirCero) params.set('incluir_cero', '1')
+      if (incluirCero) params.set('incluir_cero', '1')
       const qs = params.toString()
       await downloadApiFile(
         `/api/consulta/export/stock-sectores${qs ? `?${qs}` : ''}`,
@@ -542,9 +545,9 @@ export function ConsultaPage() {
     setLoading(true)
     setError('')
     try {
-      const data = await api<ConsultaResumen[]>(
-        `/api/consulta?q=${encodeURIComponent(q.trim())}`
-      )
+      const params = new URLSearchParams({ q: q.trim() })
+      if (incluirCero) params.set('incluir_cero', '1')
+      const data = await api<ConsultaResumen[]>(`/api/consulta?${params.toString()}`)
       setResultados(data)
       setExpandedId(null)
     } catch (err) {
@@ -554,7 +557,7 @@ export function ConsultaPage() {
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [incluirCero])
 
   useEffect(() => {
     if (modo !== 'producto') return
@@ -766,8 +769,11 @@ export function ConsultaPage() {
         <label className="inline-flex cursor-pointer items-center gap-2 text-sm text-slate-600">
           <input
             type="checkbox"
-            checked={exportIncluirCero}
-            onChange={(e) => setExportIncluirCero(e.target.checked)}
+            checked={incluirCero}
+            onChange={(e) => {
+              setIncluirCero(e.target.checked)
+              if (modo === 'todos') setTodosPage(1)
+            }}
             className="h-4 w-4 rounded border-surface-border text-brand-600 focus:ring-brand-500/30"
           />
           Incluir productos en cero
@@ -779,7 +785,7 @@ export function ConsultaPage() {
           disabled={exporting}
           onClick={() => void exportarStockProductos()}
           title={
-            exportIncluirCero
+            incluirCero
               ? 'Excel con código interno, nombre y cantidad (incluye stock 0)'
               : 'Excel con código interno, nombre y cantidad (solo con stock)'
           }
@@ -798,7 +804,7 @@ export function ConsultaPage() {
           disabled={exportingSectores}
           onClick={() => void exportarStockPorSectores()}
           title={
-            exportIncluirCero
+            incluirCero
               ? 'Excel con una columna por sector (incluye stock 0)'
               : 'Excel con una columna por sector (solo con stock)'
           }
@@ -823,10 +829,14 @@ export function ConsultaPage() {
 
   const subtitulo =
     modo === 'producto'
-      ? 'Código interno, código de barras o nombre. Desplegá cada resultado para ver el stock por sector y ubicación.'
+      ? incluirCero
+        ? 'Código interno, código de barras o nombre. Incluye productos sin stock.'
+        : 'Código interno, código de barras o nombre. Solo productos con stock.'
       : modo === 'sector'
         ? 'Elegí un sector para ver todos los productos con stock, filtrando por ubicación interna si aplica.'
-        : 'Listado de productos con stock. El desglose por sector queda cerrado; desplegá cada producto para verlo.'
+        : incluirCero
+          ? 'Listado de todos los productos activos, con o sin stock. Desplegá cada uno para ver el desglose.'
+          : 'Listado de productos con stock. El desglose por sector queda cerrado; desplegá cada producto para verlo.'
 
   function renderProductoListItem(p: ConsultaResumen, index: number) {
     const isExpanded = expandedId === p.id

@@ -19,10 +19,12 @@ function mapUsuarioRow(
     created_at: string
     rol_id: number | null
     rol_nombre: string | null
+    logistica_id?: number | null
   }
 ) {
   return {
     ...row,
+    logistica_id: row.logistica_id ?? null,
     secciones: getSeccionesForUser(db, row.id)
   }
 }
@@ -39,7 +41,7 @@ export async function usuariosRoutes(app: FastifyInstance): Promise<void> {
   }, async () => {
     const db = getDb()
     const rows = db.prepare(`
-      SELECT u.id, u.username, u.nombre, u.activo, u.created_at,
+      SELECT u.id, u.username, u.nombre, u.activo, u.created_at, u.logistica_id,
              r.id as rol_id, r.nombre as rol_nombre
       FROM usuarios u
       LEFT JOIN roles r ON r.id = u.rol_id
@@ -50,6 +52,7 @@ export async function usuariosRoutes(app: FastifyInstance): Promise<void> {
       nombre: string
       activo: number
       created_at: string
+      logistica_id: number | null
       rol_id: number | null
       rol_nombre: string | null
     }[]
@@ -77,6 +80,7 @@ export async function usuariosRoutes(app: FastifyInstance): Promise<void> {
       rol_id?: number | null
       activo?: boolean
       secciones?: string[]
+      logistica_id?: number | null
     }
 
     if (!body.username?.trim() || !body.password || !body.nombre?.trim()) {
@@ -100,18 +104,23 @@ export async function usuariosRoutes(app: FastifyInstance): Promise<void> {
     }
 
     const hash = bcrypt.hashSync(body.password, 10)
+    const logisticaId =
+      body.logistica_id === undefined || body.logistica_id === null
+        ? null
+        : Number(body.logistica_id)
 
     try {
       const tx = db.transaction(() => {
         const result = db.prepare(`
-          INSERT INTO usuarios (username, password_hash, nombre, rol_id, activo)
-          VALUES (?, ?, ?, ?, ?)
+          INSERT INTO usuarios (username, password_hash, nombre, rol_id, activo, logistica_id)
+          VALUES (?, ?, ?, ?, ?, ?)
         `).run(
           body.username!.trim(),
           hash,
           body.nombre!.trim(),
           body.rol_id ?? null,
-          body.activo === false ? 0 : 1
+          body.activo === false ? 0 : 1,
+          logisticaId
         )
         const userId = Number(result.lastInsertRowid)
         setUsuarioSecciones(db, userId, seccionesCheck.secciones)
@@ -135,6 +144,7 @@ export async function usuariosRoutes(app: FastifyInstance): Promise<void> {
       rol_id?: number | null
       activo?: boolean
       secciones?: string[]
+      logistica_id?: number | null
     }
 
     const db = getDb()
@@ -160,6 +170,13 @@ export async function usuariosRoutes(app: FastifyInstance): Promise<void> {
           ? getSeccionesForUser(db, id)
           : []
 
+    const logisticaId =
+      body.logistica_id === undefined
+        ? undefined
+        : body.logistica_id === null
+          ? null
+          : Number(body.logistica_id)
+
     if (rolId) {
       const seccionesCheck = validateSeccionesForRol(db, rolId, seccionesInput)
       if (!seccionesCheck.ok) {
@@ -175,6 +192,7 @@ export async function usuariosRoutes(app: FastifyInstance): Promise<void> {
               nombre = COALESCE(?, nombre),
               rol_id = ?,
               activo = COALESCE(?, activo),
+              logistica_id = COALESCE(?, logistica_id),
               password_hash = ?,
               updated_at = datetime('now')
             WHERE id = ?
@@ -183,6 +201,7 @@ export async function usuariosRoutes(app: FastifyInstance): Promise<void> {
             body.nombre?.trim() ?? null,
             rolId,
             body.activo === undefined ? null : body.activo ? 1 : 0,
+            logisticaId === undefined ? null : logisticaId,
             hash,
             id
           )
@@ -193,6 +212,7 @@ export async function usuariosRoutes(app: FastifyInstance): Promise<void> {
               nombre = COALESCE(?, nombre),
               rol_id = ?,
               activo = COALESCE(?, activo),
+              logistica_id = COALESCE(?, logistica_id),
               updated_at = datetime('now')
             WHERE id = ?
           `).run(
@@ -200,6 +220,7 @@ export async function usuariosRoutes(app: FastifyInstance): Promise<void> {
             body.nombre?.trim() ?? null,
             rolId,
             body.activo === undefined ? null : body.activo ? 1 : 0,
+            logisticaId === undefined ? null : logisticaId,
             id
           )
         }

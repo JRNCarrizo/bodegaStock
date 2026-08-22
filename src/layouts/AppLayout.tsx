@@ -106,11 +106,31 @@ function AppLayoutShell({
   toggleCollapsed: () => void
   children: React.ReactNode
 }) {
-  const { user, logout, offlineSession } = useAuth()
+  const { user, logout, offlineSession, setLogisticaActiva, logisticaActivaNombre } = useAuth()
   const { pathname } = useLocation()
   const [mobileOpen, setMobileOpen] = useState(false)
   const [showOfflineBanner, setShowOfflineBanner] = useState(false)
+  const [changingLogistica, setChangingLogistica] = useState(false)
   const { sidebarActive } = useSidebarNav()
+
+  const sidebarHeaderProps = {
+    logisticaNombre: logisticaActivaNombre,
+    logisticas: user?.logisticas,
+    puedeCambiarLogistica: user?.puede_cambiar_logistica,
+    logisticaActivaId: user?.logistica_activa_id,
+    changingLogistica,
+    onLogisticaChange: user?.puede_cambiar_logistica
+      ? (id: number) => {
+          if (id === user?.logistica_activa_id || changingLogistica) return
+          setChangingLogistica(true)
+          void setLogisticaActiva(id)
+            .catch(() => {
+              /* error: keep previous logística */
+            })
+            .finally(() => setChangingLogistica(false))
+        }
+      : undefined
+  }
 
   // Conteo de inventario: sin scroll del main (header + totales fijos; solo la lista scrollea).
   const isInventarioConteo =
@@ -167,6 +187,11 @@ function AppLayoutShell({
     }
   }, [canViewRetornos, refreshRetornosPendientes])
 
+  useEffect(() => {
+    if (!canViewRetornos) return
+    void refreshRetornosPendientes()
+  }, [user?.logistica_activa_id, canViewRetornos, refreshRetornosPendientes])
+
   return (
     <div className="flex h-screen bg-surface-muted">
       <aside
@@ -176,7 +201,7 @@ function AppLayoutShell({
           sidebarActive && 'ring-2 ring-inset ring-brand-200/80'
         )}
       >
-        <SidebarHeader collapsed={collapsed} onToggle={toggleCollapsed} />
+        <SidebarHeader collapsed={collapsed} onToggle={toggleCollapsed} {...sidebarHeaderProps} />
 
         <nav
           className={cn(
@@ -252,7 +277,7 @@ function AppLayoutShell({
 
           <aside className="relative flex h-full w-72 flex-col bg-gradient-to-b from-white via-white to-slate-50/70 shadow-panel">
             <div className="flex items-center justify-between border-b border-brand-100/80 bg-gradient-to-r from-brand-50/50 via-white to-white p-4">
-              <SidebarHeader compact />
+              <SidebarHeader compact {...sidebarHeaderProps} />
               <button
                 type="button"
                 onClick={() => setMobileOpen(false)}
@@ -316,7 +341,7 @@ function AppLayoutShell({
           </button>
 
           <div className="lg:hidden">
-            <SidebarHeader compact />
+            <SidebarHeader compact {...sidebarHeaderProps} />
           </div>
 
           <button
@@ -330,23 +355,29 @@ function AppLayoutShell({
           </button>
         </header>
 
-        <InventarioActivoBanner />
-        {offlineSession && showOfflineBanner && (
-          <div className="shrink-0 border-b border-sky-200 bg-sky-50 px-4 py-2 text-center text-xs font-medium text-sky-900 sm:text-sm">
-            Sin conexión al PC — sesión offline activa (conteo local)
-          </div>
-        )}
-
-        <main
-          className={cn(
-            'min-h-0 flex-1 outline-none',
-            isInventarioConteo
-              ? 'flex flex-col overflow-hidden p-0'
-              : 'overflow-y-auto p-4 lg:p-6'
-          )}
+        {/* Remount al cambiar logística: refresca datos sin cerrar sesión */}
+        <div
+          key={user?.logistica_activa_id ?? 'sin-logistica'}
+          className="flex min-h-0 min-w-0 flex-1 flex-col"
         >
-          {children}
-        </main>
+          <InventarioActivoBanner />
+          {offlineSession && showOfflineBanner && (
+            <div className="shrink-0 border-b border-sky-200 bg-sky-50 px-4 py-2 text-center text-xs font-medium text-sky-900 sm:text-sm">
+              Sin conexión al PC — sesión offline activa (conteo local)
+            </div>
+          )}
+
+          <main
+            className={cn(
+              'min-h-0 flex-1 outline-none',
+              isInventarioConteo
+                ? 'flex flex-col overflow-hidden p-0'
+                : 'overflow-y-auto p-4 lg:p-6'
+            )}
+          >
+            {children}
+          </main>
+        </div>
       </div>
     </div>
   )
@@ -453,17 +484,83 @@ function SidebarNavItem({
 function SidebarHeader({
   compact = false,
   collapsed = false,
-  onToggle
+  onToggle,
+  logisticaNombre,
+  logisticas,
+  puedeCambiarLogistica,
+  logisticaActivaId,
+  onLogisticaChange,
+  changingLogistica
 }: {
   compact?: boolean
   collapsed?: boolean
   onToggle?: () => void
+  logisticaNombre?: string | null
+  logisticas?: { id: number; nombre: string }[]
+  puedeCambiarLogistica?: boolean
+  logisticaActivaId?: number
+  onLogisticaChange?: (id: number) => void
+  changingLogistica?: boolean
 }) {
+  const showSelector =
+    !!puedeCambiarLogistica &&
+    (logisticas?.length ?? 0) > 1 &&
+    !!onLogisticaChange &&
+    logisticaActivaId != null
+
+  const logisticaLine = showSelector ? (
+    <select
+      value={logisticaActivaId}
+      disabled={changingLogistica}
+      onChange={(e) => onLogisticaChange(Number(e.target.value))}
+      className="mt-0.5 w-full max-w-full truncate rounded-lg border border-brand-200/80 bg-white/90 px-2 py-1 text-xs font-medium text-brand-800 shadow-sm focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20 disabled:opacity-60"
+      aria-label="Logística activa"
+      title="Cambiar logística"
+    >
+      {logisticas!.map((l) => (
+        <option key={l.id} value={l.id}>
+          {l.nombre}
+        </option>
+      ))}
+    </select>
+  ) : (
+    <p className="truncate text-xs text-slate-500" title={logisticaNombre ?? undefined}>
+      {logisticaNombre ?? 'Bodega'}
+    </p>
+  )
+
   if (compact) {
     return (
-      <div className="flex items-center gap-3">
-        <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-brand-600 text-white shadow-sm ring-4 ring-brand-600/10">
-          <Boxes className="h-5 w-5" />
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center gap-3">
+          <div
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-brand-600 text-white shadow-sm ring-4 ring-brand-600/10"
+            title={logisticaNombre ?? 'ControlStock'}
+          >
+            <Boxes className="h-5 w-5" />
+          </div>
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-sm font-bold text-slate-900">ControlStock</p>
+            {showSelector ? (
+              <select
+                value={logisticaActivaId}
+                disabled={changingLogistica}
+                onChange={(e) => onLogisticaChange!(Number(e.target.value))}
+                className="mt-0.5 w-full truncate rounded-lg border border-brand-200/80 bg-white px-2 py-1 text-xs font-medium text-brand-800 focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20 disabled:opacity-60"
+                aria-label="Logística activa"
+              >
+                {logisticas!.map((l) => (
+                  <option key={l.id} value={l.id}>
+                    {l.nombre}
+                  </option>
+                ))}
+              </select>
+            ) : (
+              logisticaNombre && (
+                <p className="truncate text-xs text-slate-500">{logisticaNombre}</p>
+              )
+            )}
+          </div>
         </div>
       </div>
     )
@@ -474,7 +571,7 @@ function SidebarHeader({
       <div className="flex flex-col items-center gap-2 border-b border-surface-border/80 bg-gradient-to-b from-brand-50/40 to-white px-2 py-3">
         <div
           className="flex h-9 w-9 items-center justify-center rounded-xl bg-brand-600 text-white shadow-sm ring-4 ring-brand-600/10"
-          title="ControlStock"
+          title={logisticaNombre ? `ControlStock · ${logisticaNombre}` : 'ControlStock'}
         >
           <Boxes className="h-5 w-5" />
         </div>
@@ -501,7 +598,7 @@ function SidebarHeader({
 
       <div className="min-w-0 flex-1">
         <h1 className="truncate text-base font-bold tracking-tight text-slate-900">ControlStock</h1>
-        <p className="truncate text-xs text-slate-500">Bodega Esmeralda</p>
+        {logisticaLine}
       </div>
 
       {onToggle && (

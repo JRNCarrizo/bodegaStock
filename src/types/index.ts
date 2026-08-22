@@ -208,6 +208,12 @@ export interface ProductoForm {
   activo: boolean
 }
 
+export interface LogisticaOption {
+  id: number
+  codigo: string
+  nombre: string
+}
+
 export interface Usuario {
   id: number
   username: string
@@ -217,6 +223,10 @@ export interface Usuario {
   es_admin?: boolean
   secciones?: string[]
   permisos: string[]
+  logisticas?: LogisticaOption[]
+  logistica_activa_id?: number
+  logistica_asignada_id?: number | null
+  puede_cambiar_logistica?: boolean
 }
 
 export interface UsuarioListItem {
@@ -228,6 +238,7 @@ export interface UsuarioListItem {
   rol_id: number | null
   rol_nombre: string | null
   secciones: string[]
+  logistica_id: number | null
 }
 
 export interface Rol {

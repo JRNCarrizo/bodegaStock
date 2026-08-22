@@ -49,9 +49,26 @@ function mimeFromExt(ext: string): string {
   return 'image/jpeg'
 }
 
+/** Lectura de catálogo para operaciones (ingresos, planillas, etc.) sin menú Productos. */
+const puedeConsultarProductos = requirePermisoAny(
+  'productos.ver',
+  'inventario.contar',
+  'consulta.ver',
+  'ingresos.ver',
+  'ingresos.crear',
+  'planillas.ver',
+  'planillas.crear',
+  'retornos.ver',
+  'retornos.crear',
+  'roturas.ver',
+  'roturas.crear',
+  'movimientos_internos.ver',
+  'movimientos_internos.crear'
+)
+
 export async function productosRoutes(app: FastifyInstance): Promise<void> {
   app.get('/api/productos', {
-    preHandler: requirePermisoAny('productos.ver', 'inventario.contar')
+    preHandler: puedeConsultarProductos
   }, async (request) => {
     const { q, activo, page, limit } = request.query as {
       q?: string
@@ -268,7 +285,7 @@ export async function productosRoutes(app: FastifyInstance): Promise<void> {
   })
 
   app.get('/api/productos/:id/imagen', {
-    preHandler: requirePermiso('productos.ver')
+    preHandler: puedeConsultarProductos
   }, async (request, reply) => {
     const id = Number((request.params as { id: string }).id)
     const db = getDb()
@@ -289,7 +306,7 @@ export async function productosRoutes(app: FastifyInstance): Promise<void> {
   })
 
   app.get('/api/productos/:id', {
-    preHandler: requirePermiso('productos.ver')
+    preHandler: puedeConsultarProductos
   }, async (request, reply) => {
     const id = Number((request.params as { id: string }).id)
     const db = getDb()

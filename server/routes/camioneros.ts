@@ -1,6 +1,15 @@
 import type { FastifyInstance } from 'fastify'
 import { getDb } from '../db'
-import { requirePermiso } from '../plugins/auth'
+import { requirePermiso, requirePermisoAny } from '../plugins/auth'
+
+/** Listado para planillas/retornos sin dar acceso al ABM de camioneros. */
+const puedeListarCamioneros = requirePermisoAny(
+  'camioneros.ver',
+  'planillas.ver',
+  'planillas.crear',
+  'retornos.ver',
+  'retornos.crear'
+)
 
 interface CamioneroBody {
   numero_interno?: string
@@ -12,6 +21,7 @@ interface CamioneroBody {
 interface VehiculoBody {
   marca?: string
   modelo?: string
+  alias?: string
   patente?: string
   activo?: boolean
 }
@@ -26,7 +36,7 @@ function normalizePatente(patente: string): string {
 
 export async function camionerosRoutes(app: FastifyInstance): Promise<void> {
   app.get('/api/camioneros', {
-    preHandler: requirePermiso('camioneros.ver')
+    preHandler: puedeListarCamioneros
   }, async (request) => {
     const { q, activo } = request.query as { q?: string; activo?: string }
     const db = getDb()
@@ -52,11 +62,11 @@ export async function camionerosRoutes(app: FastifyInstance): Promise<void> {
         OR EXISTS (
           SELECT 1 FROM camionero_vehiculos cv
           WHERE cv.camionero_id = c.id
-            AND (cv.patente LIKE ? OR cv.marca LIKE ? OR cv.modelo LIKE ?)
+            AND (cv.patente LIKE ? OR cv.marca LIKE ? OR cv.modelo LIKE ? OR cv.alias LIKE ?)
         )
       )`
       const term = `%${q.trim()}%`
-      params.push(term, term, term, term, term, term)
+      params.push(term, term, term, term, term, term, term)
     }
 
     sql += ' ORDER BY c.nombre COLLATE NOCASE ASC, c.numero_interno ASC'
@@ -65,7 +75,7 @@ export async function camionerosRoutes(app: FastifyInstance): Promise<void> {
   })
 
   app.get('/api/camioneros/:id', {
-    preHandler: requirePermiso('camioneros.ver')
+    preHandler: puedeListarCamioneros
   }, async (request, reply) => {
     const id = Number((request.params as { id: string }).id)
     const db = getDb()
@@ -79,7 +89,7 @@ export async function camionerosRoutes(app: FastifyInstance): Promise<void> {
   })
 
   app.get('/api/camioneros/:id/vehiculos', {
-    preHandler: requirePermiso('camioneros.ver')
+    preHandler: puedeListarCamioneros
   }, async (request, reply) => {
     const id = Number((request.params as { id: string }).id)
     const db = getDb()
@@ -88,12 +98,17 @@ export async function camionerosRoutes(app: FastifyInstance): Promise<void> {
       return reply.status(404).send({ error: 'Camionero no encontrado' })
     }
 
-    return db.prepare(`
-      SELECT id, camionero_id, marca, modelo, patente, activo, created_at
+    const { activo } = request.query as { activo?: string }
+    let sql = `
+      SELECT id, camionero_id, marca, modelo, alias, patente, activo, created_at
       FROM camionero_vehiculos
       WHERE camionero_id = ?
-      ORDER BY patente COLLATE NOCASE ASC, id ASC
-    `).all(id)
+    `
+    if (activo === '1') sql += ' AND activo = 1'
+    else if (activo === '0') sql += ' AND activo = 0'
+    sql += ' ORDER BY patente COLLATE NOCASE ASC, id ASC'
+
+    return db.prepare(sql).all(id)
   })
 
   app.post('/api/camioneros', {
@@ -177,12 +192,13 @@ export async function camionerosRoutes(app: FastifyInstance): Promise<void> {
 
     try {
       const result = db.prepare(`
-        INSERT INTO camionero_vehiculos (camionero_id, marca, modelo, patente, activo)
-        VALUES (?, ?, ?, ?, ?)
+        INSERT INTO camionero_vehiculos (camionero_id, marca, modelo, alias, patente, activo)
+        VALUES (?, ?, ?, ?, ?, ?)
       `).run(
         camioneroId,
         body.marca.trim(),
         body.modelo.trim(),
+        body.alias?.trim() || null,
         patente,
         body.activo === false ? 0 : 1
       )
@@ -214,12 +230,14 @@ export async function camionerosRoutes(app: FastifyInstance): Promise<void> {
         UPDATE camionero_vehiculos SET
           marca = COALESCE(?, marca),
           modelo = COALESCE(?, modelo),
+          alias = COALESCE(?, alias),
           patente = COALESCE(?, patente),
           activo = COALESCE(?, activo)
         WHERE id = ? AND camionero_id = ?
       `).run(
         body.marca?.trim() ?? null,
         body.modelo?.trim() ?? null,
+        body.alias === undefined ? null : body.alias.trim() || null,
         patente,
         body.activo === undefined ? null : body.activo ? 1 : 0,
         vehiculoId,

@@ -354,10 +354,22 @@ export async function ingresosRoutes(app: FastifyInstance): Promise<void> {
       }
 
       const sector = db.prepare(`
-        SELECT id, activo FROM sectores WHERE id = ?
-      `).get(sectorId) as { id: number; activo: number } | undefined
+        SELECT id, activo, usa_ubicaciones FROM sectores WHERE id = ?
+      `).get(sectorId) as { id: number; activo: number; usa_ubicaciones: number } | undefined
       if (!sector || !sector.activo) {
         return reply.status(400).send({ error: `Línea ${i + 1}: sector no válido` })
+      }
+
+      if (sector.usa_ubicaciones) {
+        const ubCount = db.prepare(`
+          SELECT COUNT(*) AS c FROM sector_ubicaciones
+          WHERE sector_id = ? AND activo = 1
+        `).get(sectorId) as { c: number }
+        if (ubCount.c > 0 && !linea.ubicacion_id) {
+          return reply.status(400).send({
+            error: `Línea ${i + 1}: seleccioná ubicación en un sector con ubicaciones`
+          })
+        }
       }
 
       if (linea.ubicacion_id) {

@@ -1,7 +1,7 @@
 # Inventario offline — estado y norte (no desviarse)
 
-> **Documento de respaldo** (agosto 2026 — **v0.3.30**). Si se pierde el chat, este archivo es la fuente de verdad del flujo offline acordado y de lo ya implementado.  
-> Complementa [INVENTARIO.md](INVENTARIO.md) §3.1–3.2 y [APP-MOVIL.md](APP-MOVIL.md).
+> **Documento de respaldo** (agosto 2026 — **v0.3.37**). Si se pierde el chat, este archivo es la fuente de verdad del flujo offline acordado y de lo ya implementado.  
+> Panorama global: [ESTADO-ACTUAL.md](ESTADO-ACTUAL.md) · Complementa [INVENTARIO.md](INVENTARIO.md) §3.1–3.2 y [APP-MOVIL.md](APP-MOVIL.md).
 
 ---
 
@@ -38,9 +38,9 @@ El inventario offline existe porque **en el depósito puede no haber WiFi hacia 
 
 ---
 
-## 2. Estado de implementación (agosto 2026 / v0.3.30)
+## 2. Estado de implementación (agosto 2026 / v0.3.37)
 
-### Listo (flujo principal de punta a punta)
+### Listo (flujo principal de punta a punta + probado en campo)
 
 | Pieza | Dónde |
 |-------|--------|
@@ -56,20 +56,21 @@ El inventario offline existe porque **en el depósito puede no haber WiFi hacia 
 | Comparación A + reconteo (solo Doble) | `compare.ts` + UI |
 | Simple: finalizar → import sin P2P | offline lib + import PC |
 | Import al PC + limpieza local | `importarAlPc` → `clearOfflineSectorLocal` |
+| Fix import APK → PC local (415) | v0.3.37 — `appFetch` / CapacitorHttp solo HTTPS |
 | Estado “Recibiendo” en la PC | aviso previo + polling |
 | Plan B archivo final | “Guardar archivo para PC” + “Importar archivo” |
 | Login offline / paquetes locales | cache usuario+clave; no expulsar si falla `/me` |
 | Badges Simple/Doble/Offline en supervisión | `InventarioPage.tsx` |
+| Guías de ayuda inventario offline | `?` + PDF (v0.3.36) |
 
 ### Pendiente / pulir (no cambia la idea)
 
-- Probar en **dos celulares reales** (hotspot + permisos).
-- Emulador + celular: no valida hotspot real.
+- Más pruebas de campo con inventarios grandes.
 - Paridad opcional: ubicaciones / escáner en offline.
 - Hotspot automático (hoy el usuario lo activa en Ajustes).
 - iOS más adelante.
 
-**Conclusión:** camino feliz **implementado** (Doble + Simple). Foco = campo y pulido, no rediseñar.
+**Conclusión:** camino feliz **implementado y probado** (Doble + Simple). Foco = operación y nuevos requerimientos, no rediseñar.
 
 ---
 
@@ -93,7 +94,7 @@ El inventario offline existe porque **en el depósito puede no haber WiFi hacia 
 2. Uno: **Crear conexión** (hotspot).
 3. Otro: Wi‑Fi del compañero → **Unirme** → IP (puerto **3850** fijo) → **Sincronizar**.
 4. OK o diferencias → reconteo → sync de nuevo.
-5. **Importar al PC** (o Plan B archivo).
+5. **Importar al PC** (o Plan B archivo). Antes: WiFi al local, **sin** hotspot del compañero activo.
 
 ### En el depósito — Simple
 
@@ -129,7 +130,10 @@ src/pages/InventarioPage.tsx          # CrearSesionForm Simple/Doble + Offline/O
 
 ```bash
 npm run cap:sync
-# Android Studio → Run / assembleDebug → release/ControlStock-x.y.z.apk
+# JDK 21 (Android Studio) si Java 25 falla en Gradle:
+# $env:JAVA_HOME = "C:\Program Files\Android\Android Studio\jbr"
+cd android && .\gradlew.bat assembleRelease
+# → release/ControlStock-x.y.z.apk
 ```
 
 ---
@@ -157,6 +161,7 @@ npm run cap:sync
 | Simple/Doble | Por sector; Simple sin pares (v0.3.28) |
 | Puerto UI manual | Fijo 3850 (v0.3.30) |
 | Sesión sin red al PC | Cache usuario+clave |
-| Prueba emulador+físico | Parcial; hotspot = 2 físicos |
+| Import APK local (415) | Fix v0.3.37 — no parchear fetch global CapacitorHttp |
+| Prueba emulador+físico | Parcial; hotspot = 2 físicos; import local OK v0.3.37 |
 
-*Última actualización: agosto 2026 — v0.3.30.*
+*Última actualización: 22 agosto 2026 — v0.3.37.*

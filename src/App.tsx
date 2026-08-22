@@ -64,7 +64,7 @@ function AppRoutes() {
         path="/inventario/offline/:sectorInvId"
         element={<PermisoRoute permiso="inventario.contar"><InventarioOfflinePage /></PermisoRoute>}
       />
-      <Route path="/configuracion" element={<PermisoRoute adminOnly><ConfiguracionPage /></PermisoRoute>} />
+      <Route path="/configuracion" element={<PermisoRoute permiso="configuracion.ver"><ConfiguracionPage /></PermisoRoute>} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   )

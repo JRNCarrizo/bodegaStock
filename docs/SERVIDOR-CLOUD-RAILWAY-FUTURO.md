@@ -1,8 +1,8 @@
-# Servidor en la nube (Railway) — plan futuro
+# Servidor en la nube (Railway) — implementado, activación pendiente en planta
 
-> **Estado: EN PROGRESO (agosto 2026).** Slice 1 OK (API en Railway). Slice 2: Postgres via `DATABASE_URL`.  
-> Modo local Electron+SQLite **se conserva**. Migrador SQLite→PG y UI local/cloud: siguientes.  
-> Complementa [ESPECIFICACION.md](ESPECIFICACION.md) §2 (arquitectura LAN + SQLite).
+> **Estado: IMPLEMENTADO en código (v0.3.32+), NO en uso productivo (ago 2026).**  
+> La planta sigue en **modo local** (Electron + SQLite). Cuando migren, usar este doc.  
+> Panorama: [ESTADO-ACTUAL.md](ESTADO-ACTUAL.md) · Complementa [ESPECIFICACION.md](ESPECIFICACION.md) §2.
 
 ---
 
@@ -58,11 +58,11 @@ La app Electron **no** usa `DATABASE_URL`; sigue en SQLite local. El volumen `/d
 
 ### Orden de slices
 
-1. ~~API standalone + Docker + Railway smoke~~
-2. ~~Postgres + schema (`DATABASE_URL`)~~
-3. Migrador SQLite → Postgres (asistente en Configuración) ← acá
-4. ~~UI: modo local vs URL nube (desktop + APK)~~
-5. Piloto y corte en planta
+1. ~~API standalone + Docker + Railway smoke~~ ✓
+2. ~~Postgres + schema (`DATABASE_URL`)~~ ✓
+3. ~~Migrador SQLite → Postgres (asistente en Configuración)~~ ✓
+4. ~~UI: modo local vs URL nube (desktop + APK)~~ ✓
+5. **Piloto y corte en planta** ← pendiente (siguen testeando local)
 
 **Probar UI nube (dev):** Configuración → **Nube (Railway)** → pegar URL → Probar → Guardar.  
 **Migrar:** con nube activa y admin logueado → Configuración → Migrar → escribir `MIGRAR`.  

@@ -12,11 +12,11 @@ import {
 } from 'lucide-react'
 import { searchDelayMs } from '@/lib/searchDelay'
 import { api, cn } from '@/lib/utils'
-import type { Camionero, CamioneroForm, CamioneroVehiculo } from '@/types'
 import { useAuth } from '@/context/AuthContext'
 import { useEscHandler } from '@/hooks/useEscHandler'
 import { useRegistroListKeyboard } from '@/hooks/useRegistroListKeyboard'
 import { focusAndScrollIntoView } from '@/lib/scroll'
+import type { Camionero, CamioneroForm, CamioneroVehiculo } from '@/types'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { Card, CardBody } from '@/components/ui/Card'
@@ -61,11 +61,19 @@ function CamioneroVehiculosPanel({
   const [error, setError] = useState('')
   const [marca, setMarca] = useState('')
   const [modelo, setModelo] = useState('')
+  const [alias, setAlias] = useState('')
   const [patente, setPatente] = useState('')
   const [saving, setSaving] = useState(false)
+  const [editingId, setEditingId] = useState<number | null>(null)
+  const [editMarca, setEditMarca] = useState('')
+  const [editModelo, setEditModelo] = useState('')
+  const [editAlias, setEditAlias] = useState('')
+  const [editPatente, setEditPatente] = useState('')
+  const [savingEdit, setSavingEdit] = useState(false)
   const formRef = useRef<HTMLFormElement>(null)
   const marcaRef = useRef<HTMLInputElement>(null)
   const modeloRef = useRef<HTMLInputElement>(null)
+  const aliasRef = useRef<HTMLInputElement>(null)
   const patenteRef = useRef<HTMLInputElement>(null)
 
   function focusMarca() {
@@ -127,10 +135,11 @@ function CamioneroVehiculosPanel({
     try {
       await api(`/api/camioneros/${camioneroId}/vehiculos`, {
         method: 'POST',
-        body: JSON.stringify({ marca, modelo, patente })
+        body: JSON.stringify({ marca, modelo, alias, patente })
       })
       setMarca('')
       setModelo('')
+      setAlias('')
       setPatente('')
       await load()
       onUpdated?.()
@@ -161,10 +170,53 @@ function CamioneroVehiculosPanel({
     setError('')
     try {
       await api(`/api/camioneros/${camioneroId}/vehiculos/${id}`, { method: 'DELETE' })
+      if (editingId === id) cancelEdit()
       await load()
       onUpdated?.()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error al eliminar')
+    }
+  }
+
+  function cancelEdit() {
+    setEditingId(null)
+    setEditMarca('')
+    setEditModelo('')
+    setEditAlias('')
+    setEditPatente('')
+  }
+
+  function startEdit(v: CamioneroVehiculo) {
+    setEditingId(v.id)
+    setEditMarca(v.marca)
+    setEditModelo(v.modelo)
+    setEditAlias(v.alias ?? '')
+    setEditPatente(v.patente)
+  }
+
+  async function guardarEdicion(e: React.FormEvent) {
+    e.preventDefault()
+    if (editingId == null) return
+    if (!editMarca.trim() || !editModelo.trim() || !editPatente.trim()) return
+    setSavingEdit(true)
+    setError('')
+    try {
+      await api(`/api/camioneros/${camioneroId}/vehiculos/${editingId}`, {
+        method: 'PUT',
+        body: JSON.stringify({
+          marca: editMarca,
+          modelo: editModelo,
+          alias: editAlias,
+          patente: editPatente
+        })
+      })
+      cancelEdit()
+      await load()
+      onUpdated?.()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Error al guardar vehículo')
+    } finally {
+      setSavingEdit(false)
     }
   }
 
@@ -173,8 +225,8 @@ function CamioneroVehiculosPanel({
       <div>
         <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">Flota</p>
         <p className="mt-1 text-sm text-slate-600">
-          Cada camionero puede tener uno o más vehículos · Enter avanza entre campos · en Patente
-          agrega y vuelve a Marca
+          Cada camionero puede tener uno o más vehículos · Alias visible en planillas/retornos · Editá
+          los existentes para agregar alias · Enter avanza entre campos
         </p>
       </div>
 
@@ -188,7 +240,7 @@ function CamioneroVehiculosPanel({
         <form
           ref={formRef}
           onSubmit={agregarVehiculo}
-          className="grid gap-3 sm:grid-cols-2 lg:grid-cols-[1fr_1fr_1fr_auto]"
+          className="grid gap-3 sm:grid-cols-2 lg:grid-cols-[1fr_1fr_1fr_1fr_auto]"
         >
           <Input
             ref={marcaRef}
@@ -203,8 +255,16 @@ function CamioneroVehiculosPanel({
             label="Modelo"
             value={modelo}
             onChange={(e) => setModelo(e.target.value)}
-            onKeyDown={(e) => handleVehiculoKeyDown(e, patenteRef)}
+            onKeyDown={(e) => handleVehiculoKeyDown(e, aliasRef)}
             placeholder="ej. Accelo 1016"
+          />
+          <Input
+            ref={aliasRef}
+            label="Alias"
+            value={alias}
+            onChange={(e) => setAlias(e.target.value)}
+            onKeyDown={(e) => handleVehiculoKeyDown(e, patenteRef)}
+            placeholder="ej. Camión blanco"
           />
           <Input
             ref={patenteRef}
@@ -239,45 +299,125 @@ function CamioneroVehiculosPanel({
         </div>
       ) : (
         <ul className="space-y-2">
-          {vehiculos.map((v) => (
-            <li
-              key={v.id}
-              className={cn(
-                'flex flex-wrap items-center justify-between gap-3 rounded-lg border border-surface-border px-3 py-2.5 sm:px-4',
-                v.activo ? 'bg-white' : 'bg-slate-50/80 opacity-80'
-              )}
-            >
-              <div className="flex min-w-0 flex-wrap items-center gap-2">
-                <span className="font-mono text-sm font-semibold text-slate-900">{v.patente}</span>
-                <span className="text-sm text-slate-600">
-                  {v.marca} {v.modelo}
-                </span>
-                {pillActivo(v.activo)}
-              </div>
-              {canEdit && (
-                <div className="flex shrink-0 gap-1">
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    className="rounded-lg"
-                    onClick={() => toggleActivoVehiculo(v)}
-                  >
-                    {v.activo ? 'Desactivar' : 'Activar'}
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    className="rounded-lg"
-                    onClick={() => eliminarVehiculo(v.id)}
-                  >
-                    <Trash2 className="h-4 w-4 text-red-500" />
-                  </Button>
+          {vehiculos.map((v) =>
+            editingId === v.id ? (
+              <li
+                key={v.id}
+                className="rounded-lg border border-brand-200 bg-brand-50/30 px-3 py-3 sm:px-4"
+              >
+                <form onSubmit={guardarEdicion} className="space-y-3">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-brand-700">
+                    Editar vehículo
+                  </p>
+                  <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                    <Input
+                      label="Marca"
+                      value={editMarca}
+                      onChange={(e) => setEditMarca(e.target.value)}
+                      required
+                    />
+                    <Input
+                      label="Modelo"
+                      value={editModelo}
+                      onChange={(e) => setEditModelo(e.target.value)}
+                      required
+                    />
+                    <Input
+                      label="Alias"
+                      value={editAlias}
+                      onChange={(e) => setEditAlias(e.target.value)}
+                      placeholder="ej. Camión blanco"
+                    />
+                    <Input
+                      label="Patente"
+                      value={editPatente}
+                      onChange={(e) => setEditPatente(e.target.value.toUpperCase())}
+                      required
+                    />
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <Button
+                      type="submit"
+                      size="sm"
+                      className="rounded-lg"
+                      disabled={
+                        savingEdit ||
+                        !editMarca.trim() ||
+                        !editModelo.trim() ||
+                        !editPatente.trim()
+                      }
+                    >
+                      {savingEdit ? 'Guardando...' : 'Guardar'}
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      size="sm"
+                      className="rounded-lg"
+                      disabled={savingEdit}
+                      onClick={cancelEdit}
+                    >
+                      Cancelar
+                    </Button>
+                  </div>
+                </form>
+              </li>
+            ) : (
+              <li
+                key={v.id}
+                className={cn(
+                  'flex flex-wrap items-center justify-between gap-3 rounded-lg border border-surface-border px-3 py-2.5 sm:px-4',
+                  v.activo ? 'bg-white' : 'bg-slate-50/80 opacity-80'
+                )}
+              >
+                <div className="flex min-w-0 flex-wrap items-center gap-2">
+                  {v.alias?.trim() ? (
+                    <span className="text-sm font-semibold text-slate-900">{v.alias}</span>
+                  ) : (
+                    <span className="text-xs italic text-slate-400">Sin alias</span>
+                  )}
+                  <span className="font-mono text-sm text-slate-700">{v.patente}</span>
+                  <span className="text-sm text-slate-600">
+                    {v.marca} {v.modelo}
+                  </span>
+                  {pillActivo(v.activo)}
                 </div>
-              )}
-            </li>
-          ))}
+                {canEdit && (
+                  <div className="flex shrink-0 gap-1">
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="rounded-lg"
+                      onClick={() => toggleActivoVehiculo(v)}
+                    >
+                      {v.activo ? 'Desactivar' : 'Activar'}
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="rounded-lg"
+                      onClick={() => startEdit(v)}
+                      aria-label="Editar vehículo"
+                    >
+                      <Pencil className="h-4 w-4" />
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="rounded-lg"
+                      onClick={() => eliminarVehiculo(v.id)}
+                      aria-label="Eliminar vehículo"
+                    >
+                      <Trash2 className="h-4 w-4 text-red-500" />
+                    </Button>
+                  </div>
+                )}
+              </li>
+            )
+          )}
         </ul>
       )}
     </div>
@@ -578,7 +718,7 @@ export function CamionerosPage() {
   if (view === 'form') {
     return (
       <div className="-m-4 h-[calc(100vh-5rem)] overflow-y-auto lg:-m-6">
-        <div className="mx-auto flex max-w-2xl flex-col gap-5 px-4 py-6 pb-16 lg:px-6">
+        <div className="mx-auto flex w-full max-w-5xl flex-col gap-5 px-4 py-6 pb-16 lg:px-8">
           <Button
             variant="ghost"
             size="sm"
@@ -662,7 +802,7 @@ export function CamionerosPage() {
             <input
               ref={searchRef}
               type="search"
-              placeholder="Buscar por nº interno, nombre, empresa o patente..."
+              placeholder="Buscar por nº interno, nombre, empresa, alias o patente..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               onKeyDown={registroListKb.handleListSearchKeyDown}
@@ -804,6 +944,9 @@ export function CamionerosPage() {
                                   <span className="font-mono font-semibold text-slate-900">
                                     {v.patente}
                                   </span>
+                                  {v.alias?.trim() && (
+                                    <span className="font-medium text-brand-800">{v.alias}</span>
+                                  )}
                                   <span className="text-slate-600">
                                     {v.marca} {v.modelo}
                                   </span>

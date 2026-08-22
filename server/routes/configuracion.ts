@@ -1,5 +1,6 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
 import { getDb } from '../db'
+import { requirePermiso } from '../plugins/auth'
 import { isAdministradorRol } from '../utils/secciones'
 import { getInventarioActivo } from '../utils/inventario-block'
 import {
@@ -31,7 +32,7 @@ export async function configuracionRoutes(app: FastifyInstance): Promise<void> {
   app.put(
     '/api/configuracion/retornos',
     {
-      preHandler: requireAdmin
+      preHandler: requirePermiso('configuracion.ver')
     },
     async (request, reply) => {
       const body = request.body as { doble_verificacion?: boolean }
@@ -58,7 +59,7 @@ export async function configuracionRoutes(app: FastifyInstance): Promise<void> {
   app.put(
     '/api/configuracion/movimientos',
     {
-      preHandler: requireAdmin
+      preHandler: requirePermiso('configuracion.ver')
     },
     async (request, reply) => {
       const body = request.body as { doble_verificacion?: boolean }

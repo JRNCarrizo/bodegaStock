@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import {
   Box,
-  Camera,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
@@ -19,7 +18,6 @@ import {
   X
 } from 'lucide-react'
 import { BottleIcon } from '@/components/icons/BottleIcon'
-import { BarcodeScannerModal } from '@/components/BarcodeScannerModal'
 import { DayTabsRow } from '@/components/DayTabsRow'
 import { ProductQuickCreateModal } from '@/components/ProductQuickCreateModal'
 import { SectionHelpButton } from '@/components/SectionHelpButton'
@@ -38,6 +36,7 @@ import { downloadApiFile } from '@/lib/downloadFile'
 import { searchDelayMs } from '@/lib/searchDelay'
 import { api, cn } from '@/lib/utils'
 import { codigoProductoExacto } from '@/lib/productoSearch'
+import { resolveSectorIdParaIngreso, sortSectoresParaIngreso } from '@/lib/sectores'
 import type {
   IngresoDetalle,
   IngresoLineaDraft,
@@ -178,7 +177,6 @@ export function IngresosPage() {
   const [cantidadSuelta, setCantidadSuelta] = useState('')
   const [ubicacionId, setUbicacionId] = useState('')
 
-  const [showScanner, setShowScanner] = useState(false)
   const [showNewProduct, setShowNewProduct] = useState(false)
   const [createPhase, setCreatePhase] = useState<'remito' | 'carga'>('remito')
   const [expandedProductos, setExpandedProductos] = useState<Set<number>>(new Set())
@@ -186,6 +184,8 @@ export function IngresosPage() {
   const [editingLineaTempId, setEditingLineaTempId] = useState<string | null>(null)
   const [swipeOpenLineId, setSwipeOpenLineId] = useState<string | null>(null)
   const draftHydratedRef = useRef(false)
+  const sectoresRef = useRef(sectores)
+  sectoresRef.current = sectores
 
   const fechaRef = useRef<HTMLInputElement>(null)
   const remitoRef = useRef<HTMLInputElement>(null)
@@ -204,6 +204,9 @@ export function IngresosPage() {
   const productLineFormRef = useRef<HTMLDivElement>(null)
 
   const sectorSeleccionado = sectores.find((s) => s.id === Number(sectorId))
+  const sectoresOrdenados = useMemo(() => sortSectoresParaIngreso(sectores), [sectores])
+  const usaUbicaciones =
+    Boolean(sectorSeleccionado?.usa_ubicaciones) && ubicaciones.length > 0
 
   function focusField(ref: React.RefObject<HTMLElement | null>) {
     requestAnimationFrame(() => {
@@ -220,13 +223,20 @@ export function IngresosPage() {
     })
   }
 
-  function abrirNuevoIngreso() {
+  async function abrirNuevoIngreso() {
     if (tieneBorrador && ingresoDraftTieneContenido({ numeroRemito, observacion, lineas })) {
       if (!confirm('Hay un ingreso en curso. ¿Descartarlo y empezar uno nuevo?')) return
     }
     clearIngresoDraft()
     setTieneBorrador(false)
-    resetCreateForm()
+    let data = sectoresRef.current
+    try {
+      data = await api<Sector[]>('/api/sectores?activo=1')
+      setSectores(data)
+    } catch {
+      /* usar listado en memoria si falla la red */
+    }
+    resetCreateForm(data)
     setView('create')
   }
 
@@ -236,7 +246,7 @@ export function IngresosPage() {
       setFecha(draft.fecha || todayIsoDate())
       setNumeroRemito(draft.numeroRemito || '')
       setObservacion(draft.observacion || '')
-      setSectorId(draft.sectorId || '')
+      setSectorId(resolveSectorIdParaIngreso(sectoresRef.current, draft.sectorId || ''))
       setUbicacionId(draft.ubicacionId || '')
       setLineas(draft.lineas || [])
       setCreatePhase(
@@ -281,7 +291,7 @@ export function IngresosPage() {
     setFecha(draft.fecha || todayIsoDate())
     setNumeroRemito(draft.numeroRemito || '')
     setObservacion(draft.observacion || '')
-    setSectorId(draft.sectorId || '')
+    setSectorId(resolveSectorIdParaIngreso(sectoresRef.current, draft.sectorId || ''))
     setUbicacionId(draft.ubicacionId || '')
     setLineas(draft.lineas || [])
     setCreatePhase(draft.createPhase || (draft.lineas?.length ? 'carga' : 'remito'))
@@ -392,9 +402,25 @@ export function IngresosPage() {
 
   useEffect(() => {
     api<Sector[]>('/api/sectores?activo=1')
-      .then(setSectores)
+      .then((data) => {
+        setSectores(data)
+        setSectorId((prev) => {
+          if (view !== 'create') return prev
+          return resolveSectorIdParaIngreso(data, prev)
+        })
+      })
       .catch(() => {})
-  }, [])
+  }, [view])
+
+  useEffect(() => {
+    if (view !== 'create' || sectores.length === 0) return
+    setSectorId((prev) => resolveSectorIdParaIngreso(sectores, prev))
+  }, [view, createPhase, sectores])
+
+  useLayoutEffect(() => {
+    if (view !== 'create' || createPhase !== 'carga' || sectores.length === 0) return
+    setSectorId((prev) => resolveSectorIdParaIngreso(sectores, prev))
+  }, [view, createPhase, sectores])
 
   useEffect(() => {
     if (!sectorId || !sectorSeleccionado?.usa_ubicaciones) {
@@ -465,11 +491,11 @@ export function IngresosPage() {
     }))
   }, [lineas])
 
-  function resetCreateForm() {
+  function resetCreateForm(sectoresList: Sector[] = sectoresRef.current) {
     setFecha(todayIsoDate())
     setNumeroRemito('')
     setObservacion('')
-    setSectorId('')
+    setSectorId(resolveSectorIdParaIngreso(sectoresList, ''))
     setUbicacionId('')
     setProductSearch('')
     setProductResults([])
@@ -487,7 +513,6 @@ export function IngresosPage() {
     setSelectedProduct(null)
     setProductSearch('')
     setProductResults([])
-    setShowScanner(false)
     setShowNewProduct(false)
     setError('')
     setView('list')
@@ -507,10 +532,6 @@ export function IngresosPage() {
   useEscHandler(view === 'create', () => {
     if (saving) return false
 
-    if (showScanner) {
-      setShowScanner(false)
-      return true
-    }
     if (showNewProduct) {
       setShowNewProduct(false)
       return true
@@ -566,6 +587,11 @@ export function IngresosPage() {
   function selectProduct(p: Producto) {
     if (!sectorId) {
       setError('Seleccioná el sector destino primero')
+      return
+    }
+    if (usaUbicaciones && !ubicacionId) {
+      setError('Seleccioná la ubicación dentro del sector')
+      focusField(ubicacionRef)
       return
     }
     setEditingLineaTempId(null)
@@ -659,6 +685,8 @@ export function IngresosPage() {
 
   function irACargaProductos() {
     if (!validarRemito()) return
+    const resolved = resolveSectorIdParaIngreso(sectoresRef.current, sectorId)
+    setSectorId(resolved)
     setCreatePhase('carga')
   }
 
@@ -683,7 +711,7 @@ export function IngresosPage() {
       return
     }
     setError('')
-    if (sectorSeleccionado?.usa_ubicaciones) {
+    if (usaUbicaciones) {
       focusField(ubicacionRef)
       return
     }
@@ -693,6 +721,10 @@ export function IngresosPage() {
   function handleCargaUbicacionKeyDown(e: React.KeyboardEvent<HTMLSelectElement>) {
     if (e.key !== 'Enter') return
     e.preventDefault()
+    if (usaUbicaciones && !ubicacionId) {
+      setError('Seleccioná la ubicación dentro del sector')
+      return
+    }
     setError('')
     focusField(productSearchRef)
   }
@@ -760,6 +792,11 @@ export function IngresosPage() {
     }
     if (!sectorSeleccionado) {
       setError('Sector destino no válido')
+      return false
+    }
+    if (usaUbicaciones && !ubicacionId) {
+      setError('Seleccioná la ubicación dentro del sector')
+      focusField(ubicacionRef)
       return false
     }
 
@@ -965,6 +1002,15 @@ export function IngresosPage() {
     }
     if (lineas.some((l) => !l.sector_id)) {
       setError('Todas las líneas necesitan sector destino')
+      return false
+    }
+    if (
+      lineas.some((l) => {
+        const sec = sectores.find((s) => s.id === l.sector_id)
+        return !!sec?.usa_ubicaciones && l.ubicacion_id == null
+      })
+    ) {
+      setError('Todas las líneas en sectores con ubicaciones necesitan ubicación asignada')
       return false
     }
     setError('')
@@ -1259,24 +1305,29 @@ export function IngresosPage() {
                   className="min-w-0 flex-1 border-0 bg-transparent py-2 pl-2 pr-3 text-sm focus:outline-none"
                 >
                   <option value="">Elegir sector…</option>
-                  {sectores.map((s) => (
-                    <option key={s.id} value={s.id}>
+                  {sectoresOrdenados.map((s) => (
+                    <option key={s.id} value={String(s.id)}>
                       {s.nombre}
+                      {Boolean(s.ingreso_por_defecto) ? ' (por defecto)' : ''}
                     </option>
                   ))}
                 </select>
               </div>
-              {!!sectorSeleccionado?.usa_ubicaciones && (
+              {usaUbicaciones && (
                 <div className="flex items-center rounded-xl border border-surface-border bg-white focus-within:border-brand-500 focus-within:ring-2 focus-within:ring-brand-500/20">
                   <span className="shrink-0 pl-3 text-xs font-medium text-slate-400">Ubicación</span>
                   <select
                     ref={ubicacionRef}
                     value={ubicacionId}
-                    onChange={(e) => setUbicacionId(e.target.value)}
+                    onChange={(e) => {
+                      setUbicacionId(e.target.value)
+                      setError('')
+                    }}
                     onKeyDown={handleCargaUbicacionKeyDown}
                     className="min-w-0 flex-1 border-0 bg-transparent py-2 pl-2 pr-3 text-sm focus:outline-none"
+                    aria-label="Ubicación"
                   >
-                    <option value="">Sin ub.</option>
+                    <option value="">Seleccionar ubicación…</option>
                     {ubicaciones.map((u) => (
                       <option key={u.id} value={u.id}>
                         {u.nombre}
@@ -1297,12 +1348,14 @@ export function IngresosPage() {
                   aria-expanded={productResults.length > 0 && !selectedProduct}
                   aria-autocomplete="list"
                   placeholder={
-                    sectorId
-                      ? 'Buscar producto — ↑↓ navegar · Enter seleccionar'
-                      : 'Primero elegí sector destino'
+                    !sectorId
+                      ? 'Primero elegí sector destino'
+                      : usaUbicaciones && !ubicacionId
+                        ? 'Primero elegí ubicación'
+                        : 'Buscar producto — ↑↓ navegar · Enter seleccionar'
                   }
                   value={productSearch}
-                  disabled={!sectorId}
+                  disabled={!sectorId || (usaUbicaciones && !ubicacionId)}
                   onChange={(e) => {
                     setProductSearch(e.target.value)
                     setProductHighlightIndex(-1)
@@ -1345,18 +1398,8 @@ export function IngresosPage() {
                   </ul>
                 )}
               </div>
-              <div className="flex shrink-0 gap-2">
-                <Button
-                  type="button"
-                  variant="secondary"
-                  size="sm"
-                  className="rounded-xl"
-                  onClick={() => setShowScanner(true)}
-                >
-                  <Camera className="h-4 w-4" />
-                  Escanear
-                </Button>
-                {hasPermiso('productos.crear') && (
+              {hasPermiso('productos.crear') && (
+                <div className="flex shrink-0 justify-end">
                   <Button
                     type="button"
                     variant="secondary"
@@ -1367,8 +1410,8 @@ export function IngresosPage() {
                     <Plus className="h-4 w-4" />
                     Nuevo
                   </Button>
-                )}
-              </div>
+                </div>
+              )}
             </div>
 
             {selectedProduct && (
@@ -1639,16 +1682,6 @@ export function IngresosPage() {
             )}
           </div>
         </div>
-
-        <BarcodeScannerModal
-          open={showScanner}
-          onClose={() => setShowScanner(false)}
-          onScan={(code) => {
-            setProductSearch(code)
-            setShowScanner(false)
-          }}
-          title="Escanear producto"
-        />
 
         <ProductQuickCreateModal
           open={showNewProduct}

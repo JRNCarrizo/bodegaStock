@@ -26,6 +26,10 @@ export function runMigrations(db: Database.Database): void {
     db.exec('ALTER TABLE sectores ADD COLUMN usa_ubicaciones INTEGER NOT NULL DEFAULT 0')
   }
 
+  if (!columnExists(db, 'sectores', 'ingreso_por_defecto')) {
+    db.exec('ALTER TABLE sectores ADD COLUMN ingreso_por_defecto INTEGER NOT NULL DEFAULT 0')
+  }
+
   if (!tableExists(db, 'sector_ubicaciones')) {
     db.exec(`
       CREATE TABLE sector_ubicaciones (
@@ -80,11 +84,16 @@ export function runMigrations(db: Database.Database): void {
         camionero_id INTEGER NOT NULL REFERENCES camioneros(id) ON DELETE CASCADE,
         marca TEXT NOT NULL,
         modelo TEXT NOT NULL,
+        alias TEXT,
         patente TEXT NOT NULL UNIQUE,
         activo INTEGER NOT NULL DEFAULT 1,
         created_at TEXT NOT NULL DEFAULT (datetime('now'))
       )
     `)
+  }
+
+  if (tableExists(db, 'camionero_vehiculos') && !columnExists(db, 'camionero_vehiculos', 'alias')) {
+    db.exec('ALTER TABLE camionero_vehiculos ADD COLUMN alias TEXT')
   }
 
   if (!tableExists(db, 'ingresos')) {

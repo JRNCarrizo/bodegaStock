@@ -15,7 +15,8 @@ export const SECCIONES_ASIGNABLES = [
   { id: 'ajustes', label: 'Ajustes de stock' },
   { id: 'camioneros', label: 'Camioneros' },
   { id: 'reportes', label: 'Movimientos del día' },
-  { id: 'usuarios', label: 'Usuarios' }
+  { id: 'usuarios', label: 'Usuarios' },
+  { id: 'configuracion', label: 'Configuración' }
 ] as const
 
 export type SeccionId = (typeof SECCIONES_ASIGNABLES)[number]['id']
@@ -33,7 +34,8 @@ const SECCION_PERMISOS: Record<SeccionId, readonly string[]> = {
   ajustes: ['ajustes.crear'],
   camioneros: ['camioneros.ver', 'camioneros.crear', 'camioneros.editar'],
   reportes: ['reportes.ver', 'reportes.exportar'],
-  usuarios: ['usuarios.ver', 'usuarios.crear', 'usuarios.editar']
+  usuarios: ['usuarios.ver', 'usuarios.crear', 'usuarios.editar'],
+  configuracion: ['configuracion.ver']
 }
 
 const ASSIGNABLE_IDS = new Set<string>(SECCIONES_ASIGNABLES.map((s) => s.id))

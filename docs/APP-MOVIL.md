@@ -105,15 +105,25 @@ La APK **online** habla con la API del PC. Para **inventario en modo offline** (
 
 ## 4. Conexión
 
-1. El **PC servidor** debe estar encendido con ControlStock en modo servidor.
-2. Celular y PC en la **misma red WiFi** de la empresa.
-3. **Web:** abrir la URL de Configuración (ej. `http://192.168.1.50:3847`) en el navegador del celular.
-4. **APK:** configurar **IP del servidor** + puerto **`3847`**, o escanear el **QR** del PC.
-5. **Login** con usuario/contraseña (mismos usuarios que en escritorio).
-6. Permisos del usuario determinan qué pantallas ve en el celular.
+### Modo local (producción actual)
+
+1. El **PC servidor** encendido con ControlStock en modo servidor.
+2. Celular y PC en la **misma red WiFi**.
+3. **Web:** URL de Configuración (ej. `http://192.168.1.50:3847`).
+4. **APK:** login → **Red local** → IP + puerto **`3847`**, o QR del PC.
+5. **Login** con usuario/contraseña.
+6. Permisos determinan pantallas visibles.
+
+### Modo nube (implementado; no en planta aún)
+
+1. Railway con API + Postgres desplegada.
+2. **PC:** Configuración → **Nube** → URL `https://….railway.app` → Probar → Guardar.
+3. **APK:** login → **Nube** → misma URL o QR de la nube.
+4. Migrar datos desde PC (admin) cuando corresponda. Ver [PASOS-TRABAJO-CLOUD.txt](PASOS-TRABAJO-CLOUD.txt).
 
 ```
-Celular (navegador o APK)  ──HTTP (+ WebSocket opcional)──►  PC servidor :3847  ──►  SQLite + UI web
+Local:   Celular ──http://PC:3847──► SQLite en PC
+Nube:    Celular ──https://railway──► Postgres
 ```
 
 ---
@@ -130,28 +140,22 @@ Pensado para **usar con las manos en el depósito**, escaneando códigos con la 
 | **Retornos** | Cargar devoluciones **y** verificar las de otro usuario | Respeta config del servidor: doble verificación solo si `retornos_doble_verificacion` está on. |
 | **Roturas** | Registrar baja de stock con motivo | Descuento por reglas de sectores (prioridad + menor stock). |
 | **Movimientos internos** | Traslado entre sectores | Lista abierta compartida (origen/destino + tilde + Finalizar). Ver [MOVIMIENTOS-LISTA-ABIERTA-FUTURO.md](MOVIMIENTOS-LISTA-ABIERTA-FUTURO.md). |
-| **Inventario** | Conteo físico por sector, **dos personas en paralelo** | Ver [INVENTARIO.md](INVENTARIO.md). Supervisor opera desde PC. |
+| **Inventario** | Conteo físico por sector | Simple/Doble; online u offline (APK). Ver [INVENTARIO.md](INVENTARIO.md). |
+| **Ingresos** | Entrada con remito | Disponible en APK si hay permiso; borrador local. Uso típico en PC. |
+| **Planillas** | Salidas con camionero | Borrador local |
+| **Ayuda (`?`)** | Guía por sección | Modal + PDF (escritorio) — v0.3.36+ |
+| **Reportes** | Movimientos del día | Resumen operativo |
 
-### También previsto en móvil (fase posterior)
-
-| Módulo | Uso |
-|--------|-----|
-| **Planillas** | Salidas con camionero y vehículo |
-| **Reportes** | Vista limitada (ej. movimientos del día) |
-
-### Solo en PC (no en celular v1)
+### Solo en PC (o admin)
 
 | Módulo | Motivo |
 |--------|--------|
-| **Ingresos** | El ingreso se controla con el **remito físico**; la carga al sistema puede hacerse **después en la PC** con el papel a mano, sin urgencia en el pasillo. No es prioritario en celular por ahora. |
-| Productos (alta/edición catálogo) | Administración; en móvil solo consulta/escaneo |
+| Productos (alta/edición catálogo) | Administración masiva |
 | Sectores / ubicaciones | Configuración |
-| Camioneros (ABM) | Configuración; en móvil solo **selector** al cargar planilla |
+| Camioneros (ABM) | Configuración; selector en planillas |
 | Usuarios y permisos | Administración |
-| Reportes completos / ABM admin | Escritorio (exports Excel de módulos operativos sí están en celular si hay `*.ver`) |
 | Crear/cerrar sesión de inventario | Supervisor en PC |
-
-*Ingresos en APK:* misma API que PC; evaluar en fase posterior si la operación lo requiere.
+| Migración a nube | Admin en PC |
 
 ---
 

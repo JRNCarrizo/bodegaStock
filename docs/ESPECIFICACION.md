@@ -1,6 +1,7 @@
 # BodegaStock — Especificación del proyecto
 
-> Documento vivo, alineado a la versión implementada **v0.3.30** (Electron + Fastify + SQLite + React + Capacitor Android).
+> Documento vivo, alineado a la versión implementada **v0.3.37** (Electron + Fastify + SQLite + React + Capacitor Android).  
+> Panorama global: [ESTADO-ACTUAL.md](ESTADO-ACTUAL.md)
 
 ---
 
@@ -11,7 +12,8 @@
 ### Objetivos principales
 
 - Tener trazabilidad completa de cada cambio de stock.
-- Operar en **red local (LAN)** sin depender de internet.
+- Operar en **red local (LAN)** sin depender de internet (despliegue actual en planta).
+- Opcionalmente conectar a **servidor en la nube** (Railway + Postgres) — implementado, no en uso productivo aún.
 - Permitir trabajo simultáneo desde **PC (administración)** y **celulares (operaciones en bodega)**.
 - Soportar **doble verificación configurable** en retornos y movimientos internos; en inventario, **Simple (1 contador)** o **Doble (2 contadores)** por sector.
 - Generar **reportes y estadísticas** del día y por rangos de fecha.
@@ -34,26 +36,27 @@
 
 ```
 ┌─────────────────────────────────────────────────────────┐
+│     MODO LOCAL (producción actual en planta)            │
 │              PC SERVIDOR (Electron)                      │
 │  ┌──────────────────┐    ┌───────────────────────────┐  │
-│  │  UI Escritorio   │    │  API REST + WebSockets    │  │
-│  │  (admin/reportes)│    │  (Fastify embebido)       │  │
+│  │  UI Escritorio   │    │  API REST (Fastify :3847) │  │
 │  └──────────────────┘    └─────────────┬─────────────┘  │
-│                                          │                │
 │                               ┌──────────▼──────────┐     │
-│                               │  Base de datos      │     │
-│                               │  SQLite (producción)│     │
-│                               │  Postgres opcional  │     │
-│                               │  (futuro)           │     │
+│                               │  SQLite (PC)        │     │
 │                               └─────────────────────┘     │
 └───────────────────────────────┬───────────────────────────┘
-                                │  Red local (WiFi/LAN)
+                                │  LAN / WiFi
               ┌─────────────────┼─────────────────┐
-              │                 │                 │
         ┌─────▼─────┐     ┌─────▼─────┐     ┌─────▼─────┐
-        │ Celular 1 │     │ Celular 2 │     │ Celular N │
+        │ Celular   │     │ Celular   │     │ Celular N │
         │ web / APK │     │ web / APK │     │ web / APK │
         └───────────┘     └───────────┘     └───────────┘
+
+┌─────────────────────────────────────────────────────────┐
+│     MODO NUBE (implementado; activación futura)         │
+│  PC / APK ──HTTPS──► Railway (Fastify + Postgres)       │
+│  Migrador SQLite→PG en Configuración (admin)            │
+└─────────────────────────────────────────────────────────┘
 ```
 
 ### Principios técnicos
@@ -64,14 +67,16 @@
 4. **Stock por sector:** un producto puede existir en varios sectores con cantidades distintas.
 5. **Ledger de movimientos:** casi todo cambio de stock genera un registro auditable; no se edita stock "a mano" salvo ajustes autorizados post-inventario.
 6. **Sin internet requerido:** funciona en LAN interna.
-7. **Base de datos:** **SQLite** en producción. PostgreSQL queda como opción futura si hiciera falta multi-servidor o mayor concurrencia.
+7. **Base de datos:** **SQLite** en el PC servidor (producción actual). **PostgreSQL** disponible vía `DATABASE_URL` para despliegue Railway (modo nube).
 
 ### Conexión móvil
 
-- **Web (siempre):** abrir la URL/QR de Configuración en el navegador del celular (misma WiFi).
-- **APK (disponible):** app Android (Capacitor) separada del instalador de PC; misma UI React y misma API; **no reemplaza** la web.
+- **Modo local (en uso):** IP del PC + puerto `3847` (web o APK).
+- **Modo nube (preparado):** URL `https://….railway.app` en Configuración / login APK.
+- **Web:** abrir URL/QR en el navegador del celular (misma WiFi en local).
+- **APK:** app Android (Capacitor); misma UI y API; inventario offline + sync P2P.
 - Login con usuario/contraseña; permisos determinan pantallas visibles.
-- Detalle completo: [APP-MOVIL.md](APP-MOVIL.md).
+- Detalle: [APP-MOVIL.md](APP-MOVIL.md) · [ESTADO-ACTUAL.md](ESTADO-ACTUAL.md)
 ---
 
 ## 3. Módulos funcionales
@@ -483,7 +488,10 @@ Ver [APP-MOVIL.md](APP-MOVIL.md).
 - [ ] Import planillas Excel/CSV
 - [ ] **OCR / foto de planilla impresa** → borrador de líneas ([PLANILLAS-OCR-FUTURO.md](PLANILLAS-OCR-FUTURO.md))
 - [ ] Escáner de barras en pantalla Planillas
-- [ ] **Movimientos: lista abierta** (origen/destino + buscador, tilde, finalizar) — [MOVIMIENTOS-LISTA-ABIERTA-FUTURO.md](MOVIMIENTOS-LISTA-ABIERTA-FUTURO.md)
+- [ ] **Movimientos: lista abierta** (origen/destino + buscador, tilde, finalizar) — [MOVIMIENTOS-LISTA-ABIERTA-FUTURO.md](MOVIMIENTOS-LISTA-ABIERTA-FUTURO.md) — **implementado v0.3.30**
+- [x] Guías de ayuda por sección (`?`) + PDF — v0.3.36
+- [x] Modo conexión local vs nube (Configuración + APK) — v0.3.32+
+- [x] Migrador SQLite → Postgres — v0.3.32
 - [ ] Backup automático
 - [x] QR para conexión móvil
 - [x] Toggles de doble verificación (retornos / movimientos) en Configuración
@@ -500,7 +508,7 @@ Items a definir o ya definidos:
 - [ ] ¿Importación / OCR de planillas: cuándo priorizar? (doc: [PLANILLAS-OCR-FUTURO.md](PLANILLAS-OCR-FUTURO.md))
 - [ ] ¿Rediseño de movimientos (lista abierta): cuándo priorizar? ([MOVIMIENTOS-LISTA-ABIERTA-FUTURO.md](MOVIMIENTOS-LISTA-ABIERTA-FUTURO.md))
 - [x] APK: **Capacitor** (React), no Flutter ni React Native
-- [x] Base de datos: **SQLite** en producción; PostgreSQL opcional a futuro
+- [x] Base de datos: **SQLite** en producción local; **PostgreSQL** en modo nube Railway
 - [x] Importación Excel de productos: plantilla propia o formato logístico con encabezados previos (`Código de producto` + `Descripción`); omite duplicados
 - [x] Inventario online + offline + Simple/Doble (ver [INVENTARIO.md](INVENTARIO.md))
 - [x] Ajustes de stock post-inventario: híbrido con confirmación del supervisor; reorganización entre sectores

@@ -1062,6 +1062,7 @@ export function ConfiguracionPage() {
         </CardBody>
       </Card>
 
+      {user?.es_admin && (
       <Card className="overflow-hidden shadow-panel">
         <button
           type="button"
@@ -1163,6 +1164,7 @@ export function ConfiguracionPage() {
           </CardBody>
         )}
       </Card>
+      )}
 
       <Card className="overflow-hidden shadow-panel">
         <div className="border-b border-brand-100 bg-gradient-to-r from-brand-50/80 via-white to-white px-5 py-4 sm:px-6">

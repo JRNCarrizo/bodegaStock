@@ -37,6 +37,7 @@ import { ProductImage } from '@/components/ProductImage'
 import { SectionHelpButton } from '@/components/SectionHelpButton'
 import { formatCantidad, formatDayTabLabel, formatTotalCajas, todayIsoDate } from '@/lib/desglose'
 import { downloadApiFile } from '@/lib/downloadFile'
+import { labelVehiculoDetalle, labelVehiculoOperativo } from '@/lib/camioneros'
 import { searchDelayMs } from '@/lib/searchDelay'
 import { api, cn } from '@/lib/utils'
 import { codigoProductoExacto } from '@/lib/productoSearch'
@@ -477,8 +478,8 @@ export function RetornosPage() {
       setVehiculoId('')
       return
     }
-    api<CamioneroVehiculo[]>(`/api/camioneros/${camioneroId}/vehiculos`)
-      .then((data) => setVehiculos(data.filter((v) => v.activo)))
+    api<CamioneroVehiculo[]>(`/api/camioneros/${camioneroId}/vehiculos?activo=1`)
+      .then(setVehiculos)
       .catch(() => setVehiculos([]))
   }, [camioneroId])
 
@@ -1231,10 +1232,7 @@ export function RetornosPage() {
 
   if (view === 'detail' && detalle) {
     const r = detalle.retorno
-    const vehiculoTexto =
-      r.vehiculo_marca || r.vehiculo_modelo
-        ? [r.vehiculo_marca, r.vehiculo_modelo].filter(Boolean).join(' ')
-        : null
+    const vehiculoTexto = labelVehiculoDetalle(r)
 
     return (
       <RegistroDetallePanel
@@ -1255,9 +1253,6 @@ export function RetornosPage() {
               <RegistroDetalleMetaChip>
                 <span className="font-medium text-slate-500">Vehículo </span>
                 {vehiculoTexto}
-                {r.vehiculo_patente && (
-                  <span className="text-slate-400"> ({r.vehiculo_patente})</span>
-                )}
               </RegistroDetalleMetaChip>
             )}
             {r.numero_planilla && (
@@ -1452,7 +1447,7 @@ export function RetornosPage() {
                   <option value="">Opcional</option>
                   {vehiculos.map((v) => (
                     <option key={v.id} value={v.id}>
-                      {v.patente} — {v.marca} {v.modelo}
+                      {labelVehiculoOperativo(v)}
                     </option>
                   ))}
                 </select>

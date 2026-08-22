@@ -1,8 +1,6 @@
 import type { FastifyInstance } from 'fastify'
 import { getDb } from '../db'
 import { requirePermiso, requirePermisoAny } from '../plugins/auth'
-
-const puedeVerSectores = requirePermisoAny('sectores.ver', 'consulta.ver')
 import {
   formatEtiquetaLinea,
   getProductoDefaults,
@@ -12,12 +10,33 @@ import {
   totalSueltoLineaConteo
 } from '../utils/stock'
 
+const puedeVerSectores = requirePermisoAny(
+  'sectores.ver',
+  'consulta.ver',
+  'ingresos.ver',
+  'ingresos.crear',
+  'planillas.ver',
+  'planillas.crear',
+  'retornos.ver',
+  'retornos.crear',
+  'roturas.ver',
+  'roturas.crear',
+  'movimientos_internos.ver',
+  'movimientos_internos.crear',
+  'inventario.ver',
+  'inventario.contar',
+  'inventario.crear_sesion',
+  'inventario.supervisar',
+  'inventario.cerrar'
+)
+
 interface SectorBody {
   nombre?: string
   descripcion?: string | null
   es_sector_descuento?: boolean
   prioridad_descuento?: number | null
   usa_ubicaciones?: boolean
+  ingreso_por_defecto?: boolean | number
   activo?: boolean
 }
 
@@ -80,9 +99,24 @@ function nombreUbicacionDuplicado(
 }
 
 function getSectorOr404(db: ReturnType<typeof getDb>, id: number) {
-  return db.prepare('SELECT id, usa_ubicaciones FROM sectores WHERE id = ?').get(id) as
-    | { id: number; usa_ubicaciones: number }
+  return db.prepare('SELECT id, usa_ubicaciones, activo FROM sectores WHERE id = ?').get(id) as
+    | { id: number; usa_ubicaciones: number; activo: number }
     | undefined
+}
+
+/** Solo un sector activo puede ser destino por defecto en ingresos. */
+function setIngresoPorDefecto(db: ReturnType<typeof getDb>, sectorId: number): void {
+  db.transaction(() => {
+    db.prepare('UPDATE sectores SET ingreso_por_defecto = 0').run()
+    db.prepare(`
+      UPDATE sectores SET ingreso_por_defecto = 1
+      WHERE id = ? AND activo = 1
+    `).run(sectorId)
+  })()
+}
+
+function clearIngresoPorDefecto(db: ReturnType<typeof getDb>, sectorId: number): void {
+  db.prepare('UPDATE sectores SET ingreso_por_defecto = 0 WHERE id = ?').run(sectorId)
 }
 
 interface StockLineaRow {
@@ -277,7 +311,8 @@ export async function sectoresRoutes(app: FastifyInstance): Promise<void> {
     let sql = `
       SELECT
         s.id, s.codigo, s.nombre, s.descripcion,
-        s.es_sector_descuento, s.prioridad_descuento, s.usa_ubicaciones, s.activo, s.created_at,
+        s.es_sector_descuento, s.prioridad_descuento, s.usa_ubicaciones,
+        s.ingreso_por_defecto, s.activo, s.created_at,
         COALESCE((
           SELECT COUNT(DISTINCT ss.producto_id)
           FROM stock_sector ss
@@ -308,6 +343,7 @@ export async function sectoresRoutes(app: FastifyInstance): Promise<void> {
     }
 
     sql += ` ORDER BY
+      s.ingreso_por_defecto DESC,
       s.es_sector_descuento DESC,
       CASE WHEN s.prioridad_descuento IS NULL THEN 9999 ELSE s.prioridad_descuento END ASC,
       s.nombre COLLATE NOCASE ASC`
@@ -316,13 +352,13 @@ export async function sectoresRoutes(app: FastifyInstance): Promise<void> {
   })
 
   app.get('/api/sectores/:id', {
-    preHandler: requirePermiso('sectores.ver')
+    preHandler: puedeVerSectores
   }, async (request, reply) => {
     const id = Number((request.params as { id: string }).id)
     const db = getDb()
     const sector = db.prepare(`
       SELECT id, codigo, nombre, descripcion, es_sector_descuento,
-             prioridad_descuento, usa_ubicaciones, activo, created_at
+             prioridad_descuento, usa_ubicaciones, ingreso_por_defecto, activo, created_at
       FROM sectores WHERE id = ?
     `).get(id)
 
@@ -528,6 +564,13 @@ export async function sectoresRoutes(app: FastifyInstance): Promise<void> {
 
     if (!esDescuento) prioridad = null
 
+    const activo = body.activo === false ? 0 : 1
+    if (body.ingreso_por_defecto === true && !activo) {
+      return reply.status(400).send({
+        error: 'Un sector inactivo no puede ser el destino por defecto de ingresos'
+      })
+    }
+
     let codigo = slugCodigoSector(nombre)
     for (let i = 2; i < 100; i++) {
       const exists = db.prepare('SELECT id FROM sectores WHERE codigo = ?').get(codigo)
@@ -551,7 +594,12 @@ export async function sectoresRoutes(app: FastifyInstance): Promise<void> {
         body.activo === false ? 0 : 1
       )
 
-      return { id: result.lastInsertRowid }
+      const sectorId = Number(result.lastInsertRowid)
+      if (body.ingreso_por_defecto === true || body.ingreso_por_defecto === 1) {
+        setIngresoPorDefecto(db, sectorId)
+      }
+
+      return { id: sectorId }
     } catch {
       return reply.status(409).send({ error: 'No se pudo crear el sector' })
     }
@@ -564,7 +612,9 @@ export async function sectoresRoutes(app: FastifyInstance): Promise<void> {
     const body = request.body as SectorBody
     const db = getDb()
 
-    const existing = db.prepare('SELECT id FROM sectores WHERE id = ?').get(id)
+    const existing = db.prepare('SELECT id, activo FROM sectores WHERE id = ?').get(id) as
+      | { id: number; activo: number }
+      | undefined
     if (!existing) return reply.status(404).send({ error: 'Sector no encontrado' })
 
     const nombre = body.nombre?.trim()
@@ -575,6 +625,14 @@ export async function sectoresRoutes(app: FastifyInstance): Promise<void> {
     const esDescuento = body.es_sector_descuento === true
     let prioridad = body.prioridad_descuento ?? null
     if (!esDescuento) prioridad = null
+
+    const activoFinal =
+      body.activo === undefined ? existing.activo === 1 : body.activo === true
+    if (body.ingreso_por_defecto === true && !activoFinal) {
+      return reply.status(400).send({
+        error: 'Un sector inactivo no puede ser el destino por defecto de ingresos'
+      })
+    }
 
     let codigo: string | null = null
     if (nombre) {
@@ -609,6 +667,14 @@ export async function sectoresRoutes(app: FastifyInstance): Promise<void> {
         body.activo === undefined ? null : body.activo ? 1 : 0,
         id
       )
+
+      if (body.activo === false) {
+        clearIngresoPorDefecto(db, id)
+      } else if (body.ingreso_por_defecto === true || body.ingreso_por_defecto === 1) {
+        setIngresoPorDefecto(db, id)
+      } else if (body.ingreso_por_defecto === false || body.ingreso_por_defecto === 0) {
+        clearIngresoPorDefecto(db, id)
+      }
 
       return { ok: true }
     } catch {

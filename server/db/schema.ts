@@ -58,6 +58,7 @@ CREATE TABLE IF NOT EXISTS sectores (
   es_sector_descuento INTEGER NOT NULL DEFAULT 0,
   prioridad_descuento INTEGER,
   usa_ubicaciones INTEGER NOT NULL DEFAULT 0,
+  ingreso_por_defecto INTEGER NOT NULL DEFAULT 0,
   activo INTEGER NOT NULL DEFAULT 1,
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
@@ -111,6 +112,7 @@ CREATE TABLE IF NOT EXISTS camionero_vehiculos (
   camionero_id INTEGER NOT NULL REFERENCES camioneros(id) ON DELETE CASCADE,
   marca TEXT NOT NULL,
   modelo TEXT NOT NULL,
+  alias TEXT,
   patente TEXT NOT NULL UNIQUE,
   activo INTEGER NOT NULL DEFAULT 1,
   created_at TEXT NOT NULL DEFAULT (datetime('now'))

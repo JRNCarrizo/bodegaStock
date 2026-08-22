@@ -31,6 +31,7 @@ const emptyForm = (): SectorForm => ({
   es_sector_descuento: false,
   prioridad_descuento: '',
   usa_ubicaciones: false,
+  ingreso_por_defecto: false,
   activo: true
 })
 
@@ -452,6 +453,7 @@ export function SectoresPage() {
       es_sector_descuento: !!s.es_sector_descuento,
       prioridad_descuento: s.prioridad_descuento?.toString() ?? '',
       usa_ubicaciones: !!s.usa_ubicaciones,
+      ingreso_por_defecto: !!s.ingreso_por_defecto,
       activo: !!s.activo
     })
     setError('')
@@ -493,6 +495,7 @@ export function SectoresPage() {
           ? Number(form.prioridad_descuento)
           : null,
       usa_ubicaciones: form.usa_ubicaciones,
+      ingreso_por_defecto: form.ingreso_por_defecto,
       activo: form.activo
     }
 
@@ -559,7 +562,13 @@ export function SectoresPage() {
             id="sector-activo"
             type="checkbox"
             checked={form.activo}
-            onChange={(e) => setForm({ ...form, activo: e.target.checked })}
+            onChange={(e) =>
+              setForm({
+                ...form,
+                activo: e.target.checked,
+                ingreso_por_defecto: e.target.checked ? form.ingreso_por_defecto : false
+              })
+            }
             onKeyDown={(e) => handleFormKeyDown(e, descuentoRef)}
             className="h-4 w-4 rounded border-surface-border text-brand-600"
           />
@@ -571,6 +580,44 @@ export function SectoresPage() {
               Inactivo
             </Badge>
           )}
+        </div>
+
+        <div className="rounded-xl border border-surface-border bg-surface-muted/20 p-4 space-y-3">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">
+              Ingresos de mercadería
+            </p>
+            <p className="mt-1 text-xs text-slate-500">
+              El sector marcado se preselecciona al cargar un ingreso. Siempre se puede cambiar en
+              el momento.
+            </p>
+          </div>
+          <label
+            className={cn(
+              'flex items-start gap-3 rounded-xl border border-surface-border bg-white px-4 py-3',
+              !form.activo && 'opacity-60'
+            )}
+          >
+            <input
+              type="checkbox"
+              checked={form.ingreso_por_defecto}
+              disabled={!form.activo}
+              onChange={(e) =>
+                setForm({ ...form, ingreso_por_defecto: e.target.checked })
+              }
+              className="mt-0.5 h-4 w-4 shrink-0 rounded border-surface-border text-brand-600 disabled:cursor-not-allowed"
+            />
+            <span className="min-w-0">
+              <span className="text-sm font-medium text-slate-700">
+                Destino por defecto en ingresos
+              </span>
+              {!form.activo && (
+                <span className="mt-1 block text-xs text-slate-500">
+                  Activá el sector para poder marcarlo como destino por defecto.
+                </span>
+              )}
+            </span>
+          </label>
         </div>
 
         <div className="rounded-xl border border-surface-border bg-surface-muted/20 p-4 space-y-3">
@@ -727,7 +774,7 @@ export function SectoresPage() {
                 <div>
                   <p className="text-sm font-semibold text-slate-900">Configuración del sector</p>
                   <p className="text-xs text-slate-500">
-                    Nombre, descuento de stock y ubicaciones internas
+                    Nombre, destino en ingresos, descuento de stock y ubicaciones internas
                   </p>
                 </div>
               </div>
@@ -889,6 +936,9 @@ export function SectoresPage() {
                             <Badge variant="default">
                               Descuento P{s.prioridad_descuento ?? '—'}
                             </Badge>
+                          )}
+                          {!!s.ingreso_por_defecto && (
+                            <Badge variant="default">Ingresos (default)</Badge>
                           )}
                         </div>
                         {s.descripcion && (

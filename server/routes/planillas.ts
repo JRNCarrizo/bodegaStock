@@ -172,7 +172,9 @@ export async function planillasRoutes(app: FastifyInstance): Promise<void> {
         c.nombre AS camionero_nombre,
         c.numero_interno AS camionero_numero,
         u.nombre AS usuario_nombre,
+        cv.marca AS vehiculo_marca,
         cv.modelo AS vehiculo_modelo,
+        cv.alias AS vehiculo_alias,
         COALESCE((
           SELECT SUM(pl.total_unidades) FROM planilla_lineas pl WHERE pl.planilla_id = p.id
         ), 0) AS total_unidades,
@@ -227,6 +229,7 @@ export async function planillasRoutes(app: FastifyInstance): Promise<void> {
         u.nombre AS usuario_nombre,
         cv.marca AS vehiculo_marca,
         cv.modelo AS vehiculo_modelo,
+        cv.alias AS vehiculo_alias,
         cv.patente AS vehiculo_patente
       FROM planillas p
       JOIN camioneros c ON c.id = p.camionero_id
@@ -307,6 +310,7 @@ export async function planillasRoutes(app: FastifyInstance): Promise<void> {
         p.id, p.fecha, p.numero, p.observacion,
         c.nombre AS camionero_nombre,
         c.numero_interno AS camionero_numero,
+        cv.alias AS vehiculo_alias,
         cv.patente AS vehiculo_patente
       FROM planillas p
       JOIN camioneros c ON c.id = p.camionero_id
@@ -320,6 +324,7 @@ export async function planillasRoutes(app: FastifyInstance): Promise<void> {
           observacion: string | null
           camionero_nombre: string
           camionero_numero: string
+          vehiculo_alias: string | null
           vehiculo_patente: string | null
         }
       | undefined
@@ -357,7 +362,7 @@ export async function planillasRoutes(app: FastifyInstance): Promise<void> {
         ['Fecha', planilla.fecha],
         ['Nº planilla', planilla.numero],
         ['Camionero', `${planilla.camionero_numero} — ${planilla.camionero_nombre}`],
-        ['Patente', planilla.vehiculo_patente],
+        ['Alias vehículo', planilla.vehiculo_alias],
         ['Observación', planilla.observacion],
         ['Total', total]
       ]),

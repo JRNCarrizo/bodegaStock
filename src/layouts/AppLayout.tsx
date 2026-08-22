@@ -58,9 +58,9 @@ function useSidebarCollapsed() {
 }
 
 export function AppLayout({ children }: { children: React.ReactNode }) {
-  const { hasPermiso, user } = useAuth()
+  const { hasPermiso } = useAuth()
   const { collapsed, toggleCollapsed, setCollapsed } = useSidebarCollapsed()
-  const showConfig = user?.es_admin === true
+  const showConfig = hasPermiso('configuracion.ver')
 
   const visibleItems = useMemo(
     () => NAV_ITEMS.filter((item) => navItemVisible(item, hasPermiso)),

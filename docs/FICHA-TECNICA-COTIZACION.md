@@ -1,7 +1,8 @@
 # ControlStock (BodegaStock) — Ficha técnica para cotización
 
 > **Documento pensado para terceros e IAs.**  
-> Describí el sistema tal como está construido (agosto 2026, **v0.3.30**).
+> Describí el sistema tal como está construido (agosto 2026, **v0.3.37**).  
+> Panorama global: [ESTADO-ACTUAL.md](ESTADO-ACTUAL.md)
 > Podés pegar este archivo completo en ChatGPT / Claude / Gemini y pedir una cotización independiente de desarrollo o de licencia.
 
 **Nombre comercial:** ControlStock  
@@ -14,7 +15,7 @@
 
 ## 1. Resumen ejecutivo (qué es)
 
-ControlStock es un **sistema completo de gestión de stock** orientado a distribuidoras y bodegas, que opera principalmente en **red local (LAN)** sin depender de internet.
+ControlStock es un **sistema completo de gestión de stock** orientado a distribuidoras y bodegas. El despliegue **actual en planta** es en **red local (LAN)** sin depender de internet. Existe además un **modo nube** (Railway + Postgres) implementado en código, pendiente de activación productiva.
 
 Incluye:
 
@@ -318,7 +319,7 @@ No inventes módulos que no estén en la ficha. Basate solo en lo documentado.
 
 ## 12. Estado del producto (honestidad comercial)
 
-**Estado:** sistema en uso / pruebas de campo (**v0.3.30**). Inventario online + offline con verificación Simple/Doble; sync P2P puerto 3850; import al PC y Comparación B.
+**Estado:** sistema en uso / pruebas de campo (**v0.3.37**). Planta en modo local; nube lista para fase posterior. Inventario online + offline Simple/Doble; sync P2P puerto 3850; import al PC probado.
 
 **Entregado:** módulos operativos (consulta, ingresos, planillas, retornos, roturas, movimientos, inventario, Excel, APK Capacitor). Inventario: sticky UX, Simple/Doble, puerto fijo en carga manual, Plan B archivo.
 
@@ -326,4 +327,4 @@ No inventes módulos que no estén en la ficha. Basate solo en lo documentado.
 
 ---
 
-*Documento generado para evaluación y cotización — ControlStock / BodegaStock **v0.3.30** — agosto 2026.*
+*Documento generado para evaluación y cotización — ControlStock / BodegaStock **v0.3.37** — agosto 2026.*

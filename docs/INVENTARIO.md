@@ -1,8 +1,8 @@
 # BodegaStock — Módulo de Inventario
 
-> **Documento de referencia** (alineado a **v0.3.30**). Define el flujo del inventario físico: verificación Simple/Doble, online/offline, reconteo, comparación vs sistema, reorganización y cierre.
+> **Documento de referencia** (alineado a **v0.3.37**). Define el flujo del inventario físico: verificación Simple/Doble, online/offline, reconteo, comparación vs sistema, reorganización y cierre.
 
-Ver también: [DESGLOSE-DE-CANTIDADES.md](DESGLOSE-DE-CANTIDADES.md) · [MODELO-DE-DATOS.md](MODELO-DE-DATOS.md) · [APP-MOVIL.md](APP-MOVIL.md) · [INVENTARIO-OFFLINE-ESTADO.md](INVENTARIO-OFFLINE-ESTADO.md)
+Ver también: [ESTADO-ACTUAL.md](ESTADO-ACTUAL.md) · [DESGLOSE-DE-CANTIDADES.md](DESGLOSE-DE-CANTIDADES.md) · [MODELO-DE-DATOS.md](MODELO-DE-DATOS.md) · [APP-MOVIL.md](APP-MOVIL.md) · [INVENTARIO-OFFLINE-ESTADO.md](INVENTARIO-OFFLINE-ESTADO.md)
 
 ---
 
@@ -177,7 +177,7 @@ Columnas en `inventario_sectores`: `modo_conectividad`, `modo_verificacion`, `pa
 
 El conteo online (líneas/finalizar/reconteo por REST) **queda bloqueado** en sectores `OFFLINE`; esos flujos viven en la APK + import.
 
-> **Estado agosto 2026 (v0.3.30):** offline punta a punta + Simple/Doble implementados. Detalle: **[INVENTARIO-OFFLINE-ESTADO.md](INVENTARIO-OFFLINE-ESTADO.md)**.
+> **Estado agosto 2026 (v0.3.37):** offline punta a punta + Simple/Doble implementados; import al PC local en APK corregido. Detalle: **[INVENTARIO-OFFLINE-ESTADO.md](INVENTARIO-OFFLINE-ESTADO.md)**.
 
 #### 1) Carga en oficina (ambos al PC)
 

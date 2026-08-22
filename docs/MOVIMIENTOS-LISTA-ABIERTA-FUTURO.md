@@ -1,6 +1,6 @@
 # Movimientos internos — lista abierta
 
-> **Estado: implementado** (agosto 2026).  
+> **Estado: implementado** (v0.3.30+).  
 > Complementa [ESPECIFICACION.md](ESPECIFICACION.md) §3.8 y [APP-MOVIL.md](APP-MOVIL.md).
 
 ---
@@ -81,4 +81,4 @@ La doble verificación clásica (`movimientos_doble_verificacion`) queda obsolet
 
 ---
 
-*Implementado sobre ControlStock ≥ v0.3.30.*
+*Implementado sobre ControlStock ≥ v0.3.30. Documentado en [ESTADO-ACTUAL.md](ESTADO-ACTUAL.md).*

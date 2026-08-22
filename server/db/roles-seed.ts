@@ -13,7 +13,8 @@ export const ALL_PERMISOS = [
   'reportes.ver', 'reportes.exportar',
   'inventario.ver', 'inventario.crear_sesion', 'inventario.contar', 'inventario.supervisar', 'inventario.cerrar',
   'usuarios.ver', 'usuarios.crear', 'usuarios.editar',
-  'ajustes.crear'
+  'ajustes.crear',
+  'configuracion.ver'
 ] as const
 
 function linkPermisos(db: Database.Database, rolId: number, codigos: readonly string[]): void {

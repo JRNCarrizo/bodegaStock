@@ -1,5 +1,5 @@
 param(
-  [string]$Version = "0.3.37"
+  [string]$Version = "0.3.38"
 )
 
 $ErrorActionPreference = "Stop"
@@ -55,12 +55,18 @@ if (Test-Path $ymlPath) { $assets += (Resolve-Path $ymlPath).Path }
 $notes = @"
 ## ControlStock v$Version
 
-Corrección de importación offline al PC local en la APK (v0.3.33–0.3.36).
+Permisos operativos, sector por defecto en ingresos y mejoras en planillas/camioneros.
 
-### Nuevo / corregido
-- Fix: **Importar al PC** en inventario offline con servidor local (error 415 Unsupported Media Type)
-- Modo nube (Railway) sigue usando HTTP nativo; LAN vuelve al comportamiento de la v0.3.29
-- Inventario online: reconteo a cero ya no se reprecarga al recargar la pantalla
+### Nuevo
+- **Configuración** accesible con permiso ``configuracion.ver`` (red, actualizaciones, toggles) sin ser admin
+- **Sector destino por defecto en ingresos**: checkbox en Sectores; preselección editable al cargar ingresos
+- **Planillas**: alias del vehículo en selector, banner de carga y listado
+- Operadores de ingresos/planillas/retornos/roturas/movimientos pueden **listar sectores, productos y camioneros** sin tener las secciones de catálogo en el menú
+- Documentación: multi-logística Esmeralda + **NAKBE** (planificado)
+
+### Corregido
+- Preselección del sector por defecto en ingresos (select y borradores)
+- Mejoras en pantalla **Camioneros** (vehículos, alias)
 
 ### Actualización
 - **APK:** instalá ``ControlStock-$Version.apk`` en los celulares

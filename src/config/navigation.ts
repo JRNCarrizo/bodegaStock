@@ -20,6 +20,7 @@ export const CONFIG_NAV_ITEM: NavItem = {
   id: 'configuracion',
   label: 'Configuración',
   path: '/configuracion',
+  permiso: 'configuracion.ver',
   group: ''
 }
 

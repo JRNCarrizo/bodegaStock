@@ -97,6 +97,17 @@ npm run cap:sync
 
 Eso genera icons + `dist/` + sync **sin** `CAP_SERVER_URL` (web embebida).
 
+## APK release (producción)
+
+```powershell
+npm run cap:sync
+$env:JAVA_HOME = "C:\Program Files\Android\Android Studio\jbr"   # si Java 25 falla
+cd android
+.\gradlew.bat assembleRelease
+```
+
+Copiar a `release/ControlStock-x.y.z.apk`. Ver también [ESTADO-ACTUAL.md](ESTADO-ACTUAL.md) §8.
+
 Después, APK debug:
 
 ```powershell
@@ -127,7 +138,14 @@ npm run cap:android
 2. `scripts/dev-android.mjs` setea esa variable, levanta Vite y corre `cap sync` / `cap run`.
 3. `npm run cap:sync` **nunca** setea `CAP_SERVER_URL` → APK lista para instalar en cualquier lado.
 
-**Importante:** si usaste live reload y después querés una APK instalable offline, corré siempre `npm run cap:sync` (o el build de APK que ya lo incluye) **antes** de distribuir. Así se borra el `server.url` del config copiado a `android/`.
+**Importante:** si usaste live reload y después querés una APK instalable offline, corré siempre `npm run cap:sync` (o el build de APK que ya lo incluye) **antes** de distribuir.
+
+### HTTP en APK (v0.3.37+)
+
+- `CapacitorHttp` **no** parchea `window.fetch` globalmente (rompía POST al PC local).
+- URLs **https://** (nube): `appFetch` usa `CapacitorHttp.request()` nativo.
+- URLs **http://** (LAN): fetch normal del WebView — compatible con import offline al PC.
+- Archivos: `capacitor.config.ts`, `src/lib/nativeServer.ts`, `src/lib/utils.ts`.
 
 ---
 

@@ -139,6 +139,7 @@ function getRetornoHeader(db: ReturnType<typeof getDb>, id: number) {
       c.empresa AS camionero_empresa,
       cv.marca AS vehiculo_marca,
       cv.modelo AS vehiculo_modelo,
+      cv.alias AS vehiculo_alias,
       cv.patente AS vehiculo_patente,
       uc.nombre AS cargado_por_nombre,
       uv.nombre AS verificado_por_nombre
@@ -170,6 +171,7 @@ function getRetornoHeader(db: ReturnType<typeof getDb>, id: number) {
     camionero_empresa: string | null
     vehiculo_marca: string | null
     vehiculo_modelo: string | null
+    vehiculo_alias: string | null
     vehiculo_patente: string | null
     cargado_por_nombre: string
     verificado_por_nombre: string | null

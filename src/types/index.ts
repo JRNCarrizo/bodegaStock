@@ -85,6 +85,7 @@ export interface Sector {
   es_sector_descuento: number
   prioridad_descuento: number | null
   usa_ubicaciones: number
+  ingreso_por_defecto: number
   activo: number
   created_at: string
   productos_con_stock: number
@@ -108,6 +109,7 @@ export interface SectorForm {
   es_sector_descuento: boolean
   prioridad_descuento: string
   usa_ubicaciones: boolean
+  ingreso_por_defecto: boolean
   activo: boolean
 }
 
@@ -167,6 +169,7 @@ export interface CamioneroVehiculo {
   camionero_id: number
   marca: string
   modelo: string
+  alias: string | null
   patente: string
   activo: number
   created_at: string
@@ -310,7 +313,9 @@ export interface PlanillaListItem {
   camionero_nombre: string
   camionero_numero: string
   vehiculo_id: number | null
+  vehiculo_marca: string | null
   vehiculo_modelo: string | null
+  vehiculo_alias: string | null
   usuario_nombre: string
   total_unidades: number
   lineas_count: number
@@ -365,6 +370,7 @@ export interface PlanillaDetalle {
     camionero_empresa: string
     vehiculo_marca: string | null
     vehiculo_modelo: string | null
+    vehiculo_alias: string | null
     vehiculo_patente: string | null
     usuario_nombre: string
     created_at: string
@@ -438,6 +444,7 @@ export interface RetornoDetalle {
     camionero_empresa: string | null
     vehiculo_marca: string | null
     vehiculo_modelo: string | null
+    vehiculo_alias: string | null
     vehiculo_patente: string | null
     cargado_por_id: number
     cargado_por_nombre: string

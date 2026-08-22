@@ -1,6 +1,6 @@
 # BodegaStock — Modelo de datos
 
-> Esquema implementado en SQLite (ControlStock / BodegaStock **v0.3.30**).
+> Esquema implementado en SQLite (ControlStock / BodegaStock **v0.3.37**). Modo nube: mismo esquema en Postgres vía shim.
 > Describe las entidades persistidas en el servidor; las exportaciones Excel son agregaciones de consulta y **no** agregan tablas.
 
 ---

@@ -93,7 +93,7 @@ app.on('window-all-closed', () => {
 })
 
 app.on('before-quit', (event) => {
-  // Dejar que quitAndInstall cierre la app con normalidad.
+  // Durante update el Setup ya está abierto; no interferir con el quit.
   if (isInstallingUpdate()) return
   if (isShuttingDown) return
   event.preventDefault()

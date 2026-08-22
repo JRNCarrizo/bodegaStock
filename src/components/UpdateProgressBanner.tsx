@@ -97,7 +97,8 @@ export function UpdateProgressBanner() {
         <div className="flex flex-wrap items-center justify-between gap-3">
           <p className="flex items-center gap-2 font-medium">
             <Download className="h-4 w-4 shrink-0 text-emerald-700" aria-hidden />
-            Actualización {version ? `v${version} ` : ''}lista. Reiniciá para aplicarla.
+            Actualización {version ? `v${version} ` : ''}lista. Se abre el Setup de Windows con
+            barra de progreso.
           </p>
           <div className="flex flex-wrap gap-2">
             <Button
@@ -111,7 +112,7 @@ export function UpdateProgressBanner() {
               ) : (
                 <RefreshCw className="h-4 w-4" />
               )}
-              {installing ? 'Reiniciando…' : 'Instalar y reiniciar'}
+              {installing ? 'Abriendo Setup…' : 'Instalar y reiniciar'}
             </Button>
             <Button
               size="sm"

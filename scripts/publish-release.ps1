@@ -1,5 +1,5 @@
 param(
-  [string]$Version = "0.3.40"
+  [string]$Version = "0.3.41"
 )
 
 $ErrorActionPreference = "Stop"
@@ -55,13 +55,12 @@ if (Test-Path $ymlPath) { $assets += (Resolve-Path $ymlPath).Path }
 $notes = @"
 ## ControlStock v$Version
 
-Mejoras en la actualización automática (instalador visible + barra de progreso).
+Instalación de updates **visible**: ya no solo el cursor de espera.
 
 ### Nuevo / Mejorado
-- Al pulsar **Instalar y reiniciar** se muestra una ventana de preparación y se abre el **instalador de Windows con su barra de progreso** (ya no se cierra “en silencio”)
-- Banner global de descarga / listo para instalar en la app
-- Barra de descarga más visible en Configuración
-- Más estabilidad al bajar updates desde GitHub (HTTP/2)
+- **Instalar y reiniciar** abre el **Setup de Windows completo** (bienvenida + barra de progreso), no el modo silencioso de electron-updater
+- Splash breve “Abriendo el instalador…” antes de cerrar la app
+- Pantalla de bienvenida del NSIS para que quede claro que la instalación está en curso
 
 ### Actualización
 - **APK:** instalá ``ControlStock-$Version.apk`` en los celulares

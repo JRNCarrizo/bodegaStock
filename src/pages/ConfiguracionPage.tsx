@@ -1369,8 +1369,8 @@ export function ConfiguracionPage() {
           {phase === 'downloaded' && (
             <div className="space-y-3 rounded-xl border border-emerald-200 bg-gradient-to-br from-emerald-50/90 to-white p-4 ring-1 ring-emerald-100">
               <p className="text-sm font-semibold text-emerald-900">
-                Versión {availableVersion} descargada. Al instalar se abrirá el instalador de
-                Windows con la barra de progreso.
+                Versión {availableVersion} descargada. Al instalar se abre el Setup de Windows con
+                su barra de progreso (como instalar a mano).
               </p>
               <Button size="sm" className="rounded-xl" onClick={() => void instalarActualizacion()}>
                 Instalar y reiniciar
@@ -1385,8 +1385,8 @@ export function ConfiguracionPage() {
                 Abriendo el instalador de Windows…
               </p>
               <p className="text-xs leading-relaxed text-brand-800/90">
-                Vas a ver la ventana del instalador con la barra de progreso. Completá o esperá a
-                que termine; ControlStock se reabre solo.
+                Buscá la ventana del instalador de ControlStock: ahí está la barra de progreso. Si
+                Windows pide permiso, aceptá y seguí los pasos del Setup.
               </p>
               <div className="h-3.5 overflow-hidden rounded-full bg-brand-100">
                 <div className="h-full w-1/3 animate-pulse rounded-full bg-brand-600" />

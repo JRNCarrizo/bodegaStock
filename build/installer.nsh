@@ -5,11 +5,9 @@
 !macro killControlStockProcesses
   DetailPrint "Cerrando ControlStock..."
   nsExec::ExecToLog `"$SYSDIR\cmd.exe" /c taskkill /F /IM "${APP_EXECUTABLE_FILENAME}" /T >nul 2>&1 & exit /b 0`
-  Sleep 400
+  Sleep 300
   nsExec::ExecToLog `"$SYSDIR\cmd.exe" /c taskkill /F /IM ControlStock.exe /T >nul 2>&1 & exit /b 0`
-  Sleep 800
-  nsExec::ExecToLog `"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -ExecutionPolicy Bypass -Command "Get-Process -Name 'ControlStock' -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue; exit 0"`
-  Sleep 1200
+  Sleep 500
 !macroend
 
 !macro skipBrokenOldUninstaller
@@ -25,8 +23,14 @@
   DeleteRegValue HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\${PRODUCT_FILENAME}" "QuietUninstallString"
 !macroend
 
+; Pantalla de bienvenida visible (barra de progreso en el paso siguiente).
+!macro customWelcomePage
+  !insertmacro MUI_PAGE_WELCOME
+!macroend
+
 !macro customInit
   !insertmacro killControlStockProcesses
+  BringToFront
 !macroend
 
 !macro customCheckAppRunning

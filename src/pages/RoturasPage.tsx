@@ -85,6 +85,7 @@ export function RoturasPage() {
   const [cantidadCajas, setCantidadCajas] = useState('')
   const [lineSectorId, setLineSectorId] = useState('')
   const [stockDisponible, setStockDisponible] = useState<number | null>(null)
+  const [stockPorSector, setStockPorSector] = useState<Record<number, number>>({})
   const [lineas, setLineas] = useState<RoturaLineaDraft[]>([])
   const [expandedProductos, setExpandedProductos] = useState<Set<number>>(new Set())
   const [showScanner, setShowScanner] = useState(false)
@@ -341,8 +342,41 @@ export function RoturasPage() {
     setProductHighlightIndex(-1)
     setCantidadCajas('')
     setError('')
-    if (!lineSectorId && sectores[0]) setLineSectorId(String(sectores[0].id))
+    setStockDisponible(null)
+    setStockPorSector({})
     setTimeout(() => focusField(cantidadRef), 50)
+
+    void (async () => {
+      try {
+        const data = await api<{
+          sectores: {
+            sector_id: number
+            sector_nombre: string
+            stock_disponible_cajas: number
+          }[]
+        }>(`/api/roturas/producto/${p.id}/stock-sectores`)
+
+        const map: Record<number, number> = {}
+        for (const s of data.sectores) {
+          map[s.sector_id] = s.stock_disponible_cajas
+        }
+        setStockPorSector(map)
+
+        const withStock = data.sectores.filter((s) => s.stock_disponible_cajas > 0)
+        const pool = withStock.length > 0 ? withStock : data.sectores
+        if (pool.length === 0) {
+          if (sectores[0]) setLineSectorId(String(sectores[0].id))
+          return
+        }
+        const best = pool.reduce((a, b) =>
+          a.stock_disponible_cajas <= b.stock_disponible_cajas ? a : b
+        )
+        setLineSectorId(String(best.sector_id))
+        setStockDisponible(best.stock_disponible_cajas)
+      } catch {
+        if (!lineSectorId && sectores[0]) setLineSectorId(String(sectores[0].id))
+      }
+    })()
   }
 
   function handleProductSearchKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
@@ -414,6 +448,7 @@ export function RoturasPage() {
     setProductSearch('')
     setCantidadCajas('')
     setStockDisponible(null)
+    setStockPorSector({})
     setError('')
     setTimeout(() => focusField(productSearchRef), 50)
   }
@@ -861,6 +896,9 @@ export function RoturasPage() {
                     <label className="flex items-center gap-1.5 text-xs font-medium text-slate-600">
                       <Warehouse className="h-3.5 w-3.5 text-slate-400" aria-hidden />
                       Sector
+                      <span className="font-normal text-slate-400">
+                        (default: el de menos stock)
+                      </span>
                     </label>
                     <div className="relative">
                       <div className="pointer-events-none absolute inset-y-0 left-0 z-[1] flex items-center pl-2.5 text-slate-400">
@@ -879,11 +917,15 @@ export function RoturasPage() {
                         className="w-full rounded-lg border border-surface-border bg-white py-2 pl-9 pr-3 text-sm focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20"
                       >
                         <option value="">Seleccionar...</option>
-                        {sectores.map((s) => (
-                          <option key={s.id} value={s.id}>
-                            {s.nombre}
-                          </option>
-                        ))}
+                        {sectores.map((s) => {
+                          const stock = stockPorSector[s.id]
+                          return (
+                            <option key={s.id} value={s.id}>
+                              {s.nombre}
+                              {stock != null ? ` (${formatCantidad(stock)})` : ''}
+                            </option>
+                          )
+                        })}
                       </select>
                     </div>
                   </div>

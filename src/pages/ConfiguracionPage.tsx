@@ -946,11 +946,13 @@ export function ConfiguracionPage() {
           Configuración
         </h1>
         <p className="mt-2 max-w-xl text-sm leading-relaxed text-slate-500">
-          Tocá cada sección para abrirla. Red, verificación, actualizaciones e información de la
-          aplicación.
+          {isNative
+            ? 'Actualizaciones e información de la aplicación.'
+            : 'Tocá cada sección para abrirla. Red, verificación, actualizaciones e información de la aplicación.'}
         </p>
       </section>
 
+      {!isNative && (
       <ConfigSection
         icon={Wifi}
         title="Red y conexión"
@@ -1353,8 +1355,9 @@ export function ConfiguracionPage() {
             </>
           )}
       </ConfigSection>
+      )}
 
-      {user?.es_admin && (
+      {!isNative && user?.es_admin && (
       <ConfigSection
         icon={Database}
         title="Migrar datos a la nube"
@@ -1440,6 +1443,7 @@ export function ConfiguracionPage() {
       </ConfigSection>
       )}
 
+      {!isNative && (
       <ConfigSection
         icon={ClipboardCheck}
         title="Verificación de documentos"
@@ -1516,6 +1520,7 @@ export function ConfiguracionPage() {
             </div>
           )}
       </ConfigSection>
+      )}
 
       <ConfigSection
         icon={RefreshCw}

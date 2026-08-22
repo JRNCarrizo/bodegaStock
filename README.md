@@ -4,7 +4,7 @@ Sistema de gestión de stock para bodega con aplicación de escritorio (Electron
 
 ## Estado del proyecto
 
-**v0.3.43** — [Release en GitHub](https://github.com/JRNCarrizo/bodegaStock/releases/tag/v0.3.43)
+**v0.3.44** — [Release en GitHub](https://github.com/JRNCarrizo/bodegaStock/releases/tag/v0.3.44)
 
 | En planta hoy | Preparado para más adelante |
 |---------------|----------------------------|
@@ -16,6 +16,7 @@ Sistema de gestión de stock para bodega con aplicación de escritorio (Electron
 
 ### Reciente (resumen)
 
+- **v0.3.44:** APK sin red/verificación en Config; roturas sector con menos stock; pulido retornos/consulta.
 - **v0.3.43:** cooldown ante rate limit de GitHub (429) al buscar updates / APK.
 - **v0.3.42:** agenda de turnos (insumos); update APK in-app; Descargar APK desde PC; Configuración plegable.
 - **v0.3.41:** instalador Windows visible al actualizar (Setup NSIS con progreso).

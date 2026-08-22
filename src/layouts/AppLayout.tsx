@@ -245,7 +245,7 @@ function AppLayoutShell({
     <div className="flex h-screen bg-surface-muted">
       <aside
         className={cn(
-          'hidden shrink-0 flex-col border-r border-surface-border bg-gradient-to-b from-white via-white to-slate-50/70 shadow-sm transition-[width] duration-200 ease-in-out lg:flex',
+          'hidden shrink-0 flex-col border-r border-surface-border bg-white shadow-sm transition-[width] duration-200 ease-in-out lg:flex',
           collapsed ? 'w-[4.25rem]' : 'w-64',
           sidebarActive && 'ring-2 ring-inset ring-brand-200/80'
         )}
@@ -331,8 +331,8 @@ function AppLayoutShell({
         <div className="fixed inset-0 z-40 lg:hidden">
           <div className="absolute inset-0 bg-slate-900/40" onClick={() => setMobileOpen(false)} />
 
-          <aside className="relative flex h-full w-72 flex-col bg-gradient-to-b from-white via-white to-slate-50/70 shadow-panel">
-            <div className="flex items-center justify-between border-b border-brand-100/80 bg-gradient-to-r from-brand-50/50 via-white to-white p-4">
+          <aside className="relative flex h-full w-72 flex-col bg-white shadow-panel">
+            <div className="flex items-center justify-between border-b border-brand-100 bg-white p-4">
               <SidebarHeader compact {...sidebarHeaderProps} />
               <button
                 type="button"
@@ -585,7 +585,7 @@ function SidebarHeader({
       value={logisticaActivaId}
       disabled={changingLogistica}
       onChange={(e) => onLogisticaChange(Number(e.target.value))}
-      className="mt-0.5 w-full max-w-full truncate rounded-lg border border-brand-200/80 bg-white/90 px-2 py-1 text-xs font-medium text-brand-800 shadow-sm focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20 disabled:opacity-60"
+      className="mt-0.5 w-full max-w-full truncate rounded-lg border border-brand-200 bg-white px-2 py-1 text-xs font-medium text-brand-800 shadow-sm focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20 disabled:opacity-60"
       aria-label="Logística activa"
       title="Cambiar logística"
     >
@@ -640,7 +640,7 @@ function SidebarHeader({
 
   if (collapsed) {
     return (
-      <div className="flex flex-col items-center gap-2 border-b border-surface-border/80 bg-gradient-to-b from-brand-50/40 to-white px-2 py-3">
+      <div className="flex flex-col items-center gap-2 border-b border-surface-border bg-white px-2 py-3">
         <div
           className="flex h-9 w-9 items-center justify-center rounded-xl bg-brand-600 text-white shadow-sm ring-4 ring-brand-600/10"
           title={logisticaNombre ? `ControlStock · ${logisticaNombre}` : 'ControlStock'}
@@ -663,7 +663,7 @@ function SidebarHeader({
   }
 
   return (
-    <div className="flex items-center gap-3 border-b border-surface-border/80 bg-gradient-to-r from-brand-50/50 via-white to-white p-5">
+    <div className="flex items-center gap-3 border-b border-surface-border bg-white p-5">
       <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-brand-600 text-white shadow-sm ring-4 ring-brand-600/10">
         <Boxes className="h-5 w-5" />
       </div>
@@ -699,7 +699,7 @@ function SidebarFooter({
 }) {
   if (collapsed) {
     return (
-      <div className="border-t border-surface-border/80 bg-white/60 p-2">
+      <div className="border-t border-surface-border bg-white p-2">
         <Button
           variant="ghost"
           size="sm"
@@ -715,7 +715,7 @@ function SidebarFooter({
   }
 
   return (
-    <div className="border-t border-surface-border/80 bg-white/60 p-4">
+    <div className="border-t border-surface-border bg-white p-4">
       <div className="flex items-center gap-3">
         <div
           className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-brand-100 text-xs font-bold text-brand-800 ring-2 ring-brand-50"

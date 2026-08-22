@@ -10,12 +10,25 @@ export function SueltoStockHint({
   unidad?: string | null
   className?: string
 }) {
-  if (!cantidad) return null
   const nombre = normalizarUnidadProducto(unidad)
+  const label = `+ ${formatCantidad(cantidad || 0)} ${nombre}${cantidad === 1 ? '' : 's'}`
+
+  // Siempre reserva la misma altura: sin botellerío el texto queda invisible
+  // para que Reorganizar / totales queden alineados entre filas.
+  if (!cantidad) {
+    return (
+      <p
+        className={cn('invisible text-[11px] font-medium leading-snug', className)}
+        aria-hidden
+      >
+        {label}
+      </p>
+    )
+  }
+
   return (
-    <p className={cn('text-[11px] font-medium text-slate-500', className)}>
-      + {formatCantidad(cantidad)} {nombre}
-      {cantidad === 1 ? '' : 's'} suelta{cantidad === 1 ? '' : 's'}
+    <p className={cn('text-[11px] font-medium leading-snug text-slate-500', className)}>
+      {label}
     </p>
   )
 }

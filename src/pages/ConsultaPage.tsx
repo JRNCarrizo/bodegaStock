@@ -145,7 +145,7 @@ function StockDetallePanel({
                   </Button>
                 )}
               </div>
-              <div className="shrink-0 text-right">
+              <div className="flex min-w-[5.5rem] shrink-0 flex-col items-end justify-center text-right">
                 <span className="inline-flex items-center rounded-full bg-brand-50 px-3 py-1 text-sm font-bold tabular-nums text-brand-700 ring-1 ring-brand-100">
                   {formatCantidad(sector.cantidad_total)}
                 </span>
@@ -920,15 +920,19 @@ export function ConsultaPage() {
               setHighlightIndex(index)
               void toggleExpand(p)
             }}
-            className="shrink-0 text-right"
+            className="flex min-w-[5.5rem] shrink-0 flex-col items-end justify-center text-right"
           >
             <span className="inline-flex min-w-[3rem] items-center justify-center rounded-lg bg-brand-50 px-2.5 py-1.5 text-sm font-bold tabular-nums text-brand-700 ring-1 ring-brand-100">
               {formatCantidad(p.stock_total)}
             </span>
             <SueltoStockHint cantidad={p.suelto_total} unidad={p.unidad} className="mt-1" />
-            {p.sectores_con_stock > 0 && (
+            {p.sectores_con_stock > 0 ? (
               <p className="mt-1 text-[11px] font-medium text-slate-500">
                 {p.sectores_con_stock} sector{p.sectores_con_stock === 1 ? '' : 'es'}
+              </p>
+            ) : (
+              <p className="invisible mt-1 text-[11px] font-medium" aria-hidden>
+                0 sectores
               </p>
             )}
           </button>

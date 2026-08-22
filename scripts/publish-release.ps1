@@ -1,5 +1,5 @@
 param(
-  [string]$Version = "0.3.43"
+  [string]$Version = "0.3.44"
 )
 
 $ErrorActionPreference = "Stop"
@@ -55,17 +55,17 @@ if (Test-Path $ymlPath) { $assets += (Resolve-Path $ymlPath).Path }
 $notes = @"
 ## ControlStock v$Version
 
-Menos presión a GitHub al buscar actualizaciones (evita errores 429).
+Pulido de APK, retornos/roturas y consulta.
 
 ### Nuevo / Mejorado
-- Cooldown de **15 min** entre búsquedas de update en escritorio (30 min tras un rate limit)
-- Single-flight: no se lanzan checks concurrentes
-- Mensaje claro + botón **Abrir Releases** si GitHub limita
-- Cooldown corto también al buscar/descargar APK
+- **APK:** en Configuración no se muestran Red ni Verificación; sidebar opaca
+- **Retornos:** cantidades sin la palabra “cajas” en carga; desglose sin estado duplicado
+- **Roturas:** al elegir producto, sector por defecto = el de **menos stock** (con cantidad)
+- **Consulta:** alineación de Reorganizar / botellerío; hint más corto (sin “sueltas”)
 
 ### Actualización
-- Si seguís con 429: instalá a mano ``ControlStock-Setup-$Version.exe`` desde el navegador
-- **APK:** ``ControlStock-$Version.apk``
+- **Windows:** Configuración → Buscar actualizaciones, o Setup de este release
+- **APK:** ``ControlStock-$Version.apk`` (o Descargar APK desde el PC)
 
 Login inicial (base vacía): **admin** / **admin123**
 "@

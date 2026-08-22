@@ -290,6 +290,34 @@ export async function roturasRoutes(app: FastifyInstance): Promise<void> {
     }
   })
 
+  app.get('/api/roturas/producto/:id/stock-sectores', {
+    preHandler: requirePermiso('roturas.crear')
+  }, async (request) => {
+    const productoId = Number((request.params as { id: string }).id)
+    const db = getDb()
+    const logisticaId = requireRequestLogistica(request)
+    assertProductoActivo(db, productoId)
+
+    const sectores = db
+      .prepare(
+        `
+      SELECT id, nombre
+      FROM sectores
+      WHERE activo = 1 AND logistica_id = ?
+      ORDER BY nombre COLLATE NOCASE
+    `
+      )
+      .all(logisticaId) as { id: number; nombre: string }[]
+
+    const rows = sectores.map((s) => ({
+      sector_id: s.id,
+      sector_nombre: s.nombre,
+      stock_disponible_cajas: getStockDisponibleCajasEnSector(db, productoId, s.id)
+    }))
+
+    return { sectores: rows }
+  })
+
   app.get('/api/roturas/:id', {
     preHandler: requirePermiso('roturas.ver')
   }, async (request, reply) => {

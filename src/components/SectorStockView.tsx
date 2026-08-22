@@ -379,23 +379,27 @@ export function SectorStockView({
                               </p>
                             </div>
                           </button>
-                          {puedeReorganizar && (
-                            <Button
-                              type="button"
-                              variant="secondary"
-                              className="h-8 shrink-0 gap-1.5 px-2.5 text-xs"
-                              disabled={reorganizingProductoId !== null}
-                              onClick={() => {
-                                setConfirmProductoId(producto.producto_id)
-                                setExpandedStockProductos((prev) => new Set(prev).add(producto.producto_id))
-                                setReorgError('')
-                              }}
-                            >
-                              <Layers className="h-3.5 w-3.5" />
-                              Armar / reorganizar
-                            </Button>
-                          )}
-                          <div className="shrink-0 text-right">
+                          <div className="flex h-8 w-[9.5rem] shrink-0 items-center justify-end">
+                            {puedeReorganizar ? (
+                              <Button
+                                type="button"
+                                variant="secondary"
+                                className="h-8 shrink-0 gap-1.5 px-2.5 text-xs"
+                                disabled={reorganizingProductoId !== null}
+                                onClick={() => {
+                                  setConfirmProductoId(producto.producto_id)
+                                  setExpandedStockProductos((prev) =>
+                                    new Set(prev).add(producto.producto_id)
+                                  )
+                                  setReorgError('')
+                                }}
+                              >
+                                <Layers className="h-3.5 w-3.5" />
+                                Armar / reorganizar
+                              </Button>
+                            ) : null}
+                          </div>
+                          <div className="flex w-[5.5rem] shrink-0 flex-col items-end justify-center text-right">
                             <span className="inline-flex items-center rounded-lg bg-brand-50 px-2.5 py-1.5 text-sm font-bold tabular-nums text-brand-700 ring-1 ring-brand-100">
                               {formatCantidad(producto.cantidad_total)}
                             </span>

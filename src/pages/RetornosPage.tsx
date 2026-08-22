@@ -1536,7 +1536,7 @@ export function RetornosPage() {
                   )}
                 </button>
                 <span className="inline-flex shrink-0 items-center rounded-lg bg-brand-50 px-2.5 py-1.5 text-sm font-bold tabular-nums text-brand-700 ring-1 ring-brand-100">
-                  {formatTotalCajas(grupo.total)}
+                  {formatCantidad(grupo.total)}
                 </span>
               </div>
               {isExpanded && (
@@ -1547,8 +1547,7 @@ export function RetornosPage() {
                       className="flex items-center justify-between gap-3 rounded-lg border border-surface-border bg-white px-3 py-2.5 text-sm"
                     >
                       <div className="min-w-0 text-slate-800">
-                        {formatTotalCajas(l.cantidad_cajas)} · {labelEstado(l.estado_condicion)} ·{' '}
-                        {l.sector_nombre}
+                        {formatTotalCajas(l.cantidad_cajas)} · {l.sector_nombre}
                       </div>
                       <div className="flex shrink-0 items-center gap-2">
                         {badgeCondicion(l.estado_condicion)}
@@ -1860,7 +1859,7 @@ export function RetornosPage() {
                 Total general
               </p>
               <p className="text-2xl font-bold tabular-nums text-brand-700">
-                {formatTotalCajas(totalGeneral)}
+                {formatCantidad(totalGeneral)}
               </p>
               <p className="mt-1 text-xs text-slate-500">
                 {lineas.length} línea{lineas.length === 1 ? '' : 's'} cargada

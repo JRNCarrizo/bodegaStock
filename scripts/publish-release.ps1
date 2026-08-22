@@ -1,5 +1,5 @@
 param(
-  [string]$Version = "0.3.42"
+  [string]$Version = "0.3.43"
 )
 
 $ErrorActionPreference = "Stop"
@@ -55,20 +55,17 @@ if (Test-Path $ymlPath) { $assets += (Resolve-Path $ymlPath).Path }
 $notes = @"
 ## ControlStock v$Version
 
-Agenda de turnos (insumos), actualización APK y Configuración más ordenada.
+Menos presión a GitHub al buscar actualizaciones (evita errores 429).
 
 ### Nuevo / Mejorado
-- **Agenda de turnos**: vista semanal, estados Solicitado/Confirmado/Cancelado, historial y badge de pendientes
-- Cantidad del producto **opcional** al crear/editar turnos
-- **APK Android**: buscar / descargar / instalar actualización desde Configuración
-- **Escritorio**: botón **Descargar APK** para repartir a celulares
-- Configuración con secciones **plegables** (red, verificación, actualizaciones)
-- Mensaje más claro si GitHub limita el chequeo de updates (HTTP 429)
+- Cooldown de **15 min** entre búsquedas de update en escritorio (30 min tras un rate limit)
+- Single-flight: no se lanzan checks concurrentes
+- Mensaje claro + botón **Abrir Releases** si GitHub limita
+- Cooldown corto también al buscar/descargar APK
 
 ### Actualización
-- **Windows:** Configuración → Buscar actualizaciones, o instalá el Setup de este release
-- **APK:** instalá ``ControlStock-$Version.apk`` una vez (después podés actualizar desde la app)
-- En PC también podés Configuración → Descargar APK para los celulares
+- Si seguís con 429: instalá a mano ``ControlStock-Setup-$Version.exe`` desde el navegador
+- **APK:** ``ControlStock-$Version.apk``
 
 Login inicial (base vacía): **admin** / **admin123**
 "@

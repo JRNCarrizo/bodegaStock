@@ -11,6 +11,7 @@ contextBridge.exposeInMainWorld('bodegaStock', {
   resetDatabase: (confirmacion: string) =>
     ipcRenderer.invoke('app:reset-database', { confirmacion }),
   checkForUpdates: () => ipcRenderer.invoke('update:check'),
+  getUpdateCooldown: () => ipcRenderer.invoke('update:get-cooldown'),
   downloadUpdate: () => ipcRenderer.invoke('update:download'),
   installUpdate: () => ipcRenderer.invoke('update:install'),
   downloadLatestApk: () => ipcRenderer.invoke('apk:download-latest'),

@@ -1,11 +1,13 @@
-import { BrowserWindow, dialog, ipcMain } from 'electron'
-import { createWriteStream } from 'fs'
+import { app, BrowserWindow, dialog, ipcMain } from 'electron'
+import { createWriteStream, existsSync, readFileSync, writeFileSync } from 'fs'
 import { pipeline } from 'stream/promises'
 import { Readable } from 'stream'
-import { basename } from 'path'
+import { basename, join } from 'path'
 
 const GITHUB_OWNER = 'JRNCarrizo'
 const GITHUB_REPO = 'bodegaStock'
+const CHECK_COOLDOWN_MS = 5 * 60 * 1000
+const RATE_LIMIT_COOLDOWN_MS = 30 * 60 * 1000
 
 type GhAsset = {
   name?: string
@@ -19,8 +21,47 @@ type GhRelease = {
   assets?: GhAsset[]
 }
 
+type CooldownState = {
+  lastCheckAt: number
+  blockedUntil: number
+}
+
 function normalizeVersion(v: string): string {
   return v.trim().replace(/^v/i, '')
+}
+
+function minutesLeft(ms: number): number {
+  return Math.max(1, Math.ceil(ms / 60_000))
+}
+
+function cooldownPath(): string {
+  return join(app.getPath('userData'), 'apk-download-cooldown.json')
+}
+
+function readCooldown(): CooldownState {
+  try {
+    if (!existsSync(cooldownPath())) return { lastCheckAt: 0, blockedUntil: 0 }
+    const parsed = JSON.parse(readFileSync(cooldownPath(), 'utf8')) as Partial<CooldownState>
+    return {
+      lastCheckAt: typeof parsed.lastCheckAt === 'number' ? parsed.lastCheckAt : 0,
+      blockedUntil: typeof parsed.blockedUntil === 'number' ? parsed.blockedUntil : 0
+    }
+  } catch {
+    return { lastCheckAt: 0, blockedUntil: 0 }
+  }
+}
+
+function writeCooldown(state: CooldownState): void {
+  try {
+    writeFileSync(cooldownPath(), JSON.stringify(state), 'utf8')
+  } catch {
+    /* ignore */
+  }
+}
+
+function remainingMs(state: CooldownState, now = Date.now()): number {
+  const until = Math.max(state.lastCheckAt + CHECK_COOLDOWN_MS, state.blockedUntil)
+  return Math.max(0, until - now)
 }
 
 async function fetchLatestApk(): Promise<{
@@ -29,6 +70,20 @@ async function fetchLatestApk(): Promise<{
   filename: string
   size?: number
 }> {
+  const state = readCooldown()
+  const wait = remainingMs(state)
+  if (wait > 0) {
+    const rateLimited = state.blockedUntil > Date.now()
+    throw new Error(
+      rateLimited
+        ? `GitHub limitó las consultas. Esperá ~${minutesLeft(wait)} min.`
+        : `Esperá ~${minutesLeft(wait)} min antes de volver a descargar el APK.`
+    )
+  }
+
+  const now = Date.now()
+  writeCooldown({ ...state, lastCheckAt: now })
+
   const res = await fetch(
     `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/releases/latest`,
     {
@@ -41,7 +96,13 @@ async function fetchLatestApk(): Promise<{
 
   if (!res.ok) {
     if (res.status === 403 || res.status === 429) {
-      throw new Error('GitHub limitó las consultas. Probá en unos minutos.')
+      writeCooldown({
+        lastCheckAt: now,
+        blockedUntil: now + RATE_LIMIT_COOLDOWN_MS
+      })
+      throw new Error(
+        `GitHub limitó las consultas. Esperá ~${minutesLeft(RATE_LIMIT_COOLDOWN_MS)} min.`
+      )
     }
     throw new Error(`No se pudo consultar releases (HTTP ${res.status}).`)
   }

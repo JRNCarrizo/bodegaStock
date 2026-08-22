@@ -1,11 +1,17 @@
 import { App } from '@capacitor/app'
 import { Capacitor, CapacitorHttp } from '@capacitor/core'
 import { Directory, Filesystem } from '@capacitor/filesystem'
+import { Preferences } from '@capacitor/preferences'
 import { ApkInstaller } from '@/plugins/apkInstaller'
 
 const GITHUB_OWNER = 'JRNCarrizo'
 const GITHUB_REPO = 'bodegaStock'
 const APK_FILENAME = 'ControlStock-update.apk'
+const COOLDOWN_KEY = 'controlstock.apkUpdateCooldown'
+/** Entre consultas normales. */
+const CHECK_COOLDOWN_MS = 5 * 60 * 1000
+/** Tras 429/403. */
+const RATE_LIMIT_COOLDOWN_MS = 30 * 60 * 1000
 
 export type ApkUpdateInfo = {
   version: string
@@ -14,8 +20,61 @@ export type ApkUpdateInfo = {
   size?: number
 }
 
+type CooldownState = {
+  lastCheckAt: number
+  blockedUntil: number
+}
+
 function normalizeVersion(v: string): string {
   return v.trim().replace(/^v/i, '')
+}
+
+function minutesLeft(ms: number): number {
+  return Math.max(1, Math.ceil(ms / 60_000))
+}
+
+async function readCooldown(): Promise<CooldownState> {
+  try {
+    if (Capacitor.isNativePlatform()) {
+      const { value } = await Preferences.get({ key: COOLDOWN_KEY })
+      if (value) {
+        const parsed = JSON.parse(value) as Partial<CooldownState>
+        return {
+          lastCheckAt: typeof parsed.lastCheckAt === 'number' ? parsed.lastCheckAt : 0,
+          blockedUntil: typeof parsed.blockedUntil === 'number' ? parsed.blockedUntil : 0
+        }
+      }
+    } else {
+      const raw = localStorage.getItem(COOLDOWN_KEY)
+      if (raw) {
+        const parsed = JSON.parse(raw) as Partial<CooldownState>
+        return {
+          lastCheckAt: typeof parsed.lastCheckAt === 'number' ? parsed.lastCheckAt : 0,
+          blockedUntil: typeof parsed.blockedUntil === 'number' ? parsed.blockedUntil : 0
+        }
+      }
+    }
+  } catch {
+    /* ignore */
+  }
+  return { lastCheckAt: 0, blockedUntil: 0 }
+}
+
+async function writeCooldown(state: CooldownState): Promise<void> {
+  const json = JSON.stringify(state)
+  try {
+    if (Capacitor.isNativePlatform()) {
+      await Preferences.set({ key: COOLDOWN_KEY, value: json })
+    }
+    localStorage.setItem(COOLDOWN_KEY, json)
+  } catch {
+    /* ignore */
+  }
+}
+
+function remainingMs(state: CooldownState, now = Date.now()): number {
+  const until = Math.max(state.lastCheckAt + CHECK_COOLDOWN_MS, state.blockedUntil)
+  return Math.max(0, until - now)
 }
 
 /** Compara semver simple a.b.c. >0 si a>b. */
@@ -40,7 +99,20 @@ export async function checkLatestApkRelease(): Promise<{
   latest: ApkUpdateInfo | null
   updateAvailable: boolean
 }> {
+  const state = await readCooldown()
+  const wait = remainingMs(state)
+  if (wait > 0) {
+    const rateLimited = state.blockedUntil > Date.now()
+    throw new Error(
+      rateLimited
+        ? `GitHub limitó las consultas. Esperá ~${minutesLeft(wait)} min.`
+        : `Esperá ~${minutesLeft(wait)} min antes de volver a buscar (límite de GitHub).`
+    )
+  }
+
   const currentVersion = await getNativeAppVersion()
+  const now = Date.now()
+  await writeCooldown({ ...state, lastCheckAt: now })
 
   const res = await CapacitorHttp.get({
     url: `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/releases/latest`,
@@ -51,11 +123,16 @@ export async function checkLatestApkRelease(): Promise<{
   })
 
   if (res.status < 200 || res.status >= 300) {
-    throw new Error(
-      res.status === 403 || res.status === 429
-        ? 'GitHub limitó las consultas. Probá en unos minutos.'
-        : `No se pudo consultar releases (HTTP ${res.status}).`
-    )
+    if (res.status === 403 || res.status === 429) {
+      await writeCooldown({
+        lastCheckAt: now,
+        blockedUntil: now + RATE_LIMIT_COOLDOWN_MS
+      })
+      throw new Error(
+        `GitHub limitó las consultas. Esperá ~${minutesLeft(RATE_LIMIT_COOLDOWN_MS)} min.`
+      )
+    }
+    throw new Error(`No se pudo consultar releases (HTTP ${res.status}).`)
   }
 
   const body =

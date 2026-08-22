@@ -34,16 +34,45 @@ export type UpdateStatusPayload =
   | { type: 'download-progress'; percent: number; transferred: number; total: number }
   | { type: 'downloaded'; version: string }
   | { type: 'installing'; version?: string }
-  | { type: 'error'; message: string }
+  | {
+      type: 'error'
+      message: string
+      rateLimited?: boolean
+      retryAfterMs?: number
+    }
 
 export type UpdateCheckResult =
   | { ok: true; updateInfo?: string }
   | { ok: false; reason: 'dev' }
-  | { ok: false; reason: 'error'; message?: string }
+  | {
+      ok: false
+      reason: 'cooldown'
+      message?: string
+      rateLimited?: boolean
+      retryAfterMs?: number
+    }
+  | {
+      ok: false
+      reason: 'error'
+      message?: string
+      rateLimited?: boolean
+      retryAfterMs?: number
+    }
+
+export type UpdateCooldownInfo = {
+  retryAfterMs: number
+  releasesUrl: string
+}
 
 export type UpdateActionResult =
   | { ok: true }
-  | { ok: false; reason?: 'dev'; message?: string }
+  | {
+      ok: false
+      reason?: 'dev'
+      message?: string
+      rateLimited?: boolean
+      retryAfterMs?: number
+    }
 
 export type MigrationExportResult =
   | {
@@ -76,6 +105,7 @@ interface Window {
       confirmacion: string
     ) => Promise<{ ok: true } | { ok: false; message?: string }>
     checkForUpdates?: () => Promise<UpdateCheckResult>
+    getUpdateCooldown?: () => Promise<UpdateCooldownInfo>
     downloadUpdate?: () => Promise<UpdateActionResult>
     installUpdate?: () => Promise<UpdateActionResult>
     downloadLatestApk?: () => Promise<ApkDownloadResult>

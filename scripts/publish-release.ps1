@@ -1,5 +1,5 @@
 param(
-  [string]$Version = "0.3.39"
+  [string]$Version = "0.3.40"
 )
 
 $ErrorActionPreference = "Stop"
@@ -55,14 +55,13 @@ if (Test-Path $ymlPath) { $assets += (Resolve-Path $ymlPath).Path }
 $notes = @"
 ## ControlStock v$Version
 
-Multi-logística Esmeralda + NAKBE, consulta con productos en cero y mejoras de sesión.
+Mejoras en la actualización automática (instalador visible + barra de progreso).
 
-### Nuevo
-- **Dos logísticas** en el mismo sistema: Esmeralda y NAKBE (stock, sectores, camioneros, documentos e inventarios independientes)
-- **Admin**: selector en el menú para cambiar de logística **sin cerrar sesión**
-- **Operadores**: asignados a una sola logística; ven solo esa empresa (sin desplegable)
-- **Consulta**: el checkbox «Incluir productos en cero» también aplica al listado y la búsqueda (no solo al Excel)
-- Borradores de ingresos/planillas/retornos separados por logística
+### Nuevo / Mejorado
+- Al pulsar **Instalar y reiniciar** se muestra una ventana de preparación y se abre el **instalador de Windows con su barra de progreso** (ya no se cierra “en silencio”)
+- Banner global de descarga / listo para instalar en la app
+- Barra de descarga más visible en Configuración
+- Más estabilidad al bajar updates desde GitHub (HTTP/2)
 
 ### Actualización
 - **APK:** instalá ``ControlStock-$Version.apk`` en los celulares

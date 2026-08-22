@@ -44,6 +44,7 @@ type UpdatePhase =
   | 'not-available'
   | 'downloading'
   | 'downloaded'
+  | 'installing'
   | 'error'
   | 'dev-mode'
 
@@ -469,12 +470,15 @@ export function ConfiguracionPage() {
         break
       case 'download-progress':
         setPhase('downloading')
-        setDownloadPercent(Math.round(status.percent))
+        setDownloadPercent(Math.min(100, Math.max(0, Math.round(status.percent))))
         setDownloadDetail(`${formatBytes(status.transferred)} / ${formatBytes(status.total)}`)
         break
       case 'downloaded':
         setPhase('downloaded')
         setAvailableVersion(status.version)
+        break
+      case 'installing':
+        setPhase('installing')
         break
       case 'error':
         setPhase('error')
@@ -1330,33 +1334,63 @@ export function ConfiguracionPage() {
           )}
 
           {phase === 'downloading' && (
-            <div className="space-y-2.5 rounded-xl border border-surface-border bg-slate-50/80 p-4">
-              <div className="flex justify-between text-sm text-slate-600">
-                <span className="flex items-center gap-2">
-                  <Loader2 className="h-4 w-4 animate-spin text-brand-600" />
-                  Descargando…
-                </span>
-                <span className="tabular-nums">
-                  {downloadPercent}%{downloadDetail && ` · ${downloadDetail}`}
+            <div className="space-y-3 rounded-xl border-2 border-brand-300 bg-gradient-to-br from-brand-50 to-white p-4 shadow-sm ring-1 ring-brand-100">
+              <div className="flex flex-wrap items-start justify-between gap-2">
+                <div>
+                  <p className="flex items-center gap-2 text-sm font-semibold text-brand-900">
+                    <Loader2 className="h-4 w-4 animate-spin text-brand-600" />
+                    Descargando actualización…
+                  </p>
+                  <p className="mt-1 text-xs text-brand-700/80">
+                    No cierres la aplicación. Podés seguir trabajando; el progreso también se ve
+                    arriba.
+                  </p>
+                </div>
+                <span className="shrink-0 rounded-lg bg-brand-600 px-2.5 py-1 text-sm font-bold tabular-nums text-white">
+                  {downloadPercent}%
                 </span>
               </div>
-              <div className="h-2.5 overflow-hidden rounded-full bg-slate-200">
+              <div className="h-3.5 overflow-hidden rounded-full bg-brand-100 ring-1 ring-brand-200/80">
                 <div
-                  className="h-full rounded-full bg-brand-600 transition-all duration-300"
-                  style={{ width: `${downloadPercent}%` }}
+                  className={
+                    downloadPercent <= 0
+                      ? 'h-full w-1/3 animate-pulse rounded-full bg-brand-600'
+                      : 'h-full rounded-full bg-brand-600 transition-all duration-300'
+                  }
+                  style={downloadPercent > 0 ? { width: `${downloadPercent}%` } : undefined}
                 />
               </div>
+              {downloadDetail && (
+                <p className="text-center text-xs tabular-nums text-slate-600">{downloadDetail}</p>
+              )}
             </div>
           )}
 
           {phase === 'downloaded' && (
             <div className="space-y-3 rounded-xl border border-emerald-200 bg-gradient-to-br from-emerald-50/90 to-white p-4 ring-1 ring-emerald-100">
               <p className="text-sm font-semibold text-emerald-900">
-                Versión {availableVersion} descargada. Reinicie para aplicar los cambios.
+                Versión {availableVersion} descargada. Al instalar se abrirá el instalador de
+                Windows con la barra de progreso.
               </p>
               <Button size="sm" className="rounded-xl" onClick={() => void instalarActualizacion()}>
                 Instalar y reiniciar
               </Button>
+            </div>
+          )}
+
+          {phase === 'installing' && (
+            <div className="space-y-3 rounded-xl border-2 border-brand-300 bg-gradient-to-br from-brand-50 to-white p-4 shadow-sm">
+              <p className="flex items-center gap-2 text-sm font-semibold text-brand-900">
+                <Loader2 className="h-4 w-4 animate-spin text-brand-600" />
+                Abriendo el instalador de Windows…
+              </p>
+              <p className="text-xs leading-relaxed text-brand-800/90">
+                Vas a ver la ventana del instalador con la barra de progreso. Completá o esperá a
+                que termine; ControlStock se reabre solo.
+              </p>
+              <div className="h-3.5 overflow-hidden rounded-full bg-brand-100">
+                <div className="h-full w-1/3 animate-pulse rounded-full bg-brand-600" />
+              </div>
             </div>
           )}
 
@@ -1371,7 +1405,9 @@ export function ConfiguracionPage() {
               variant="secondary"
               size="sm"
               className="rounded-xl"
-              disabled={phase === 'checking' || phase === 'downloading'}
+              disabled={
+                phase === 'checking' || phase === 'downloading' || phase === 'installing'
+              }
               onClick={() => void buscarActualizaciones()}
             >
               <RefreshCw className={cn('h-4 w-4', phase === 'checking' && 'animate-spin')} />

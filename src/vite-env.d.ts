@@ -33,6 +33,7 @@ export type UpdateStatusPayload =
   | { type: 'not-available'; version: string }
   | { type: 'download-progress'; percent: number; transferred: number; total: number }
   | { type: 'downloaded'; version: string }
+  | { type: 'installing'; version?: string }
   | { type: 'error'; message: string }
 
 export type UpdateCheckResult =

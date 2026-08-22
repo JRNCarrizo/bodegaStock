@@ -4,9 +4,14 @@ import { getAppIcon } from './icon'
 import { bootstrapNetworkServer, setupNetworkIpc, shutdownNetworkServer } from './network'
 import { setupMigracionIpc } from './migracion'
 import { setupHelpPdfIpc } from './helpPdf'
-import { setupAutoUpdater } from './updater'
+import { setupAutoUpdater, isInstallingUpdate } from './updater'
 
 const isDev = !app.isPackaged
+
+// GitHub CDN / redes locales a veces fallan con HTTP/2 al bajar el Setup (~100MB).
+if (!isDev) {
+  app.commandLine.appendSwitch('disable-http2')
+}
 
 let mainWindow: BrowserWindow | null = null
 let isShuttingDown = false
@@ -78,6 +83,8 @@ app.whenReady().then(async () => {
 
 app.on('window-all-closed', () => {
   if (process.platform === 'darwin') return
+  // Durante actualización el NSIS se encarga; no forzar app.exit acá.
+  if (isInstallingUpdate()) return
   if (isShuttingDown) return
   isShuttingDown = true
   void gracefulShutdown().finally(() => {
@@ -86,6 +93,8 @@ app.on('window-all-closed', () => {
 })
 
 app.on('before-quit', (event) => {
+  // Dejar que quitAndInstall cierre la app con normalidad.
+  if (isInstallingUpdate()) return
   if (isShuttingDown) return
   event.preventDefault()
   isShuttingDown = true

@@ -3,6 +3,7 @@ import { Boxes, LogOut, Menu, PanelLeft, PanelLeftClose, X } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { SidebarNavProvider, useSidebarNav } from '@/context/SidebarNavContext'
 import { InventarioActivoBanner } from '@/components/InventarioActivoBanner'
+import { UpdateProgressBanner } from '@/components/UpdateProgressBanner'
 import { CONFIG_NAV_ITEM, NAV_ICONS, NAV_ITEMS } from '@/config/navigation'
 import { useAuth } from '@/context/AuthContext'
 import { navItemVisible } from '@/types'
@@ -361,6 +362,7 @@ function AppLayoutShell({
           className="flex min-h-0 min-w-0 flex-1 flex-col"
         >
           <InventarioActivoBanner />
+          <UpdateProgressBanner />
           {offlineSession && showOfflineBanner && (
             <div className="shrink-0 border-b border-sky-200 bg-sky-50 px-4 py-2 text-center text-xs font-medium text-sky-900 sm:text-sm">
               Sin conexión al PC — sesión offline activa (conteo local)

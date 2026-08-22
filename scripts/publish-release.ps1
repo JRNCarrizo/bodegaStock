@@ -1,5 +1,5 @@
 param(
-  [string]$Version = "0.3.44"
+  [string]$Version = "0.3.45"
 )
 
 $ErrorActionPreference = "Stop"
@@ -55,13 +55,10 @@ if (Test-Path $ymlPath) { $assets += (Resolve-Path $ymlPath).Path }
 $notes = @"
 ## ControlStock v$Version
 
-Pulido de APK, retornos/roturas y consulta.
+Pulido de cantidades en Roturas (sin “cajas”).
 
-### Nuevo / Mejorado
-- **APK:** en Configuración no se muestran Red ni Verificación; sidebar opaca
-- **Retornos:** cantidades sin la palabra “cajas” en carga; desglose sin estado duplicado
-- **Roturas:** al elegir producto, sector por defecto = el de **menos stock** (con cantidad)
-- **Consulta:** alineación de Reorganizar / botellerío; hint más corto (sin “sueltas”)
+### Mejorado
+- **Roturas:** cantidad a la derecha y total inferior sin la palabra “caja/cajas” (mismo criterio que Retornos)
 
 ### Actualización
 - **Windows:** Configuración → Buscar actualizaciones, o Setup de este release

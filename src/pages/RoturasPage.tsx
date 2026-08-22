@@ -709,7 +709,7 @@ export function RoturasPage() {
                   )}
                 </button>
                 <span className="inline-flex shrink-0 items-center rounded-lg bg-red-50 px-2.5 py-1.5 text-sm font-bold tabular-nums text-red-700 ring-1 ring-red-100">
-                  {formatTotalCajas(grupo.total)}
+                  {formatCantidad(grupo.total)}
                 </span>
               </div>
               {isExpanded && (
@@ -720,7 +720,7 @@ export function RoturasPage() {
                       className="flex items-center justify-between gap-3 rounded-lg border border-surface-border bg-white px-3 py-2.5 text-sm"
                     >
                       <span className="text-slate-800">
-                        {formatTotalCajas(l.cantidad_cajas)} · {l.sector_nombre}
+                        {formatCantidad(l.cantidad_cajas)} · {l.sector_nombre}
                       </span>
                       <Button
                         type="button"
@@ -972,7 +972,7 @@ export function RoturasPage() {
           <div className="flex items-center justify-between gap-4">
             <div>
               <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">Total a descontar</p>
-              <p className="text-2xl font-bold tabular-nums text-red-700">{formatTotalCajas(totalGeneral)}</p>
+              <p className="text-2xl font-bold tabular-nums text-red-700">{formatCantidad(totalGeneral)}</p>
               <p className="mt-1 text-xs text-slate-500">
                 {lineas.length} línea{lineas.length === 1 ? '' : 's'} cargada
                 {lineas.length === 1 ? '' : 's'}

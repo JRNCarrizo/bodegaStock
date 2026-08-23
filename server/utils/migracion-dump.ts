@@ -3,6 +3,57 @@ import { MIGRATION_TABLES, type MigrationDump, type MigrationTableName } from '.
 import { isPostgresMode } from '../db'
 import { ensureLogisticasSeed } from './logisticas'
 
+const TABLES_WITH_LOGISTICA_ID = new Set<string>([
+  'usuarios',
+  'sectores',
+  'camioneros',
+  'planillas',
+  'ingresos',
+  'retornos',
+  'roturas',
+  'movimientos_internos',
+  'inventario_sesiones',
+])
+
+function validLogisticaIds(db: Database.Database): Set<number> {
+  if (!tableExists(db, 'logisticas')) return new Set()
+  const rows = db.prepare('SELECT id FROM logisticas').all() as { id: number }[]
+  return new Set(rows.map((r) => Number(r.id)))
+}
+
+function sanitizeLogisticaFkRow(
+  table: string,
+  row: Record<string, unknown>,
+  validIds: Set<number>
+): Record<string, unknown> {
+  if (!TABLES_WITH_LOGISTICA_ID.has(table) || !('logistica_id' in row)) return row
+  const raw = row.logistica_id
+  if (raw == null) return row
+  const id = Number(raw)
+  if (!Number.isFinite(id) || !validIds.has(id)) {
+    return { ...row, logistica_id: null }
+  }
+  return row
+}
+
+function resetPgSerialSequence(db: Database.Database, table: string): void {
+  if (!isPostgresMode() || !tableExists(db, table)) return
+  const hasId = db
+    .prepare(
+      `SELECT 1 AS ok FROM information_schema.columns
+       WHERE table_schema = 'public' AND table_name = ? AND column_name = 'id'`
+    )
+    .get(table) as { ok: number } | undefined
+  if (!hasId) return
+  db.prepare(
+    `SELECT setval(
+       pg_get_serial_sequence('${table}', 'id'),
+       COALESCE((SELECT MAX(id) FROM ${table}), 1),
+       true
+     )`
+  ).get()
+}
+
 function tableExists(db: Database.Database, name: string): boolean {
   if (isPostgresMode()) {
     const row = db
@@ -78,6 +129,8 @@ export function importDatabaseDump(db: Database.Database, dump: MigrationDump): 
       db.prepare(`DELETE FROM ${name}`).run()
     }
 
+    let logisticaIds = new Set<number>()
+
     for (const name of MIGRATION_TABLES) {
       const rows = dump.tables[name as MigrationTableName]
       if (name === 'logisticas' && !rows?.length) {
@@ -85,6 +138,7 @@ export function importDatabaseDump(db: Database.Database, dump: MigrationDump): 
         imported[name] = (
           db.prepare('SELECT COUNT(*) AS n FROM logisticas').get() as { n: number }
         ).n
+        logisticaIds = validLogisticaIds(db)
         continue
       }
       if (!rows?.length) {
@@ -106,28 +160,20 @@ export function importDatabaseDump(db: Database.Database, dump: MigrationDump): 
       const sql = `INSERT INTO ${name} (${colList}) VALUES (${placeholders})`
       const stmt = db.prepare(sql)
       for (const row of rows) {
-        stmt.run(...cols.map((c) => row[c] ?? null))
+        const sanitized = sanitizeLogisticaFkRow(name, row, logisticaIds)
+        stmt.run(...cols.map((c) => sanitized[c] ?? null))
       }
       imported[name] = rows.length
+
+      if (name === 'logisticas') {
+        logisticaIds = validLogisticaIds(db)
+        resetPgSerialSequence(db, 'logisticas')
+      }
     }
 
     if (isPostgresMode()) {
       for (const name of MIGRATION_TABLES) {
-        if (!tableExists(db, name)) continue
-        const hasId = db
-          .prepare(
-            `SELECT 1 AS ok FROM information_schema.columns
-             WHERE table_schema = 'public' AND table_name = ? AND column_name = 'id'`
-          )
-          .get(name) as { ok: number } | undefined
-        if (!hasId) continue
-        db.prepare(
-          `SELECT setval(
-             pg_get_serial_sequence('${name}', 'id'),
-             COALESCE((SELECT MAX(id) FROM ${name}), 1),
-             true
-           )`
-        ).get()
+        resetPgSerialSequence(db, name)
       }
     }
   })

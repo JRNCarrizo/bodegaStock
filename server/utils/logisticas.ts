@@ -3,7 +3,7 @@ import type Database from 'better-sqlite3'
 import { getDb } from '../db'
 import type { AuthUser } from '../plugins/auth'
 import { isAdministradorRol } from './secciones'
-import { columnExists } from '../db/introspection'
+import { columnExists, isPostgresDb } from '../db/introspection'
 
 export const LOGISTICA_HEADER = 'x-logistica-id'
 
@@ -34,10 +34,19 @@ export function ensureLogisticasSeed(db: Database.Database): void {
   const count = (db.prepare('SELECT COUNT(*) AS n FROM logisticas').get() as { n: number }).n
   if (count === 0) {
     db.prepare(`
-      INSERT INTO logisticas (codigo, nombre, activo) VALUES
-        ('ESMERALDA', 'Esmeralda', 1),
-        ('NAKBE', 'NAKBE', 1)
+      INSERT INTO logisticas (id, codigo, nombre, activo) VALUES
+        (1, 'ESMERALDA', 'Esmeralda', 1),
+        (2, 'NAKBE', 'NAKBE', 1)
     `).run()
+    if (isPostgresDb()) {
+      db.prepare(`
+        SELECT setval(
+          pg_get_serial_sequence('logisticas', 'id'),
+          COALESCE((SELECT MAX(id) FROM logisticas), 1),
+          true
+        )
+      `).get()
+    }
   }
 }
 

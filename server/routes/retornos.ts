@@ -574,12 +574,23 @@ export async function retornosRoutes(app: FastifyInstance): Promise<void> {
 
     if (!linea) return reply.status(404).send({ error: 'Línea no encontrada' })
 
+    if (body.verificada === false) {
+      db.prepare(`
+        UPDATE retorno_lineas SET
+          linea_verificada = 0,
+          cantidad_verificada = NULL,
+          estado_verificado = NULL
+        WHERE id = ?
+      `).run(Number(lineaId))
+      return { ok: true }
+    }
+
     const estadosValidos: EstadoCondicion[] = ['BUEN_ESTADO', 'INCOMPLETA', 'MAL_ESTADO']
     const cantidad = body.cantidad_cajas ?? linea.total_unidades
     const estado = body.estado_condicion ?? linea.estado_condicion
     const sectorId = body.sector_id ?? linea.sector_id
 
-    if (cantidad <= 0) {
+    if (cantidad < 0 || !Number.isFinite(cantidad)) {
       return reply.status(400).send({ error: 'Cantidad inválida' })
     }
     if (!estadosValidos.includes(estado)) {

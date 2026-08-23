@@ -8,6 +8,7 @@ import { CONFIG_NAV_ITEM, NAV_ICONS, NAV_ITEMS } from '@/config/navigation'
 import { useAuth } from '@/context/AuthContext'
 import { navItemVisible } from '@/types'
 import { api, cn } from '@/lib/utils'
+import { getLogisticaTheme, resolveLogisticaCodigo, type LogisticaTheme } from '@/lib/logisticaTheme'
 import { Button } from '@/components/ui/Button'
 import type { NavItem } from '@/types'
 
@@ -124,7 +125,12 @@ function AppLayoutShell({
   const [changingLogistica, setChangingLogistica] = useState(false)
   const { sidebarActive } = useSidebarNav()
 
+  const logisticaTheme = getLogisticaTheme(
+    resolveLogisticaCodigo(user?.logisticas, user?.logistica_activa_id)
+  )
+
   const sidebarHeaderProps = {
+    theme: logisticaTheme,
     logisticaNombre: logisticaActivaNombre,
     logisticas: user?.logisticas,
     puedeCambiarLogistica: user?.puede_cambiar_logistica,
@@ -171,7 +177,7 @@ function AppLayoutShell({
 
     try {
       const data = await api<{ count: number }>('/api/retornos/pendientes-count')
-      setRetornosPendientesCount(data.count)
+      setRetornosPendientesCount(Number(data.count) || 0)
     } catch {
       // Si falla el refresco del aviso, no bloquea la navegación.
     }
@@ -184,7 +190,7 @@ function AppLayoutShell({
     }
     try {
       const data = await api<{ count: number }>('/api/agenda-turnos/pendientes-count')
-      setAgendaPendientesCount(data.count)
+      setAgendaPendientesCount(Number(data.count) || 0)
     } catch {
       /* ignore */
     }
@@ -247,7 +253,7 @@ function AppLayoutShell({
         className={cn(
           'hidden shrink-0 flex-col border-r border-surface-border bg-white shadow-sm transition-[width] duration-200 ease-in-out lg:flex',
           collapsed ? 'w-[4.25rem]' : 'w-64',
-          sidebarActive && 'ring-2 ring-inset ring-brand-200/80'
+          sidebarActive && cn('ring-2 ring-inset', logisticaTheme.sidebarRing)
         )}
       >
         <SidebarHeader collapsed={collapsed} onToggle={toggleCollapsed} {...sidebarHeaderProps} />
@@ -277,6 +283,7 @@ function AppLayoutShell({
                         key={item.id}
                         item={item}
                         index={index}
+                        theme={logisticaTheme}
                         collapsed={collapsed}
                         end={item.path === '/'}
                         notificationCount={
@@ -312,6 +319,7 @@ function AppLayoutShell({
               <SidebarNavItem
                 item={CONFIG_NAV_ITEM}
                 index={configIndex}
+                theme={logisticaTheme}
                 collapsed={collapsed}
                 notificationCount={0}
                 onNavigate={() => setMobileOpen(false)}
@@ -322,6 +330,7 @@ function AppLayoutShell({
 
         <SidebarFooter
           collapsed={collapsed}
+          theme={logisticaTheme}
           userName={user?.nombre}
           onLogout={logout}
         />
@@ -332,7 +341,13 @@ function AppLayoutShell({
           <div className="absolute inset-0 bg-slate-900/40" onClick={() => setMobileOpen(false)} />
 
           <aside className="relative flex h-full w-72 flex-col bg-white shadow-panel">
-            <div className="flex items-center justify-between border-b border-brand-100 bg-white p-4">
+            <div
+              className={cn(
+                'flex items-center justify-between border-b bg-white p-4',
+                logisticaTheme.mobileDrawerHeaderBorder,
+                logisticaTheme.sidebarHeaderBg
+              )}
+            >
               <SidebarHeader compact {...sidebarHeaderProps} />
               <button
                 type="button"
@@ -358,6 +373,7 @@ function AppLayoutShell({
                             key={item.id}
                             item={item}
                             index={index}
+                            theme={logisticaTheme}
                             end={item.path === '/'}
                             notificationCount={
                               navNotification(
@@ -386,6 +402,7 @@ function AppLayoutShell({
                 <SidebarNavItem
                   item={CONFIG_NAV_ITEM}
                   index={configIndex}
+                  theme={logisticaTheme}
                   notificationCount={0}
                   onNavigate={() => setMobileOpen(false)}
                   mobile
@@ -393,13 +410,17 @@ function AppLayoutShell({
               </div>
             </nav>
 
-            <SidebarFooter userName={user?.nombre} onLogout={logout} />
+            <SidebarFooter theme={logisticaTheme} userName={user?.nombre} onLogout={logout} />
           </aside>
         </div>
       )}
 
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-        <header className="flex h-14 shrink-0 items-center gap-3 border-b border-surface-border bg-white px-4 lg:px-6">
+        <header className="relative flex h-14 shrink-0 items-center gap-3 border-b border-surface-border bg-white px-4 lg:px-6">
+          <div
+            className={cn('pointer-events-none absolute inset-x-0 top-0 h-1', logisticaTheme.topStripe)}
+            aria-hidden
+          />
           <button
             type="button"
             className="rounded-lg p-2 hover:bg-slate-100 lg:hidden"
@@ -461,7 +482,8 @@ function SidebarNavItem({
   notificationCount = 0,
   notificationPhrase = 'pendientes',
   mobile = false,
-  collapsed = false
+  collapsed = false,
+  theme = getLogisticaTheme('ESMERALDA')
 }: {
   item: NavItem
   index: number
@@ -471,6 +493,7 @@ function SidebarNavItem({
   notificationPhrase?: string
   mobile?: boolean
   collapsed?: boolean
+  theme?: LogisticaTheme
 }) {
   const Icon = NAV_ICONS[item.id] ?? Boxes
   const { setNavLinkRef, isNavItemHighlighted, handleNavLinkClick, activateNavItem } =
@@ -510,13 +533,26 @@ function SidebarNavItem({
           item.disabled
             ? 'cursor-not-allowed text-slate-300 [&>svg]:text-slate-300'
             : keyboardFocused
-              ? 'bg-brand-100 text-brand-800 shadow-sm ring-2 ring-brand-500/40 ring-offset-1 [&>svg]:text-brand-600'
+              ? cn(
+                  'shadow-sm ring-2 ring-offset-1',
+                  theme.navKeyboardBg,
+                  theme.navKeyboardText,
+                  theme.navKeyboardRing,
+                  theme.navKeyboardIcon
+                )
               : isActive
                 ? cn(
-                    'bg-brand-50 text-brand-800 shadow-sm ring-1 ring-brand-100/90 [&>svg]:text-brand-600',
+                    'shadow-sm ring-1',
+                    theme.navActiveBg,
+                    theme.navActiveText,
+                    theme.navActiveRing,
+                    theme.navActiveIcon,
                     !collapsed || mobile
-                      ? 'before:absolute before:inset-y-1.5 before:left-0 before:w-1 before:rounded-r-full before:bg-brand-600'
-                      : 'ring-2 ring-brand-200'
+                      ? cn(
+                          'before:absolute before:inset-y-1.5 before:left-0 before:w-1 before:rounded-r-full',
+                          theme.navActiveBar
+                        )
+                      : cn('ring-2', theme.navActiveCollapsedRing)
                   )
                 : 'text-slate-600 hover:bg-white hover:text-slate-900 hover:shadow-sm hover:ring-1 hover:ring-surface-border/80 [&>svg]:text-slate-400'
         )
@@ -557,6 +593,7 @@ function SidebarHeader({
   compact = false,
   collapsed = false,
   onToggle,
+  theme = getLogisticaTheme('ESMERALDA'),
   logisticaNombre,
   logisticas,
   puedeCambiarLogistica,
@@ -567,6 +604,7 @@ function SidebarHeader({
   compact?: boolean
   collapsed?: boolean
   onToggle?: () => void
+  theme?: LogisticaTheme
   logisticaNombre?: string | null
   logisticas?: { id: number; nombre: string }[]
   puedeCambiarLogistica?: boolean
@@ -574,6 +612,13 @@ function SidebarHeader({
   onLogisticaChange?: (id: number) => void
   changingLogistica?: boolean
 }) {
+  const selectorClassName = cn(
+    'mt-0.5 w-full max-w-full truncate rounded-lg border bg-white px-2 py-1 text-xs font-semibold shadow-sm focus:outline-none focus:ring-2 disabled:opacity-60',
+    theme.selectorBorder,
+    theme.selectorText,
+    theme.selectorFocus
+  )
+
   const showSelector =
     !!puedeCambiarLogistica &&
     (logisticas?.length ?? 0) > 1 &&
@@ -585,7 +630,7 @@ function SidebarHeader({
       value={logisticaActivaId}
       disabled={changingLogistica}
       onChange={(e) => onLogisticaChange(Number(e.target.value))}
-      className="mt-0.5 w-full max-w-full truncate rounded-lg border border-brand-200 bg-white px-2 py-1 text-xs font-medium text-brand-800 shadow-sm focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20 disabled:opacity-60"
+      className={selectorClassName}
       aria-label="Logística activa"
       title="Cambiar logística"
     >
@@ -595,9 +640,16 @@ function SidebarHeader({
         </option>
       ))}
     </select>
+  ) : logisticaNombre ? (
+    <span
+      className={cn('mt-0.5 inline-flex max-w-full truncate rounded-md px-2 py-0.5 text-xs font-semibold', theme.selectorBadge)}
+      title={logisticaNombre}
+    >
+      {logisticaNombre}
+    </span>
   ) : (
-    <p className="truncate text-xs text-slate-500" title={logisticaNombre ?? undefined}>
-      {logisticaNombre ?? 'Bodega'}
+    <p className={cn('truncate text-xs', theme.labelText)} title="Bodega">
+      Bodega
     </p>
   )
 
@@ -606,7 +658,11 @@ function SidebarHeader({
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-3">
           <div
-            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-brand-600 text-white shadow-sm ring-4 ring-brand-600/10"
+            className={cn(
+              'flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-white shadow-sm ring-4',
+              theme.logoBg,
+              theme.logoRing
+            )}
             title={logisticaNombre ?? 'ControlStock'}
           >
             <Boxes className="h-5 w-5" />
@@ -618,7 +674,7 @@ function SidebarHeader({
                 value={logisticaActivaId}
                 disabled={changingLogistica}
                 onChange={(e) => onLogisticaChange!(Number(e.target.value))}
-                className="mt-0.5 w-full truncate rounded-lg border border-brand-200/80 bg-white px-2 py-1 text-xs font-medium text-brand-800 focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20 disabled:opacity-60"
+                className={cn(selectorClassName, 'mt-0.5')}
                 aria-label="Logística activa"
               >
                 {logisticas!.map((l) => (
@@ -627,11 +683,16 @@ function SidebarHeader({
                   </option>
                 ))}
               </select>
-            ) : (
-              logisticaNombre && (
-                <p className="truncate text-xs text-slate-500">{logisticaNombre}</p>
-              )
-            )}
+            ) : logisticaNombre ? (
+              <span
+                className={cn(
+                  'mt-0.5 inline-flex max-w-full truncate rounded-md px-2 py-0.5 text-xs font-semibold',
+                  theme.selectorBadge
+                )}
+              >
+                {logisticaNombre}
+              </span>
+            ) : null}
           </div>
         </div>
       </div>
@@ -640,9 +701,18 @@ function SidebarHeader({
 
   if (collapsed) {
     return (
-      <div className="flex flex-col items-center gap-2 border-b border-surface-border bg-white px-2 py-3">
+      <div
+        className={cn(
+          'flex flex-col items-center gap-2 border-b border-surface-border px-2 py-3',
+          theme.sidebarHeaderBg
+        )}
+      >
         <div
-          className="flex h-9 w-9 items-center justify-center rounded-xl bg-brand-600 text-white shadow-sm ring-4 ring-brand-600/10"
+          className={cn(
+            'flex h-9 w-9 items-center justify-center rounded-xl text-white shadow-sm ring-4',
+            theme.logoBg,
+            theme.logoRing
+          )}
           title={logisticaNombre ? `ControlStock · ${logisticaNombre}` : 'ControlStock'}
         >
           <Boxes className="h-5 w-5" />
@@ -663,8 +733,19 @@ function SidebarHeader({
   }
 
   return (
-    <div className="flex items-center gap-3 border-b border-surface-border bg-white p-5">
-      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-brand-600 text-white shadow-sm ring-4 ring-brand-600/10">
+    <div
+      className={cn(
+        'flex items-center gap-3 border-b border-surface-border p-5',
+        theme.sidebarHeaderBg
+      )}
+    >
+      <div
+        className={cn(
+          'flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-white shadow-sm ring-4',
+          theme.logoBg,
+          theme.logoRing
+        )}
+      >
         <Boxes className="h-5 w-5" />
       </div>
 
@@ -691,11 +772,13 @@ function SidebarHeader({
 function SidebarFooter({
   userName,
   onLogout,
-  collapsed = false
+  collapsed = false,
+  theme = getLogisticaTheme('ESMERALDA')
 }: {
   userName?: string
   onLogout: () => void
   collapsed?: boolean
+  theme?: LogisticaTheme
 }) {
   if (collapsed) {
     return (
@@ -718,7 +801,12 @@ function SidebarFooter({
     <div className="border-t border-surface-border bg-white p-4">
       <div className="flex items-center gap-3">
         <div
-          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-brand-100 text-xs font-bold text-brand-800 ring-2 ring-brand-50"
+          className={cn(
+            'flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-xs font-bold ring-2',
+            theme.footerAvatarBg,
+            theme.footerAvatarText,
+            theme.footerAvatarRing
+          )}
           aria-hidden
         >
           {userInitials(userName)}

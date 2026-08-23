@@ -5,17 +5,48 @@ import { syncUnidadesPorCajaFromNombres } from '../utils/empaqueNombre'
 import { recalcStockTotalsEnCajas } from '../utils/stock'
 import { ensureLogisticasSeed, getLogisticaEsmeraldaId } from '../utils/logisticas'
 
+function isPostgresDb(): boolean {
+  return Boolean(process.env.DATABASE_URL?.trim())
+}
+
 function columnExists(db: Database.Database, table: string, column: string): boolean {
+  if (isPostgresDb()) {
+    const row = db
+      .prepare(
+        `SELECT 1 AS ok FROM information_schema.columns
+         WHERE table_schema = 'public' AND table_name = ? AND column_name = ?`
+      )
+      .get(table, column) as { ok: number } | undefined
+    return Boolean(row)
+  }
   const cols = db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[]
   return cols.some((c) => c.name === column)
 }
 
 function columnNotNull(db: Database.Database, table: string, column: string): boolean {
+  if (isPostgresDb()) {
+    const row = db
+      .prepare(
+        `SELECT is_nullable FROM information_schema.columns
+         WHERE table_schema = 'public' AND table_name = ? AND column_name = ?`
+      )
+      .get(table, column) as { is_nullable: string } | undefined
+    return row?.is_nullable === 'NO'
+  }
   const cols = db.prepare(`PRAGMA table_info(${table})`).all() as { name: string; notnull: number }[]
   return cols.find((c) => c.name === column)?.notnull === 1
 }
 
 function tableExists(db: Database.Database, table: string): boolean {
+  if (isPostgresDb()) {
+    const row = db
+      .prepare(
+        `SELECT 1 AS ok FROM information_schema.tables
+         WHERE table_schema = 'public' AND table_name = ?`
+      )
+      .get(table) as { ok: number } | undefined
+    return Boolean(row)
+  }
   const row = db.prepare(`
     SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?
   `).get(table)
@@ -404,7 +435,7 @@ export function runMigrations(db: Database.Database): void {
     `)
   }
 
-  if (tableExists(db, 'movimientos_internos')) {
+  if (!isPostgresDb() && tableExists(db, 'movimientos_internos')) {
     const ddl = db.prepare(`
       SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'movimientos_internos'
     `).get() as { sql: string } | undefined
@@ -767,7 +798,7 @@ export function runMigrations(db: Database.Database): void {
     `)
   }
 
-  if (tableExists(db, 'movimientos_internos')) {
+  if (!isPostgresDb() && tableExists(db, 'movimientos_internos')) {
     const tableSql = (
       db
         .prepare(`SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'movimientos_internos'`)
@@ -845,6 +876,78 @@ export function runMigrations(db: Database.Database): void {
   }
 
   migrateMultiLogistica(db)
+  migrateAgendaTurnos(db)
+}
+
+function migrateAgendaTurnos(db: Database.Database): void {
+  if (!tableExists(db, 'insumos_transportistas')) {
+    db.exec(`
+      CREATE TABLE insumos_transportistas (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        nombre TEXT NOT NULL,
+        activo INTEGER NOT NULL DEFAULT 1,
+        created_at TEXT NOT NULL DEFAULT (datetime('now'))
+      )
+    `)
+  }
+
+  if (!tableExists(db, 'agenda_turnos')) {
+    db.exec(`
+      CREATE TABLE agenda_turnos (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        fecha TEXT NOT NULL,
+        descripcion TEXT NOT NULL,
+        cantidad REAL,
+        unidad TEXT NOT NULL CHECK (unidad IN ('PALLETS', 'CAJAS', 'BULTOS')),
+        transportista_id INTEGER NOT NULL REFERENCES insumos_transportistas(id),
+        notas TEXT,
+        estado TEXT NOT NULL DEFAULT 'SOLICITADO'
+          CHECK (estado IN ('SOLICITADO', 'CONFIRMADO', 'CANCELADO')),
+        creado_por_id INTEGER REFERENCES usuarios(id),
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+      CREATE INDEX IF NOT EXISTS idx_agenda_turnos_fecha ON agenda_turnos(fecha);
+    `)
+    return
+  }
+
+  if (!columnNotNull(db, 'agenda_turnos', 'cantidad')) return
+
+  db.pragma('foreign_keys = OFF')
+  try {
+    db.exec(`
+      CREATE TABLE agenda_turnos_flexible (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        fecha TEXT NOT NULL,
+        descripcion TEXT NOT NULL,
+        cantidad REAL,
+        unidad TEXT NOT NULL CHECK (unidad IN ('PALLETS', 'CAJAS', 'BULTOS')),
+        transportista_id INTEGER NOT NULL REFERENCES insumos_transportistas(id),
+        notas TEXT,
+        estado TEXT NOT NULL DEFAULT 'SOLICITADO'
+          CHECK (estado IN ('SOLICITADO', 'CONFIRMADO', 'CANCELADO')),
+        creado_por_id INTEGER REFERENCES usuarios(id),
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+      )
+    `)
+    db.exec(`
+      INSERT INTO agenda_turnos_flexible (
+        id, fecha, descripcion, cantidad, unidad, transportista_id, notas, estado,
+        creado_por_id, created_at, updated_at
+      )
+      SELECT
+        id, fecha, descripcion, cantidad, unidad, transportista_id, notas, estado,
+        creado_por_id, created_at, updated_at
+      FROM agenda_turnos
+    `)
+    db.exec('DROP TABLE agenda_turnos')
+    db.exec('ALTER TABLE agenda_turnos_flexible RENAME TO agenda_turnos')
+    db.exec('CREATE INDEX IF NOT EXISTS idx_agenda_turnos_fecha ON agenda_turnos(fecha)')
+  } finally {
+    db.pragma('foreign_keys = ON')
+  }
 }
 
 function migrateMultiLogistica(db: Database.Database): void {
@@ -938,70 +1041,4 @@ function migrateMultiLogistica(db: Database.Database): void {
       applied_at TEXT NOT NULL DEFAULT (datetime('now'))
     )
   `)
-
-  if (!tableExists(db, 'insumos_transportistas')) {
-    db.exec(`
-      CREATE TABLE insumos_transportistas (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        nombre TEXT NOT NULL,
-        activo INTEGER NOT NULL DEFAULT 1,
-        created_at TEXT NOT NULL DEFAULT (datetime('now'))
-      )
-    `)
-  }
-
-  if (!tableExists(db, 'agenda_turnos')) {
-    db.exec(`
-      CREATE TABLE agenda_turnos (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        fecha TEXT NOT NULL,
-        descripcion TEXT NOT NULL,
-        cantidad REAL,
-        unidad TEXT NOT NULL CHECK (unidad IN ('PALLETS', 'CAJAS', 'BULTOS')),
-        transportista_id INTEGER NOT NULL REFERENCES insumos_transportistas(id),
-        notas TEXT,
-        estado TEXT NOT NULL DEFAULT 'SOLICITADO'
-          CHECK (estado IN ('SOLICITADO', 'CONFIRMADO', 'CANCELADO')),
-        creado_por_id INTEGER REFERENCES usuarios(id),
-        created_at TEXT NOT NULL DEFAULT (datetime('now')),
-        updated_at TEXT NOT NULL DEFAULT (datetime('now'))
-      );
-      CREATE INDEX IF NOT EXISTS idx_agenda_turnos_fecha ON agenda_turnos(fecha);
-    `)
-  } else if (columnNotNull(db, 'agenda_turnos', 'cantidad')) {
-    db.pragma('foreign_keys = OFF')
-    try {
-      db.exec(`
-        CREATE TABLE agenda_turnos_flexible (
-          id INTEGER PRIMARY KEY AUTOINCREMENT,
-          fecha TEXT NOT NULL,
-          descripcion TEXT NOT NULL,
-          cantidad REAL,
-          unidad TEXT NOT NULL CHECK (unidad IN ('PALLETS', 'CAJAS', 'BULTOS')),
-          transportista_id INTEGER NOT NULL REFERENCES insumos_transportistas(id),
-          notas TEXT,
-          estado TEXT NOT NULL DEFAULT 'SOLICITADO'
-            CHECK (estado IN ('SOLICITADO', 'CONFIRMADO', 'CANCELADO')),
-          creado_por_id INTEGER REFERENCES usuarios(id),
-          created_at TEXT NOT NULL DEFAULT (datetime('now')),
-          updated_at TEXT NOT NULL DEFAULT (datetime('now'))
-        )
-      `)
-      db.exec(`
-        INSERT INTO agenda_turnos_flexible (
-          id, fecha, descripcion, cantidad, unidad, transportista_id, notas, estado,
-          creado_por_id, created_at, updated_at
-        )
-        SELECT
-          id, fecha, descripcion, cantidad, unidad, transportista_id, notas, estado,
-          creado_por_id, created_at, updated_at
-        FROM agenda_turnos
-      `)
-      db.exec('DROP TABLE agenda_turnos')
-      db.exec('ALTER TABLE agenda_turnos_flexible RENAME TO agenda_turnos')
-      db.exec('CREATE INDEX IF NOT EXISTS idx_agenda_turnos_fecha ON agenda_turnos(fecha)')
-    } finally {
-      db.pragma('foreign_keys = ON')
-    }
-  }
 }

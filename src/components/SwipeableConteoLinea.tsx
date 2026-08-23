@@ -2,6 +2,13 @@ import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { Pencil, Trash2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
+export type SwipeableLineaLeftAction = {
+  onClick: () => void
+  ariaLabel: string
+  icon?: ReactNode
+  className?: string
+}
+
 const REVEAL_PX = 72
 const ACTION_PX = 140
 const TAP_SLOP_PX = 14
@@ -13,7 +20,9 @@ type SwipeableConteoLineaProps = {
   open?: boolean
   onOpenChange?: (open: boolean) => void
   onEdit: () => void
-  onDelete: () => void
+  onDelete?: () => void
+  /** Reemplaza borrar (ej. poner cantidad en 0 en verificación de retornos). */
+  leftAction?: SwipeableLineaLeftAction
   className?: string
   /** Fondo del panel deslizable (por defecto blanco). */
   contentClassName?: string
@@ -31,9 +40,14 @@ export function SwipeableConteoLinea({
   onOpenChange,
   onEdit,
   onDelete,
+  leftAction,
   className,
   contentClassName
 }: SwipeableConteoLineaProps) {
+  const leftHandler = leftAction?.onClick ?? onDelete
+  const leftAriaLabel = leftAction?.ariaLabel ?? 'Borrar línea'
+  const leftIcon = leftAction?.icon ?? <Trash2 className="h-5 w-5" />
+  const leftClassName = leftAction?.className ?? 'bg-red-600 text-white'
   const [offset, setOffset] = useState(0)
   const [dragging, setDragging] = useState(false)
   const startX = useRef(0)
@@ -83,11 +97,11 @@ export function SwipeableConteoLinea({
       return
     }
 
-    // Izquierda → borrar
+    // Izquierda → acción secundaria (borrar o poner en 0)
     if (x <= -ACTION_PX) {
       onOpenChange?.(false)
       setOffset(-Math.max(ACTION_PX + 80, 220))
-      window.setTimeout(() => onDelete(), 140)
+      window.setTimeout(() => leftHandler?.(), 140)
       return
     }
     if (x <= -REVEAL_PX / 2) {
@@ -202,24 +216,30 @@ export function SwipeableConteoLinea({
         </button>
       </div>
 
-      {/* Borrar (izquierda) */}
-      <div
-        className="absolute inset-y-0 right-0 flex w-[72px] items-center justify-center bg-red-600 text-white"
-        aria-hidden
-      >
-        <button
-          type="button"
-          className="flex h-full w-full items-center justify-center"
-          aria-label="Borrar línea"
-          onClick={(e) => {
-            e.stopPropagation()
-            onOpenChange?.(false)
-            onDelete()
-          }}
+      {/* Acción izquierda (borrar / poner en 0) */}
+      {leftHandler && (
+        <div
+          className={cn(
+            'absolute inset-y-0 right-0 flex w-[72px] items-center justify-center',
+            leftClassName
+          )}
+          aria-hidden
         >
-          <Trash2 className="h-5 w-5" />
-        </button>
-      </div>
+          <button
+            type="button"
+            className="flex h-full w-full items-center justify-center"
+            aria-label={leftAriaLabel}
+            onClick={(e) => {
+              e.stopPropagation()
+              onOpenChange?.(false)
+              setOffset(0)
+              leftHandler()
+            }}
+          >
+            {leftIcon}
+          </button>
+        </div>
+      )}
 
       <div
         className={cn(

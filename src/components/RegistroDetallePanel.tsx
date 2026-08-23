@@ -1,6 +1,11 @@
 import { useMemo, useState, type ReactNode } from 'react'
 import { ChevronDown, ChevronLeft, ChevronRight, Package } from 'lucide-react'
-import { formatCantidad } from '@/lib/desglose'
+import {
+  formatCantidad,
+  formatBultosPieLabel,
+  sumBultosPieFromLineas,
+  type LineaBultosPieInput
+} from '@/lib/desglose'
 import { Badge, Card } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 
@@ -24,6 +29,8 @@ export type RegistroDetalleLinea = {
   cantidadUnidad?: string
   /** Si está, se muestra en lugar de cantidad + unidad (ej. texto ya formateado). */
   cantidadTexto?: string
+  /** Datos para agrupar pallets + cajas en el badge del producto (vista colapsada). */
+  bultosPie?: LineaBultosPieInput
   /** Badge u otro contenido visible en la fila del producto (sin desplegar) */
   extra?: ReactNode
   /** Agrupa extras iguales cuando hay varias líneas del mismo producto */
@@ -38,6 +45,8 @@ export function RegistroDetallePanel({
   fecha,
   totalEtiqueta,
   total,
+  totalTexto,
+  totalSuelto,
   meta,
   lineas,
   encabezadoExtra,
@@ -52,6 +61,10 @@ export function RegistroDetallePanel({
   fecha: string
   totalEtiqueta: string
   total: number
+  /** Si está, reemplaza el total numérico en cajas (ej. pallets + cajas). */
+  totalTexto?: string
+  /** Botellas/unidades sueltas aparte del total principal. */
+  totalSuelto?: number
   meta?: ReactNode
   lineas?: RegistroDetalleLinea[]
   encabezadoExtra?: ReactNode
@@ -72,11 +85,21 @@ export function RegistroDetallePanel({
       if (existing) existing.lineas.push(l)
       else map.set(l.producto_id, { producto: l, lineas: [l] })
     }
-    return [...map.values()].map((g) => ({
-      ...g,
-      total: g.lineas.reduce((s, l) => s + l.cantidad, 0),
-      cantidadUnidad: g.lineas[0]?.cantidadUnidad
-    }))
+    return [...map.values()].map((g) => {
+      const pieLineas = g.lineas.map((l) => l.bultosPie).filter(Boolean) as NonNullable<
+        RegistroDetalleLinea['bultosPie']
+      >[]
+      const totalTextoGrupo =
+        pieLineas.length === g.lineas.length && pieLineas.length > 0
+          ? formatBultosPieLabel(sumBultosPieFromLineas(pieLineas))
+          : undefined
+      return {
+        ...g,
+        total: g.lineas.reduce((s, l) => s + l.cantidad, 0),
+        cantidadUnidad: g.lineas[0]?.cantidadUnidad,
+        totalTextoGrupo
+      }
+    })
   }, [lineasLista])
 
   const cantidadProductos = productosCount ?? lineasPorProducto.length
@@ -172,7 +195,8 @@ export function RegistroDetallePanel({
                   <div className="flex shrink-0 items-center gap-2">
                     {extrasFila}
                     <Badge variant="default">
-                      {formatCantidadConUnidad(grupo.total, grupo.cantidadUnidad)}
+                      {grupo.totalTextoGrupo ??
+                        formatCantidadConUnidad(grupo.total, grupo.cantidadUnidad)}
                     </Badge>
                   </div>
                 </div>
@@ -213,7 +237,16 @@ export function RegistroDetallePanel({
             <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">
               {totalLabel}
             </p>
-            <p className="text-2xl font-bold tabular-nums text-brand-700">{formatCantidad(total)}</p>
+            <div className="flex flex-wrap items-baseline gap-x-3 gap-y-0.5">
+              <p className="text-2xl font-bold tabular-nums text-brand-700">
+                {totalTexto ?? formatCantidad(total)}
+              </p>
+              {totalSuelto != null && totalSuelto > 0 && (
+                <p className="text-sm font-medium text-slate-500">
+                  + {formatCantidad(totalSuelto)} botellas sueltas
+                </p>
+              )}
+            </div>
           </div>
           {accionesTotal && (
             <div className="flex shrink-0 flex-wrap items-center gap-2">{accionesTotal}</div>

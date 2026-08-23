@@ -155,7 +155,6 @@ export async function agendaTurnosRoutes(app: FastifyInstance): Promise<void> {
         SELECT COUNT(*) AS count
         FROM agenda_turnos
         WHERE estado = 'SOLICITADO'
-          AND fecha >= date('now', 'localtime')
       `)
       .get() as { count: number } | undefined
     return { count: row?.count ?? 0 }

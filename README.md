@@ -90,7 +90,7 @@ Genera `release/ControlStock-Setup-x.y.z.exe` y `release/latest.yml`.
 
 ```powershell
 gh auth login
-.\scripts\publish-release.ps1 -Version "0.3.38"
+.\scripts\publish-release.ps1 -Version "0.3.45"
 ```
 
 O tag + GitHub Actions: **Actions → Release → Run workflow**

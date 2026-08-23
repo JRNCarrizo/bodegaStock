@@ -404,6 +404,39 @@ function buildDetalle(db: ReturnType<typeof getDb>, id: number) {
   }
 }
 
+function lineaEsPalletMovimiento(l: ReturnType<typeof getMovimientoLineas>[number]): boolean {
+  const tipo = l.tipo_bulto
+  if (tipo === 'PALLET') return true
+  if (tipo === 'CAJA' || tipo === 'SUELTO') return false
+  const upb = Number(l.unidades_por_bulto ?? 0)
+  const cajas = Number(l.cantidad_cajas ?? 0)
+  const bultos = Number(l.cantidad_bultos ?? 0)
+  if (upb < 24) return false
+  if (bultos > 0) return true
+  return cajas > 0 && Math.abs(cajas % upb) < 0.0001
+}
+
+function sumBultosPieMovimientoLineas(lineas: ReturnType<typeof getMovimientoLineas>) {
+  let pallets = 0
+  let cajas = 0
+  for (const l of lineas) {
+    if (lineaEsPalletMovimiento(l)) {
+      let bultos = Number(l.cantidad_bultos ?? 0)
+      if (bultos <= 0) {
+        const cajasEq = Number(l.cantidad_cajas ?? 0)
+        const upb = Number(l.unidades_por_bulto ?? 0)
+        if (cajasEq > 0 && upb > 0) bultos = cajasEq / upb
+      }
+      pallets += bultos
+    } else if (l.tipo_bulto === 'SUELTO') {
+      continue
+    } else {
+      cajas += Number(l.cantidad_bultos ?? l.cantidad_cajas ?? 0)
+    }
+  }
+  return { total_pallets: pallets, total_cajas_bulto: cajas }
+}
+
 function resumenRutaFromLineas(
   lineas: ReturnType<typeof getMovimientoLineas>,
   tipo: MovimientoTipo
@@ -638,6 +671,31 @@ export async function movimientosInternosRoutes(app: FastifyInstance): Promise<v
           WHERE ml.movimiento_interno_id = m.id AND ml.cancelada = 0
         ), 0) AS total_cajas,
         COALESCE((
+          SELECT SUM(
+            CASE WHEN ml.tipo_bulto = 'PALLET' THEN
+              COALESCE(
+                ml.cantidad_bultos,
+                CASE
+                  WHEN COALESCE(ml.unidades_por_bulto, 0) > 0
+                    THEN CAST(ml.cantidad_cajas AS REAL) / ml.unidades_por_bulto
+                  ELSE 0
+                END
+              )
+            ELSE 0 END
+          ) FROM movimiento_interno_lineas ml
+          WHERE ml.movimiento_interno_id = m.id AND ml.cancelada = 0
+        ), 0) AS total_pallets,
+        COALESCE((
+          SELECT SUM(
+            CASE
+              WHEN ml.tipo_bulto = 'CAJA' OR ml.tipo_bulto IS NULL OR ml.tipo_bulto = ''
+                THEN COALESCE(ml.cantidad_bultos, ml.cantidad_cajas, 0)
+              ELSE 0
+            END
+          ) FROM movimiento_interno_lineas ml
+          WHERE ml.movimiento_interno_id = m.id AND ml.cancelada = 0
+        ), 0) AS total_cajas_bulto,
+        COALESCE((
           SELECT COUNT(*) FROM movimiento_interno_lineas ml
           WHERE ml.movimiento_interno_id = m.id AND ml.cancelada = 0
         ), 0) AS lineas_count
@@ -699,11 +757,20 @@ export async function movimientosInternosRoutes(app: FastifyInstance): Promise<v
     return rows.map((row) => {
       const lineas = getMovimientoLineas(db, row.id, true)
       const ruta = resumenRutaFromLineas(lineas, row.tipo)
+      const bultos = sumBultosPieMovimientoLineas(lineas)
       return {
         ...row,
         ingreso_directo: !!row.ingreso_directo,
         sector_origen_nombre: ruta.origen,
-        sector_destino_nombre: ruta.destino
+        sector_destino_nombre: ruta.destino,
+        total_pallets: bultos.total_pallets,
+        total_cajas_bulto: bultos.total_cajas_bulto,
+        lineas_resumen: lineas.map((l) => ({
+          tipo_bulto: l.tipo_bulto,
+          cantidad_bultos: l.cantidad_bultos,
+          cantidad_cajas: l.cantidad_cajas,
+          unidades_por_bulto: l.unidades_por_bulto
+        }))
       }
     })
   })

@@ -1,13 +1,18 @@
 # BodegaStock — Modelo de datos
 
-> Esquema implementado en SQLite (ControlStock / BodegaStock **v0.3.37**). Modo nube: mismo esquema en Postgres vía shim.
+> Esquema implementado en SQLite (ControlStock / BodegaStock **v0.3.45**). Modo nube: mismo esquema en Postgres vía shim.
 > Describe las entidades persistidas en el servidor; las exportaciones Excel son agregaciones de consulta y **no** agregan tablas.
+> Multi-logística: ver [MULTI-LOGISTICA.md](MULTI-LOGISTICA.md).
 
 ---
 
 ## Diagrama de relaciones (simplificado)
 
 ```
+logisticas ──┬── usuarios.logistica_id
+             ├── sectores, camioneros
+             └── documentos / inventario / stock (vía sector)
+
 usuarios ──────────────┐
                        │
 camioneros ────────┐   │
@@ -29,11 +34,27 @@ inventario_sesiones
     │       └── inventario_conteo_lineas (por contador, independientes)
     ├── inventario_diferencias
     └── inventario_reportes
+
+agenda_turnos ◄── insumos_transportistas   (independiente del stock)
 ```
 
 ---
 
 ## Entidades
+
+### `logisticas` (v0.3.39+)
+
+| Campo | Tipo | Notas |
+|-------|------|-------|
+| id | PK | |
+| codigo | string | Único (ej. `ESMERALDA`, `NAKBE`) |
+| nombre | string | |
+| activo | boolean | |
+| created_at | datetime | |
+
+Muchas tablas operativas llevan `logistica_id` (sectores, camioneros, documentos, sesiones de inventario, etc.).
+
+---
 
 ### `usuarios`
 
@@ -44,6 +65,7 @@ inventario_sesiones
 | password_hash | string | |
 | nombre | string | Nombre visible |
 | rol_id | FK → roles | Plantilla de permisos |
+| logistica_id | FK → logisticas | NULL = admin puede cambiar; operadores fijados |
 | activo | boolean | |
 | created_at | datetime | |
 | updated_at | datetime | |
@@ -497,6 +519,36 @@ Para calcular stock inicial/final del día sin recalcular todo el historial.
 | cantidad | decimal | Stock al cierre del día |
 
 Job nocturno o cálculo bajo demanda al generar reportes.
+
+---
+
+## Agenda de turnos (v0.3.42+)
+
+Independiente del stock / productos del depósito.
+
+### `insumos_transportistas`
+
+| Campo | Tipo | Notas |
+|-------|------|-------|
+| id | PK | |
+| nombre | string | |
+| activo | boolean | |
+| created_at | datetime | |
+
+### `agenda_turnos`
+
+| Campo | Tipo | Notas |
+|-------|------|-------|
+| id | PK | |
+| fecha | date (TEXT ISO) | |
+| descripcion | string | |
+| cantidad | number | Opcional |
+| unidad | enum | `PALLETS` / `CAJAS` / `BULTOS` |
+| transportista_id | FK → insumos_transportistas | |
+| notas | string | Opcional |
+| estado | enum | `SOLICITADO` / `CONFIRMADO` / `CANCELADO` |
+| creado_por_id | FK → usuarios | |
+| created_at / updated_at | datetime | |
 
 ---
 

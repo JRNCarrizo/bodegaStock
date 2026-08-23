@@ -1,7 +1,7 @@
 # ControlStock (BodegaStock) — Ficha técnica para cotización
 
 > **Documento pensado para terceros e IAs.**  
-> Describí el sistema tal como está construido (agosto 2026, **v0.3.37**).  
+> Describí el sistema tal como está construido (agosto 2026, **v0.3.45**).  
 > Panorama global: [ESTADO-ACTUAL.md](ESTADO-ACTUAL.md)
 > Podés pegar este archivo completo en ChatGPT / Claude / Gemini y pedir una cotización independiente de desarrollo o de licencia.
 
@@ -142,7 +142,9 @@ No es un prototipo de una sola pantalla: es un sistema multi-módulo con reglas 
 - **Sectores:** estructura de bodega / zonas de stock.
 - **Usuarios y permisos:** roles y permisos granulares por módulo.
 - **Camioneros:** padrón para planillas / salidas.
-- **Configuración:** URL/IP del servidor, QR de conexión, actualizaciones; toggles de **doble verificación** (`retornos_doble_verificacion`, `movimientos_doble_verificacion`).
+- **Configuración:** URL/IP del servidor, QR de conexión, actualizaciones Windows; **Descargar APK**; toggles de **doble verificación** (`retornos_doble_verificacion`, `movimientos_doble_verificacion`). En APK, Config sin Red/Verificación.
+- **Logísticas:** Esmeralda / NAKBE (selector admin; operadores fijados).
+- **Agenda de turnos:** insumos / confirmación de turnos.
 - **Pie de página:** copyright de producto en la UI (ControlStock / JRNCarrizo).
 
 ### Consulta de stock
@@ -319,7 +321,7 @@ No inventes módulos que no estén en la ficha. Basate solo en lo documentado.
 
 ## 12. Estado del producto (honestidad comercial)
 
-**Estado:** sistema en uso / pruebas de campo (**v0.3.37**). Planta en modo local; nube lista para fase posterior. Inventario online + offline Simple/Doble; sync P2P puerto 3850; import al PC probado.
+**Estado:** sistema en uso / pruebas de campo (**v0.3.45**). Planta en modo local; nube lista para fase posterior. Multi-logística Esmeralda/NAKBE; agenda de turnos; inventario online + offline Simple/Doble; updates APK/Windows.
 
 **Entregado:** módulos operativos (consulta, ingresos, planillas, retornos, roturas, movimientos, inventario, Excel, APK Capacitor). Inventario: sticky UX, Simple/Doble, puerto fijo en carga manual, Plan B archivo.
 
@@ -327,4 +329,4 @@ No inventes módulos que no estén en la ficha. Basate solo en lo documentado.
 
 ---
 
-*Documento generado para evaluación y cotización — ControlStock / BodegaStock **v0.3.37** — agosto 2026.*
+*Documento generado para evaluación y cotización — ControlStock / BodegaStock **v0.3.45** — agosto 2026.*

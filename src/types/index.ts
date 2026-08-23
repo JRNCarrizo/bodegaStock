@@ -669,6 +669,17 @@ export interface MovimientoInternoListItem {
   creado_por_nombre: string
   recibido_por_nombre: string | null
   total_cajas: number
+  /** Pallets en líneas activas (no convertidos a cajas). */
+  total_pallets?: number
+  /** Cajas sueltas en líneas activas (tipo CAJA o legacy sin tipo). */
+  total_cajas_bulto?: number
+  /** Resumen mínimo por línea para calcular pallets + cajas en el cliente. */
+  lineas_resumen?: Array<{
+    tipo_bulto?: 'PALLET' | 'CAJA' | 'SUELTO' | string | null
+    cantidad_bultos?: number | null
+    cantidad_cajas?: number
+    unidades_por_bulto?: number | null
+  }>
   lineas_count: number
   created_at: string
 }

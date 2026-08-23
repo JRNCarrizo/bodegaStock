@@ -286,8 +286,8 @@ Durante el conteo **no** se emiten las líneas del otro contador (independencia)
 | Iconos | Fuente: `build/icon.svg` → `npm run icons` genera desktop (`icon.png`/`icon.ico`) y mipmaps Android. `npm run cap:sync` = icons + `build:mobile` + `cap sync`. |
 | Desarrollo local | Live reload en celular/emulador sin regenerar APK: ver [ANDROID-DEV.md](ANDROID-DEV.md) (`npm run dev:android`). |
 | Imágenes productos | Servidas por API (`GET /api/productos/:id/imagen`) |
-| Distribución | APK firmada; instalación manual o enlace de descarga (release GitHub u otro) |
-| Actualizaciones APK | Pendiente (Play Store interna, descarga directa, etc.) |
+| Distribución | APK firmada; release GitHub + Descargar APK desde Config (PC) |
+| Actualizaciones APK | **Hecho (v0.3.42+):** chequeo/descarga in-app; cooldown ante 429 (v0.3.43) |
 
 ---
 
@@ -319,8 +319,10 @@ Orden sugerido para ir sumando valor en bodega. **Sujeto a priorización** con e
 | **6** | **Inventario** online + offline + Simple/Doble | Hecho (v0.3.28/29); seguir probando en campo |
 | **7** | WebSocket, pulido de escaneo, reportes móviles | Pendiente / opcional |
 | **8** | **OCR / foto de planilla** → borrador de líneas | Futuro — [PLANILLAS-OCR-FUTURO.md](PLANILLAS-OCR-FUTURO.md) |
-| **9** | **Movimientos: lista abierta** | Futuro — [MOVIMIENTOS-LISTA-ABIERTA-FUTURO.md](MOVIMIENTOS-LISTA-ABIERTA-FUTURO.md) |
+| **9** | **Movimientos: lista abierta** | Hecho (v0.3.30+) — [MOVIMIENTOS-LISTA-ABIERTA-FUTURO.md](MOVIMIENTOS-LISTA-ABIERTA-FUTURO.md) |
 | *—* | *Ingresos en APK* | *Fuera de v1; cargar en PC con remito* |
+| *—* | *Agenda de turnos* | Hecho (v0.3.42+) |
+| *—* | *Multi-logística en móvil* | Hecho (v0.3.39+) |
 
 ### Alternativa histórica: “solo web antes de APK”
 
@@ -350,12 +352,13 @@ Eso ya está **superado**:
 - [ ] **Ingresos en APK** (fase futura): ¿hace falta algún día cargar en el pasillo?
 - [x] **Inventario offline (APK):** Doble + Simple, P2P 3850, import, Plan B. Ver [INVENTARIO-OFFLINE-ESTADO.md](INVENTARIO-OFFLINE-ESTADO.md).
 - [ ] **OCR planillas** — [PLANILLAS-OCR-FUTURO.md](PLANILLAS-OCR-FUTURO.md).
-- [ ] **Movimientos lista abierta** — [MOVIMIENTOS-LISTA-ABIERTA-FUTURO.md](MOVIMIENTOS-LISTA-ABIERTA-FUTURO.md).
+- [x] **Movimientos lista abierta** — [MOVIMIENTOS-LISTA-ABIERTA-FUTURO.md](MOVIMIENTOS-LISTA-ABIERTA-FUTURO.md) (v0.3.30+).
 - [ ] **Cache offline mínimo** (consulta / cola corta) — aparte del inventario offline.
 - [ ] **Versión mínima de Android** soportada.
-- [ ] **Distribución y actualización** de la APK; firma de código Windows en desktop (Defender).
+- [x] **Distribución y actualización APK** — in-app + Descargar APK desde PC (v0.3.42+); firma de código Windows en desktop (Defender) sigue pendiente.
 - [ ] **iOS:** cuando haga falta.
 - [x] **Repo:** monorepo (`android/` + Capacitor).
+- [x] **Config APK sin Red/Verificación** (v0.3.44); sidebar opaca.
 
 ---
 
@@ -367,8 +370,8 @@ Eso ya está **superado**:
 
 ## 15. Próximo paso (para decidir con el equipo)
 
-1. Seguir usando inventario Simple/Doble + offline en campo.
+1. Seguir usando inventario Simple/Doble + offline en campo; multi-logística Esmeralda/NAKBE.
 2. Cuando haya planillas físicas de prueba: evaluar OCR ([PLANILLAS-OCR-FUTURO.md](PLANILLAS-OCR-FUTURO.md)) o primero escáner de barras en Planillas.
-3. Rediseño de movimientos (lista abierta): [MOVIMIENTOS-LISTA-ABIERTA-FUTURO.md](MOVIMIENTOS-LISTA-ABIERTA-FUTURO.md).
+3. Corte a nube Railway cuando planta lo decida ([SERVIDOR-CLOUD-RAILWAY-FUTURO.md](SERVIDOR-CLOUD-RAILWAY-FUTURO.md)).
 4. Firma de código / exclusiones Defender en updates del escritorio.
 5. Pulir UX restante según prioridad del depósito.

@@ -216,6 +216,116 @@ export function formatCantidad(cantidad: number | string): string {
   return Number.isInteger(n) ? String(n) : String(n)
 }
 
+export type LineaBultosPieInput = {
+  tipo_bulto?: TipoBulto | string | null
+  cantidad_bultos?: number | string | null
+  cantidad_cajas?: number | string | null
+  unidades_por_bulto?: number | string | null
+  cancelada?: boolean | number
+}
+
+/** unidades_por_bulto en pallet = cajas por pallet (típ. 84–112); en caja = botellas por caja (≤24). */
+const UMBRAL_CAJAS_POR_PALLET = 24
+
+function lineaEsPallet(l: LineaBultosPieInput): boolean {
+  const tipo = l.tipo_bulto
+  if (tipo === 'PALLET') return true
+  if (tipo === 'CAJA' || tipo === 'SUELTO') return false
+  const upb = Number(l.unidades_por_bulto ?? 0)
+  const cajas = Number(l.cantidad_cajas ?? 0)
+  const bultos = Number(l.cantidad_bultos ?? 0)
+  if (upb < UMBRAL_CAJAS_POR_PALLET) return false
+  if (bultos > 0) return true
+  return cajas > 0 && Math.abs(cajas % upb) < 0.0001
+}
+
+function palletsDesdeLinea(l: LineaBultosPieInput): number {
+  let bultos = Number(l.cantidad_bultos ?? 0)
+  if (bultos <= 0) {
+    const cajasEq = Number(l.cantidad_cajas ?? 0)
+    const upb = Number(l.unidades_por_bulto ?? 0)
+    if (cajasEq > 0 && upb > 0) {
+      bultos = cajasEq / upb
+    }
+  }
+  return bultos
+}
+
+/** Suma pallets y cajas sueltas (no convierte pallets a cajas). */
+export function sumBultosPieFromLineas(
+  lineas: LineaBultosPieInput[],
+  opts?: { incluirCanceladas?: boolean }
+): { pallets: number; cajas: number } {
+  let pallets = 0
+  let cajas = 0
+  for (const l of lineas) {
+    if (!opts?.incluirCanceladas && l.cancelada) continue
+    if (lineaEsPallet(l)) {
+      pallets += palletsDesdeLinea(l)
+    } else if (l.tipo_bulto === 'SUELTO') {
+      continue
+    } else {
+      cajas += Number(l.cantidad_bultos ?? l.cantidad_cajas ?? 0)
+    }
+  }
+  return { pallets, cajas }
+}
+
+export function formatBultosPieLabel(pie: { pallets: number; cajas: number }): string {
+  const parts: string[] = []
+  if (pie.pallets > 0) {
+    parts.push(`${formatCantidad(pie.pallets)} pallet${pie.pallets === 1 ? '' : 's'}`)
+  }
+  if (pie.cajas > 0) {
+    parts.push(`${formatCantidad(pie.cajas)} caja${pie.cajas === 1 ? '' : 's'}`)
+  }
+  if (parts.length === 0) return '0'
+  return parts.join(' + ')
+}
+
+/** Total en listado de movimientos (historial). */
+export function formatMovimientoListBultos(m: {
+  total_pallets?: number
+  total_cajas_bulto?: number
+  total_cajas: number
+  lineas_resumen?: LineaBultosPieInput[]
+}): string {
+  if (m.lineas_resumen?.length) {
+    return formatBultosPieLabel(sumBultosPieFromLineas(m.lineas_resumen))
+  }
+  const pallets = Number(m.total_pallets ?? 0)
+  const cajas = Number(m.total_cajas_bulto ?? 0)
+  return formatBultosPieLabel({ pallets, cajas })
+}
+
+export function formatResumenBultosPieFromLineas(
+  lineas: Array<
+    LineaBultosPieInput & {
+      cantidad_bultos?: number | string | null
+      unidades_por_bulto?: number | string | null
+      cantidad_suelta?: number | string | null
+    }
+  >,
+  opts?: { incluirCanceladas?: boolean }
+): { label: string; suelto: number } {
+  const activas = opts?.incluirCanceladas
+    ? lineas
+    : lineas.filter((l) => !l.cancelada)
+  const pie = sumBultosPieFromLineas(activas, { incluirCanceladas: true })
+  const suelto = activas.reduce(
+    (s, l) =>
+      s +
+      totalSueltoLineaConteo({
+        tipo_bulto: (l.tipo_bulto ?? 'CAJA') as TipoBulto,
+        cantidad_bultos: l.cantidad_bultos,
+        unidades_por_bulto: l.unidades_por_bulto,
+        cantidad_suelta: l.cantidad_suelta
+      }),
+    0
+  )
+  return { label: formatBultosPieLabel(pie), suelto }
+}
+
 export function formatTotalCajas(cantidad: number): string {
   return `${cantidad} caja${cantidad === 1 ? '' : 's'}`
 }

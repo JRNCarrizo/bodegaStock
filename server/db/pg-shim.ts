@@ -152,6 +152,7 @@ export class PgDatabase {
 
 function translateSqliteSqlForExec(sql: string): string {
   return sql
+    .replace(/INTEGER PRIMARY KEY AUTOINCREMENT/gi, 'SERIAL PRIMARY KEY')
     .replace(/datetime\('now'\)/gi, "to_char(NOW() AT TIME ZONE 'UTC', 'YYYY-MM-DD HH24:MI:SS')")
     .replace(/\s+COLLATE\s+NOCASE/gi, '')
 }

@@ -1,8 +1,8 @@
 # Multi-logística — Esmeralda y NAKBE
 
-> **Estado: planificado, sin implementar** (agosto 2026).  
-> Documento de diseño acordado con logística / administración.  
-> Panorama: [ESTADO-ACTUAL.md](ESTADO-ACTUAL.md) · Modelo actual: [MODELO-DE-DATOS.md](MODELO-DE-DATOS.md)
+> **Estado: implementado** (v0.3.39+).  
+> Documento de **diseño de referencia** (relevamiento acordado). El comportamiento en planta sigue estas reglas.  
+> Panorama: [ESTADO-ACTUAL.md](ESTADO-ACTUAL.md) · Modelo: [MODELO-DE-DATOS.md](MODELO-DE-DATOS.md)
 
 ---
 
@@ -171,18 +171,18 @@ Migración de datos existentes: todos los sectores y camioneros actuales → **`
 
 ---
 
-## 8. Fases de implementación sugeridas
+## 8. Fases de implementación
 
-| Fase | Alcance | Objetivo |
-|------|---------|----------|
-| **1** | `logisticas`, `sectores.logistica_id`, selector admin, filtro sectores | Base del concepto |
-| **2** | `camioneros.logistica_id`, consulta filtrada | Catálogos operativos separados |
-| **3** | Inventario + reportes por logística | Primera necesidad operativa NAKBE |
-| **4** | Ingresos, planillas, retornos, roturas, movimientos | Paridad operativa completa |
-| **5** | `usuarios.logistica_id`, ocultar selector a operadores | Aislamiento por usuario |
-| **6** | APK / offline inventario respetando logística | Móvil alineado |
+| Fase | Alcance | Estado |
+|------|---------|--------|
+| **1** | `logisticas`, `sectores.logistica_id`, selector admin, filtro sectores | Hecho |
+| **2** | `camioneros.logistica_id`, consulta filtrada | Hecho |
+| **3** | Inventario + reportes por logística | Hecho |
+| **4** | Ingresos, planillas, retornos, roturas, movimientos | Hecho |
+| **5** | `usuarios.logistica_id`, ocultar selector a operadores | Hecho |
+| **6** | APK / offline inventario respetando logística | Hecho |
 
-Prioridad negociada con planta: **inventario en NAKBE primero**; resto de módulos en orden de uso real.
+Implementación en código desde **v0.3.39** (sesión al cambiar logística, consulta con ceros, etc.).
 
 ---
 
@@ -196,15 +196,15 @@ Prioridad negociada con planta: **inventario en NAKBE primero**; resto de módul
 
 ---
 
-## 10. Preguntas abiertas
+## 10. Preguntas abiertas (histórico)
 
 | # | Tema | Estado |
 |---|------|--------|
 | 1 | Nombre oficial de la mini-bodega | **Confirmado: NAKBE** |
-| 2 | ¿NAKBE = un sector o varios sectores propios? | Pendiente |
-| 3 | ¿Quién da de alta productos además del admin principal? | Probablemente solo admin (igual que hoy) |
-| 4 | ¿Usuarios “ambas” además del admin principal? | Pendiente |
-| 5 | ¿Configuración de red / QR compartida o por logística? | Probablemente compartida (una PC servidor) |
+| 2 | ¿NAKBE = un sector o varios sectores propios? | Varios sectores propios (como Esmeralda) |
+| 3 | ¿Quién da de alta productos además del admin principal? | Solo admin / catálogo compartido |
+| 4 | ¿Usuarios “ambas” además del admin principal? | Admin principal puede cambiar logística |
+| 5 | ¿Configuración de red / QR compartida o por logística? | Compartida (una PC servidor) |
 
 ---
 
@@ -214,4 +214,4 @@ Prioridad negociada con planta: **inventario en NAKBE primero**; resto de módul
 
 ---
 
-*Documento creado a partir de relevamiento con Jorge / logística — agosto 2026. Nombre NAKBE confirmado agosto 2026.*
+*Documento creado a partir de relevamiento con Jorge / logística — agosto 2026. Implementado v0.3.39+. Nombre NAKBE confirmado agosto 2026.*

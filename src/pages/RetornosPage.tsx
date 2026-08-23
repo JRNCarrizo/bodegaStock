@@ -12,7 +12,6 @@ import {
   ClipboardList,
   Download,
   Loader2,
-  Pencil,
   Plus,
   RotateCcw,
   Search,
@@ -25,6 +24,7 @@ import {
 } from 'lucide-react'
 import { BarcodeScannerModal } from '@/components/BarcodeScannerModal'
 import { DayTabsRow } from '@/components/DayTabsRow'
+import { SwipeableConteoLinea } from '@/components/SwipeableConteoLinea'
 import {
   RegistroDetalleMetaChip,
   RegistroDetalleObsChip,
@@ -32,7 +32,7 @@ import {
 } from '@/components/RegistroDetallePanel'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
-import { Card, CardBody } from '@/components/ui/Card'
+import { Card, CardBody, Badge } from '@/components/ui/Card'
 import { ProductImage } from '@/components/ProductImage'
 import { SectionHelpButton } from '@/components/SectionHelpButton'
 import { formatCantidad, formatDayTabLabel, formatTotalCajas, todayIsoDate } from '@/lib/desglose'
@@ -146,6 +146,46 @@ function labelCamionero(numero: string | null | undefined, nombre: string | null
   return `${numero ?? '—'} — ${nombre ?? '—'}`
 }
 
+function retornoMetaChips(r: RetornoDetalle['retorno']) {
+  const vehiculoTexto = labelVehiculoDetalle(r)
+  return (
+    <>
+      {(r.camionero_numero || r.camionero_nombre) && (
+        <RegistroDetalleMetaChip icon={<Truck className="h-3.5 w-3.5 shrink-0 text-slate-400" />}>
+          {labelCamionero(r.camionero_numero, r.camionero_nombre)}
+        </RegistroDetalleMetaChip>
+      )}
+      {vehiculoTexto && (
+        <RegistroDetalleMetaChip>
+          <span className="font-medium text-slate-500">Vehículo </span>
+          {vehiculoTexto}
+        </RegistroDetalleMetaChip>
+      )}
+      {r.numero_planilla && (
+        <RegistroDetalleMetaChip>
+          <span className="font-medium text-slate-500">Planilla </span>
+          {r.numero_planilla}
+        </RegistroDetalleMetaChip>
+      )}
+      <RegistroDetalleMetaChip icon={<User className="h-3.5 w-3.5 shrink-0 text-slate-400" />}>
+        {r.cargado_por_nombre}
+      </RegistroDetalleMetaChip>
+      {r.verificado_por_nombre && (
+        <RegistroDetalleMetaChip>
+          <span className="font-medium text-slate-500">
+            {r.ingreso_directo ? 'Ingresado ' : 'Verificado '}
+          </span>
+          {r.verificado_por_nombre}
+        </RegistroDetalleMetaChip>
+      )}
+      {r.observacion && <RegistroDetalleObsChip>{r.observacion}</RegistroDetalleObsChip>}
+      {r.ingreso_directo && r.observacion_verificacion && (
+        <RegistroDetalleObsChip>{r.observacion_verificacion}</RegistroDetalleObsChip>
+      )}
+    </>
+  )
+}
+
 function newTempId(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
 }
@@ -246,6 +286,10 @@ export function RetornosPage() {
   const [editCantidad, setEditCantidad] = useState('')
   const [editEstado, setEditEstado] = useState<RetornoEstadoCondicion>('BUEN_ESTADO')
   const [editSector, setEditSector] = useState('')
+  const [swipeOpenLineId, setSwipeOpenLineId] = useState<number | null>(null)
+  const [expandedVerificacionIds, setExpandedVerificacionIds] = useState<Set<number>>(
+    () => new Set()
+  )
   const [obsVerificacion, setObsVerificacion] = useState('')
   const [dobleVerificacion, setDobleVerificacion] = useState(true)
   const [tieneBorrador, setTieneBorrador] = useState(false)
@@ -387,11 +431,13 @@ export function RetornosPage() {
     }
   }, [listFechaDesde, listFechaHasta])
 
+  // Días siempre desde el listado completo (sin filtro de estado), para que las
+  // pestañas no desaparezcan al filtrar "Sin verificar" / "Verificados".
   const diasConRetornos = useMemo(() => {
     const dias = new Set<string>()
-    for (const r of retornosVisibles) dias.add(r.fecha)
+    for (const r of retornos) dias.add(r.fecha)
     return [...dias].sort((a, b) => b.localeCompare(a))
-  }, [retornosVisibles])
+  }, [retornos])
 
   const retornosDelDia = useMemo(
     () => retornosVisibles.filter((r) => r.fecha === selectedDay),
@@ -935,7 +981,7 @@ export function RetornosPage() {
     const estado = editLineaId === linea.id ? editEstado : linea.estado_efectivo
     const sectorLinea =
       editLineaId === linea.id ? Number(editSector) : linea.sector_id
-    if (!cantidad || cantidad <= 0) {
+    if (!Number.isFinite(cantidad) || cantidad < 0) {
       setError('Cantidad inválida')
       return
     }
@@ -956,12 +1002,70 @@ export function RetornosPage() {
         })
       })
       setEditLineaId(null)
+      setSwipeOpenLineId(null)
       await recargarDetalle()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error al confirmar línea')
     } finally {
       setSaving(false)
     }
+  }
+
+  async function desconfirmarLinea(linea: RetornoDetalleLinea) {
+    if (!detalle) return
+    setSaving(true)
+    setError('')
+    try {
+      await api(`/api/retornos/${detalle.retorno.id}/lineas/${linea.id}`, {
+        method: 'PUT',
+        body: JSON.stringify({ verificada: false })
+      })
+      setEditLineaId(null)
+      setSwipeOpenLineId(null)
+      await recargarDetalle()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Error al quitar confirmación')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  function toggleConfirmacionLinea(linea: RetornoDetalleLinea) {
+    if (linea.linea_verificada) void desconfirmarLinea(linea)
+    else void confirmarLinea(linea)
+  }
+
+  async function ponerLineaEnCero(linea: RetornoDetalleLinea) {
+    if (!detalle) return
+    setSwipeOpenLineId(null)
+    setEditLineaId(null)
+    setSaving(true)
+    setError('')
+    try {
+      await api(`/api/retornos/${detalle.retorno.id}/lineas/${linea.id}`, {
+        method: 'PUT',
+        body: JSON.stringify({
+          cantidad_cajas: 0,
+          estado_condicion:
+            linea.estado_efectivo === 'BUEN_ESTADO' ? 'INCOMPLETA' : linea.estado_efectivo,
+          sector_id: linea.sector_id,
+          verificada: true
+        })
+      })
+      await recargarDetalle()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Error al corregir línea')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  function empezarEditarLineaVerificacion(linea: RetornoDetalleLinea) {
+    setEditLineaId(linea.id)
+    setEditCantidad(String(linea.cantidad_efectiva))
+    setEditEstado(linea.estado_efectivo)
+    setEditSector(String(linea.sector_id))
+    setSwipeOpenLineId(null)
   }
 
   async function completarVerificacion() {
@@ -996,85 +1100,135 @@ export function RetornosPage() {
     ? detalle.lineas.length > 0 && detalle.lineas.every((l) => l.linea_verificada)
     : false
 
+  function toggleVerificacionExpand(lineaId: number) {
+    setExpandedVerificacionIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(lineaId)) next.delete(lineaId)
+      else next.add(lineaId)
+      return next
+    })
+  }
+
   function renderLineasVerificacion() {
     if (!detalle) return null
     return (
-      <div className="space-y-3">
+      <div className="divide-y divide-surface-border">
         {detalle.lineas.map((linea) => {
           const editando = editLineaId === linea.id
+          const verificada = linea.linea_verificada
+          const isExpanded = expandedVerificacionIds.has(linea.id)
           return (
             <div
               key={linea.id}
-              className={cn(
-                'rounded-xl border px-4 py-3.5 sm:px-5',
-                linea.linea_verificada
-                  ? 'border-l-4 border-l-emerald-400 border-emerald-200 bg-emerald-50/40'
-                  : 'border-l-4 border-l-amber-400 border-amber-200 bg-amber-50/50'
-              )}
+              className={cn(verificada && 'bg-green-50')}
             >
-              <div className="flex flex-wrap items-start justify-between gap-3">
-                <div className="min-w-0">
-                  <span className="inline-flex rounded-md bg-slate-100 px-2 py-0.5 font-mono text-xs font-semibold text-slate-700">
-                    {linea.codigo_interno}
-                  </span>
-                  <p className="mt-1 text-sm font-semibold text-slate-900">{linea.nombre}</p>
-                  <p className="mt-1.5 text-sm text-slate-600">
-                    Declarado: {formatTotalCajas(linea.cantidad_cajas)} · {labelEstado(linea.estado_condicion)} ·{' '}
-                    {linea.sector_nombre}
-                  </p>
-                  {linea.linea_verificada && (
-                    <p className="mt-1 text-sm font-medium text-green-800">
-                      Verificado: {formatTotalCajas(linea.cantidad_efectiva)} ·{' '}
-                      {labelEstado(linea.estado_efectivo)} · {linea.sector_nombre}
-                    </p>
-                  )}
-                </div>
-                <div className="flex shrink-0 flex-wrap items-center gap-2">
-                  {linea.linea_verificada ? (
-                    <span className="inline-flex items-center rounded-full bg-green-50 px-2.5 py-0.5 text-xs font-medium text-green-800 ring-1 ring-green-100">
-                      Confirmada
-                    </span>
+              <div className="flex items-stretch">
+                <button
+                  type="button"
+                  onClick={() => toggleVerificacionExpand(linea.id)}
+                  className="flex shrink-0 items-center px-2 text-slate-400 hover:bg-slate-50/80 sm:px-3"
+                  aria-expanded={isExpanded}
+                  aria-label={isExpanded ? 'Ocultar sector' : 'Ver sector'}
+                >
+                  {isExpanded ? (
+                    <ChevronDown className="h-4 w-4" />
                   ) : (
-                    <>
-                      {!editando && (
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="sm"
-                          className="rounded-lg"
-                          onClick={() => {
-                            setEditLineaId(linea.id)
-                            setEditCantidad(String(linea.cantidad_efectiva))
-                            setEditEstado(linea.estado_efectivo)
-                            setEditSector(String(linea.sector_id))
-                          }}
-                        >
-                          <Pencil className="h-4 w-4" />
-                          Corregir
-                        </Button>
-                      )}
-                      {!editando && (
-                        <Button
-                          type="button"
-                          size="sm"
-                          className="rounded-xl"
-                          disabled={saving}
-                          onClick={() => void confirmarLinea(linea)}
-                        >
-                          <Check className="h-4 w-4" />
-                          Confirmar línea
-                        </Button>
-                      )}
-                    </>
+                    <ChevronRight className="h-4 w-4" />
                   )}
-                </div>
+                </button>
+                <ul className="min-w-0 flex-1 list-none">
+                  <SwipeableConteoLinea
+                    disabled={saving || verificada}
+                    open={swipeOpenLineId === linea.id}
+                    onOpenChange={(open) => setSwipeOpenLineId(open ? linea.id : null)}
+                    onEdit={() => empezarEditarLineaVerificacion(linea)}
+                    leftAction={{
+                      onClick: () => void ponerLineaEnCero(linea),
+                      ariaLabel: 'Poner cantidad en cero',
+                      icon: <span className="text-lg font-bold leading-none">0</span>,
+                      className: 'bg-amber-600 text-white'
+                    }}
+                    className={cn(
+                      'rounded-none border-0 shadow-none',
+                      verificada && 'border-l-2 border-l-green-500'
+                    )}
+                    contentClassName={verificada ? 'bg-green-50' : undefined}
+                  >
+                    <div className="flex min-w-0 flex-1 items-center gap-2">
+                      <span className="shrink-0 font-mono text-sm font-semibold text-slate-900">
+                        {linea.codigo_interno}
+                      </span>
+                      <span
+                        className="min-w-0 flex-1 truncate text-sm text-slate-700"
+                        title={linea.nombre}
+                      >
+                        {linea.nombre}
+                      </span>
+                    </div>
+                    <div className="ml-auto shrink-0 pr-5 sm:pr-8">
+                      {badgeCondicion(linea.estado_efectivo)}
+                    </div>
+                    <div className="flex shrink-0 items-center gap-2">
+                      <span
+                        className={cn(
+                          'text-sm font-semibold tabular-nums',
+                          linea.cantidad_efectiva <= 0 ? 'text-amber-800' : 'text-slate-900'
+                        )}
+                      >
+                        {formatCantidad(linea.cantidad_efectiva)}
+                      </span>
+                      <button
+                        type="button"
+                        title={verificada ? 'Quitar confirmación' : 'Confirmar línea'}
+                        className={cn(
+                          'flex h-8 w-8 items-center justify-center rounded-lg border',
+                          verificada
+                            ? 'border-green-600 bg-green-600 text-white hover:bg-green-700'
+                            : 'border-surface-border bg-white text-slate-500 hover:border-brand-300 hover:text-brand-700'
+                        )}
+                        disabled={saving}
+                        onPointerDown={(e) => e.stopPropagation()}
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          toggleConfirmacionLinea(linea)
+                        }}
+                      >
+                        <Check className="h-4 w-4" />
+                      </button>
+                    </div>
+                  </SwipeableConteoLinea>
+                </ul>
               </div>
+              {isExpanded && (
+                <div className="flex items-center justify-between gap-3 border-t border-surface-border bg-surface-muted/20 py-2.5 pl-11 pr-4 sm:pl-14 sm:pr-5">
+                  <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5 text-sm text-slate-700">
+                    <span>{formatTotalCajas(linea.cantidad_efectiva)}</span>
+                    <span className="text-slate-300" aria-hidden>
+                      ·
+                    </span>
+                    <div className="flex min-w-0 items-center gap-1.5">
+                      <Warehouse className="h-3.5 w-3.5 shrink-0 text-slate-400" />
+                      <span className="truncate">{linea.sector_nombre}</span>
+                    </div>
+                  </div>
+                  <span
+                    className={cn(
+                      'shrink-0 rounded-md px-2 py-1 text-sm font-semibold tabular-nums ring-1 ring-surface-border',
+                      linea.cantidad_efectiva <= 0
+                        ? 'bg-amber-50 text-amber-900'
+                        : 'bg-slate-50 text-slate-900'
+                    )}
+                  >
+                    {formatCantidad(linea.cantidad_efectiva)}
+                  </span>
+                </div>
+              )}
               {editando && (
-                <div className="mt-3 grid gap-3 border-t border-surface-border pt-3 sm:grid-cols-2 lg:grid-cols-4">
+                <div className="grid gap-3 border-t border-surface-border bg-slate-50/80 px-4 py-3 sm:grid-cols-2 lg:grid-cols-4 sm:px-5">
                   <Input
                     label="Cantidad (cajas)"
                     type="number"
-                    min="1"
+                    min="0"
                     value={editCantidad}
                     onChange={(e) => setEditCantidad(e.target.value)}
                   />
@@ -1114,7 +1268,7 @@ export function RetornosPage() {
                       disabled={saving}
                       onClick={() => void confirmarLinea(linea)}
                     >
-                      Confirmar
+                      Guardar
                     </Button>
                     <Button
                       type="button"
@@ -1136,61 +1290,51 @@ export function RetornosPage() {
   }
 
   if (view === 'verify' && detalle) {
+    const r = detalle.retorno
     return (
-      <div className="mx-auto max-w-4xl space-y-6 px-4 py-6 lg:px-0">
-        <Button
-          variant="ghost"
-          size="sm"
-          className="-ml-2 h-9 rounded-xl px-3"
-          onClick={volverAlListado}
-        >
-          <ChevronLeft className="h-4 w-4" />
-          Volver
-        </Button>
-        <div>
-          <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">Verificación</p>
-          <h1 className="mt-1 text-2xl font-bold tracking-tight text-slate-900">Verificar retorno</h1>
-          <p className="mt-1 text-sm text-slate-500">
-            Confirmá línea por línea — solo &quot;Buen estado&quot; suma al stock · Esc vuelve al listado
-          </p>
+      <div className="mx-auto flex max-w-5xl flex-col gap-4 px-4 py-6 lg:px-0">
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+          <Button
+            variant="ghost"
+            size="sm"
+            className="-ml-2 h-8 shrink-0 rounded-lg px-2"
+            onClick={volverAlListado}
+          >
+            <ChevronLeft className="h-4 w-4" />
+            Volver
+          </Button>
+          <span className="hidden h-4 w-px bg-surface-border sm:block" aria-hidden />
+          <h1 className="text-base font-semibold text-slate-900 sm:text-lg">
+            Verificar retorno #{r.id}
+          </h1>
+          <Badge variant="muted">{r.fecha}</Badge>
+          {badgeEstadoRetorno(r.estado, 'md', !!r.ingreso_directo)}
+          <span className="text-xs text-slate-400">
+            {detalle.lineas_verificadas} de {detalle.lineas.length} confirmadas
+          </span>
         </div>
+
+        <div className="flex flex-wrap items-center gap-1.5 text-xs">{retornoMetaChips(r)}</div>
+
         {error && (
-          <div className="rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700 ring-1 ring-red-100">
+          <div className="rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700 ring-1 ring-red-100">
             {error}
           </div>
         )}
+
         <Card className="overflow-hidden shadow-panel">
-          <div className="border-b border-brand-100 bg-gradient-to-r from-brand-50/80 via-white to-white px-5 py-4">
-            <div className="flex flex-wrap items-center gap-2">
-              {badgeEstadoRetorno(detalle.retorno.estado, 'md', !!detalle.retorno.ingreso_directo)}
+          <div className="border-b border-surface-border bg-slate-50/80 px-4 py-3 sm:px-5">
+            <div className="flex items-center gap-2">
+              <RotateCcw className="h-4 w-4 text-slate-400" />
+              <h2 className="text-sm font-semibold text-slate-800">Líneas a verificar</h2>
             </div>
-          </div>
-          <CardBody className="space-y-2 text-sm">
-            <p>
-              <span className="text-slate-500">Camionero:</span>{' '}
-              <strong>{labelCamionero(detalle.retorno.camionero_numero, detalle.retorno.camionero_nombre)}</strong>
-            </p>
-            {detalle.retorno.numero_planilla && (
-              <p>
-                <span className="text-slate-500">Planilla:</span>{' '}
-                <strong>{detalle.retorno.numero_planilla}</strong>
-              </p>
-            )}
-            <p>
-              <span className="text-slate-500">Cargado por:</span>{' '}
-              <strong>{detalle.retorno.cargado_por_nombre}</strong>
-            </p>
-          </CardBody>
-        </Card>
-        <Card className="overflow-hidden shadow-panel">
-          <div className="border-b border-surface-border bg-slate-50/80 px-5 py-3.5">
-            <h2 className="text-sm font-semibold text-slate-900">Líneas a verificar</h2>
-            <p className="text-xs text-slate-500">
-              {detalle.lineas_verificadas} de {detalle.lineas.length} confirmadas
+            <p className="mt-0.5 text-xs text-slate-500">
+              Deslizá para editar o poner en 0 · solo &quot;Buen estado&quot; suma al stock
             </p>
           </div>
-          <CardBody>{renderLineasVerificacion()}</CardBody>
+          <CardBody className="p-0">{renderLineasVerificacion()}</CardBody>
         </Card>
+
         {puedeVerificar && (
           <Card className="shadow-panel">
             <CardBody className="space-y-4">
@@ -1200,16 +1344,18 @@ export function RetornosPage() {
                 onChange={(e) => setObsVerificacion(e.target.value)}
                 placeholder="Opcional"
               />
-              <Button
-                className="rounded-xl"
-                disabled={saving || !todasLineasVerificadas}
-                onClick={() => void completarVerificacion()}
-              >
-                {saving ? 'Procesando...' : 'Completar verificación y sumar stock'}
-              </Button>
               {!todasLineasVerificadas && (
                 <p className="text-xs text-slate-500">Confirmá todas las líneas para continuar.</p>
               )}
+              <div className="flex justify-end">
+                <Button
+                  className="rounded-xl"
+                  disabled={saving || !todasLineasVerificadas}
+                  onClick={() => void completarVerificacion()}
+                >
+                  {saving ? 'Procesando...' : 'Confirmar verificación'}
+                </Button>
+              </div>
             </CardBody>
           </Card>
         )}
@@ -1219,7 +1365,6 @@ export function RetornosPage() {
 
   if (view === 'detail' && detalle) {
     const r = detalle.retorno
-    const vehiculoTexto = labelVehiculoDetalle(r)
 
     return (
       <RegistroDetallePanel
@@ -1229,42 +1374,7 @@ export function RetornosPage() {
         totalEtiqueta="Total"
         total={detalle.total_cajas}
         encabezadoExtra={badgeEstadoRetorno(r.estado, 'md', !!r.ingreso_directo)}
-        meta={
-          <>
-            {(r.camionero_numero || r.camionero_nombre) && (
-              <RegistroDetalleMetaChip icon={<Truck className="h-3.5 w-3.5 shrink-0 text-slate-400" />}>
-                {labelCamionero(r.camionero_numero, r.camionero_nombre)}
-              </RegistroDetalleMetaChip>
-            )}
-            {vehiculoTexto && (
-              <RegistroDetalleMetaChip>
-                <span className="font-medium text-slate-500">Vehículo </span>
-                {vehiculoTexto}
-              </RegistroDetalleMetaChip>
-            )}
-            {r.numero_planilla && (
-              <RegistroDetalleMetaChip>
-                <span className="font-medium text-slate-500">Planilla </span>
-                {r.numero_planilla}
-              </RegistroDetalleMetaChip>
-            )}
-            <RegistroDetalleMetaChip icon={<User className="h-3.5 w-3.5 shrink-0 text-slate-400" />}>
-              {r.cargado_por_nombre}
-            </RegistroDetalleMetaChip>
-            {r.verificado_por_nombre && (
-              <RegistroDetalleMetaChip>
-                <span className="font-medium text-slate-500">
-                  {r.ingreso_directo ? 'Ingresado ' : 'Verificado '}
-                </span>
-                {r.verificado_por_nombre}
-              </RegistroDetalleMetaChip>
-            )}
-            {r.observacion && <RegistroDetalleObsChip>{r.observacion}</RegistroDetalleObsChip>}
-            {r.ingreso_directo && r.observacion_verificacion && (
-              <RegistroDetalleObsChip>{r.observacion_verificacion}</RegistroDetalleObsChip>
-            )}
-          </>
-        }
+        meta={retornoMetaChips(r)}
         antesProductos={
           <>
             {error && (
@@ -1319,8 +1429,16 @@ export function RetornosPage() {
           nombre: l.nombre,
           etiqueta: l.etiqueta,
           cantidad: l.cantidad_efectiva,
-          extra: badgeCondicion(l.estado_efectivo),
-          extraKey: l.estado_efectivo
+          ...(r.estado === 'VERIFICADO'
+            ? {
+                extra: l.sector_nombre,
+                extraKey: String(l.sector_id),
+                extraSoloDesglose: true
+              }
+            : {
+                extra: badgeCondicion(l.estado_efectivo),
+                extraKey: l.estado_efectivo
+              })
         }))}
         despuesProductos={
           puedeVerificar ? (

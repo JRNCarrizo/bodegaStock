@@ -708,9 +708,6 @@ export function AgendaTurnosPage() {
             <CalendarDays className="h-7 w-7 text-brand-600" />
             Agenda de turnos
           </h1>
-          <p className="mt-1 text-sm text-slate-500">
-            Envíos de insumos a Mendoza · transportistas propios (no flota de reparto)
-          </p>
         </div>
         <div className="flex flex-wrap gap-2">
           {canEdit && (

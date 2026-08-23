@@ -27,8 +27,12 @@ Cada permiso es una combinación de sección + acción.
 | `camioneros` | `ver`, `crear`, `editar` |
 | `reportes` | `ver`, `exportar` |
 | `inventario` | `ver`, `crear_sesion`, `contar`, `supervisar`, `cerrar` |
+| `agenda_turnos` | `ver`, `crear`, `editar` |
 | `usuarios` | `ver`, `crear`, `editar` |
 | `ajustes` | `crear` (ajustes post-inventario) |
+| `configuracion` | acceso operativo a Configuración (según rol; admin completo) |
+
+**Logística (v0.3.39+):** cada usuario operativo tiene una logística asignada (Esmeralda o NAKBE). El admin principal puede cambiar de logística activa. Ver [MULTI-LOGISTICA.md](MULTI-LOGISTICA.md).
 
 ---
 
@@ -144,3 +148,7 @@ Campos de auditoría mínimos en documentos:
 - `created_at`
 - En retornos: `cargado_por_id`, `verificado_por_id`
 - En inventario: contadores asignados por sector
+
+---
+
+*Actualizado agosto 2026 — alineado a v0.3.45 (agenda_turnos, multi-logística).*

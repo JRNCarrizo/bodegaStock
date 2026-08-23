@@ -32,11 +32,15 @@ import {
   botellasPorCajaDefault,
   cajasPorPalletDefault,
   calcTotalEnCajas,
+  formatBultosPieLabel,
   formatCantidad,
   formatCantidadUnidad,
   formatDayTabLabel,
   formatEtiqueta,
+  formatMovimientoListBultos,
+  formatResumenBultosPieFromLineas,
   formatTotalCajas,
+  sumBultosPieFromLineas,
   todayIsoDate,
   totalSueltoLineaConteo
 } from '@/lib/desglose'
@@ -133,6 +137,104 @@ function etiquetaLinea(l: MovimientoInternoDetalleLinea): string {
   return formatTotalCajas(l.cantidad_cajas)
 }
 
+/** Columna derecha del desglose: total en cajas (sueltas aparte si aplica). */
+function cantidadDerechaDesgloseLinea(l: MovimientoInternoDetalleLinea): string {
+  if (l.tipo_bulto === 'SUELTO') {
+    return formatCantidad(Number(l.cantidad_suelta ?? 0))
+  }
+  return formatCantidad(l.cantidad_cajas)
+}
+
+function cantidadDesgloseRegistroLinea(l: MovimientoInternoDetalleLinea) {
+  if (l.tipo_bulto === 'SUELTO') {
+    return {
+      cantidad: Number(l.cantidad_suelta ?? 0),
+      cantidadUnidad: l.unidad ?? 'botella'
+    }
+  }
+  return { cantidad: l.cantidad_cajas }
+}
+
+function bultosPieDesdeLinea(l: MovimientoInternoDetalleLinea) {
+  return {
+    tipo_bulto: l.tipo_bulto,
+    cantidad_bultos: l.cantidad_bultos,
+    cantidad_cajas: l.cantidad_cajas,
+    unidades_por_bulto: l.unidades_por_bulto
+  }
+}
+
+interface EditorRutaDraft {
+  origenId: string
+  destinoId: string
+  ubicacionOrigenId: string
+  ubicacionDestinoId: string
+}
+
+function editorRutaStorageKey(movimientoId: number): string {
+  return `movimientos-lista-ruta-${movimientoId}`
+}
+
+function loadEditorRutaDraft(movimientoId: number): EditorRutaDraft | null {
+  try {
+    const raw = localStorage.getItem(editorRutaStorageKey(movimientoId))
+    if (!raw) return null
+    const parsed = JSON.parse(raw) as EditorRutaDraft
+    if (typeof parsed.origenId !== 'string' || typeof parsed.destinoId !== 'string') return null
+    return {
+      origenId: parsed.origenId,
+      destinoId: parsed.destinoId,
+      ubicacionOrigenId: parsed.ubicacionOrigenId ?? '',
+      ubicacionDestinoId: parsed.ubicacionDestinoId ?? ''
+    }
+  } catch {
+    return null
+  }
+}
+
+function saveEditorRutaDraft(movimientoId: number, ruta: EditorRutaDraft): void {
+  try {
+    localStorage.setItem(editorRutaStorageKey(movimientoId), JSON.stringify(ruta))
+  } catch {
+    /* ignore */
+  }
+}
+
+function clearEditorRutaDraft(movimientoId: number): void {
+  try {
+    localStorage.removeItem(editorRutaStorageKey(movimientoId))
+  } catch {
+    /* ignore */
+  }
+}
+
+function editorRutaFromLineas(lineas: MovimientoInternoDetalleLinea[]): EditorRutaDraft | null {
+  const activas = lineas.filter((l) => !l.cancelada)
+  if (activas.length === 0) return null
+  const last = activas.reduce((a, b) => (a.id > b.id ? a : b))
+  return {
+    origenId: String(last.sector_origen_id),
+    destinoId: String(last.sector_destino_id),
+    ubicacionOrigenId: last.ubicacion_origen_id != null ? String(last.ubicacion_origen_id) : '',
+    ubicacionDestinoId: last.ubicacion_destino_id != null ? String(last.ubicacion_destino_id) : ''
+  }
+}
+
+function resolveEditorRuta(
+  movimientoId: number,
+  lineas: MovimientoInternoDetalleLinea[]
+): EditorRutaDraft {
+  return (
+    loadEditorRutaDraft(movimientoId) ??
+    editorRutaFromLineas(lineas) ?? {
+      origenId: '',
+      destinoId: '',
+      ubicacionOrigenId: '',
+      ubicacionDestinoId: ''
+    }
+  )
+}
+
 export function MovimientosPage() {
   const { hasPermiso, user } = useAuth()
   const [view, setView] = useState<'list' | 'editor' | 'detail'>('list')
@@ -209,25 +311,30 @@ export function MovimientosPage() {
       if (existing) existing.lineas.push(l)
       else map.set(l.producto_id, { producto: l, lineas: [l] })
     }
-    return [...map.values()].map((g) => ({
-      ...g,
-      total: g.lineas.reduce((s, l) => s + l.cantidad_cajas, 0),
-      totalSuelto: g.lineas.reduce(
-        (s, l) =>
-          s +
-          totalSueltoLineaConteo({
-            tipo_bulto: (l.tipo_bulto ?? 'CAJA') as 'PALLET' | 'CAJA' | 'SUELTO',
-            cantidad_bultos: l.cantidad_bultos,
-            unidades_por_bulto: l.unidades_por_bulto,
-            cantidad_suelta: l.cantidad_suelta
-          }),
-        0
-      )
-    }))
+    return [...map.values()].map((g) => {
+      const pie = sumBultosPieFromLineas(g.lineas.map(bultosPieDesdeLinea))
+      return {
+        ...g,
+        total: g.lineas.reduce((s, l) => s + l.cantidad_cajas, 0),
+        totalBultosLabel: formatBultosPieLabel(pie),
+        totalSuelto: g.lineas.reduce(
+          (s, l) =>
+            s +
+            totalSueltoLineaConteo({
+              tipo_bulto: (l.tipo_bulto ?? 'CAJA') as 'PALLET' | 'CAJA' | 'SUELTO',
+              cantidad_bultos: l.cantidad_bultos,
+              unidades_por_bulto: l.unidades_por_bulto,
+              cantidad_suelta: l.cantidad_suelta
+            }),
+          0
+        )
+      }
+    })
   }, [lineasEditor])
 
-  const totalGeneral = useMemo(
-    () => lineasActivasEditor.reduce((s, l) => s + l.cantidad_cajas, 0),
+  /** Totales del pie: pallets + cajas sueltas (no total en cajas). */
+  const totalBultosPie = useMemo(
+    () => sumBultosPieFromLineas(lineasActivasEditor),
     [lineasActivasEditor]
   )
 
@@ -245,6 +352,11 @@ export function MovimientosPage() {
         0
       ),
     [lineasActivasEditor]
+  )
+
+  const totalPieLabel = useMemo(
+    () => formatBultosPieLabel(totalBultosPie),
+    [totalBultosPie]
   )
 
   const lineasPorProductoDetalle = useMemo(() => {
@@ -280,10 +392,28 @@ export function MovimientosPage() {
     return map
   }, [movimientos])
 
-  const totalCajasDelDia = useMemo(
-    () => movimientosDelDia.reduce((s, m) => s + m.total_cajas, 0),
-    [movimientosDelDia]
-  )
+  const resumenBultosDelDia = useMemo(() => {
+    let pallets = 0
+    let cajas = 0
+    for (const m of movimientosDelDia) {
+      if (m.lineas_resumen?.length) {
+        const pie = sumBultosPieFromLineas(m.lineas_resumen)
+        pallets += pie.pallets
+        cajas += pie.cajas
+      } else {
+        pallets += Number(m.total_pallets ?? 0)
+        cajas += Number(m.total_cajas_bulto ?? 0)
+      }
+    }
+    return { pallets, cajas }
+  }, [movimientosDelDia])
+
+  const detalleResumenBultos = useMemo(() => {
+    if (!detalle) return null
+    const lineas =
+      detalle.movimiento.estado === 'PENDIENTE' ? editLineas : detalle.lineas
+    return formatResumenBultosPieFromLineas(lineas)
+  }, [detalle, editLineas])
 
   const puedeAutorizar =
     detalle?.movimiento.estado === 'PENDIENTE' && hasPermiso('movimientos_internos.crear')
@@ -566,6 +696,28 @@ export function MovimientosPage() {
     return () => clearTimeout(timer)
   }, [view, detalle?.movimiento.id])
 
+  function applyEditorRuta(ruta: EditorRutaDraft) {
+    setOrigenId(ruta.origenId)
+    setDestinoId(ruta.destinoId)
+    setUbicacionOrigenId(ruta.ubicacionOrigenId)
+    setUbicacionDestinoId(ruta.ubicacionDestinoId)
+  }
+
+  function restoreEditorRuta(movimientoId: number, lineas: MovimientoInternoDetalleLinea[]) {
+    applyEditorRuta(resolveEditorRuta(movimientoId, lineas))
+  }
+
+  useEffect(() => {
+    const movId = detalle?.movimiento.id
+    if (view !== 'editor' || !movId) return
+    saveEditorRutaDraft(movId, {
+      origenId,
+      destinoId,
+      ubicacionOrigenId,
+      ubicacionDestinoId
+    })
+  }, [view, detalle?.movimiento.id, origenId, destinoId, ubicacionOrigenId, ubicacionDestinoId])
+
   function volverAlListado() {
     setView('list')
     setDetalle(null)
@@ -588,6 +740,7 @@ export function MovimientosPage() {
       })
       setDetalle(data)
       setTieneListaAbierta(true)
+      restoreEditorRuta(data.movimiento.id, data.lineas)
       setExpandedProductos(new Set())
       setSelectedProduct(null)
       setProductSearch('')
@@ -607,6 +760,7 @@ export function MovimientosPage() {
       if (data.movimiento.estado === 'ABIERTA' && data.movimiento.tipo === 'LISTA') {
         setDetalle(data)
         setTieneListaAbierta(true)
+        restoreEditorRuta(data.movimiento.id, data.lineas)
         setView('editor')
         return
       }
@@ -1012,6 +1166,7 @@ export function MovimientosPage() {
       await api(`/api/movimientos-internos/${detalle.movimiento.id}/finalizar`, {
         method: 'POST'
       })
+      clearEditorRutaDraft(detalle.movimiento.id)
       setTieneListaAbierta(false)
       volverAlListado()
     } catch (err) {
@@ -1035,6 +1190,7 @@ export function MovimientosPage() {
       await api(`/api/movimientos-internos/${detalle.movimiento.id}/cancelar`, {
         method: 'POST'
       })
+      clearEditorRutaDraft(detalle.movimiento.id)
       setTieneListaAbierta(false)
       volverAlListado()
     } catch (err) {
@@ -1297,6 +1453,8 @@ export function MovimientosPage() {
           fecha={m.fecha}
           totalEtiqueta="Total"
           total={detalle.total_cajas}
+          totalTexto={detalleResumenBultos?.label}
+          totalSuelto={detalleResumenBultos?.suelto}
           encabezadoExtra={
             <>
               {badgeTipo(m.tipo)}
@@ -1313,7 +1471,8 @@ export function MovimientosPage() {
               codigo_interno: l.codigo_interno,
               nombre: l.nombre,
               etiqueta: etiquetaLinea(l),
-              cantidad: l.cantidad_cajas,
+              ...cantidadDesgloseRegistroLinea(l),
+              bultosPie: bultosPieDesdeLinea(l),
               extra: (
                 <span className="text-xs text-slate-500">{formatRutaLinea(l)}</span>
               ),
@@ -1449,7 +1608,9 @@ export function MovimientosPage() {
                       <span className="shrink-0 text-xs text-slate-400">Cancelada</span>
                     )}
                     <span className="inline-flex shrink-0 items-center rounded-lg bg-brand-50 px-2.5 py-1.5 text-sm font-bold tabular-nums text-brand-700 ring-1 ring-brand-100">
-                      {formatCantidad(grupo.total)}
+                      {formatBultosPieLabel(
+                        sumBultosPieFromLineas(grupo.lineas.filter((l) => !l.cancelada).map(bultosPieDesdeLinea))
+                      )}
                     </span>
                     {cancelada ? (
                       <button
@@ -1504,7 +1665,7 @@ export function MovimientosPage() {
                           {rutaExtra(l)}
                         </div>
                         <span className="shrink-0 font-semibold tabular-nums text-slate-900">
-                          {formatCantidad(l.cantidad_cajas)}
+                          {cantidadDerechaDesgloseLinea(l)}
                         </span>
                       </li>
                     ))}
@@ -1524,6 +1685,8 @@ export function MovimientosPage() {
         fecha={m.fecha}
         totalEtiqueta="Total"
         total={detalle.total_cajas}
+        totalTexto={detalleResumenBultos?.label}
+        totalSuelto={detalleResumenBultos?.suelto}
         encabezadoExtra={
           <>
             {badgeTipo(m.tipo)}
@@ -1642,7 +1805,7 @@ export function MovimientosPage() {
                   )}
                 </button>
                 <div className="shrink-0 text-right">
-                  {grupo.total > 0 && (
+                  {grupo.totalBultosLabel !== '0' && (
                     <span
                       className={cn(
                         'inline-flex items-center rounded-lg px-2.5 py-1.5 text-sm font-bold tabular-nums ring-1',
@@ -1651,15 +1814,20 @@ export function MovimientosPage() {
                           : 'bg-brand-50 text-brand-700 ring-brand-100'
                       )}
                     >
-                      {formatCantidad(grupo.total)}
+                      {grupo.totalBultosLabel}
                     </span>
                   )}
                   {grupo.totalSuelto > 0 && (
-                    <p className={cn('text-[11px] font-medium text-slate-500', grupo.total > 0 && 'mt-1')}>
+                    <p
+                      className={cn(
+                        'text-[11px] font-medium text-slate-500',
+                        grupo.totalBultosLabel !== '0' && 'mt-1'
+                      )}
+                    >
                       + {formatCantidadUnidad(grupo.totalSuelto, grupo.producto.unidad)}
                     </p>
                   )}
-                  {grupo.total <= 0 && grupo.totalSuelto <= 0 && (
+                  {grupo.totalBultosLabel === '0' && grupo.totalSuelto <= 0 && (
                     <span
                       className={cn(
                         'inline-flex items-center rounded-lg px-2.5 py-1.5 text-sm font-bold tabular-nums ring-1',
@@ -1943,10 +2111,7 @@ export function MovimientosPage() {
                     Total general
                   </p>
                   <p className="text-xl font-bold tabular-nums leading-tight text-brand-700 sm:text-2xl">
-                    {formatCantidad(totalGeneral)}
-                    <span className="ml-1 text-sm font-semibold text-brand-600/80 sm:text-base">
-                      cajas
-                    </span>
+                    {totalPieLabel}
                   </p>
                 </div>
                 {totalSueltoGeneral > 0 && (
@@ -2442,7 +2607,7 @@ export function MovimientosPage() {
             </h2>
             <p className="text-xs text-slate-500">
               {diasConMovimientos.length > 0
-                ? `${movimientosDelDia.length} movimiento(s) · ${formatCantidad(totalCajasDelDia)} en el día`
+                ? `${movimientosDelDia.length} movimiento(s) · ${formatBultosPieLabel(resumenBultosDelDia)} en el día`
                 : `${movimientos.length} movimiento(s)`}
             </p>
           </div>
@@ -2521,7 +2686,7 @@ export function MovimientosPage() {
                   </div>
                   <div className="flex shrink-0 items-center gap-2 sm:justify-end">
                     <span className="inline-flex min-w-[3rem] items-center justify-center rounded-lg bg-brand-50 px-2.5 py-1.5 text-sm font-bold tabular-nums text-brand-700 ring-1 ring-brand-100">
-                      {formatCantidad(m.total_cajas)}
+                      {formatMovimientoListBultos(m)}
                     </span>
                     <Button
                       variant="secondary"

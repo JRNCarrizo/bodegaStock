@@ -34,6 +34,7 @@ export function initDatabase(): Database.Database {
     const { openPgDatabase } = require('./pg-shim') as typeof import('./pg-shim')
     db = openPgDatabase(databaseUrl, sqliteSchemaToPostgres(SCHEMA_SQL)) as unknown as Database.Database
     usingPostgres = true
+    runMigrations(db)
     seedIfEmpty(db)
     recalcStockTotalsEnCajas(db)
     syncAllUnidadesPorCajaDefaultsFromStock(db)

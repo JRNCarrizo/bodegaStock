@@ -1,6 +1,6 @@
 # BodegaStock — Especificación del proyecto
 
-> Documento vivo, alineado a la versión implementada **v0.3.37** (Electron + Fastify + SQLite + React + Capacitor Android).  
+> Documento vivo, alineado a la versión implementada **v0.3.45** (Electron + Fastify + SQLite + React + Capacitor Android).  
 > Panorama global: [ESTADO-ACTUAL.md](ESTADO-ACTUAL.md)
 
 ---
@@ -16,6 +16,7 @@
 - Opcionalmente conectar a **servidor en la nube** (Railway + Postgres) — implementado, no en uso productivo aún.
 - Permitir trabajo simultáneo desde **PC (administración)** y **celulares (operaciones en bodega)**.
 - Soportar **doble verificación configurable** en retornos y movimientos internos; en inventario, **Simple (1 contador)** o **Doble (2 contadores)** por sector.
+- Soportar **dos logísticas** (Esmeralda / NAKBE) en la misma instalación, con stock y documentos aislados.
 - Generar **reportes y estadísticas** del día y por rangos de fecha.
 
 ### Usuarios típicos
@@ -252,7 +253,21 @@ Productos dañados, rotos, perdidos o en mal estado durante el trabajo.
 
 **Efecto:** descuenta stock aplicando la [regla de sectores de descuento](DESGLOSE-DE-CANTIDADES.md#8-regla-de-descuento-planillas-roturas-y-pérdidas). Genera movimientos tipo `ROTURA` o `PERDIDA`.
 
+**UX (v0.3.44–0.3.45):** al elegir producto, el sector por defecto es el de **menor stock** (entre sectores con cantidad > 0). En la carga, cantidad y total se muestran **sin** la palabra “cajas”.
+
 **Export Excel del día:** `GET /api/roturas/export-dia?fecha=` — incluye columna **Observación**.
+
+---
+
+### 3.6b Agenda de turnos (v0.3.42+)
+
+Registro de turnos de insumos (fecha, producto, cantidad opcional, estado). Confirmación desde PC o APK. Contador de pendientes en el menú lateral. Permisos: `agenda_turnos.ver` / `.crear` / `.editar`.
+
+---
+
+### 3.6c Multi-logística (v0.3.39+)
+
+Dos contextos operativos (**Esmeralda**, **NAKBE**) en una sola base. Sectores, camioneros, stock, documentos e inventarios aislados; catálogo de productos compartido. Ver [MULTI-LOGISTICA.md](MULTI-LOGISTICA.md).
 
 ---
 
@@ -383,7 +398,8 @@ Administración de cuentas y permisos. Ver documento: [USUARIOS-Y-PERMISOS.md](U
 
 **Configuración (admin):**
 - Toggles de **doble verificación** para retornos (`retornos_doble_verificacion`) y movimientos internos (`movimientos_doble_verificacion`).
-- Red/LAN, URL y QR de conexión móvil, actualizaciones.
+- Red/LAN, URL y QR de conexión móvil, actualizaciones (Windows + Descargar APK).
+- En **APK** no se muestran Red ni Verificación de documentos (v0.3.44); sidebar opaca.
 
 **Pie de copyright:** visible en **Inicio** y **Configuración** (`© ControlStock` / contacto del desarrollador).
 
@@ -406,6 +422,7 @@ Administración de cuentas y permisos. Ver documento: [USUARIOS-Y-PERMISOS.md](U
 | R11 | Stock y conteos se visualizan con desglose (pallet × unidades + sueltos), no solo total |
 | R12 | Descuentos (planillas, roturas): primero sectores marcados por prioridad; si no alcanza, sectores con menor stock del producto |
 | R13 | Inventario en `EN_PROGRESO`: bloqueo global de movimientos hasta cierre o cancelación |
+| R14 | Operaciones de stock/documentos respetan la **logística activa** (Esmeralda / NAKBE); no cruzar datos entre logísticas |
 
 ---
 
@@ -425,13 +442,14 @@ Administración de cuentas y permisos. Ver documento: [USUARIOS-Y-PERMISOS.md](U
 | Camioneros | ✓ | Selector |
 | Reportes | ✓ | Limitado |
 | Inventario (conteo) | Supervisión | ✓ |
+| Agenda de turnos | ✓ | ✓ |
 | Usuarios/permisos | ✓ | — |
 
 ---
 
 ## 6. Fases de desarrollo
 
-Estado respecto a **v0.3.13**:
+Estado respecto a **v0.3.45**:
 
 ### Fase 1 — Base
 - [x] Proyecto Electron + servidor embebido (Fastify)
@@ -488,10 +506,13 @@ Ver [APP-MOVIL.md](APP-MOVIL.md).
 - [ ] Import planillas Excel/CSV
 - [ ] **OCR / foto de planilla impresa** → borrador de líneas ([PLANILLAS-OCR-FUTURO.md](PLANILLAS-OCR-FUTURO.md))
 - [ ] Escáner de barras en pantalla Planillas
-- [ ] **Movimientos: lista abierta** (origen/destino + buscador, tilde, finalizar) — [MOVIMIENTOS-LISTA-ABIERTA-FUTURO.md](MOVIMIENTOS-LISTA-ABIERTA-FUTURO.md) — **implementado v0.3.30**
+- [x] **Movimientos: lista abierta** (origen/destino + buscador, tilde, finalizar) — [MOVIMIENTOS-LISTA-ABIERTA-FUTURO.md](MOVIMIENTOS-LISTA-ABIERTA-FUTURO.md) — **implementado v0.3.30**
 - [x] Guías de ayuda por sección (`?`) + PDF — v0.3.36
 - [x] Modo conexión local vs nube (Configuración + APK) — v0.3.32+
 - [x] Migrador SQLite → Postgres — v0.3.32
+- [x] Multi-logística Esmeralda / NAKBE — v0.3.39+
+- [x] Agenda de turnos — v0.3.42+
+- [x] Update APK in-app + Descargar APK desde PC — v0.3.42+
 - [ ] Backup automático
 - [x] QR para conexión móvil
 - [x] Toggles de doble verificación (retornos / movimientos) en Configuración
@@ -506,13 +527,16 @@ Items a definir o ya definidos:
 - [ ] ¿Planilla requiere camionero obligatorio siempre o solo recomendado?
 - [ ] ¿Número de remito único global o por proveedor/fecha?
 - [ ] ¿Importación / OCR de planillas: cuándo priorizar? (doc: [PLANILLAS-OCR-FUTURO.md](PLANILLAS-OCR-FUTURO.md))
-- [ ] ¿Rediseño de movimientos (lista abierta): cuándo priorizar? ([MOVIMIENTOS-LISTA-ABIERTA-FUTURO.md](MOVIMIENTOS-LISTA-ABIERTA-FUTURO.md))
+- [x] Movimientos lista abierta — implementado v0.3.30+ ([MOVIMIENTOS-LISTA-ABIERTA-FUTURO.md](MOVIMIENTOS-LISTA-ABIERTA-FUTURO.md))
+- [x] Multi-logística Esmeralda / NAKBE — implementado v0.3.39+ ([MULTI-LOGISTICA.md](MULTI-LOGISTICA.md))
 - [x] APK: **Capacitor** (React), no Flutter ni React Native
 - [x] Base de datos: **SQLite** en producción local; **PostgreSQL** en modo nube Railway
 - [x] Importación Excel de productos: plantilla propia o formato logístico con encabezados previos (`Código de producto` + `Descripción`); omite duplicados
 - [x] Inventario online + offline + Simple/Doble (ver [INVENTARIO.md](INVENTARIO.md))
 - [x] Ajustes de stock post-inventario: híbrido con confirmación del supervisor; reorganización entre sectores
 - [x] Estrategia de descuento: sectores marcados + fallback por menor stock ([DESGLOSE-DE-CANTIDADES.md](DESGLOSE-DE-CANTIDADES.md))
+- [x] Agenda de turnos — v0.3.42+
+- [x] Updates APK in-app + Descargar APK desde PC — v0.3.42+
 - [x] Reconteo: mostrar desglose anterior del producto con diferencia ([INVENTARIO.md](INVENTARIO.md))
 - [x] Sectores chicos / poco movidos: verificación **Simple** (1 contador) sin Comparación A
 

@@ -1,5 +1,5 @@
 param(
-  [string]$Version = "0.3.45"
+  [string]$Version = "0.3.46"
 )
 
 $ErrorActionPreference = "Stop"
@@ -55,10 +55,12 @@ if (Test-Path $ymlPath) { $assets += (Resolve-Path $ymlPath).Path }
 $notes = @"
 ## ControlStock v$Version
 
-Pulido de cantidades en Roturas (sin “cajas”).
+Retornos, movimientos y migración a nube.
 
 ### Mejorado
-- **Roturas:** cantidad a la derecha y total inferior sin la palabra “caja/cajas” (mismo criterio que Retornos)
+- **Retornos — verificación:** swipe editar / poner en 0; confirmar y destildar líneas; fila estado · cantidad · tilde; sector en detalle verificado; botón Confirmar verificación; pestañas de fecha estables al filtrar Sin verificar
+- **Movimientos:** historial y detalle muestran **pallets + cajas** (no total plano en cajas)
+- **Nube (Railway):** migraciones Postgres al arrancar; tabla ``logisticas`` en migrador; fixes FK/PRAGMA en importación SQLite → Postgres
 
 ### Actualización
 - **Windows:** Configuración → Buscar actualizaciones, o Setup de este release

@@ -3,6 +3,7 @@ export const MIGRATION_TABLES = [
   'roles',
   'permisos',
   'rol_permisos',
+  'logisticas',
   'usuarios',
   'usuario_secciones',
   'app_settings',

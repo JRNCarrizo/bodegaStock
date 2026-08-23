@@ -1,6 +1,7 @@
 import type Database from 'better-sqlite3'
 import { MIGRATION_TABLES, type MigrationDump, type MigrationTableName } from '../db/migration-tables'
 import { isPostgresMode } from '../db'
+import { ensureLogisticasSeed } from './logisticas'
 
 function tableExists(db: Database.Database, name: string): boolean {
   if (isPostgresMode()) {
@@ -79,6 +80,13 @@ export function importDatabaseDump(db: Database.Database, dump: MigrationDump): 
 
     for (const name of MIGRATION_TABLES) {
       const rows = dump.tables[name as MigrationTableName]
+      if (name === 'logisticas' && !rows?.length) {
+        ensureLogisticasSeed(db)
+        imported[name] = (
+          db.prepare('SELECT COUNT(*) AS n FROM logisticas').get() as { n: number }
+        ).n
+        continue
+      }
       if (!rows?.length) {
         imported[name] = 0
         continue

@@ -4,54 +4,7 @@ import { migrateLegacyUsersToSecciones } from '../utils/secciones'
 import { syncUnidadesPorCajaFromNombres } from '../utils/empaqueNombre'
 import { recalcStockTotalsEnCajas } from '../utils/stock'
 import { ensureLogisticasSeed, getLogisticaEsmeraldaId } from '../utils/logisticas'
-
-function isPostgresDb(): boolean {
-  return Boolean(process.env.DATABASE_URL?.trim())
-}
-
-function columnExists(db: Database.Database, table: string, column: string): boolean {
-  if (isPostgresDb()) {
-    const row = db
-      .prepare(
-        `SELECT 1 AS ok FROM information_schema.columns
-         WHERE table_schema = 'public' AND table_name = ? AND column_name = ?`
-      )
-      .get(table, column) as { ok: number } | undefined
-    return Boolean(row)
-  }
-  const cols = db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[]
-  return cols.some((c) => c.name === column)
-}
-
-function columnNotNull(db: Database.Database, table: string, column: string): boolean {
-  if (isPostgresDb()) {
-    const row = db
-      .prepare(
-        `SELECT is_nullable FROM information_schema.columns
-         WHERE table_schema = 'public' AND table_name = ? AND column_name = ?`
-      )
-      .get(table, column) as { is_nullable: string } | undefined
-    return row?.is_nullable === 'NO'
-  }
-  const cols = db.prepare(`PRAGMA table_info(${table})`).all() as { name: string; notnull: number }[]
-  return cols.find((c) => c.name === column)?.notnull === 1
-}
-
-function tableExists(db: Database.Database, table: string): boolean {
-  if (isPostgresDb()) {
-    const row = db
-      .prepare(
-        `SELECT 1 AS ok FROM information_schema.tables
-         WHERE table_schema = 'public' AND table_name = ?`
-      )
-      .get(table) as { ok: number } | undefined
-    return Boolean(row)
-  }
-  const row = db.prepare(`
-    SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?
-  `).get(table)
-  return !!row
-}
+import { columnExists, columnNotNull, isPostgresDb, tableExists } from './introspection'
 
 export function runMigrations(db: Database.Database): void {
   if (!columnExists(db, 'sectores', 'usa_ubicaciones')) {

@@ -3,6 +3,7 @@ import type Database from 'better-sqlite3'
 import { getDb } from '../db'
 import type { AuthUser } from '../plugins/auth'
 import { isAdministradorRol } from './secciones'
+import { columnExists } from '../db/introspection'
 
 export const LOGISTICA_HEADER = 'x-logistica-id'
 
@@ -73,11 +74,6 @@ export function getUsuarioLogisticaAsignada(
     | { logistica_id: number | null }
     | undefined
   return row?.logistica_id ?? null
-}
-
-function columnExists(db: Database.Database, table: string, column: string): boolean {
-  const cols = db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[]
-  return cols.some((c) => c.name === column)
 }
 
 export function usuarioPuedeElegirLogistica(

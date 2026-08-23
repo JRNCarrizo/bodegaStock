@@ -10,6 +10,7 @@ import {
   totalSueltoLineaConteo
 } from '../utils/stock'
 import { requireRequestLogistica } from '../utils/logisticas'
+import { columnExists } from '../db/introspection'
 
 const puedeVerSectores = requirePermisoAny(
   'sectores.ver',
@@ -60,8 +61,7 @@ function slugCodigoSector(nombre: string, suffix = ''): string {
 }
 
 function sectoresTieneLogisticaId(db: ReturnType<typeof getDb>): boolean {
-  const cols = db.prepare('PRAGMA table_info(sectores)').all() as { name: string }[]
-  return cols.some((c) => c.name === 'logistica_id')
+  return columnExists(db, 'sectores', 'logistica_id')
 }
 
 function nombreSectorDuplicado(

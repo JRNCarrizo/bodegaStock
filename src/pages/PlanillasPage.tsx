@@ -24,6 +24,7 @@ import {
   RegistroDetallePanel
 } from '@/components/RegistroDetallePanel'
 import { ProductImage } from '@/components/ProductImage'
+import { ScrollableProductName } from '@/components/ScrollableProductName'
 import { SectionHelpButton } from '@/components/SectionHelpButton'
 import { SwipeableConteoLinea } from '@/components/SwipeableConteoLinea'
 import { Button } from '@/components/ui/Button'
@@ -39,10 +40,15 @@ import {
 } from '@/lib/desglose'
 import { downloadApiFile } from '@/lib/downloadFile'
 import { labelVehiculoDetalle, labelVehiculoOperativo } from '@/lib/camioneros'
+import { isNativeApp } from '@/lib/nativeServer'
 import { searchDelayMs } from '@/lib/searchDelay'
 import { clearDraft, readDraft, writeDraft } from '@/lib/draftStorage'
 import { api, cn } from '@/lib/utils'
 import { codigoProductoExacto } from '@/lib/productoSearch'
+import {
+  scrollFocusedFieldIntoSheet,
+  useVisualViewportBottomInset
+} from '@/hooks/useVisualViewportBottomInset'
 import type {
   Camionero,
   CamioneroVehiculo,
@@ -169,9 +175,19 @@ export function PlanillasPage() {
   const createScrollRef = useRef<HTMLDivElement>(null)
   const cargaPanelRef = useRef<HTMLDivElement>(null)
   const productLineFormRef = useRef<HTMLDivElement>(null)
+  const keyboardBridgeRef = useRef<HTMLInputElement>(null)
+  const pendingFocusCantidadRef = useRef(false)
+  const nativeApp = isNativeApp()
+  const keyboardInset = useVisualViewportBottomInset()
 
   const camioneroSeleccionado = camioneros.find((c) => c.id === Number(camioneroId))
   const vehiculoSeleccionado = vehiculos.find((v) => v.id === Number(vehiculoId))
+
+  function armKeyboardForCantidadModal() {
+    if (!nativeApp) return
+    pendingFocusCantidadRef.current = true
+    keyboardBridgeRef.current?.focus({ preventScroll: true })
+  }
 
   function focusField(ref: React.RefObject<HTMLElement | null>) {
     requestAnimationFrame(() => {
@@ -179,6 +195,9 @@ export function PlanillasPage() {
       if (!el) return
       el.focus()
       el.scrollIntoView({ block: 'center', behavior: 'smooth' })
+      if (el instanceof HTMLInputElement) {
+        requestAnimationFrame(() => el.select())
+      }
     })
   }
 
@@ -518,6 +537,7 @@ export function PlanillasPage() {
   }, [selectedProduct, modoSalida, cantidad])
 
   async function selectProduct(p: Producto) {
+    armKeyboardForCantidadModal()
     setEditingLineaTempId(null)
     setSelectedProduct(p)
     setProductSearch(p.codigo_interno)
@@ -539,8 +559,20 @@ export function PlanillasPage() {
       setProductoRefs(null)
       resetLineaForm(p)
     }
-    setTimeout(() => focusField(cantidadRef), 50)
+    if (!nativeApp) {
+      setTimeout(() => focusField(cantidadRef), 50)
+    }
   }
+
+  useEffect(() => {
+    if (!nativeApp || !selectedProduct || !pendingFocusCantidadRef.current) return
+    pendingFocusCantidadRef.current = false
+    const id = window.requestAnimationFrame(() => {
+      focusField(cantidadRef)
+      scrollFocusedFieldIntoSheet(cantidadRef.current, 0)
+    })
+    return () => window.cancelAnimationFrame(id)
+  }, [nativeApp, selectedProduct, editingLineaTempId])
 
   function cancelarLineaForm() {
     setEditingLineaTempId(null)
@@ -555,6 +587,7 @@ export function PlanillasPage() {
 
   async function empezarEditarLinea(l: PlanillaLineaDraft) {
     setSwipeOpenLineId(null)
+    armKeyboardForCantidadModal()
     setEditingLineaTempId(l.tempId)
     setExpandedProductos((prev) => new Set(prev).add(l.producto_id))
     setSelectedProduct({
@@ -576,8 +609,10 @@ export function PlanillasPage() {
     setModoSalida(l.modo_salida)
     setCantidad(String(l.cantidad))
     setError('')
-    scrollFieldIntoView(productLineFormRef)
-    setTimeout(() => focusField(cantidadRef), 50)
+    if (!nativeApp) {
+      scrollFieldIntoView(productLineFormRef)
+      setTimeout(() => focusField(cantidadRef), 50)
+    }
     try {
       const refs = await api<{
         stock_disponible: number
@@ -1039,9 +1074,9 @@ export function PlanillasPage() {
                   <span className="shrink-0 rounded-md bg-slate-100 px-2 py-0.5 font-mono text-xs font-semibold text-slate-700">
                     {grupo.producto.codigo_interno}
                   </span>
-                  <span className="min-w-0 truncate text-sm font-semibold text-slate-900">
+                  <ScrollableProductName className="min-w-0 flex-1 text-sm font-semibold text-slate-900">
                     {grupo.producto.nombre}
-                  </span>
+                  </ScrollableProductName>
                   {!isExpanded && grupo.lineas.length > 1 && (
                     <span className="shrink-0 text-xs text-slate-500">
                       · {grupo.lineas.length} líneas
@@ -1076,7 +1111,14 @@ export function PlanillasPage() {
       )
 
     return (
-      <div className="-m-4 flex h-[calc(100vh-5rem)] flex-col bg-surface-muted/30 lg:-m-6">
+      <div
+        className={cn(
+          'flex flex-col bg-surface-muted/30',
+          nativeApp
+            ? 'fixed inset-x-0 bottom-0 top-14 z-10'
+            : '-m-4 h-[calc(100vh-5rem)] lg:-m-6'
+        )}
+      >
         <div
           ref={cargaPanelRef}
           className="relative z-20 shrink-0 overflow-visible border-b border-surface-border bg-white shadow-sm"
@@ -1125,7 +1167,7 @@ export function PlanillasPage() {
             </div>
           )}
 
-          <div className="space-y-3 overflow-visible p-4 sm:p-5">
+          <div className={cn('space-y-3 overflow-visible', nativeApp ? 'p-3' : 'p-4 sm:p-5')}>
             <div className="relative z-30 overflow-visible">
               <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-brand-400" />
                 <input
@@ -1134,7 +1176,7 @@ export function PlanillasPage() {
                   role="combobox"
                   aria-expanded={productResults.length > 0 && !selectedProduct}
                   aria-autocomplete="list"
-                  placeholder="Buscar producto — ↑↓ navegar · Enter seleccionar"
+                  placeholder={nativeApp ? 'Buscar producto...' : 'Buscar producto — ↑↓ navegar · Enter seleccionar'}
                   value={productSearch}
                   onChange={(e) => {
                     setProductSearch(e.target.value)
@@ -1163,7 +1205,8 @@ export function PlanillasPage() {
                               : 'hover:bg-slate-50'
                           )}
                           onMouseEnter={() => setProductHighlightIndex(index)}
-                          onClick={() => selectProduct(p)}
+                          onPointerDown={armKeyboardForCantidadModal}
+                          onClick={() => void selectProduct(p)}
                         >
                           <span className="rounded bg-slate-100 px-1.5 py-0.5 font-mono text-xs font-semibold">
                             {p.codigo_interno}
@@ -1176,18 +1219,54 @@ export function PlanillasPage() {
                 )}
             </div>
 
+            {nativeApp && (
+              <input
+                ref={keyboardBridgeRef}
+                type="text"
+                inputMode="numeric"
+                enterKeyHint="done"
+                aria-hidden
+                tabIndex={-1}
+                className="pointer-events-none fixed left-0 top-0 h-px w-px opacity-0"
+                value=""
+                onChange={() => {}}
+              />
+            )}
+
             {selectedProduct && (
-              <div
-                ref={productLineFormRef}
-                className="overflow-hidden rounded-xl border border-brand-200 bg-gradient-to-br from-brand-50/80 to-white p-4 shadow-card"
-              >
-                <div className="mb-4 flex items-center gap-3">
-                  <ProductImage
-                    productoId={selectedProduct.id}
-                    hasImage={!!selectedProduct.imagen_path}
-                    alt={selectedProduct.nombre}
-                    className="h-11 w-11 rounded-xl ring-1 ring-surface-border"
+              <>
+                {nativeApp && (
+                  <div
+                    className="fixed inset-0 z-40 bg-slate-900/45"
+                    aria-hidden
+                    onClick={cancelarLineaForm}
                   />
+                )}
+                <div
+                  ref={productLineFormRef}
+                  className={cn(
+                    nativeApp
+                      ? 'fixed inset-x-0 z-50 mx-auto w-full max-w-3xl overflow-y-auto overscroll-contain rounded-t-2xl border-2 border-b-0 border-brand-400 bg-white p-4 shadow-[0_-12px_40px_rgba(15,23,42,0.25)] ring-4 ring-brand-500/15 transition-[bottom,max-height] duration-200 ease-out'
+                      : 'overflow-hidden rounded-xl border border-brand-200 bg-gradient-to-br from-brand-50/80 to-white p-4 shadow-card'
+                  )}
+                  style={
+                    nativeApp
+                      ? {
+                          bottom: keyboardInset,
+                          maxHeight: `calc(100dvh - ${keyboardInset}px - env(safe-area-inset-top, 0px) - 0.5rem)`
+                        }
+                      : undefined
+                  }
+                >
+                <div className="mb-4 flex items-center gap-3">
+                  {!nativeApp && (
+                    <ProductImage
+                      productoId={selectedProduct.id}
+                      hasImage={!!selectedProduct.imagen_path}
+                      alt={selectedProduct.nombre}
+                      className="h-11 w-11 rounded-xl ring-1 ring-surface-border"
+                    />
+                  )}
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2">
                       <span className="inline-flex rounded-md bg-white px-2 py-0.5 font-mono text-xs font-semibold text-slate-700 ring-1 ring-surface-border">
@@ -1197,9 +1276,9 @@ export function PlanillasPage() {
                         {editingLineaTempId ? 'Editar línea' : 'Nueva línea'}
                       </p>
                     </div>
-                    <p className="mt-1 truncate text-sm font-semibold text-slate-900">
+                    <ScrollableProductName className="mt-1 text-sm font-semibold text-slate-900">
                       {selectedProduct.nombre}
-                    </p>
+                    </ScrollableProductName>
                   </div>
                   <button
                     type="button"
@@ -1335,6 +1414,7 @@ export function PlanillasPage() {
                   </div>
                 )}
               </div>
+              </>
             )}
           </div>
         </div>
@@ -1343,45 +1423,95 @@ export function PlanillasPage() {
           {lineasListContent}
         </div>
 
-        <div className="shrink-0 border-t border-surface-border bg-white px-4 py-4 shadow-[0_-4px_12px_rgba(0,0,0,0.04)] sm:px-5">
-          <div className="flex items-center justify-between gap-4">
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">
-                Total general
-              </p>
-              <p className="text-2xl font-bold tabular-nums text-brand-700">
-                {formatCantidad(totalGeneral)}
-              </p>
-              <p className="mt-1 text-xs text-slate-500">
-                {lineas.length} línea{lineas.length === 1 ? '' : 's'} cargada
-                {lineas.length === 1 ? '' : 's'}
-              </p>
-            </div>
-            {hasPermiso('planillas.crear') && (
-              <div className="flex shrink-0 flex-wrap gap-2">
-                <Button
-                  variant="secondary"
-                  className="rounded-xl"
-                  onClick={cancelarPlanillaEnCurso}
-                  disabled={saving || loadingPreview}
-                >
-                  Cancelar planilla
-                </Button>
-                <Button
-                  className="rounded-xl"
-                  onClick={confirmarPlanilla}
-                  disabled={
-                    lineas.length === 0 ||
-                    saving ||
-                    loadingPreview ||
-                    (previewData?.some((p) => p.error) ?? false)
-                  }
-                >
-                  {saving ? 'Registrando...' : 'Confirmar planilla'}
-                </Button>
+        <div
+          className={cn(
+            'shrink-0 border-t border-surface-border bg-white shadow-[0_-4px_12px_rgba(0,0,0,0.04)]',
+            nativeApp
+              ? 'px-3 pt-3 pb-3'
+              : 'px-4 py-4 sm:px-5'
+          )}
+        >
+          {nativeApp ? (
+            <div className="space-y-3">
+              <div className="flex items-end justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">
+                    Total
+                  </p>
+                  <p className="text-xl font-bold tabular-nums text-brand-700">
+                    {formatCantidad(totalGeneral)}
+                  </p>
+                </div>
+                <p className="shrink-0 text-xs text-slate-500">
+                  {lineas.length} línea{lineas.length === 1 ? '' : 's'}
+                </p>
               </div>
-            )}
-          </div>
+              {hasPermiso('planillas.crear') && (
+                <div className="grid grid-cols-2 gap-2">
+                  <Button
+                    variant="secondary"
+                    className="h-11 rounded-xl"
+                    onClick={cancelarPlanillaEnCurso}
+                    disabled={saving || loadingPreview}
+                  >
+                    Cancelar
+                  </Button>
+                  <Button
+                    className="h-11 rounded-xl"
+                    onClick={confirmarPlanilla}
+                    disabled={
+                      lineas.length === 0 ||
+                      saving ||
+                      loadingPreview ||
+                      (previewData?.some((p) => p.error) ?? false)
+                    }
+                  >
+                    <Check className="h-4 w-4" />
+                    {saving || loadingPreview ? '…' : 'Confirmar'}
+                  </Button>
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="flex items-center justify-between gap-4">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+                  Total general
+                </p>
+                <p className="text-2xl font-bold tabular-nums text-brand-700">
+                  {formatCantidad(totalGeneral)}
+                </p>
+                <p className="mt-1 text-xs text-slate-500">
+                  {lineas.length} línea{lineas.length === 1 ? '' : 's'} cargada
+                  {lineas.length === 1 ? '' : 's'}
+                </p>
+              </div>
+              {hasPermiso('planillas.crear') && (
+                <div className="flex shrink-0 flex-wrap gap-2">
+                  <Button
+                    variant="secondary"
+                    className="rounded-xl"
+                    onClick={cancelarPlanillaEnCurso}
+                    disabled={saving || loadingPreview}
+                  >
+                    Cancelar
+                  </Button>
+                  <Button
+                    className="rounded-xl"
+                    onClick={confirmarPlanilla}
+                    disabled={
+                      lineas.length === 0 ||
+                      saving ||
+                      loadingPreview ||
+                      (previewData?.some((p) => p.error) ?? false)
+                    }
+                  >
+                    {saving ? 'Registrando...' : 'Confirmar'}
+                  </Button>
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
         {showPreview && previewData && (
@@ -1469,16 +1599,20 @@ export function PlanillasPage() {
                   </div>
                 ))}
 
-                <div className="flex gap-2 pt-2">
+                <div className={cn('flex gap-2 pt-2', nativeApp && 'grid grid-cols-2')}>
                   <Button
-                    className="rounded-xl"
+                    className={cn('rounded-xl', nativeApp && 'h-11')}
                     onClick={confirmarPlanilla}
                     disabled={saving || previewData.some((p) => p.error)}
                   >
-                    {saving ? 'Registrando...' : 'Confirmar planilla'}
+                    {saving ? '…' : nativeApp ? 'Confirmar' : 'Confirmar planilla'}
                   </Button>
-                  <Button variant="secondary" className="rounded-xl" onClick={() => setShowPreview(false)}>
-                    Volver a editar
+                  <Button
+                    variant="secondary"
+                    className={cn('rounded-xl', nativeApp && 'h-11')}
+                    onClick={() => setShowPreview(false)}
+                  >
+                    {nativeApp ? 'Editar' : 'Volver a editar'}
                   </Button>
                 </div>
               </div>
@@ -1490,31 +1624,15 @@ export function PlanillasPage() {
   }
 
   return (
-    <div className="mx-auto max-w-6xl space-y-6">
-      <section className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-        <div>
-          <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">
-            Movimientos
-          </p>
-          <div className="mt-1 flex items-center gap-1.5">
-            <h1 className="text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">
-              Carga de planillas
-            </h1>
-            <SectionHelpButton guideId="planillas" />
-          </div>
-          <p className="mt-2 max-w-xl text-sm leading-relaxed text-slate-500">
-            Salidas de mercadería con descuento automático de stock por camionero y vehículo.
-          </p>
-        </div>
-        {hasPermiso('planillas.crear') && (
-          <div className="flex flex-col items-stretch gap-2 sm:items-end">
-            <p className="text-xs text-slate-400 sm:text-right">
-              {tieneBorrador
-                ? 'Enter → continuar planilla en curso'
-                : 'Enter → nueva planilla'}
-            </p>
+    <div className={cn('mx-auto max-w-6xl', nativeApp ? '-mt-1 space-y-3' : 'space-y-6')}>
+      {nativeApp ? (
+        <div className="flex items-center gap-3">
+          <h1 className="min-w-0 flex-1 truncate text-xl font-bold tracking-tight text-slate-900">
+            Planillas
+          </h1>
+          {hasPermiso('planillas.crear') && (
             <Button
-              className="rounded-xl px-4"
+              className="h-10 shrink-0 rounded-xl px-3"
               onClick={() => {
                 if (tieneBorrador) continuarBorrador()
                 else abrirNuevaPlanilla()
@@ -1523,25 +1641,75 @@ export function PlanillasPage() {
               {tieneBorrador ? (
                 <>
                   <ClipboardList className="h-4 w-4" />
-                  Continuar planilla
+                  Continuar
                 </>
               ) : (
                 <>
                   <Plus className="h-4 w-4" />
-                  Nueva planilla
+                  Nueva
                 </>
               )}
             </Button>
+          )}
+        </div>
+      ) : (
+        <section className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">
+              Movimientos
+            </p>
+            <div className="mt-1 flex items-center gap-1.5">
+              <h1 className="text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">
+                Carga de planillas
+              </h1>
+              <SectionHelpButton guideId="planillas" />
+            </div>
+            <p className="mt-2 max-w-xl text-sm leading-relaxed text-slate-500">
+              Salidas de mercadería con descuento automático de stock por camionero y vehículo.
+            </p>
           </div>
-        )}
-      </section>
+          {hasPermiso('planillas.crear') && (
+            <div className="flex flex-col items-stretch gap-2 sm:items-end">
+              <p className="text-xs text-slate-400 sm:text-right">
+                {tieneBorrador
+                  ? 'Enter → continuar planilla en curso'
+                  : 'Enter → nueva planilla'}
+              </p>
+              <Button
+                className="rounded-xl px-4"
+                onClick={() => {
+                  if (tieneBorrador) continuarBorrador()
+                  else abrirNuevaPlanilla()
+                }}
+              >
+                {tieneBorrador ? (
+                  <>
+                    <ClipboardList className="h-4 w-4" />
+                    Continuar planilla
+                  </>
+                ) : (
+                  <>
+                    <Plus className="h-4 w-4" />
+                    Nueva planilla
+                  </>
+                )}
+              </Button>
+            </div>
+          )}
+        </section>
+      )}
 
       <Card className="overflow-hidden shadow-panel">
-        <div className="border-b border-brand-100 bg-gradient-to-r from-brand-50/80 via-white to-white px-5 py-4 sm:px-6">
-          <div className="flex flex-col gap-3">
-            <div className="flex flex-wrap items-center gap-2">
-              <div className="relative min-w-[10rem] flex-1">
-                <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-brand-400" />
+        <div
+          className={cn(
+            'border-b border-brand-100 bg-gradient-to-r from-brand-50/80 via-white to-white sm:px-6',
+            nativeApp ? 'px-3 py-2.5' : 'px-5 py-4'
+          )}
+        >
+          <div className={cn('flex flex-col', nativeApp ? 'gap-2' : 'gap-3')}>
+            <div className={cn('flex gap-2', nativeApp ? 'flex-col' : 'flex-wrap items-center')}>
+              <div className="relative min-w-0 flex-1">
+                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-brand-400" />
                 <input
                   ref={listSearchRef}
                   type="search"
@@ -1549,31 +1717,52 @@ export function PlanillasPage() {
                   value={listSearch}
                   onChange={(e) => setListSearch(e.target.value)}
                   onKeyDown={registroListKb.handleListSearchKeyDown}
-                  className="w-full rounded-xl border border-surface-border bg-white py-2.5 pl-10 pr-4 text-sm shadow-sm focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20"
+                  className={cn(
+                    'w-full rounded-xl border border-surface-border bg-white pl-9 pr-3 text-sm shadow-sm focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20',
+                    nativeApp ? 'py-2' : 'py-2.5 pl-10 pr-4'
+                  )}
                 />
               </div>
 
-              <div className="flex shrink-0 items-center gap-1.5 rounded-xl border border-surface-border bg-white px-2 py-1.5 shadow-sm">
-                <span className="pl-1 text-xs font-medium text-slate-500">Desde</span>
+              <div
+                className={cn(
+                  'flex shrink-0 items-center gap-1.5 rounded-xl border border-surface-border bg-white shadow-sm',
+                  nativeApp ? 'w-full justify-between px-2 py-1' : 'px-2 py-1.5'
+                )}
+              >
+                <span className="pl-0.5 text-[11px] font-medium text-slate-500">Desde</span>
                 <input
                   type="date"
                   value={listFechaDesde}
                   onChange={(e) => setListFechaDesde(e.target.value)}
                   title="Fecha desde — solo este campo = ese día"
-                  className="rounded border-0 bg-transparent px-1 py-1 text-sm focus:outline-none focus:ring-0"
+                  className="min-w-0 flex-1 rounded border-0 bg-transparent px-1 py-1 text-sm focus:outline-none focus:ring-0"
                 />
                 <span className="text-slate-300">|</span>
-                <span className="text-xs font-medium text-slate-500">Hasta</span>
+                <span className="text-[11px] font-medium text-slate-500">Hasta</span>
                 <input
                   type="date"
                   value={listFechaHasta}
                   onChange={(e) => setListFechaHasta(e.target.value)}
                   title="Fecha hasta — solo este campo = ese día"
-                  className="rounded border-0 bg-transparent px-1 py-1 text-sm focus:outline-none focus:ring-0"
+                  className="min-w-0 flex-1 rounded border-0 bg-transparent px-1 py-1 text-sm focus:outline-none focus:ring-0"
                 />
+                {(listFechaDesde || listFechaHasta) && (
+                  <button
+                    type="button"
+                    className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
+                    onClick={() => {
+                      setListFechaDesde('')
+                      setListFechaHasta('')
+                    }}
+                    aria-label="Limpiar fechas"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                )}
               </div>
 
-              {(listFechaDesde || listFechaHasta) && (
+              {!nativeApp && (listFechaDesde || listFechaHasta) && (
                 <Button
                   type="button"
                   variant="ghost"
@@ -1588,10 +1777,12 @@ export function PlanillasPage() {
                 </Button>
               )}
             </div>
-            <p className="text-xs text-slate-500">
-              Una sola fecha filtra ese día · las dos juntas = rango
-              {hasPermiso('planillas.crear') && ' · Enter = nueva planilla'}
-            </p>
+            {!nativeApp && (
+              <p className="text-xs text-slate-500">
+                Una sola fecha filtra ese día · las dos juntas = rango
+                {hasPermiso('planillas.crear') && ' · Enter = nueva planilla'}
+              </p>
+            )}
 
             <DayTabsRow
               days={diasConPlanillas}
@@ -1602,9 +1793,14 @@ export function PlanillasPage() {
           </div>
         </div>
 
-        <div className="flex items-center justify-between gap-3 border-b border-surface-border bg-slate-50/80 px-5 py-3.5 sm:px-6">
+        <div
+          className={cn(
+            'flex items-center justify-between gap-3 border-b border-surface-border bg-slate-50/80 sm:px-6',
+            nativeApp ? 'px-3 py-2.5' : 'px-5 py-3.5'
+          )}
+        >
           <div>
-            <h2 className="text-sm font-semibold text-slate-900">
+            <h2 className="font-semibold text-slate-900 text-sm">
               {diasConPlanillas.length > 0 ? formatDayTabLabel(selectedDay) : 'Registros'}
             </h2>
             <p className="text-xs text-slate-500">
@@ -1616,9 +1812,16 @@ export function PlanillasPage() {
           {loadingList && <Loader2 className="h-5 w-5 shrink-0 animate-spin text-brand-600" />}
         </div>
 
-        <CardBody className="p-0">
+        <CardBody className={cn(nativeApp ? 'bg-surface-muted/35 p-2' : 'p-0')}>
           {error && (
-            <div className="border-b border-red-100 bg-red-50 px-6 py-3 text-sm text-red-700">
+            <div
+              className={cn(
+                'text-sm text-red-700',
+                nativeApp
+                  ? 'mb-2 rounded-xl border border-red-100 bg-red-50 px-4 py-3'
+                  : 'border-b border-red-100 bg-red-50 px-6 py-3'
+              )}
+            >
               {error}
             </div>
           )}
@@ -1628,7 +1831,12 @@ export function PlanillasPage() {
               Cargando planillas...
             </div>
           ) : planillas.length === 0 ? (
-            <div className="flex flex-col items-center px-6 py-16 text-center">
+            <div
+              className={cn(
+                'flex flex-col items-center px-6 py-14 text-center',
+                nativeApp && 'rounded-xl border border-dashed border-surface-border bg-white shadow-card'
+              )}
+            >
               <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-slate-100 text-slate-400">
                 <ClipboardList className="h-7 w-7" />
               </div>
@@ -1637,13 +1845,16 @@ export function PlanillasPage() {
                   ? 'No hay planillas con esos filtros'
                   : 'No hay planillas registradas'}
               </p>
-              <p className="mt-1 max-w-sm text-xs text-slate-500">
-                {listSearch || listFechaDesde || listFechaHasta
-                  ? 'Probá ampliar el rango de fechas o cambiar la búsqueda'
-                  : 'Registrá la primera salida para descontar stock'}
-              </p>
+              {!nativeApp && (
+                <p className="mt-1 max-w-sm text-xs text-slate-500">
+                  {listSearch || listFechaDesde || listFechaHasta
+                    ? 'Probá ampliar el rango de fechas o cambiar la búsqueda'
+                    : 'Registrá la primera salida para descontar stock'}
+                </p>
+              )}
               {!(listSearch || listFechaDesde || listFechaHasta) &&
-                hasPermiso('planillas.crear') && (
+                hasPermiso('planillas.crear') &&
+                !nativeApp && (
                   <Button
                     className="mt-4 rounded-xl"
                     size="sm"
@@ -1667,13 +1878,69 @@ export function PlanillasPage() {
                 )}
             </div>
           ) : planillasDelDia.length === 0 ? (
-            <div className="flex flex-col items-center px-6 py-16 text-center">
+            <div
+              className={cn(
+                'flex flex-col items-center px-6 py-14 text-center',
+                nativeApp && 'rounded-xl border border-dashed border-surface-border bg-white shadow-card'
+              )}
+            >
               <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-slate-100 text-slate-400">
                 <ClipboardList className="h-7 w-7" />
               </div>
               <p className="mt-4 text-sm font-medium text-slate-700">Sin resultados para este día</p>
-              <p className="mt-1 text-xs text-slate-500">Probá otra fecha o ajustá la búsqueda</p>
+              {!nativeApp && (
+                <p className="mt-1 text-xs text-slate-500">Probá otra fecha o ajustá la búsqueda</p>
+              )}
             </div>
+          ) : nativeApp ? (
+            <ul className="space-y-2">
+              {planillasDelDia.map((p, index) => (
+                <li
+                  key={p.id}
+                  {...registroListKb.listItemProps(
+                    index,
+                    'overflow-hidden rounded-xl border border-surface-border bg-white shadow-card'
+                  )}
+                >
+                  <button
+                    type="button"
+                    className="flex w-full items-start gap-3 px-3 py-3 text-left active:bg-slate-50"
+                    onClick={() => verDetalle(p.id)}
+                  >
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2">
+                        <p className="truncate text-sm font-semibold text-slate-900">{p.numero}</p>
+                        <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-brand-50 px-2 py-0.5 text-[11px] font-medium text-brand-800 ring-1 ring-brand-100">
+                          <Truck className="h-3 w-3" />
+                          {p.camionero_nombre}
+                        </span>
+                      </div>
+                      <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-slate-500">
+                        {p.vehiculo_modelo || p.vehiculo_alias ? (
+                          <>
+                            <span>{labelVehiculoDetalle(p) ?? p.vehiculo_modelo}</span>
+                            <span>·</span>
+                          </>
+                        ) : null}
+                        <span>
+                          {p.lineas_count} línea{p.lineas_count === 1 ? '' : 's'}
+                        </span>
+                        <span>·</span>
+                        <span className="inline-flex items-center gap-1">
+                          <User className="h-3 w-3" />
+                          {p.usuario_nombre}
+                        </span>
+                      </div>
+                    </div>
+                    <div className="flex shrink-0 flex-col items-end justify-center">
+                      <span className="inline-flex items-center rounded-lg bg-brand-50 px-2.5 py-1 text-sm font-bold tabular-nums text-brand-700 ring-1 ring-brand-100">
+                        {formatCantidad(p.total_unidades)}
+                      </span>
+                    </div>
+                  </button>
+                </li>
+              ))}
+            </ul>
           ) : (
             <ul className="divide-y divide-surface-border">
               {planillasDelDia.map((p, index) => (

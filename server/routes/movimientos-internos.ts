@@ -1569,14 +1569,9 @@ export async function movimientosInternosRoutes(app: FastifyInstance): Promise<v
       return reply.status(400).send({ error: 'Este movimiento ya no se puede cancelar' })
     }
 
-    db.prepare(`
-      UPDATE movimientos_internos
-      SET estado = 'CANCELADO',
-          cancelado_por_id = ?,
-          cancelado_at = datetime('now')
-      WHERE id = ?
-    `).run(user.id, id)
+    // Lista abierta o pendiente sin stock aplicado: descartar, no guardar como CANCELADO.
+    db.prepare('DELETE FROM movimientos_internos WHERE id = ?').run(id)
 
-    return buildDetalle(db, id)
+    return { ok: true, eliminado: true, id }
   })
 }

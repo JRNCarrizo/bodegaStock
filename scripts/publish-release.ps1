@@ -1,5 +1,5 @@
 param(
-  [string]$Version = "0.3.46"
+  [string]$Version = "0.3.47"
 )
 
 $ErrorActionPreference = "Stop"
@@ -55,12 +55,13 @@ if (Test-Path $ymlPath) { $assets += (Resolve-Path $ymlPath).Path }
 $notes = @"
 ## ControlStock v$Version
 
-Retornos, movimientos y migración a nube.
+Inventario APK: conteo más ágil y totales claros.
 
 ### Mejorado
-- **Retornos — verificación:** swipe editar / poner en 0; confirmar y destildar líneas; fila estado · cantidad · tilde; sector en detalle verificado; botón Confirmar verificación; pestañas de fecha estables al filtrar Sin verificar
-- **Movimientos:** historial y detalle muestran **pallets + cajas** (no total plano en cajas)
-- **Nube (Railway):** migraciones Postgres al arrancar; tabla ``logisticas`` en migrador; fixes FK/PRAGMA en importación SQLite → Postgres
+- **Inventario (APK):** teclado numérico en cantidades; botones ``+ − × ÷`` al lado de cajas/botellas sueltas (aplican al campo enfocado)
+- **Total contado:** tocá para alternar cajas vs pallets + cajas (scroll lateral si se alarga)
+- **Footer conteo:** con teclado abierto libera altura para ver mejor los registros
+- **Agenda / cargas (APK):** UI compacta y formularios bottom-sheet alineados al teclado
 
 ### Actualización
 - **Windows:** Configuración → Buscar actualizaciones, o Setup de este release

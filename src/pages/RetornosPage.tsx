@@ -34,10 +34,12 @@ import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { Card, CardBody, Badge } from '@/components/ui/Card'
 import { ProductImage } from '@/components/ProductImage'
+import { ScrollableProductName } from '@/components/ScrollableProductName'
 import { SectionHelpButton } from '@/components/SectionHelpButton'
 import { formatCantidad, formatDayTabLabel, formatTotalCajas, todayIsoDate } from '@/lib/desglose'
 import { downloadApiFile } from '@/lib/downloadFile'
 import { labelVehiculoDetalle, labelVehiculoOperativo } from '@/lib/camioneros'
+import { isNativeApp } from '@/lib/nativeServer'
 import { searchDelayMs } from '@/lib/searchDelay'
 import { clearDraft, readDraft, writeDraft } from '@/lib/draftStorage'
 import { api, cn } from '@/lib/utils'
@@ -57,6 +59,10 @@ import { useAuth } from '@/context/AuthContext'
 import { useEscHandler } from '@/hooks/useEscHandler'
 import { useProductoQuickSearch } from '@/hooks/useProductoQuickSearch'
 import { useRegistroListKeyboard } from '@/hooks/useRegistroListKeyboard'
+import {
+  scrollFocusedFieldIntoSheet,
+  useVisualViewportBottomInset
+} from '@/hooks/useVisualViewportBottomInset'
 
 const ESTADOS_CONDICION: { value: RetornoEstadoCondicion; label: string }[] = [
   { value: 'BUEN_ESTADO', label: 'Buen estado' },
@@ -146,7 +152,10 @@ function labelCamionero(numero: string | null | undefined, nombre: string | null
   return `${numero ?? '—'} — ${nombre ?? '—'}`
 }
 
-function retornoMetaChips(r: RetornoDetalle['retorno']) {
+function retornoMetaChips(
+  r: RetornoDetalle['retorno'],
+  opts?: { omitUsuario?: boolean }
+) {
   const vehiculoTexto = labelVehiculoDetalle(r)
   return (
     <>
@@ -167,9 +176,11 @@ function retornoMetaChips(r: RetornoDetalle['retorno']) {
           {r.numero_planilla}
         </RegistroDetalleMetaChip>
       )}
-      <RegistroDetalleMetaChip icon={<User className="h-3.5 w-3.5 shrink-0 text-slate-400" />}>
-        {r.cargado_por_nombre}
-      </RegistroDetalleMetaChip>
+      {!opts?.omitUsuario && (
+        <RegistroDetalleMetaChip icon={<User className="h-3.5 w-3.5 shrink-0 text-slate-400" />}>
+          {r.cargado_por_nombre}
+        </RegistroDetalleMetaChip>
+      )}
       {r.verificado_por_nombre && (
         <RegistroDetalleMetaChip>
           <span className="font-medium text-slate-500">
@@ -310,6 +321,16 @@ export function RetornosPage() {
   const listScrollRef = useRef<HTMLDivElement>(null)
   const cargaPanelRef = useRef<HTMLDivElement>(null)
   const productLineFormRef = useRef<HTMLDivElement>(null)
+  const keyboardBridgeRef = useRef<HTMLInputElement>(null)
+  const pendingFocusCantidadRef = useRef(false)
+  const nativeApp = isNativeApp()
+  const keyboardInset = useVisualViewportBottomInset()
+
+  function armKeyboardForCantidadModal() {
+    if (!nativeApp) return
+    pendingFocusCantidadRef.current = true
+    keyboardBridgeRef.current?.focus({ preventScroll: true })
+  }
 
   const camioneroSeleccionado = camioneros.find((c) => c.id === Number(camioneroId))
   const sectorDefaultSeleccionado = sectores.find((s) => s.id === Number(sectorId))
@@ -377,8 +398,13 @@ export function RetornosPage() {
 
   function focusField(ref: React.RefObject<HTMLElement | null>) {
     requestAnimationFrame(() => {
-      ref.current?.focus()
-      ref.current?.scrollIntoView({ block: 'center', behavior: 'smooth' })
+      const el = ref.current
+      if (!el) return
+      el.focus()
+      el.scrollIntoView({ block: 'center', behavior: 'smooth' })
+      if (el instanceof HTMLInputElement) {
+        requestAnimationFrame(() => el.select())
+      }
     })
   }
 
@@ -783,7 +809,16 @@ export function RetornosPage() {
     setTimeout(() => focusField(productSearchRef), 50)
   }
 
+  function cancelarLineaForm() {
+    setSelectedProduct(null)
+    setProductSearch('')
+    resetLineaForm()
+    setError('')
+    setTimeout(() => productSearchRef.current?.focus(), 50)
+  }
+
   function selectProduct(p: Producto) {
+    armKeyboardForCantidadModal()
     setSelectedProduct(p)
     setProductSearch(p.codigo_interno)
     setProductResults([])
@@ -791,8 +826,20 @@ export function RetornosPage() {
     if (!lineSectorId) setLineSectorId(sectorDefaultParaLinea())
     resetLineaForm()
     setError('')
-    setTimeout(() => focusField(cantidadRef), 50)
+    if (!nativeApp) {
+      setTimeout(() => focusField(cantidadRef), 50)
+    }
   }
+
+  useEffect(() => {
+    if (!nativeApp || !selectedProduct || !pendingFocusCantidadRef.current) return
+    pendingFocusCantidadRef.current = false
+    const id = window.requestAnimationFrame(() => {
+      focusField(cantidadRef)
+      scrollFocusedFieldIntoSheet(cantidadRef.current, 0)
+    })
+    return () => window.cancelAnimationFrame(id)
+  }, [nativeApp, selectedProduct])
 
   function pickProductFromSearch() {
     if (!productSearch.trim()) return
@@ -1154,48 +1201,92 @@ export function RetornosPage() {
                     )}
                     contentClassName={verificada ? 'bg-green-50' : undefined}
                   >
-                    <div className="flex min-w-0 flex-1 items-center gap-2">
-                      <span className="shrink-0 font-mono text-sm font-semibold text-slate-900">
-                        {linea.codigo_interno}
-                      </span>
-                      <span
-                        className="min-w-0 flex-1 truncate text-sm text-slate-700"
-                        title={linea.nombre}
-                      >
-                        {linea.nombre}
-                      </span>
-                    </div>
-                    <div className="ml-auto shrink-0 pr-5 sm:pr-8">
-                      {badgeCondicion(linea.estado_efectivo)}
-                    </div>
-                    <div className="flex shrink-0 items-center gap-2">
-                      <span
-                        className={cn(
-                          'text-sm font-semibold tabular-nums',
-                          linea.cantidad_efectiva <= 0 ? 'text-amber-800' : 'text-slate-900'
-                        )}
-                      >
-                        {formatCantidad(linea.cantidad_efectiva)}
-                      </span>
-                      <button
-                        type="button"
-                        title={verificada ? 'Quitar confirmación' : 'Confirmar línea'}
-                        className={cn(
-                          'flex h-8 w-8 items-center justify-center rounded-lg border',
-                          verificada
-                            ? 'border-green-600 bg-green-600 text-white hover:bg-green-700'
-                            : 'border-surface-border bg-white text-slate-500 hover:border-brand-300 hover:text-brand-700'
-                        )}
-                        disabled={saving}
-                        onPointerDown={(e) => e.stopPropagation()}
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          toggleConfirmacionLinea(linea)
-                        }}
-                      >
-                        <Check className="h-4 w-4" />
-                      </button>
-                    </div>
+                    {nativeApp ? (
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-start justify-between gap-2">
+                          <span className="inline-flex max-w-[55%] truncate rounded-md bg-brand-600 px-2 py-0.5 font-mono text-xs font-bold tracking-wide text-white shadow-sm">
+                            {linea.codigo_interno}
+                          </span>
+                          <div className="flex shrink-0 items-center gap-2">
+                            {badgeCondicion(linea.estado_efectivo)}
+                            <span
+                              className={cn(
+                                'text-sm font-semibold tabular-nums',
+                                linea.cantidad_efectiva <= 0 ? 'text-amber-800' : 'text-slate-900'
+                              )}
+                            >
+                              {formatCantidad(linea.cantidad_efectiva)}
+                            </span>
+                            <button
+                              type="button"
+                              title={verificada ? 'Quitar confirmación' : 'Confirmar línea'}
+                              className={cn(
+                                'flex h-8 w-8 items-center justify-center rounded-lg border',
+                                verificada
+                                  ? 'border-green-600 bg-green-600 text-white hover:bg-green-700'
+                                  : 'border-surface-border bg-white text-slate-500 hover:border-brand-300 hover:text-brand-700'
+                              )}
+                              disabled={saving}
+                              onPointerDown={(e) => e.stopPropagation()}
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                toggleConfirmacionLinea(linea)
+                              }}
+                            >
+                              <Check className="h-4 w-4" />
+                            </button>
+                          </div>
+                        </div>
+                        <ScrollableProductName className="mt-0.5 block w-full text-sm text-slate-700">
+                          {linea.nombre}
+                        </ScrollableProductName>
+                      </div>
+                    ) : (
+                      <>
+                        <div className="flex min-w-0 flex-1 items-center gap-2">
+                          <span className="shrink-0 font-mono text-sm font-semibold text-slate-900">
+                            {linea.codigo_interno}
+                          </span>
+                          <span
+                            className="min-w-0 flex-1 truncate text-sm text-slate-700"
+                            title={linea.nombre}
+                          >
+                            {linea.nombre}
+                          </span>
+                        </div>
+                        <div className="ml-auto shrink-0 pr-5 sm:pr-8">
+                          {badgeCondicion(linea.estado_efectivo)}
+                        </div>
+                        <div className="flex shrink-0 items-center gap-2">
+                          <span
+                            className={cn(
+                              'text-sm font-semibold tabular-nums',
+                              linea.cantidad_efectiva <= 0 ? 'text-amber-800' : 'text-slate-900'
+                            )}
+                          >
+                            {formatCantidad(linea.cantidad_efectiva)}
+                          </span>
+                          <button
+                            type="button"
+                            title={verificada ? 'Quitar confirmación' : 'Confirmar línea'}
+                            className={cn(
+                              'flex h-8 w-8 items-center justify-center rounded-lg border',
+                              verificada
+                                ? 'border-green-600 bg-green-600 text-white hover:bg-green-700'
+                                : 'border-surface-border bg-white text-slate-500 hover:border-brand-300 hover:text-brand-700'
+                            )}
+                            disabled={saving}
+                            onPointerDown={(e) => e.stopPropagation()}
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              toggleConfirmacionLinea(linea)
+                            }}
+                          >
+                            <Check className="h-4 w-4" />
+                          </button>
+                        </div>
+                      </>
+                    )}
                   </SwipeableConteoLinea>
                 </ul>
               </div>
@@ -1292,29 +1383,75 @@ export function RetornosPage() {
   if (view === 'verify' && detalle) {
     const r = detalle.retorno
     return (
-      <div className="mx-auto flex max-w-5xl flex-col gap-4 px-4 py-6 lg:px-0">
-        <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-          <Button
-            variant="ghost"
-            size="sm"
-            className="-ml-2 h-8 shrink-0 rounded-lg px-2"
-            onClick={volverAlListado}
-          >
-            <ChevronLeft className="h-4 w-4" />
-            Volver
-          </Button>
-          <span className="hidden h-4 w-px bg-surface-border sm:block" aria-hidden />
-          <h1 className="text-base font-semibold text-slate-900 sm:text-lg">
-            Verificar retorno #{r.id}
-          </h1>
-          <Badge variant="muted">{r.fecha}</Badge>
-          {badgeEstadoRetorno(r.estado, 'md', !!r.ingreso_directo)}
-          <span className="text-xs text-slate-400">
-            {detalle.lineas_verificadas} de {detalle.lineas.length} confirmadas
-          </span>
-        </div>
+      <div
+        className={cn(
+          'mx-auto flex max-w-5xl flex-col',
+          nativeApp ? '-mt-1 gap-3 px-1' : 'gap-4 px-4 py-6 lg:px-0'
+        )}
+      >
+        {nativeApp ? (
+          <div className="space-y-2">
+            <div className="flex items-center gap-1">
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-9 w-9 shrink-0 rounded-lg p-0"
+                onClick={volverAlListado}
+                aria-label="Volver"
+              >
+                <ChevronLeft className="h-5 w-5" />
+              </Button>
+              <div className="flex min-w-0 flex-1 items-center gap-2">
+              <h1 className="min-w-0 truncate text-base font-semibold text-slate-900">
+                Verificar #{r.id}
+              </h1>
+              <Badge variant="muted" className="shrink-0">
+                {r.fecha}
+              </Badge>
+            </div>
+          </div>
+          <div className="flex flex-wrap items-center gap-2 pl-0.5">
+            <span className="inline-flex max-w-[12rem] items-center gap-1 text-[11px] text-slate-500">
+              <User className="h-3 w-3 shrink-0 text-slate-400" />
+              <span className="truncate">{r.cargado_por_nombre}</span>
+            </span>
+            {badgeEstadoRetorno(r.estado, 'sm', !!r.ingreso_directo)}
+            <span className="text-[11px] text-slate-400">
+              {detalle.lineas_verificadas}/{detalle.lineas.length} confirmadas
+            </span>
+          </div>
+          </div>
+        ) : (
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+            <Button
+              variant="ghost"
+              size="sm"
+              className="-ml-2 h-8 shrink-0 rounded-lg px-2"
+              onClick={volverAlListado}
+            >
+              <ChevronLeft className="h-4 w-4" />
+              Volver
+            </Button>
+            <span className="hidden h-4 w-px bg-surface-border sm:block" aria-hidden />
+            <h1 className="text-base font-semibold text-slate-900 sm:text-lg">
+              Verificar retorno #{r.id}
+            </h1>
+            <Badge variant="muted">{r.fecha}</Badge>
+            {badgeEstadoRetorno(r.estado, 'md', !!r.ingreso_directo)}
+            <span className="text-xs text-slate-400">
+              {detalle.lineas_verificadas} de {detalle.lineas.length} confirmadas
+            </span>
+          </div>
+        )}
 
-        <div className="flex flex-wrap items-center gap-1.5 text-xs">{retornoMetaChips(r)}</div>
+        <div
+          className={cn(
+            'flex flex-wrap items-center text-xs',
+            nativeApp ? 'gap-1' : 'gap-1.5'
+          )}
+        >
+          {retornoMetaChips(r, { omitUsuario: nativeApp })}
+        </div>
 
         {error && (
           <div className="rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700 ring-1 ring-red-100">
@@ -1328,9 +1465,11 @@ export function RetornosPage() {
               <RotateCcw className="h-4 w-4 text-slate-400" />
               <h2 className="text-sm font-semibold text-slate-800">Líneas a verificar</h2>
             </div>
-            <p className="mt-0.5 text-xs text-slate-500">
-              Deslizá para editar o poner en 0 · solo &quot;Buen estado&quot; suma al stock
-            </p>
+            {!nativeApp && (
+              <p className="mt-0.5 text-xs text-slate-500">
+                Deslizá para editar o poner en 0 · solo &quot;Buen estado&quot; suma al stock
+              </p>
+            )}
           </div>
           <CardBody className="p-0">{renderLineasVerificacion()}</CardBody>
         </Card>
@@ -1344,7 +1483,7 @@ export function RetornosPage() {
                 onChange={(e) => setObsVerificacion(e.target.value)}
                 placeholder="Opcional"
               />
-              {!todasLineasVerificadas && (
+              {!todasLineasVerificadas && !nativeApp && (
                 <p className="text-xs text-slate-500">Confirmá todas las líneas para continuar.</p>
               )}
               <div className="flex justify-end">
@@ -1373,14 +1512,22 @@ export function RetornosPage() {
         fecha={r.fecha}
         totalEtiqueta="Total"
         total={detalle.total_cajas}
-        encabezadoExtra={badgeEstadoRetorno(r.estado, 'md', !!r.ingreso_directo)}
-        meta={retornoMetaChips(r)}
+        encabezadoExtra={badgeEstadoRetorno(r.estado, nativeApp ? 'sm' : 'md', !!r.ingreso_directo)}
+        encabezadoSubline={
+          nativeApp ? (
+            <span className="inline-flex max-w-[12rem] items-center gap-1 text-[11px] text-slate-500">
+              <User className="h-3 w-3 shrink-0 text-slate-400" />
+              <span className="truncate">{r.cargado_por_nombre}</span>
+            </span>
+          ) : undefined
+        }
+        meta={retornoMetaChips(r, { omitUsuario: nativeApp })}
         antesProductos={
           <>
             {error && (
               <div className="rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>
             )}
-            {r.estado === 'PENDIENTE' && (
+            {r.estado === 'PENDIENTE' && !nativeApp && (
               <div
                 className={`rounded-lg border px-4 py-3 text-sm ${
                   puedeVerificar
@@ -1437,22 +1584,39 @@ export function RetornosPage() {
               }
             : {
                 extra: badgeCondicion(l.estado_efectivo),
-                extraKey: l.estado_efectivo
+                extraKey: l.estado_efectivo,
+                desgloseExtra: (
+                  <span className="inline-flex items-center gap-1 text-xs text-slate-600">
+                    <Warehouse className="h-3 w-3 shrink-0 text-slate-400" />
+                    {l.sector_nombre}
+                  </span>
+                )
               })
         }))}
         despuesProductos={
           puedeVerificar ? (
             <Card className="overflow-hidden shadow-panel">
-              <CardBody className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                <div>
-                  <p className="font-medium text-slate-900">Listo para verificar</p>
-                  <p className="text-sm text-slate-600">
-                    {detalle.lineas_verificadas} de {detalle.lineas.length} líneas confirmadas en sesiones
-                    anteriores
-                  </p>
-                </div>
-                <Button className="rounded-xl" onClick={() => setView('verify')}>
-                  Iniciar verificación
+              <CardBody
+                className={cn(
+                  nativeApp
+                    ? 'p-3'
+                    : 'flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between'
+                )}
+              >
+                {!nativeApp && (
+                  <div>
+                    <p className="font-medium text-slate-900">Listo para verificar</p>
+                    <p className="text-sm text-slate-600">
+                      {detalle.lineas_verificadas} de {detalle.lineas.length} líneas confirmadas en sesiones
+                      anteriores
+                    </p>
+                  </div>
+                )}
+                <Button
+                  className={cn('rounded-xl', nativeApp && 'h-11 w-full')}
+                  onClick={() => setView('verify')}
+                >
+                  {nativeApp ? 'Verificar' : 'Iniciar verificación'}
                 </Button>
               </CardBody>
             </Card>
@@ -1614,7 +1778,8 @@ export function RetornosPage() {
             <div key={grupo.producto.producto_id} className="border-b border-surface-border last:border-0">
               <div
                 className={cn(
-                  'flex items-center gap-3 px-4 py-2.5 transition-colors sm:px-5',
+                  'flex gap-3 px-4 py-2.5 transition-colors sm:px-5',
+                  nativeApp ? 'items-start' : 'items-center',
                   isExpanded ? 'bg-brand-50/50' : 'hover:bg-slate-50/80'
                 )}
               >
@@ -1636,26 +1801,53 @@ export function RetornosPage() {
                     <ChevronRight className="h-4 w-4" />
                   )}
                 </button>
-                <button
-                  type="button"
-                  onClick={() => toggleProductoExpand(grupo.producto.producto_id)}
-                  className="flex min-w-0 flex-1 items-center gap-2 text-left"
-                >
-                  <span className="shrink-0 rounded-md bg-slate-100 px-2 py-0.5 font-mono text-xs font-semibold text-slate-700">
-                    {grupo.producto.codigo_interno}
-                  </span>
-                  <span className="min-w-0 truncate text-sm font-semibold text-slate-900">
-                    {grupo.producto.nombre}
-                  </span>
-                  {!isExpanded && grupo.lineas.length > 1 && (
-                    <span className="shrink-0 text-xs text-slate-500">
-                      · {grupo.lineas.length} líneas
+                {nativeApp ? (
+                  <button
+                    type="button"
+                    onClick={() => toggleProductoExpand(grupo.producto.producto_id)}
+                    className="min-w-0 flex-1 text-left"
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <span className="inline-flex max-w-[70%] truncate rounded-md bg-brand-600 px-2 py-0.5 font-mono text-xs font-bold tracking-wide text-white shadow-sm">
+                        {grupo.producto.codigo_interno}
+                      </span>
+                      <span className="inline-flex shrink-0 items-center rounded-lg bg-brand-50 px-2.5 py-1.5 text-sm font-bold tabular-nums text-brand-700 ring-1 ring-brand-100">
+                        {formatCantidad(grupo.total)}
+                      </span>
+                    </div>
+                    <ScrollableProductName className="mt-1 block w-full text-sm font-semibold text-slate-900">
+                      {grupo.producto.nombre}
+                    </ScrollableProductName>
+                    {!isExpanded && grupo.lineas.length > 1 && (
+                      <span className="mt-0.5 block text-xs text-slate-500">
+                        {grupo.lineas.length} líneas
+                      </span>
+                    )}
+                  </button>
+                ) : (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => toggleProductoExpand(grupo.producto.producto_id)}
+                      className="flex min-w-0 flex-1 items-center gap-2 text-left"
+                    >
+                      <span className="shrink-0 rounded-md bg-slate-100 px-2 py-0.5 font-mono text-xs font-semibold text-slate-700">
+                        {grupo.producto.codigo_interno}
+                      </span>
+                      <ScrollableProductName className="min-w-0 flex-1 text-sm font-semibold text-slate-900">
+                        {grupo.producto.nombre}
+                      </ScrollableProductName>
+                      {!isExpanded && grupo.lineas.length > 1 && (
+                        <span className="shrink-0 text-xs text-slate-500">
+                          · {grupo.lineas.length} líneas
+                        </span>
+                      )}
+                    </button>
+                    <span className="inline-flex shrink-0 items-center rounded-lg bg-brand-50 px-2.5 py-1.5 text-sm font-bold tabular-nums text-brand-700 ring-1 ring-brand-100">
+                      {formatCantidad(grupo.total)}
                     </span>
-                  )}
-                </button>
-                <span className="inline-flex shrink-0 items-center rounded-lg bg-brand-50 px-2.5 py-1.5 text-sm font-bold tabular-nums text-brand-700 ring-1 ring-brand-100">
-                  {formatCantidad(grupo.total)}
-                </span>
+                  </>
+                )}
               </div>
               {isExpanded && (
                 <ul className="space-y-2 border-t border-brand-100/80 bg-gradient-to-b from-surface-muted/40 to-white px-4 py-3 sm:px-5">
@@ -1665,10 +1857,23 @@ export function RetornosPage() {
                       className="flex items-center justify-between gap-3 rounded-lg border border-surface-border bg-white px-3 py-2.5 text-sm"
                     >
                       <div className="min-w-0 text-slate-800">
-                        {formatTotalCajas(l.cantidad_cajas)} · {l.sector_nombre}
+                        {formatTotalCajas(l.cantidad_cajas)}
+                        {!nativeApp && (
+                          <>
+                            {' · '}
+                            {l.sector_nombre}
+                          </>
+                        )}
                       </div>
                       <div className="flex shrink-0 items-center gap-2">
-                        {badgeCondicion(l.estado_condicion)}
+                        {nativeApp ? (
+                          <span className="inline-flex max-w-[8rem] items-center gap-1 truncate text-xs font-medium text-slate-600">
+                            <Warehouse className="h-3 w-3 shrink-0 text-slate-400" />
+                            {l.sector_nombre}
+                          </span>
+                        ) : (
+                          badgeCondicion(l.estado_condicion)
+                        )}
                         <Button
                           type="button"
                           variant="ghost"
@@ -1689,7 +1894,14 @@ export function RetornosPage() {
       )
 
     return (
-      <div className="-m-4 flex h-[calc(100vh-5rem)] flex-col bg-surface-muted/30 lg:-m-6">
+      <div
+        className={cn(
+          'flex flex-col bg-surface-muted/30',
+          nativeApp
+            ? 'fixed inset-x-0 bottom-0 top-14 z-10'
+            : '-m-4 h-[calc(100vh-5rem)] lg:-m-6'
+        )}
+      >
         <div
           ref={cargaPanelRef}
           className="relative z-20 shrink-0 overflow-visible border-b border-surface-border bg-white shadow-sm"
@@ -1741,7 +1953,7 @@ export function RetornosPage() {
             </div>
           )}
 
-          <div className="space-y-3 overflow-visible p-4 sm:p-5">
+          <div className={cn('space-y-3 overflow-visible', nativeApp ? 'p-3' : 'p-4 sm:p-5')}>
             <div className="relative flex flex-col gap-2 overflow-visible sm:flex-row">
               <div className="relative z-30 min-w-0 flex-1">
                 <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-brand-400" />
@@ -1751,7 +1963,7 @@ export function RetornosPage() {
                   role="combobox"
                   aria-expanded={productResults.length > 0 && !selectedProduct}
                   aria-autocomplete="list"
-                  placeholder="Buscar producto — ↑↓ navegar · Enter seleccionar"
+                  placeholder={nativeApp ? 'Buscar producto...' : 'Buscar producto — ↑↓ navegar · Enter seleccionar'}
                   value={productSearch}
                   onChange={(e) => {
                     setProductSearch(e.target.value)
@@ -1780,6 +1992,7 @@ export function RetornosPage() {
                               : 'hover:bg-slate-50'
                           )}
                           onMouseEnter={() => setProductHighlightIndex(index)}
+                          onPointerDown={armKeyboardForCantidadModal}
                           onClick={() => selectProduct(p)}
                         >
                           <span className="rounded bg-slate-100 px-1.5 py-0.5 font-mono text-xs font-semibold">
@@ -1806,40 +2019,78 @@ export function RetornosPage() {
               </div>
             </div>
 
+            {nativeApp && (
+              <input
+                ref={keyboardBridgeRef}
+                type="text"
+                inputMode="numeric"
+                enterKeyHint="done"
+                aria-hidden
+                tabIndex={-1}
+                className="pointer-events-none fixed left-0 top-0 h-px w-px opacity-0"
+                value=""
+                onChange={() => {}}
+              />
+            )}
+
             {selectedProduct && (
-              <div
-                ref={productLineFormRef}
-                className="overflow-hidden rounded-xl border border-brand-200 bg-gradient-to-br from-brand-50/80 to-white p-4 shadow-card"
-              >
-                <div className="mb-4 flex items-center gap-3">
-                  <ProductImage
-                    productoId={selectedProduct.id}
-                    hasImage={!!selectedProduct.imagen_path}
-                    alt={selectedProduct.nombre}
-                    className="h-11 w-11 rounded-xl ring-1 ring-surface-border"
+              <>
+                {nativeApp && (
+                  <div
+                    className="fixed inset-0 z-40 bg-slate-900/45"
+                    aria-hidden
+                    onClick={cancelarLineaForm}
                   />
+                )}
+                <div
+                  ref={productLineFormRef}
+                  className={cn(
+                    nativeApp
+                      ? 'fixed inset-x-0 z-50 mx-auto w-full max-w-3xl overflow-y-auto overscroll-contain rounded-t-2xl border-2 border-b-0 border-brand-400 bg-white p-4 shadow-[0_-12px_40px_rgba(15,23,42,0.25)] ring-4 ring-brand-500/15 transition-[bottom,max-height] duration-200 ease-out'
+                      : 'overflow-hidden rounded-xl border border-brand-200 bg-gradient-to-br from-brand-50/80 to-white p-4 shadow-card'
+                  )}
+                  style={
+                    nativeApp
+                      ? {
+                          bottom: keyboardInset,
+                          maxHeight: `calc(100dvh - ${keyboardInset}px - env(safe-area-inset-top, 0px) - 0.5rem)`
+                        }
+                      : undefined
+                  }
+                >
+                <div className="mb-4 flex items-center gap-3">
+                  {!nativeApp && (
+                    <ProductImage
+                      productoId={selectedProduct.id}
+                      hasImage={!!selectedProduct.imagen_path}
+                      alt={selectedProduct.nombre}
+                      className="h-11 w-11 rounded-xl ring-1 ring-surface-border"
+                    />
+                  )}
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2">
-                      <span className="inline-flex rounded-md bg-white px-2 py-0.5 font-mono text-xs font-semibold text-slate-700 ring-1 ring-surface-border">
+                      <span
+                        className={cn(
+                          'inline-flex rounded-md px-2 py-0.5 font-mono text-xs font-bold tracking-wide',
+                          nativeApp
+                            ? 'bg-brand-600 text-white shadow-sm'
+                            : 'bg-white font-semibold text-slate-700 ring-1 ring-surface-border'
+                        )}
+                      >
                         {selectedProduct.codigo_interno}
                       </span>
                       <p className="ml-auto shrink-0 text-[10px] font-semibold uppercase tracking-wide text-brand-600">
                         Nueva línea
                       </p>
                     </div>
-                    <p className="mt-1 truncate text-sm font-semibold text-slate-900">
+                    <ScrollableProductName className="mt-1 text-sm font-semibold text-slate-900">
                       {selectedProduct.nombre}
-                    </p>
+                    </ScrollableProductName>
                   </div>
                   <button
                     type="button"
                     className="rounded-lg p-1.5 text-slate-400 hover:bg-white hover:text-slate-600"
-                    onClick={() => {
-                      setSelectedProduct(null)
-                      setProductSearch('')
-                      resetLineaForm()
-                      productSearchRef.current?.focus()
-                    }}
+                    onClick={cancelarLineaForm}
                   >
                     <X className="h-4 w-4" />
                   </button>
@@ -1939,6 +2190,7 @@ export function RetornosPage() {
                     </Button>
                   </div>
                 </div>
+                {!nativeApp && (
                 <p className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs leading-relaxed text-slate-500">
                   <span className="inline-flex items-center gap-1">
                     <Box className="h-3 w-3 text-amber-600" aria-hidden />
@@ -1961,7 +2213,9 @@ export function RetornosPage() {
                       : 'suma stock al confirmar el retorno.'}
                   </span>
                 </p>
+                )}
               </div>
+              </>
             )}
           </div>
         </div>
@@ -1970,45 +2224,94 @@ export function RetornosPage() {
           {lineasListContent}
         </div>
 
-        <div className="shrink-0 border-t border-surface-border bg-white px-4 py-4 shadow-[0_-4px_12px_rgba(0,0,0,0.04)] sm:px-5">
-          <div className="flex items-center justify-between gap-4">
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">
-                Total general
-              </p>
-              <p className="text-2xl font-bold tabular-nums text-brand-700">
-                {formatCantidad(totalGeneral)}
-              </p>
-              <p className="mt-1 text-xs text-slate-500">
-                {lineas.length} línea{lineas.length === 1 ? '' : 's'} cargada
-                {lineas.length === 1 ? '' : 's'}
-              </p>
-            </div>
-            {hasPermiso('retornos.crear') && (
-              <div className="flex shrink-0 flex-wrap gap-2">
-                <Button
-                  variant="secondary"
-                  className="rounded-xl"
-                  onClick={cancelarRetornoEnCurso}
-                  disabled={saving}
-                >
-                  Cancelar retorno
-                </Button>
-                <Button
-                  className="rounded-xl"
-                  onClick={() => void confirmarRetorno()}
-                  disabled={lineas.length === 0 || saving}
-                >
-                  <Check className="h-4 w-4" />
-                  {saving
-                    ? 'Registrando...'
-                    : dobleVerificacion
-                      ? 'Confirmar retorno'
-                      : 'Confirmar y sumar stock'}
-                </Button>
+        <div
+          className={cn(
+            'shrink-0 border-t border-surface-border bg-white shadow-[0_-4px_12px_rgba(0,0,0,0.04)]',
+            nativeApp
+              ? 'px-3 pt-3 pb-3'
+              : 'px-4 py-4 sm:px-5'
+          )}
+        >
+          {nativeApp ? (
+            <div className="space-y-3">
+              <div className="flex items-end justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">
+                    Total
+                  </p>
+                  <p className="text-xl font-bold tabular-nums text-brand-700">
+                    {formatCantidad(totalGeneral)}
+                  </p>
+                </div>
+                <p className="shrink-0 text-xs text-slate-500">
+                  {lineas.length} línea{lineas.length === 1 ? '' : 's'}
+                </p>
               </div>
-            )}
-          </div>
+              {hasPermiso('retornos.crear') && (
+                <div className="grid grid-cols-2 gap-2">
+                  <Button
+                    variant="secondary"
+                    className="h-11 rounded-xl"
+                    onClick={cancelarRetornoEnCurso}
+                    disabled={saving}
+                  >
+                    Cancelar
+                  </Button>
+                  <Button
+                    className="h-11 rounded-xl"
+                    onClick={() => void confirmarRetorno()}
+                    disabled={lineas.length === 0 || saving}
+                  >
+                    <Check className="h-4 w-4" />
+                    {saving
+                      ? '…'
+                      : dobleVerificacion
+                        ? 'Confirmar'
+                        : 'Confirmar'}
+                  </Button>
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="flex items-center justify-between gap-4">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+                  Total general
+                </p>
+                <p className="text-2xl font-bold tabular-nums text-brand-700">
+                  {formatCantidad(totalGeneral)}
+                </p>
+                <p className="mt-1 text-xs text-slate-500">
+                  {lineas.length} línea{lineas.length === 1 ? '' : 's'} cargada
+                  {lineas.length === 1 ? '' : 's'}
+                </p>
+              </div>
+              {hasPermiso('retornos.crear') && (
+                <div className="flex shrink-0 flex-wrap gap-2">
+                  <Button
+                    variant="secondary"
+                    className="rounded-xl"
+                    onClick={cancelarRetornoEnCurso}
+                    disabled={saving}
+                  >
+                    Cancelar retorno
+                  </Button>
+                  <Button
+                    className="rounded-xl"
+                    onClick={() => void confirmarRetorno()}
+                    disabled={lineas.length === 0 || saving}
+                  >
+                    <Check className="h-4 w-4" />
+                    {saving
+                      ? 'Registrando...'
+                      : dobleVerificacion
+                        ? 'Confirmar retorno'
+                        : 'Confirmar y sumar stock'}
+                  </Button>
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
         <BarcodeScannerModal
@@ -2025,33 +2328,15 @@ export function RetornosPage() {
   }
 
   return (
-    <div className="mx-auto max-w-6xl space-y-6">
-      <section className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-        <div>
-          <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">
-            Movimientos
-          </p>
-          <div className="mt-1 flex items-center gap-1.5">
-            <h1 className="text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">
-              Retornos
-            </h1>
-            <SectionHelpButton guideId="retornos" />
-          </div>
-          <p className="mt-2 max-w-xl text-sm leading-relaxed text-slate-500">
-            {dobleVerificacion
-              ? 'Mercadería que vuelve a bodega — sin verificar hasta segunda revisión por otro usuario.'
-              : 'Mercadería que vuelve a bodega — ingreso directo: al confirmar ya suma stock (control en hoja).'}
-          </p>
-        </div>
-        {hasPermiso('retornos.crear') && (
-          <div className="flex flex-col items-stretch gap-2 sm:items-end">
-            <p className="text-xs text-slate-400 sm:text-right">
-              {tieneBorrador
-                ? 'Enter → continuar retorno en curso'
-                : 'Enter → nuevo retorno'}
-            </p>
+    <div className={cn('mx-auto max-w-6xl', nativeApp ? '-mt-1 space-y-3' : 'space-y-6')}>
+      {nativeApp ? (
+        <div className="flex items-center gap-3">
+          <h1 className="min-w-0 flex-1 truncate text-xl font-bold tracking-tight text-slate-900">
+            Retornos
+          </h1>
+          {hasPermiso('retornos.crear') && (
             <Button
-              className="rounded-xl px-4"
+              className="h-10 shrink-0 rounded-xl px-3"
               onClick={() => {
                 if (tieneBorrador) continuarBorrador()
                 else abrirNuevoRetorno()
@@ -2060,25 +2345,77 @@ export function RetornosPage() {
               {tieneBorrador ? (
                 <>
                   <ClipboardList className="h-4 w-4" />
-                  Continuar retorno
+                  Continuar
                 </>
               ) : (
                 <>
                   <Plus className="h-4 w-4" />
-                  Nuevo retorno
+                  Nuevo
                 </>
               )}
             </Button>
+          )}
+        </div>
+      ) : (
+        <section className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">
+              Movimientos
+            </p>
+            <div className="mt-1 flex items-center gap-1.5">
+              <h1 className="text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">
+                Retornos
+              </h1>
+              <SectionHelpButton guideId="retornos" />
+            </div>
+            <p className="mt-2 max-w-xl text-sm leading-relaxed text-slate-500">
+              {dobleVerificacion
+                ? 'Mercadería que vuelve a bodega — sin verificar hasta segunda revisión por otro usuario.'
+                : 'Mercadería que vuelve a bodega — ingreso directo: al confirmar ya suma stock (control en hoja).'}
+            </p>
           </div>
-        )}
-      </section>
+          {hasPermiso('retornos.crear') && (
+            <div className="flex flex-col items-stretch gap-2 sm:items-end">
+              <p className="text-xs text-slate-400 sm:text-right">
+                {tieneBorrador
+                  ? 'Enter → continuar retorno en curso'
+                  : 'Enter → nuevo retorno'}
+              </p>
+              <Button
+                className="rounded-xl px-4"
+                onClick={() => {
+                  if (tieneBorrador) continuarBorrador()
+                  else abrirNuevoRetorno()
+                }}
+              >
+                {tieneBorrador ? (
+                  <>
+                    <ClipboardList className="h-4 w-4" />
+                    Continuar retorno
+                  </>
+                ) : (
+                  <>
+                    <Plus className="h-4 w-4" />
+                    Nuevo retorno
+                  </>
+                )}
+              </Button>
+            </div>
+          )}
+        </section>
+      )}
 
       <Card className="overflow-hidden shadow-panel">
-        <div className="border-b border-brand-100 bg-gradient-to-r from-brand-50/80 via-white to-white px-5 py-4 sm:px-6">
-          <div className="flex flex-col gap-3">
-            <div className="flex flex-wrap items-center gap-2">
-              <div className="relative min-w-[10rem] flex-1">
-                <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-brand-400" />
+        <div
+          className={cn(
+            'border-b border-brand-100 bg-gradient-to-r from-brand-50/80 via-white to-white sm:px-6',
+            nativeApp ? 'px-3 py-2.5' : 'px-5 py-4'
+          )}
+        >
+          <div className={cn('flex flex-col', nativeApp ? 'gap-2' : 'gap-3')}>
+            <div className={cn('flex gap-2', nativeApp ? 'flex-col' : 'flex-wrap items-center')}>
+              <div className="relative min-w-0 flex-1">
+                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-brand-400" />
                 <input
                   ref={listSearchRef}
                   type="search"
@@ -2086,31 +2423,52 @@ export function RetornosPage() {
                   value={listSearch}
                   onChange={(e) => setListSearch(e.target.value)}
                   onKeyDown={registroListKb.handleListSearchKeyDown}
-                  className="w-full rounded-xl border border-surface-border bg-white py-2.5 pl-10 pr-4 text-sm shadow-sm focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20"
+                  className={cn(
+                    'w-full rounded-xl border border-surface-border bg-white pl-9 pr-3 text-sm shadow-sm focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20',
+                    nativeApp ? 'py-2' : 'py-2.5 pl-10 pr-4'
+                  )}
                 />
               </div>
 
-              <div className="flex shrink-0 items-center gap-1.5 rounded-xl border border-surface-border bg-white px-2 py-1.5 shadow-sm">
-                <span className="pl-1 text-xs font-medium text-slate-500">Desde</span>
+              <div
+                className={cn(
+                  'flex shrink-0 items-center gap-1.5 rounded-xl border border-surface-border bg-white shadow-sm',
+                  nativeApp ? 'w-full justify-between px-2 py-1' : 'px-2 py-1.5'
+                )}
+              >
+                <span className="pl-0.5 text-[11px] font-medium text-slate-500">Desde</span>
                 <input
                   type="date"
                   value={listFechaDesde}
                   onChange={(e) => setListFechaDesde(e.target.value)}
                   title="Fecha desde — solo este campo = ese día"
-                  className="rounded border-0 bg-transparent px-1 py-1 text-sm focus:outline-none focus:ring-0"
+                  className="min-w-0 flex-1 rounded border-0 bg-transparent px-1 py-1 text-sm focus:outline-none focus:ring-0"
                 />
                 <span className="text-slate-300">|</span>
-                <span className="text-xs font-medium text-slate-500">Hasta</span>
+                <span className="text-[11px] font-medium text-slate-500">Hasta</span>
                 <input
                   type="date"
                   value={listFechaHasta}
                   onChange={(e) => setListFechaHasta(e.target.value)}
                   title="Fecha hasta — solo este campo = ese día"
-                  className="rounded border-0 bg-transparent px-1 py-1 text-sm focus:outline-none focus:ring-0"
+                  className="min-w-0 flex-1 rounded border-0 bg-transparent px-1 py-1 text-sm focus:outline-none focus:ring-0"
                 />
+                {(listFechaDesde || listFechaHasta) && (
+                  <button
+                    type="button"
+                    className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
+                    onClick={() => {
+                      setListFechaDesde('')
+                      setListFechaHasta('')
+                    }}
+                    aria-label="Limpiar fechas"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                )}
               </div>
 
-              {(listFechaDesde || listFechaHasta) && (
+              {!nativeApp && (listFechaDesde || listFechaHasta) && (
                 <Button
                   type="button"
                   variant="ghost"
@@ -2125,11 +2483,12 @@ export function RetornosPage() {
                 </Button>
               )}
             </div>
-
-            <p className="text-xs text-slate-500">
-              Una sola fecha filtra ese día · las dos juntas = rango
-              {hasPermiso('retornos.crear') && ' · Enter = nuevo retorno'}
-            </p>
+            {!nativeApp && (
+              <p className="text-xs text-slate-500">
+                Una sola fecha filtra ese día · las dos juntas = rango
+                {hasPermiso('retornos.crear') && ' · Enter = nuevo retorno'}
+              </p>
+            )}
 
             <DayTabsRow
               days={diasConRetornos}
@@ -2140,11 +2499,11 @@ export function RetornosPage() {
               hidePendingDotOnDay={todayIsoDate()}
             />
 
-            <div className="flex flex-wrap gap-2">
+            <div className={cn('flex flex-wrap gap-2', nativeApp && 'gap-1.5')}>
               {(
                 [
                   ['TODOS', 'Todos', conteoEstadoFiltros.pendiente + conteoEstadoFiltros.verificado],
-                  ['PENDIENTE', 'Sin verificar', conteoEstadoFiltros.pendiente],
+                  ['PENDIENTE', nativeApp ? 'Pendientes' : 'Sin verificar', conteoEstadoFiltros.pendiente],
                   ['VERIFICADO', 'Verificados', conteoEstadoFiltros.verificado]
                 ] as const
               ).map(([e, label, count]) => (
@@ -2154,6 +2513,7 @@ export function RetornosPage() {
                   size="sm"
                   className={cn(
                     'rounded-xl',
+                    nativeApp && 'h-8 px-2.5 text-xs',
                     e === 'PENDIENTE' &&
                       filtroEstado !== 'PENDIENTE' &&
                       count > 0 &&
@@ -2185,7 +2545,12 @@ export function RetornosPage() {
           </div>
         </div>
 
-        <div className="flex items-center justify-between gap-3 border-b border-surface-border bg-slate-50/80 px-5 py-3.5 sm:px-6">
+        <div
+          className={cn(
+            'flex items-center justify-between gap-3 border-b border-surface-border bg-slate-50/80 sm:px-6',
+            nativeApp ? 'px-3 py-2.5' : 'px-5 py-3.5'
+          )}
+        >
           <div>
             <h2 className="text-sm font-semibold text-slate-900">
               {diasConRetornos.length > 0 ? formatDayTabLabel(selectedDay) : 'Registros'}
@@ -2199,9 +2564,16 @@ export function RetornosPage() {
           {loadingList && <Loader2 className="h-5 w-5 shrink-0 animate-spin text-brand-600" />}
         </div>
 
-        <CardBody className="p-0">
+        <CardBody className={cn(nativeApp ? 'bg-surface-muted/35 p-2' : 'p-0')}>
           {error && (
-            <div className="border-b border-red-100 bg-red-50 px-6 py-3 text-sm text-red-700">
+            <div
+              className={cn(
+                'text-sm text-red-700',
+                nativeApp
+                  ? 'mb-2 rounded-xl border border-red-100 bg-red-50 px-4 py-3'
+                  : 'border-b border-red-100 bg-red-50 px-6 py-3'
+              )}
+            >
               {error}
             </div>
           )}
@@ -2211,7 +2583,12 @@ export function RetornosPage() {
               Cargando retornos...
             </div>
           ) : retornosVisibles.length === 0 ? (
-            <div className="flex flex-col items-center px-6 py-16 text-center">
+            <div
+              className={cn(
+                'flex flex-col items-center px-6 py-14 text-center',
+                nativeApp && 'rounded-xl border border-dashed border-surface-border bg-white shadow-card'
+              )}
+            >
               <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-slate-100 text-slate-400">
                 <RotateCcw className="h-7 w-7" />
               </div>
@@ -2220,13 +2597,16 @@ export function RetornosPage() {
                   ? 'No hay retornos con esos filtros'
                   : 'No hay retornos registrados'}
               </p>
-              <p className="mt-1 max-w-sm text-xs text-slate-500">
-                {listSearch || listFechaDesde || listFechaHasta || filtroEstado !== 'TODOS'
-                  ? 'Probá ampliar el rango de fechas o cambiar la búsqueda'
-                  : 'Registrá el primer retorno de mercadería que vuelve a bodega'}
-              </p>
+              {!nativeApp && (
+                <p className="mt-1 max-w-sm text-xs text-slate-500">
+                  {listSearch || listFechaDesde || listFechaHasta || filtroEstado !== 'TODOS'
+                    ? 'Probá ampliar el rango de fechas o cambiar la búsqueda'
+                    : 'Registrá el primer retorno de mercadería que vuelve a bodega'}
+                </p>
+              )}
               {!(listSearch || listFechaDesde || listFechaHasta || filtroEstado !== 'TODOS') &&
-                hasPermiso('retornos.crear') && (
+                hasPermiso('retornos.crear') &&
+                !nativeApp && (
                   <Button
                     className="mt-4 rounded-xl"
                     size="sm"
@@ -2250,13 +2630,89 @@ export function RetornosPage() {
                 )}
             </div>
           ) : retornosDelDia.length === 0 ? (
-            <div className="flex flex-col items-center px-6 py-16 text-center">
+            <div
+              className={cn(
+                'flex flex-col items-center px-6 py-14 text-center',
+                nativeApp && 'rounded-xl border border-dashed border-surface-border bg-white shadow-card'
+              )}
+            >
               <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-slate-100 text-slate-400">
                 <RotateCcw className="h-7 w-7" />
               </div>
               <p className="mt-4 text-sm font-medium text-slate-700">Sin resultados para este día</p>
-              <p className="mt-1 text-xs text-slate-500">Probá otra fecha o ajustá la búsqueda</p>
+              {!nativeApp && (
+                <p className="mt-1 text-xs text-slate-500">Probá otra fecha o ajustá la búsqueda</p>
+              )}
             </div>
+          ) : nativeApp ? (
+            <ul className="space-y-2">
+              {retornosDelDiaOrdenados.map((r, index) => {
+                const esPendiente = r.estado === 'PENDIENTE'
+                return (
+                  <li
+                    key={r.id}
+                    {...registroListKb.listItemProps(
+                      index,
+                      cn(
+                        'overflow-hidden rounded-xl border border-surface-border bg-white shadow-card border-l-4',
+                        esPendiente ? 'border-l-amber-400' : 'border-l-emerald-400'
+                      )
+                    )}
+                  >
+                    <button
+                      type="button"
+                      className="flex w-full items-start gap-3 px-3 py-3 text-left active:bg-slate-50"
+                      onClick={() => void abrirRetorno(r.id)}
+                    >
+                      <div className="min-w-0 flex-1">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <p
+                            className={cn(
+                              'truncate text-sm font-semibold',
+                              esPendiente ? 'text-amber-950' : 'text-slate-900'
+                            )}
+                          >
+                            {r.numero_planilla ?? `Retorno #${r.id}`}
+                          </p>
+                          {badgeEstadoRetorno(r.estado, 'sm', !!r.ingreso_directo)}
+                        </div>
+                        <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-slate-500">
+                          {r.camionero_nombre ? (
+                            <>
+                              <span className="inline-flex items-center gap-1">
+                                <Truck className="h-3 w-3" />
+                                {r.camionero_nombre}
+                              </span>
+                              <span>·</span>
+                            </>
+                          ) : null}
+                          <span>
+                            {r.lineas_count} línea{r.lineas_count === 1 ? '' : 's'}
+                          </span>
+                          <span>·</span>
+                          <span className="inline-flex items-center gap-1">
+                            <User className="h-3 w-3" />
+                            {r.usuario_nombre}
+                          </span>
+                        </div>
+                      </div>
+                      <div className="flex shrink-0 flex-col items-end justify-center">
+                        <span
+                          className={cn(
+                            'inline-flex items-center rounded-lg px-2.5 py-1 text-sm font-bold tabular-nums ring-1',
+                            esPendiente
+                              ? 'bg-amber-100 text-amber-900 ring-amber-200'
+                              : 'bg-brand-50 text-brand-700 ring-brand-100'
+                          )}
+                        >
+                          {formatCantidad(r.total_cajas)}
+                        </span>
+                      </div>
+                    </button>
+                  </li>
+                )
+              })}
+            </ul>
           ) : (
             <ul className="divide-y divide-surface-border/80">
               {retornosDelDiaOrdenados.map((r, index) => {

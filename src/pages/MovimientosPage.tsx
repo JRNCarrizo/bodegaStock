@@ -23,6 +23,7 @@ import {
   RegistroDetalleObsChip,
   RegistroDetallePanel
 } from '@/components/RegistroDetallePanel'
+import { ScrollableProductName } from '@/components/ScrollableProductName'
 import { SwipeableConteoLinea } from '@/components/SwipeableConteoLinea'
 import { SectionHelpButton } from '@/components/SectionHelpButton'
 import { Button } from '@/components/ui/Button'
@@ -44,9 +45,14 @@ import {
   todayIsoDate,
   totalSueltoLineaConteo
 } from '@/lib/desglose'
+import { isNativeApp } from '@/lib/nativeServer'
 import { searchDelayMs } from '@/lib/searchDelay'
 import { api, cn } from '@/lib/utils'
 import { codigoProductoExacto } from '@/lib/productoSearch'
+import {
+  scrollFocusedFieldIntoSheet,
+  useVisualViewportBottomInset
+} from '@/hooks/useVisualViewportBottomInset'
 import type {
   MovimientoInternoDetalle,
   MovimientoInternoDetalleLinea,
@@ -61,54 +67,92 @@ import { useAuth } from '@/context/AuthContext'
 import { useEscHandler } from '@/hooks/useEscHandler'
 import { useRegistroListKeyboard } from '@/hooks/useRegistroListKeyboard'
 
-function badgeTipo(tipo: MovimientoInternoTipo) {
+function badgeTipo(tipo: MovimientoInternoTipo, compact = false) {
+  const size = compact ? 'gap-0.5 px-2 py-0.5 text-[10px]' : 'gap-1 px-2.5 py-0.5 text-xs'
+  const icon = compact ? 'h-2.5 w-2.5' : 'h-3 w-3'
   if (tipo === 'ENVIAR') {
     return (
-      <span className="inline-flex items-center gap-1 rounded-full bg-brand-50 px-2.5 py-0.5 text-xs font-medium text-brand-800 ring-1 ring-brand-100">
-        <Send className="h-3 w-3" />
+      <span
+        className={cn(
+          'inline-flex items-center rounded-full bg-brand-50 font-medium text-brand-800 ring-1 ring-brand-100',
+          size
+        )}
+      >
+        <Send className={icon} />
         Enviar
       </span>
     )
   }
   if (tipo === 'LISTA') {
     return (
-      <span className="inline-flex items-center gap-1 rounded-full bg-sky-50 px-2.5 py-0.5 text-xs font-medium text-sky-800 ring-1 ring-sky-100">
-        <ClipboardList className="h-3 w-3" />
+      <span
+        className={cn(
+          'inline-flex items-center rounded-full bg-sky-50 font-medium text-sky-800 ring-1 ring-sky-100',
+          size
+        )}
+      >
+        <ClipboardList className={icon} />
         Lista
       </span>
     )
   }
   return (
-    <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-medium text-slate-700 ring-1 ring-surface-border">
-      <ArrowLeftRight className="h-3 w-3" />
+    <span
+      className={cn(
+        'inline-flex items-center rounded-full bg-slate-100 font-medium text-slate-700 ring-1 ring-surface-border',
+        size
+      )}
+    >
+      <ArrowLeftRight className={icon} />
       Recibir
     </span>
   )
 }
 
-function badgeEstado(estado: MovimientoInternoEstado, ingresoDirecto = false) {
+function badgeEstado(estado: MovimientoInternoEstado, ingresoDirecto = false, compact = false) {
+  const size = compact ? 'px-2 py-0.5 text-[10px]' : 'px-2.5 py-0.5 text-xs'
   switch (estado) {
     case 'ABIERTA':
       return (
-        <span className="inline-flex items-center rounded-full bg-sky-50 px-2.5 py-0.5 text-xs font-medium text-sky-800 ring-1 ring-sky-100">
+        <span
+          className={cn(
+            'inline-flex items-center rounded-full bg-sky-50 font-medium text-sky-800 ring-1 ring-sky-100',
+            size
+          )}
+        >
           Abierta
         </span>
       )
     case 'PENDIENTE':
       return (
-        <span className="inline-flex items-center rounded-full bg-amber-50 px-2.5 py-0.5 text-xs font-medium text-amber-800 ring-1 ring-amber-100">
+        <span
+          className={cn(
+            'inline-flex items-center rounded-full bg-amber-50 font-medium text-amber-800 ring-1 ring-amber-100',
+            size
+          )}
+        >
           Pendiente
         </span>
       )
     case 'COMPLETADO':
       return (
-        <span className="inline-flex items-center rounded-full bg-green-50 px-2.5 py-0.5 text-xs font-medium text-green-800 ring-1 ring-green-100">
+        <span
+          className={cn(
+            'inline-flex items-center rounded-full bg-green-50 font-medium text-green-800 ring-1 ring-green-100',
+            size
+          )}
+        >
           {ingresoDirecto ? 'Ingreso directo' : 'Completado'}
         </span>
       )
     case 'CANCELADO':
       return (
-        <span className="inline-flex items-center rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-medium text-slate-600 ring-1 ring-surface-border">
+        <span
+          className={cn(
+            'inline-flex items-center rounded-full bg-slate-100 font-medium text-slate-600 ring-1 ring-surface-border',
+            size
+          )}
+        >
           Cancelado
         </span>
       )
@@ -293,6 +337,16 @@ export function MovimientosPage() {
   const destinoRef = useRef<HTMLSelectElement>(null)
   const ubicacionOrigenRef = useRef<HTMLSelectElement>(null)
   const ubicacionDestinoRef = useRef<HTMLSelectElement>(null)
+  const keyboardBridgeRef = useRef<HTMLInputElement>(null)
+  const pendingFocusCantidadRef = useRef(false)
+  const nativeApp = isNativeApp()
+  const keyboardInset = useVisualViewportBottomInset()
+
+  function armKeyboardForCantidadModal() {
+    if (!nativeApp) return
+    pendingFocusCantidadRef.current = true
+    keyboardBridgeRef.current?.focus({ preventScroll: true })
+  }
 
   const lineasEditor = detalle?.lineas ?? []
   const lineasActivasEditor = useMemo(
@@ -625,7 +679,14 @@ export function MovimientosPage() {
   })
 
   function focusField(ref: React.RefObject<HTMLElement | null>) {
-    requestAnimationFrame(() => ref.current?.focus({ preventScroll: true }))
+    requestAnimationFrame(() => {
+      const el = ref.current
+      if (!el) return
+      el.focus({ preventScroll: true })
+      if (el instanceof HTMLInputElement) {
+        requestAnimationFrame(() => el.select())
+      }
+    })
   }
 
   function focusProductSearch() {
@@ -791,17 +852,33 @@ export function MovimientosPage() {
   }
 
   function handleTipoBultoChange(tipo: 'PALLET' | 'CAJA' | 'SUELTO') {
+    const targetEl =
+      tipo === 'SUELTO' ? cantidadSueltaRef.current : cantidadBultosRef.current
+    // Si el input con foco se va a ocultar, mover el foco ANTES del setState
+    // para que Android no cierre y reabra el teclado.
+    if (nativeApp && targetEl && document.activeElement !== targetEl) {
+      targetEl.focus({ preventScroll: true })
+    }
+
     setTipoBulto(tipo)
     if (tipo === 'SUELTO') {
       setCantidadBultos('')
       setUnidadesPorBulto('')
-      setTimeout(() => focusField(cantidadSueltaRef), 50)
     } else {
       // Mantener sueltas opcionales al cambiar PALLET ↔ CAJA; limpiar al salir de SUELTO.
       if (tipoBulto === 'SUELTO') setCantidadSuelta('')
       setUnidadesPorBulto(defaultUnidadesPorBulto(tipo, selectedProduct))
-      setTimeout(() => focusField(cantidadBultosRef), 50)
     }
+
+    requestAnimationFrame(() => {
+      const el =
+        tipo === 'SUELTO' ? cantidadSueltaRef.current : cantidadBultosRef.current
+      if (!el) return
+      if (document.activeElement !== el) el.focus({ preventScroll: true })
+      if (nativeApp) scrollFocusedFieldIntoSheet(el, 0)
+      else el.scrollIntoView({ block: 'center', behavior: 'smooth' })
+      el.select()
+    })
   }
 
   function cancelarLineaForm() {
@@ -817,6 +894,7 @@ export function MovimientosPage() {
   }
 
   function selectProduct(p: MovimientoInternoProductoStock) {
+    armKeyboardForCantidadModal()
     setEditingLineaId(null)
     setSelectedProduct(p)
     setProductSearch(p.codigo_interno)
@@ -828,14 +906,28 @@ export function MovimientosPage() {
     setFormUbicacionDestinoId(ubicacionDestinoId)
     resetLineaForm(p)
     setError('')
-    setTimeout(
-      () => focusField(tipoBulto === 'SUELTO' ? cantidadSueltaRef : cantidadBultosRef),
-      50
-    )
+    if (!nativeApp) {
+      setTimeout(
+        () => focusField(tipoBulto === 'SUELTO' ? cantidadSueltaRef : cantidadBultosRef),
+        50
+      )
+    }
   }
+
+  useEffect(() => {
+    if (!nativeApp || !selectedProduct || !pendingFocusCantidadRef.current) return
+    pendingFocusCantidadRef.current = false
+    const id = window.requestAnimationFrame(() => {
+      const ref = tipoBulto === 'SUELTO' ? cantidadSueltaRef : cantidadBultosRef
+      focusField(ref)
+      scrollFocusedFieldIntoSheet(ref.current, 0)
+    })
+    return () => window.cancelAnimationFrame(id)
+  }, [nativeApp, selectedProduct, tipoBulto, editingLineaId])
 
   function empezarEditarLinea(l: MovimientoInternoDetalleLinea) {
     setSwipeOpenLineId(null)
+    armKeyboardForCantidadModal()
     setEditingLineaId(l.id)
     setSelectedProduct({
       id: l.producto_id,
@@ -859,7 +951,7 @@ export function MovimientosPage() {
       setCantidadBultos('')
       setUnidadesPorBulto('')
       setCantidadSuelta(l.cantidad_suelta != null ? String(l.cantidad_suelta) : '')
-      setTimeout(() => focusField(cantidadSueltaRef), 50)
+      if (!nativeApp) setTimeout(() => focusField(cantidadSueltaRef), 50)
     } else {
       setTipoBulto(l.tipo_bulto === 'CAJA' ? 'CAJA' : 'PALLET')
       setCantidadBultos(l.cantidad_bultos != null ? String(l.cantidad_bultos) : '')
@@ -867,7 +959,7 @@ export function MovimientosPage() {
       setCantidadSuelta(
         l.cantidad_suelta != null && Number(l.cantidad_suelta) > 0 ? String(l.cantidad_suelta) : ''
       )
-      setTimeout(() => focusField(cantidadBultosRef), 50)
+      if (!nativeApp) setTimeout(() => focusField(cantidadBultosRef), 50)
     }
     setExpandedProductos((prev) => new Set(prev).add(l.producto_id))
     setError('')
@@ -1180,8 +1272,8 @@ export function MovimientosPage() {
     if (!detalle) return
     const activas = lineasActivasEditor.length
     if (activas > 0) {
-      if (!confirm(`La lista tiene ${activas} línea(s). ¿Cancelar la lista abierta?`)) return
-    } else if (!confirm('¿Cancelar la lista abierta?')) {
+      if (!confirm(`La lista tiene ${activas} línea(s). ¿Descartar la lista sin guardar?`)) return
+    } else if (!confirm('¿Descartar la lista sin guardar?')) {
       return
     }
     setSaving(true)
@@ -1194,7 +1286,7 @@ export function MovimientosPage() {
       setTieneListaAbierta(false)
       volverAlListado()
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Error al cancelar')
+      setError(err instanceof Error ? err.message : 'Error al descartar')
     } finally {
       setSaving(false)
     }
@@ -1328,18 +1420,17 @@ export function MovimientosPage() {
   }
 
   async function cancelarDocPendiente() {
-    if (!detalle || !confirm('¿Cancelar este movimiento?')) return
+    if (!detalle || !confirm('¿Descartar este movimiento sin guardar?')) return
     setSaving(true)
     setError('')
     try {
-      const data = await api<MovimientoInternoDetalle>(
-        `/api/movimientos-internos/${detalle.movimiento.id}/cancelar`,
-        { method: 'POST' }
-      )
-      setDetalle(data)
+      await api(`/api/movimientos-internos/${detalle.movimiento.id}/cancelar`, {
+        method: 'POST'
+      })
+      volverAlListado()
       void loadMovimientos()
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Error al cancelar')
+      setError(err instanceof Error ? err.message : 'Error al descartar')
     } finally {
       setSaving(false)
     }
@@ -1403,9 +1494,11 @@ export function MovimientosPage() {
 
     const metaDetalle = (
       <>
-        <RegistroDetalleMetaChip icon={<User className="h-3.5 w-3.5 shrink-0 text-slate-400" />}>
-          {m.creado_por_nombre}
-        </RegistroDetalleMetaChip>
+        {!nativeApp && (
+          <RegistroDetalleMetaChip icon={<User className="h-3.5 w-3.5 shrink-0 text-slate-400" />}>
+            {m.creado_por_nombre}
+          </RegistroDetalleMetaChip>
+        )}
         {m.recibido_por_nombre && (
           <RegistroDetalleMetaChip>
             <span className="font-medium text-slate-500">Finalizado </span>
@@ -1416,12 +1509,19 @@ export function MovimientosPage() {
       </>
     )
 
+    const encabezadoSublineDetalle = nativeApp ? (
+      <span className="inline-flex max-w-[12rem] items-center gap-1 text-[11px] text-slate-500">
+        <User className="h-3 w-3 shrink-0 text-slate-400" />
+        <span className="truncate">{m.creado_por_nombre}</span>
+      </span>
+    ) : undefined
+
     const antesProductosDetalle = (
       <>
         {error && (
           <div className="rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>
         )}
-        {m.estado === 'PENDIENTE' && (
+        {m.estado === 'PENDIENTE' && !nativeApp && (
           <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950">
             <p className="font-medium">Pendiente de autorización</p>
             <p className="mt-1 text-amber-900/80">
@@ -1434,7 +1534,7 @@ export function MovimientosPage() {
             </p>
           </div>
         )}
-        {m.estado === 'COMPLETADO' && m.ingreso_directo && (
+        {m.estado === 'COMPLETADO' && m.ingreso_directo && !nativeApp && (
           <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-950">
             <p className="font-medium">Ingreso directo</p>
             <p className="mt-1 text-emerald-900/80">
@@ -1457,10 +1557,11 @@ export function MovimientosPage() {
           totalSuelto={detalleResumenBultos?.suelto}
           encabezadoExtra={
             <>
-              {badgeTipo(m.tipo)}
-              {badgeEstado(m.estado, !!m.ingreso_directo)}
+              {badgeTipo(m.tipo, nativeApp)}
+              {badgeEstado(m.estado, !!m.ingreso_directo, nativeApp)}
             </>
           }
+          encabezadoSubline={encabezadoSublineDetalle}
           meta={metaDetalle}
           antesProductos={antesProductosDetalle}
           lineas={detalle.lineas
@@ -1505,18 +1606,23 @@ export function MovimientosPage() {
             return (
               <div key={grupo.producto.producto_id}>
                 <div
-                  className={`flex items-center gap-2 px-4 py-2.5 ${
+                  className={cn(
+                    'flex gap-2 px-4 py-2.5',
+                    nativeApp ? 'flex-wrap items-start' : 'items-center',
                     cancelada
                       ? 'bg-slate-50/80 opacity-60'
                       : confirmada
                         ? 'border-l-2 border-green-500 bg-green-50/90'
                         : 'hover:bg-slate-50/80'
-                  }`}
+                  )}
                 >
                   <button
                     type="button"
                     onClick={() => toggleProductoExpandDetalle(grupo.producto.producto_id)}
-                    className="shrink-0 rounded p-1 text-slate-400 hover:bg-slate-200 hover:text-slate-700"
+                    className={cn(
+                      'shrink-0 rounded p-1 text-slate-400 hover:bg-slate-200 hover:text-slate-700',
+                      nativeApp && 'mt-0.5'
+                    )}
                     aria-expanded={isExpanded}
                   >
                     {isExpanded ? (
@@ -1525,22 +1631,89 @@ export function MovimientosPage() {
                       <ChevronRight className="h-4 w-4" />
                     )}
                   </button>
-                  <div className="min-w-0 flex-1">
-                    <div className="flex min-w-0 items-baseline gap-2">
-                      <span className="shrink-0 font-mono text-sm font-semibold text-slate-900">
-                        {grupo.producto.codigo_interno}
-                      </span>
-                      <span className="min-w-0 truncate text-sm text-slate-600" title={grupo.producto.nombre}>
+                  {nativeApp ? (
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-start justify-between gap-2">
+                        <span className="inline-flex max-w-[70%] truncate rounded-md bg-brand-600 px-2 py-0.5 font-mono text-xs font-bold tracking-wide text-white shadow-sm">
+                          {grupo.producto.codigo_interno}
+                        </span>
+                        <div className="flex shrink-0 items-center gap-1.5">
+                          <span className="inline-flex items-center rounded-lg bg-brand-50 px-2.5 py-1.5 text-sm font-bold tabular-nums text-brand-700 ring-1 ring-brand-100">
+                            {formatBultosPieLabel(
+                              sumBultosPieFromLineas(
+                                grupo.lineas.filter((l) => !l.cancelada).map(bultosPieDesdeLinea)
+                              )
+                            )}
+                          </span>
+                          {cancelada ? (
+                            <button
+                              type="button"
+                              className="shrink-0 text-xs text-brand-600 hover:underline"
+                              onClick={() => restaurarLineasGrupo(grupo.lineas)}
+                            >
+                              Restaurar
+                            </button>
+                          ) : (
+                            <div className="flex shrink-0 items-center gap-0.5">
+                              <Button
+                                type="button"
+                                variant="secondary"
+                                size="sm"
+                                title="Quitar producto"
+                                className="h-7 w-7 p-0 text-slate-500 hover:border-red-200 hover:bg-red-50 hover:text-red-600"
+                                onClick={() => cancelarLineasGrupo(grupo.lineas)}
+                              >
+                                <X className="h-3.5 w-3.5" />
+                              </Button>
+                              <Button
+                                type="button"
+                                size="sm"
+                                title={confirmada ? 'Quitar confirmación' : 'Confirmar revisión'}
+                                className={
+                                  confirmada
+                                    ? 'h-7 w-7 border-green-600 bg-green-600 p-0 text-white hover:bg-green-700'
+                                    : 'h-7 w-7 p-0'
+                                }
+                                variant={confirmada ? 'primary' : 'secondary'}
+                                onClick={() => toggleConfirmadaGrupo(grupo.lineas)}
+                              >
+                                <Check className="h-3.5 w-3.5" />
+                              </Button>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                      <ScrollableProductName className="mt-0.5 block w-full text-sm text-slate-600">
                         {grupo.producto.nombre}
-                      </span>
+                      </ScrollableProductName>
+                      {!isExpanded && grupo.lineas.length > 1 && (
+                        <p className="text-xs text-slate-400">{grupo.lineas.length} líneas</p>
+                      )}
+                      {cancelada && (
+                        <span className="mt-0.5 block text-xs text-slate-400">Cancelada</span>
+                      )}
                     </div>
-                    {!isExpanded && grupo.lineas.length > 1 && (
-                      <p className="text-xs text-slate-400">{grupo.lineas.length} líneas</p>
-                    )}
-                  </div>
+                  ) : (
+                    <div className="min-w-0 flex-1">
+                      <div className="flex min-w-0 items-baseline gap-2">
+                        <span className="shrink-0 font-mono text-sm font-semibold text-slate-900">
+                          {grupo.producto.codigo_interno}
+                        </span>
+                        <span className="min-w-0 truncate text-sm text-slate-600" title={grupo.producto.nombre}>
+                          {grupo.producto.nombre}
+                        </span>
+                      </div>
+                      {!isExpanded && grupo.lineas.length > 1 && (
+                        <p className="text-xs text-slate-400">{grupo.lineas.length} líneas</p>
+                      )}
+                    </div>
+                  )}
                   {lineaRef && !cancelada && (
                     <div
-                      className="flex shrink-0 flex-wrap items-center gap-1.5"
+                      className={cn(
+                        'flex shrink-0 flex-wrap items-center gap-1.5',
+                        nativeApp && 'w-full basis-full pl-8'
+                      )}
                       onClick={(e) => e.stopPropagation()}
                     >
                       <select
@@ -1603,52 +1776,54 @@ export function MovimientosPage() {
                       )}
                     </div>
                   )}
-                  <div className="flex shrink-0 items-center gap-2">
-                    {cancelada && (
-                      <span className="shrink-0 text-xs text-slate-400">Cancelada</span>
-                    )}
-                    <span className="inline-flex shrink-0 items-center rounded-lg bg-brand-50 px-2.5 py-1.5 text-sm font-bold tabular-nums text-brand-700 ring-1 ring-brand-100">
-                      {formatBultosPieLabel(
-                        sumBultosPieFromLineas(grupo.lineas.filter((l) => !l.cancelada).map(bultosPieDesdeLinea))
+                  {!nativeApp && (
+                    <div className="flex shrink-0 items-center gap-2">
+                      {cancelada && (
+                        <span className="shrink-0 text-xs text-slate-400">Cancelada</span>
                       )}
-                    </span>
-                    {cancelada ? (
-                      <button
-                        type="button"
-                        className="shrink-0 text-xs text-brand-600 hover:underline"
-                        onClick={() => restaurarLineasGrupo(grupo.lineas)}
-                      >
-                        Restaurar
-                      </button>
-                    ) : (
-                      <div className="flex shrink-0 items-center gap-0.5">
-                        <Button
+                      <span className="inline-flex shrink-0 items-center rounded-lg bg-brand-50 px-2.5 py-1.5 text-sm font-bold tabular-nums text-brand-700 ring-1 ring-brand-100">
+                        {formatBultosPieLabel(
+                          sumBultosPieFromLineas(grupo.lineas.filter((l) => !l.cancelada).map(bultosPieDesdeLinea))
+                        )}
+                      </span>
+                      {cancelada ? (
+                        <button
                           type="button"
-                          variant="secondary"
-                          size="sm"
-                          title="Quitar producto"
-                          className="h-7 w-7 p-0 text-slate-500 hover:border-red-200 hover:bg-red-50 hover:text-red-600"
-                          onClick={() => cancelarLineasGrupo(grupo.lineas)}
+                          className="shrink-0 text-xs text-brand-600 hover:underline"
+                          onClick={() => restaurarLineasGrupo(grupo.lineas)}
                         >
-                          <X className="h-3.5 w-3.5" />
-                        </Button>
-                        <Button
-                          type="button"
-                          size="sm"
-                          title={confirmada ? 'Quitar confirmación' : 'Confirmar revisión'}
-                          className={
-                            confirmada
-                              ? 'h-7 w-7 border-green-600 bg-green-600 p-0 text-white hover:bg-green-700'
-                              : 'h-7 w-7 p-0'
-                          }
-                          variant={confirmada ? 'primary' : 'secondary'}
-                          onClick={() => toggleConfirmadaGrupo(grupo.lineas)}
-                        >
-                          <Check className="h-3.5 w-3.5" />
-                        </Button>
-                      </div>
-                    )}
-                  </div>
+                          Restaurar
+                        </button>
+                      ) : (
+                        <div className="flex shrink-0 items-center gap-0.5">
+                          <Button
+                            type="button"
+                            variant="secondary"
+                            size="sm"
+                            title="Quitar producto"
+                            className="h-7 w-7 p-0 text-slate-500 hover:border-red-200 hover:bg-red-50 hover:text-red-600"
+                            onClick={() => cancelarLineasGrupo(grupo.lineas)}
+                          >
+                            <X className="h-3.5 w-3.5" />
+                          </Button>
+                          <Button
+                            type="button"
+                            size="sm"
+                            title={confirmada ? 'Quitar confirmación' : 'Confirmar revisión'}
+                            className={
+                              confirmada
+                                ? 'h-7 w-7 border-green-600 bg-green-600 p-0 text-white hover:bg-green-700'
+                                : 'h-7 w-7 p-0'
+                            }
+                            variant={confirmada ? 'primary' : 'secondary'}
+                            onClick={() => toggleConfirmadaGrupo(grupo.lineas)}
+                          >
+                            <Check className="h-3.5 w-3.5" />
+                          </Button>
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
                 {isExpanded && (
                   <ul className="divide-y divide-surface-border border-t border-surface-border bg-surface-muted/20">
@@ -1689,10 +1864,11 @@ export function MovimientosPage() {
         totalSuelto={detalleResumenBultos?.suelto}
         encabezadoExtra={
           <>
-            {badgeTipo(m.tipo)}
-            {badgeEstado(m.estado, !!m.ingreso_directo)}
+            {badgeTipo(m.tipo, nativeApp)}
+            {badgeEstado(m.estado, !!m.ingreso_directo, nativeApp)}
           </>
         }
+        encabezadoSubline={encabezadoSublineDetalle}
         meta={metaDetalle}
         antesProductos={antesProductosDetalle}
         productosContent={productosContent}
@@ -1757,7 +1933,8 @@ export function MovimientosPage() {
             <div key={grupo.producto.producto_id} className="border-b border-surface-border last:border-0">
               <div
                 className={cn(
-                  'flex items-center gap-3 px-4 py-2.5 transition-colors sm:px-5',
+                  'flex gap-3 px-4 py-2.5 transition-colors sm:px-5',
+                  nativeApp ? 'items-start' : 'items-center',
                   grupoVerificado
                     ? 'border-l-2 border-green-500 bg-green-50/90'
                     : isExpanded
@@ -1780,66 +1957,133 @@ export function MovimientosPage() {
                 >
                   {isExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
                 </button>
-                <button
-                  type="button"
-                  onClick={() => toggleProductoExpand(grupo.producto.producto_id)}
-                  className="flex min-w-0 flex-1 items-center gap-2 text-left"
-                >
-                  <span
-                    className={cn(
-                      'shrink-0 rounded-md px-2 py-0.5 font-mono text-xs font-semibold',
-                      grupoVerificado
-                        ? 'bg-green-100 text-green-800'
-                        : 'bg-slate-100 text-slate-700'
-                    )}
+                {nativeApp ? (
+                  <button
+                    type="button"
+                    onClick={() => toggleProductoExpand(grupo.producto.producto_id)}
+                    className="min-w-0 flex-1 text-left"
                   >
-                    {grupo.producto.codigo_interno}
-                  </span>
-                  <span className="min-w-0 truncate text-sm font-semibold text-slate-900">
-                    {grupo.producto.nombre}
-                  </span>
-                  {!isExpanded && grupo.lineas.length > 1 && (
-                    <span className="shrink-0 text-xs text-slate-500">
-                      · {grupo.lineas.length} líneas
-                    </span>
-                  )}
-                </button>
-                <div className="shrink-0 text-right">
-                  {grupo.totalBultosLabel !== '0' && (
-                    <span
-                      className={cn(
-                        'inline-flex items-center rounded-lg px-2.5 py-1.5 text-sm font-bold tabular-nums ring-1',
-                        grupoVerificado
-                          ? 'bg-green-100 text-green-800 ring-green-200'
-                          : 'bg-brand-50 text-brand-700 ring-brand-100'
-                      )}
+                    <div className="flex items-start justify-between gap-2">
+                      <span
+                        className={cn(
+                          'inline-flex max-w-[70%] truncate rounded-md px-2 py-0.5 font-mono text-xs font-bold tracking-wide shadow-sm',
+                          grupoVerificado
+                            ? 'bg-green-600 text-white'
+                            : 'bg-brand-600 text-white'
+                        )}
+                      >
+                        {grupo.producto.codigo_interno}
+                      </span>
+                      <div className="shrink-0 text-right">
+                        {grupo.totalBultosLabel !== '0' && (
+                          <span
+                            className={cn(
+                              'inline-flex items-center rounded-lg px-2.5 py-1.5 text-sm font-bold tabular-nums ring-1',
+                              grupoVerificado
+                                ? 'bg-green-100 text-green-800 ring-green-200'
+                                : 'bg-brand-50 text-brand-700 ring-brand-100'
+                            )}
+                          >
+                            {grupo.totalBultosLabel}
+                          </span>
+                        )}
+                        {grupo.totalSuelto > 0 && (
+                          <p
+                            className={cn(
+                              'text-[11px] font-medium text-slate-500',
+                              grupo.totalBultosLabel !== '0' && 'mt-1'
+                            )}
+                          >
+                            + {formatCantidadUnidad(grupo.totalSuelto, grupo.producto.unidad)}
+                          </p>
+                        )}
+                        {grupo.totalBultosLabel === '0' && grupo.totalSuelto <= 0 && (
+                          <span
+                            className={cn(
+                              'inline-flex items-center rounded-lg px-2.5 py-1.5 text-sm font-bold tabular-nums ring-1',
+                              grupoVerificado
+                                ? 'bg-green-100 text-green-800 ring-green-200'
+                                : 'bg-brand-50 text-brand-700 ring-brand-100'
+                            )}
+                          >
+                            0
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                    <ScrollableProductName className="mt-1 block w-full text-sm font-semibold text-slate-900">
+                      {grupo.producto.nombre}
+                    </ScrollableProductName>
+                    {!isExpanded && grupo.lineas.length > 1 && (
+                      <span className="mt-0.5 block text-xs text-slate-500">
+                        {grupo.lineas.length} líneas
+                      </span>
+                    )}
+                  </button>
+                ) : (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => toggleProductoExpand(grupo.producto.producto_id)}
+                      className="flex min-w-0 flex-1 items-center gap-2 text-left"
                     >
-                      {grupo.totalBultosLabel}
-                    </span>
-                  )}
-                  {grupo.totalSuelto > 0 && (
-                    <p
-                      className={cn(
-                        'text-[11px] font-medium text-slate-500',
-                        grupo.totalBultosLabel !== '0' && 'mt-1'
+                      <span
+                        className={cn(
+                          'shrink-0 rounded-md px-2 py-0.5 font-mono text-xs font-semibold',
+                          grupoVerificado
+                            ? 'bg-green-100 text-green-800'
+                            : 'bg-slate-100 text-slate-700'
+                        )}
+                      >
+                        {grupo.producto.codigo_interno}
+                      </span>
+                      <span className="min-w-0 truncate text-sm font-semibold text-slate-900">
+                        {grupo.producto.nombre}
+                      </span>
+                      {!isExpanded && grupo.lineas.length > 1 && (
+                        <span className="shrink-0 text-xs text-slate-500">
+                          · {grupo.lineas.length} líneas
+                        </span>
                       )}
-                    >
-                      + {formatCantidadUnidad(grupo.totalSuelto, grupo.producto.unidad)}
-                    </p>
-                  )}
-                  {grupo.totalBultosLabel === '0' && grupo.totalSuelto <= 0 && (
-                    <span
-                      className={cn(
-                        'inline-flex items-center rounded-lg px-2.5 py-1.5 text-sm font-bold tabular-nums ring-1',
-                        grupoVerificado
-                          ? 'bg-green-100 text-green-800 ring-green-200'
-                          : 'bg-brand-50 text-brand-700 ring-brand-100'
+                    </button>
+                    <div className="shrink-0 text-right">
+                      {grupo.totalBultosLabel !== '0' && (
+                        <span
+                          className={cn(
+                            'inline-flex items-center rounded-lg px-2.5 py-1.5 text-sm font-bold tabular-nums ring-1',
+                            grupoVerificado
+                              ? 'bg-green-100 text-green-800 ring-green-200'
+                              : 'bg-brand-50 text-brand-700 ring-brand-100'
+                          )}
+                        >
+                          {grupo.totalBultosLabel}
+                        </span>
                       )}
-                    >
-                      0
-                    </span>
-                  )}
-                </div>
+                      {grupo.totalSuelto > 0 && (
+                        <p
+                          className={cn(
+                            'text-[11px] font-medium text-slate-500',
+                            grupo.totalBultosLabel !== '0' && 'mt-1'
+                          )}
+                        >
+                          + {formatCantidadUnidad(grupo.totalSuelto, grupo.producto.unidad)}
+                        </p>
+                      )}
+                      {grupo.totalBultosLabel === '0' && grupo.totalSuelto <= 0 && (
+                        <span
+                          className={cn(
+                            'inline-flex items-center rounded-lg px-2.5 py-1.5 text-sm font-bold tabular-nums ring-1',
+                            grupoVerificado
+                              ? 'bg-green-100 text-green-800 ring-green-200'
+                              : 'bg-brand-50 text-brand-700 ring-brand-100'
+                          )}
+                        >
+                          0
+                        </span>
+                      )}
+                    </div>
+                  </>
+                )}
               </div>
               {isExpanded && (
                 <ul
@@ -1913,7 +2157,14 @@ export function MovimientosPage() {
       )
 
     return (
-      <div className="-m-4 flex h-[calc(100vh-5rem)] flex-col bg-surface-muted/30 lg:-m-6">
+      <div
+        className={cn(
+          'flex flex-col bg-surface-muted/30',
+          nativeApp
+            ? 'fixed inset-x-0 bottom-0 top-14 z-10'
+            : '-m-4 h-[calc(100vh-5rem)] lg:-m-6'
+        )}
+      >
         <div className="relative z-20 shrink-0 overflow-visible border-b border-surface-border bg-white shadow-sm">
           <div className="border-b border-brand-100 bg-gradient-to-r from-brand-50/80 via-white to-white px-4 py-3 sm:px-5">
             <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
@@ -1927,8 +2178,8 @@ export function MovimientosPage() {
                 Salir
               </Button>
               <div className="flex flex-wrap items-center gap-2 text-xs">
-                {badgeTipo('LISTA')}
-                {badgeEstado('ABIERTA')}
+                {badgeTipo('LISTA', nativeApp)}
+                {badgeEstado('ABIERTA', false, nativeApp)}
                 <span className="rounded-full bg-white px-2.5 py-1 font-medium text-slate-700 ring-1 ring-surface-border">
                   #{m.id}
                 </span>
@@ -1945,7 +2196,7 @@ export function MovimientosPage() {
             </div>
           )}
 
-          <div className="space-y-3 overflow-visible p-4 sm:p-5">
+          <div className={cn('space-y-3 overflow-visible', nativeApp ? 'p-3' : 'p-4 sm:p-5')}>
             <div className="flex flex-wrap gap-2">
               <div className="flex min-w-[9.5rem] flex-1 items-center rounded-xl border border-surface-border bg-white shadow-sm focus-within:border-brand-500 focus-within:ring-2 focus-within:ring-brand-500/20">
                 <span className="shrink-0 pl-3 text-xs font-medium text-slate-400">Origen</span>
@@ -2034,7 +2285,9 @@ export function MovimientosPage() {
                   aria-autocomplete="list"
                   placeholder={
                     origenId
-                      ? 'Buscar producto con stock en origen — ↑↓ · Enter'
+                      ? nativeApp
+                        ? 'Buscar producto...'
+                        : 'Buscar producto con stock en origen — ↑↓ · Enter'
                       : 'Primero elegí sector origen'
                   }
                   disabled={!origenId}
@@ -2068,6 +2321,7 @@ export function MovimientosPage() {
                             index === productHighlightIndex ? 'bg-brand-50 text-brand-900' : 'hover:bg-slate-50'
                           )}
                           onMouseEnter={() => setProductHighlightIndex(index)}
+                          onPointerDown={armKeyboardForCantidadModal}
                           onClick={() => selectProduct(p)}
                         >
                           <span className="rounded bg-slate-100 px-1.5 py-0.5 font-mono text-xs font-semibold">
@@ -2095,6 +2349,20 @@ export function MovimientosPage() {
               </div>
             </div>
 
+            {nativeApp && (
+              <input
+                ref={keyboardBridgeRef}
+                type="text"
+                inputMode="numeric"
+                enterKeyHint="done"
+                aria-hidden
+                tabIndex={-1}
+                className="pointer-events-none fixed left-0 top-0 h-px w-px opacity-0"
+                value=""
+                onChange={() => {}}
+              />
+            )}
+
           </div>
         </div>
 
@@ -2102,74 +2370,143 @@ export function MovimientosPage() {
           {lineasListContent}
         </div>
 
-        <div className="shrink-0 border-t border-surface-border bg-white px-4 py-3 shadow-[0_-4px_12px_rgba(0,0,0,0.04)] sm:px-5 sm:py-4">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
-            <div className="min-w-0">
-              <div className="flex flex-wrap items-baseline gap-x-3 gap-y-0.5">
-                <div>
-                  <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400 sm:text-xs">
-                    Total general
+        <div
+          className={cn(
+            'shrink-0 border-t border-surface-border bg-white shadow-[0_-4px_12px_rgba(0,0,0,0.04)]',
+            nativeApp ? 'px-3 pt-3 pb-3' : 'px-4 py-3 sm:px-5 sm:py-4'
+          )}
+        >
+          {nativeApp ? (
+            <div className="space-y-3">
+              <div className="flex items-end justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">
+                    Total
                   </p>
-                  <p className="text-xl font-bold tabular-nums leading-tight text-brand-700 sm:text-2xl">
+                  <p className="text-xl font-bold tabular-nums text-brand-700">
                     {totalPieLabel}
+                    {totalSueltoGeneral > 0 && (
+                      <span className="ml-1.5 text-sm font-medium text-slate-500">
+                        + {formatCantidad(totalSueltoGeneral)} sueltas
+                      </span>
+                    )}
                   </p>
                 </div>
-                {totalSueltoGeneral > 0 && (
-                  <p className="text-xs font-medium text-slate-500 sm:text-sm">
-                    + {formatCantidad(totalSueltoGeneral)} botellas sueltas
-                  </p>
-                )}
+                <p className="shrink-0 text-xs text-slate-500">
+                  {dobleVerificacion ? (
+                    <>
+                      {lineasActivasEditor.filter((l) => l.verificada).length}/
+                      {lineasActivasEditor.length} verif.
+                    </>
+                  ) : (
+                    <>
+                      {lineasActivasEditor.length} línea
+                      {lineasActivasEditor.length === 1 ? '' : 's'}
+                    </>
+                  )}
+                </p>
               </div>
-              <p className="mt-1 text-xs text-slate-500">
-                {dobleVerificacion ? (
-                  <>
-                    {lineasActivasEditor.filter((l) => l.verificada).length}/
-                    {lineasActivasEditor.length} verificada
-                    {lineasActivasEditor.length === 1 ? '' : 's'}
-                  </>
-                ) : (
-                  <>
-                    {lineasActivasEditor.length} línea
-                    {lineasActivasEditor.length === 1 ? '' : 's'} cargada
-                    {lineasActivasEditor.length === 1 ? '' : 's'}
-                  </>
-                )}
-              </p>
+              {hasPermiso('movimientos_internos.crear') && (
+                <div className="grid grid-cols-2 gap-2">
+                  <Button
+                    variant="secondary"
+                    className="h-11 rounded-xl"
+                    disabled={saving}
+                    onClick={() => void cancelarListaAbierta()}
+                  >
+                    Cancelar
+                  </Button>
+                  <Button
+                    className="h-11 rounded-xl"
+                    onClick={() => void finalizarLista()}
+                    disabled={
+                      lineasActivasEditor.length === 0 ||
+                      saving ||
+                      (dobleVerificacion &&
+                        lineasActivasEditor.some((l) => !l.verificada))
+                    }
+                    title={
+                      dobleVerificacion &&
+                      lineasActivasEditor.some((l) => !l.verificada)
+                        ? 'Tildá cada línea activa antes de finalizar'
+                        : undefined
+                    }
+                  >
+                    <Check className="h-4 w-4 shrink-0" />
+                    {saving ? '…' : 'Finalizar'}
+                  </Button>
+                </div>
+              )}
             </div>
-            {hasPermiso('movimientos_internos.crear') && (
-              <div className="flex w-full gap-2 sm:w-auto sm:shrink-0">
-                <Button
-                  variant="secondary"
-                  className="min-w-0 flex-1 rounded-xl sm:flex-none"
-                  disabled={saving}
-                  onClick={() => void cancelarListaAbierta()}
-                >
-                  Cancelar
-                </Button>
-                <Button
-                  className="min-w-0 flex-[1.6] rounded-xl sm:flex-none"
-                  onClick={() => void finalizarLista()}
-                  disabled={
-                    lineasActivasEditor.length === 0 ||
-                    saving ||
-                    (dobleVerificacion &&
-                      lineasActivasEditor.some((l) => !l.verificada))
-                  }
-                  title={
-                    dobleVerificacion &&
-                    lineasActivasEditor.some((l) => !l.verificada)
-                      ? 'Tildá cada línea activa antes de finalizar'
-                      : undefined
-                  }
-                >
-                  <Check className="h-4 w-4 shrink-0" />
-                  <span className="truncate">
-                    {saving ? 'Guardando...' : 'Finalizar'}
-                  </span>
-                </Button>
+          ) : (
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-baseline gap-x-3 gap-y-0.5">
+                  <div>
+                    <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400 sm:text-xs">
+                      Total general
+                    </p>
+                    <p className="text-xl font-bold tabular-nums leading-tight text-brand-700 sm:text-2xl">
+                      {totalPieLabel}
+                    </p>
+                  </div>
+                  {totalSueltoGeneral > 0 && (
+                    <p className="text-xs font-medium text-slate-500 sm:text-sm">
+                      + {formatCantidad(totalSueltoGeneral)} botellas sueltas
+                    </p>
+                  )}
+                </div>
+                <p className="mt-1 text-xs text-slate-500">
+                  {dobleVerificacion ? (
+                    <>
+                      {lineasActivasEditor.filter((l) => l.verificada).length}/
+                      {lineasActivasEditor.length} verificada
+                      {lineasActivasEditor.length === 1 ? '' : 's'}
+                    </>
+                  ) : (
+                    <>
+                      {lineasActivasEditor.length} línea
+                      {lineasActivasEditor.length === 1 ? '' : 's'} cargada
+                      {lineasActivasEditor.length === 1 ? '' : 's'}
+                    </>
+                  )}
+                </p>
               </div>
-            )}
-          </div>
+              {hasPermiso('movimientos_internos.crear') && (
+                <div className="flex w-full gap-2 sm:w-auto sm:shrink-0">
+                  <Button
+                    variant="secondary"
+                    className="min-w-0 flex-1 rounded-xl sm:flex-none"
+                    disabled={saving}
+                    onClick={() => void cancelarListaAbierta()}
+                  >
+                    Cancelar
+                  </Button>
+                  <Button
+                    className="min-w-0 flex-[1.6] rounded-xl sm:flex-none"
+                    onClick={() => void finalizarLista()}
+                    disabled={
+                      lineasActivasEditor.length === 0 ||
+                      saving ||
+                      (dobleVerificacion &&
+                        lineasActivasEditor.some((l) => !l.verificada))
+                    }
+                    title={
+                      dobleVerificacion &&
+                      lineasActivasEditor.some((l) => !l.verificada)
+                        ? 'Tildá cada línea activa antes de finalizar'
+                        : undefined
+                    }
+                  >
+                    <Check className="h-4 w-4 shrink-0" />
+                    <span className="truncate">
+                      {saving ? 'Guardando...' : 'Finalizar'}
+                    </span>
+                  </Button>
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
         {selectedProduct && (
@@ -2181,12 +2518,29 @@ export function MovimientosPage() {
             />
             <div
               ref={productLineFormRef}
-              className="fixed inset-x-0 bottom-0 z-50 mx-auto w-full max-w-3xl overflow-y-auto overscroll-contain rounded-t-2xl border-2 border-b-0 border-brand-400 bg-white p-4 shadow-[0_-12px_40px_rgba(15,23,42,0.25)] ring-4 ring-brand-500/15 sm:rounded-2xl sm:border sm:p-5"
-              style={{ maxHeight: 'min(92dvh, 40rem)' }}
+              className={cn(
+                'fixed inset-x-0 z-50 mx-auto w-full max-w-3xl overflow-y-auto overscroll-contain rounded-t-2xl border-2 border-b-0 border-brand-400 bg-white p-4 shadow-[0_-12px_40px_rgba(15,23,42,0.25)] ring-4 ring-brand-500/15 sm:rounded-2xl sm:border sm:p-5',
+                nativeApp && 'transition-[bottom,max-height] duration-200 ease-out'
+              )}
+              style={
+                nativeApp
+                  ? {
+                      bottom: keyboardInset,
+                      maxHeight: `calc(100dvh - ${keyboardInset}px - env(safe-area-inset-top, 0px) - 0.5rem)`
+                    }
+                  : { bottom: 0, maxHeight: 'min(92dvh, 40rem)' }
+              }
             >
               <div className="mb-3 sm:mb-4">
                 <div className="flex items-center gap-2">
-                  <span className="inline-flex min-w-0 rounded-md bg-slate-50 px-2 py-0.5 font-mono text-sm font-semibold text-slate-700 ring-1 ring-surface-border">
+                  <span
+                    className={cn(
+                      'inline-flex min-w-0 rounded-md px-2 py-0.5 font-mono text-sm tracking-wide',
+                      nativeApp
+                        ? 'bg-brand-600 font-bold text-white shadow-sm'
+                        : 'bg-slate-50 font-semibold text-slate-700 ring-1 ring-surface-border'
+                    )}
+                  >
                     {selectedProduct.codigo_interno}
                   </span>
                   <p className="ml-auto shrink-0 text-xs font-semibold uppercase tracking-wide text-brand-600">
@@ -2200,7 +2554,9 @@ export function MovimientosPage() {
                     <X className="h-4 w-4" />
                   </button>
                 </div>
-                <p className="mt-1 text-base font-semibold text-slate-900">{selectedProduct.nombre}</p>
+                <ScrollableProductName className="mt-1 text-base font-semibold text-slate-900">
+                  {selectedProduct.nombre}
+                </ScrollableProductName>
                 {tipoBulto === 'SUELTO'
                   ? stockDisponibleBotellas !== null && (
                       <p className="mt-0.5 text-xs text-slate-500">
@@ -2488,30 +2844,15 @@ export function MovimientosPage() {
   }
 
   return (
-    <div className="mx-auto max-w-6xl space-y-6">
-      <section className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-        <div>
-          <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">Movimientos</p>
-          <div className="mt-1 flex items-center gap-1.5">
-            <h1 className="text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">
-              Movimientos internos
-            </h1>
-            <SectionHelpButton guideId="movimientos" />
-          </div>
-          <p className="mt-2 max-w-xl text-sm leading-relaxed text-slate-500">
-            {dobleVerificacion
-              ? 'Lista abierta compartida: cargá líneas, salí y volvé cuando quieras; tildá y finalizá para mover el stock.'
-              : 'Lista abierta compartida: cargá líneas, salí y volvé cuando quieras; al finalizar se mueve el stock sin tildar.'}
-          </p>
-        </div>
-        {hasPermiso('movimientos_internos.crear') && (
-          <div className="flex flex-col items-stretch gap-2 sm:items-end">
-            <p className="text-xs text-slate-400 sm:text-right">
-              Enter → {tieneListaAbierta ? 'continuar lista' : 'crear lista'} · ↓ navega movimientos
-            </p>
+    <div className={cn('mx-auto max-w-6xl', nativeApp ? '-mt-1 space-y-3' : 'space-y-6')}>
+      {nativeApp ? (
+        <div className="flex items-center gap-3">
+          <h1 className="min-w-0 flex-1 truncate text-xl font-bold tracking-tight text-slate-900">
+            Movimientos
+          </h1>
+          {hasPermiso('movimientos_internos.crear') && (
             <Button
-              type="button"
-              className="rounded-xl px-4"
+              className="h-10 shrink-0 rounded-xl px-3"
               disabled={loadingEditor}
               onClick={() => void abrirListaEditor()}
             >
@@ -2520,25 +2861,67 @@ export function MovimientosPage() {
               ) : (
                 <ClipboardList className="h-4 w-4" />
               )}
-              {tieneListaAbierta ? 'Continuar lista abierta' : 'Crear lista de movimientos'}
+              {tieneListaAbierta ? 'Continuar' : 'Nueva'}
             </Button>
+          )}
+        </div>
+      ) : (
+        <section className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">Movimientos</p>
+            <div className="mt-1 flex items-center gap-1.5">
+              <h1 className="text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">
+                Movimientos internos
+              </h1>
+              <SectionHelpButton guideId="movimientos" />
+            </div>
+            <p className="mt-2 max-w-xl text-sm leading-relaxed text-slate-500">
+              {dobleVerificacion
+                ? 'Lista abierta compartida: cargá líneas, salí y volvé cuando quieras; tildá y finalizá para mover el stock.'
+                : 'Lista abierta compartida: cargá líneas, salí y volvé cuando quieras; al finalizar se mueve el stock sin tildar.'}
+            </p>
           </div>
-        )}
-      </section>
+          {hasPermiso('movimientos_internos.crear') && (
+            <div className="flex flex-col items-stretch gap-2 sm:items-end">
+              <p className="text-xs text-slate-400 sm:text-right">
+                Enter → {tieneListaAbierta ? 'continuar lista' : 'crear lista'} · ↓ navega movimientos
+              </p>
+              <Button
+                type="button"
+                className="rounded-xl px-4"
+                disabled={loadingEditor}
+                onClick={() => void abrirListaEditor()}
+              >
+                {loadingEditor ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <ClipboardList className="h-4 w-4" />
+                )}
+                {tieneListaAbierta ? 'Continuar lista abierta' : 'Crear lista de movimientos'}
+              </Button>
+            </div>
+          )}
+        </section>
+      )}
 
       <Card className="overflow-hidden shadow-panel">
-        <div className="border-b border-brand-100 bg-gradient-to-r from-brand-50/80 via-white to-white px-5 py-4 sm:px-6">
-          <div className="flex flex-col gap-3">
-            <div className="flex flex-wrap items-center gap-2">
+        <div
+          className={cn(
+            'border-b border-brand-100 bg-gradient-to-r from-brand-50/80 via-white to-white sm:px-6',
+            nativeApp ? 'px-3 py-2.5' : 'px-5 py-4'
+          )}
+        >
+          <div className={cn('flex flex-col', nativeApp ? 'gap-2' : 'gap-3')}>
+            <div className={cn('flex gap-2', nativeApp ? 'flex-col' : 'flex-wrap items-center')}>
               <div
-                className="relative min-w-[10rem] flex-1"
+                className="relative min-w-0 flex-1"
                 onMouseDown={(e) => {
                   if (e.target === listSearchRef.current) return
                   e.preventDefault()
                   focusListSearch()
                 }}
               >
-                <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-brand-400" />
+                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-brand-400" />
                 <input
                   ref={listSearchRef}
                   type="search"
@@ -2546,31 +2929,52 @@ export function MovimientosPage() {
                   value={listSearch}
                   onChange={(e) => setListSearch(e.target.value)}
                   onKeyDown={registroListKb.handleListSearchKeyDown}
-                  className="w-full rounded-xl border border-surface-border bg-white py-2.5 pl-10 pr-4 text-sm shadow-sm focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20"
+                  className={cn(
+                    'w-full rounded-xl border border-surface-border bg-white pl-9 pr-3 text-sm shadow-sm focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20',
+                    nativeApp ? 'py-2' : 'py-2.5 pl-10 pr-4'
+                  )}
                 />
               </div>
 
-              <div className="flex shrink-0 items-center gap-1.5 rounded-xl border border-surface-border bg-white px-2 py-1.5 shadow-sm">
-                <span className="pl-1 text-xs font-medium text-slate-500">Desde</span>
+              <div
+                className={cn(
+                  'flex shrink-0 items-center gap-1.5 rounded-xl border border-surface-border bg-white shadow-sm',
+                  nativeApp ? 'w-full justify-between px-2 py-1' : 'px-2 py-1.5'
+                )}
+              >
+                <span className="pl-0.5 text-[11px] font-medium text-slate-500">Desde</span>
                 <input
                   id="movimientos-fecha-desde"
                   type="date"
                   value={listFechaDesde}
                   onChange={(e) => setListFechaDesde(e.target.value)}
-                  className="rounded border-0 bg-transparent px-1 py-1 text-sm focus:outline-none focus:ring-0"
+                  className="min-w-0 flex-1 rounded border-0 bg-transparent px-1 py-1 text-sm focus:outline-none focus:ring-0"
                 />
                 <span className="text-slate-300">|</span>
-                <span className="text-xs font-medium text-slate-500">Hasta</span>
+                <span className="text-[11px] font-medium text-slate-500">Hasta</span>
                 <input
                   id="movimientos-fecha-hasta"
                   type="date"
                   value={listFechaHasta}
                   onChange={(e) => setListFechaHasta(e.target.value)}
-                  className="rounded border-0 bg-transparent px-1 py-1 text-sm focus:outline-none focus:ring-0"
+                  className="min-w-0 flex-1 rounded border-0 bg-transparent px-1 py-1 text-sm focus:outline-none focus:ring-0"
                 />
+                {(listFechaDesde || listFechaHasta) && nativeApp && (
+                  <button
+                    type="button"
+                    className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
+                    onClick={() => {
+                      setListFechaDesde('')
+                      setListFechaHasta('')
+                    }}
+                    aria-label="Limpiar fechas"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                )}
               </div>
 
-              {(listFechaDesde || listFechaHasta) && (
+              {!nativeApp && (listFechaDesde || listFechaHasta) && (
                 <Button
                   type="button"
                   variant="ghost"
@@ -2586,10 +2990,12 @@ export function MovimientosPage() {
               )}
             </div>
 
-            <p className="text-xs text-slate-500">
-              Una sola fecha filtra ese día · las dos juntas = rango · la lista abierta no aparece
-              acá
-            </p>
+            {!nativeApp && (
+              <p className="text-xs text-slate-500">
+                Una sola fecha filtra ese día · las dos juntas = rango · la lista abierta no aparece
+                acá
+              </p>
+            )}
 
             <DayTabsRow
               days={diasConMovimientos}
@@ -2600,7 +3006,12 @@ export function MovimientosPage() {
           </div>
         </div>
 
-        <div className="flex items-center justify-between gap-3 border-b border-surface-border bg-slate-50/80 px-5 py-3.5 sm:px-6">
+        <div
+          className={cn(
+            'flex items-center justify-between gap-3 border-b border-surface-border bg-slate-50/80 sm:px-6',
+            nativeApp ? 'px-3 py-2.5' : 'px-5 py-3.5'
+          )}
+        >
           <div>
             <h2 className="text-sm font-semibold text-slate-900">
               {diasConMovimientos.length > 0 ? formatDayTabLabel(selectedDay) : 'Historial'}
@@ -2614,9 +3025,16 @@ export function MovimientosPage() {
           {loadingList && <Loader2 className="h-5 w-5 shrink-0 animate-spin text-brand-600" />}
         </div>
 
-        <CardBody className="p-0">
+        <CardBody className={cn(nativeApp ? 'bg-surface-muted/35 p-2' : 'p-0')}>
           {error && (
-            <div className="border-b border-red-100 bg-red-50 px-6 py-3 text-sm text-red-700">
+            <div
+              className={cn(
+                'text-sm text-red-700',
+                nativeApp
+                  ? 'mb-2 rounded-xl border border-red-100 bg-red-50 px-4 py-3'
+                  : 'border-b border-red-100 bg-red-50 px-6 py-3'
+              )}
+            >
               {error}
             </div>
           )}
@@ -2626,7 +3044,12 @@ export function MovimientosPage() {
               Cargando movimientos...
             </div>
           ) : movimientos.length === 0 ? (
-            <div className="flex flex-col items-center px-6 py-16 text-center">
+            <div
+              className={cn(
+                'flex flex-col items-center px-6 py-14 text-center',
+                nativeApp && 'rounded-xl border border-dashed border-surface-border bg-white shadow-card'
+              )}
+            >
               <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-slate-100 text-slate-400">
                 <ClipboardList className="h-7 w-7" />
               </div>
@@ -2635,20 +3058,70 @@ export function MovimientosPage() {
                   ? 'No hay movimientos con esos filtros'
                   : 'No hay movimientos cerrados'}
               </p>
-              <p className="mt-1 max-w-sm text-xs text-slate-500">
-                {listSearch || listFechaDesde || listFechaHasta
-                  ? 'Probá ampliar el rango de fechas o limpiar la búsqueda'
-                  : 'Creá una lista de movimientos para empezar a trasladar stock'}
-              </p>
+              {!nativeApp && (
+                <p className="mt-1 max-w-sm text-xs text-slate-500">
+                  {listSearch || listFechaDesde || listFechaHasta
+                    ? 'Probá ampliar el rango de fechas o limpiar la búsqueda'
+                    : 'Creá una lista de movimientos para empezar a trasladar stock'}
+                </p>
+              )}
             </div>
           ) : movimientosDelDia.length === 0 ? (
-            <div className="flex flex-col items-center px-6 py-16 text-center">
+            <div
+              className={cn(
+                'flex flex-col items-center px-6 py-14 text-center',
+                nativeApp && 'rounded-xl border border-dashed border-surface-border bg-white shadow-card'
+              )}
+            >
               <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-slate-100 text-slate-400">
                 <ArrowLeftRight className="h-7 w-7" />
               </div>
               <p className="mt-4 text-sm font-medium text-slate-700">No hay movimientos en este día</p>
-              <p className="mt-1 text-xs text-slate-500">Elegí otra pestaña de día arriba</p>
+              {!nativeApp && (
+                <p className="mt-1 text-xs text-slate-500">Elegí otra pestaña de día arriba</p>
+              )}
             </div>
+          ) : nativeApp ? (
+            <ul className="space-y-2">
+              {movimientosDelDia.map((m, index) => (
+                <li
+                  key={m.id}
+                  {...registroListKb.listItemProps(
+                    index,
+                    'overflow-hidden rounded-xl border border-surface-border bg-white shadow-card'
+                  )}
+                >
+                  <button
+                    type="button"
+                    className="flex w-full items-start gap-3 px-3 py-3 text-left active:bg-slate-50"
+                    onClick={() => void abrirDetalle(m.id)}
+                  >
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <p className="truncate text-sm font-semibold text-slate-900">#{m.id}</p>
+                        {badgeTipo(m.tipo, true)}
+                        {badgeEstado(m.estado, !!m.ingreso_directo, true)}
+                      </div>
+                      <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-slate-500">
+                        <span className="inline-flex items-center gap-1">
+                          <User className="h-3 w-3" />
+                          {m.creado_por_nombre}
+                        </span>
+                        <span>·</span>
+                        <span>
+                          {m.lineas_count} línea{m.lineas_count === 1 ? '' : 's'}
+                        </span>
+                      </div>
+                    </div>
+                    <div className="flex shrink-0 flex-col items-end justify-center">
+                      <span className="inline-flex items-center rounded-lg bg-brand-50 px-2.5 py-1 text-sm font-bold tabular-nums text-brand-700 ring-1 ring-brand-100">
+                        {formatMovimientoListBultos(m)}
+                      </span>
+                    </div>
+                  </button>
+                </li>
+              ))}
+            </ul>
           ) : (
             <ul className="divide-y divide-surface-border">
               {movimientosDelDia.map((m, index) => (

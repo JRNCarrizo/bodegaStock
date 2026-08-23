@@ -34,6 +34,7 @@ import { Capacitor } from '@capacitor/core'
 import QRCode from 'qrcode'
 import { BarcodeScannerModal } from '@/components/BarcodeScannerModal'
 import { ScrollableProductName } from '@/components/ScrollableProductName'
+import { CantidadExprOperators } from '@/components/CantidadExprOperators'
 import { SwipeableConteoLinea } from '@/components/SwipeableConteoLinea'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
@@ -42,9 +43,10 @@ import { scrollProductoIntoListVisible } from '@/lib/scroll'
 import { textoProductoMatches } from '@/lib/productoSearch'
 import {
   scrollFocusedFieldIntoSheet,
+  useKeyboardLayoutShrink,
   useVisualViewportBottomInset
 } from '@/hooks/useVisualViewportBottomInset'
-import { botellasPorCajaDefault, cajasPorPalletDefault, formatValorLineaConteo, formatTotalesInventarioResumen } from '@/lib/desglose'
+import { botellasPorCajaDefault, cajasPorPalletDefault, formatValorLineaConteo, formatTotalesInventarioResumen, formatTotalesInventarioFisicos, sumarTotalesInventarioFisicos } from '@/lib/desglose'
 import {
   cantidadExprEsCuenta,
   conteoExprPendientes,
@@ -259,7 +261,13 @@ export function InventarioOfflinePage() {
   const [unidadesPorBulto, setUnidadesPorBulto] = useState('')
   const [cantidadSuelta, setCantidadSuelta] = useState('')
   const [ubicacionId, setUbicacionId] = useState('')
+  const [cantidadExprFocus, setCantidadExprFocus] = useState<
+    'bultos' | 'unidades' | 'suelta' | null
+  >(null)
+  const [totalVistaFisica, setTotalVistaFisica] = useState(false)
   const keyboardInset = useVisualViewportBottomInset()
+  const keyboardLayoutShrink = useKeyboardLayoutShrink()
+  const pinConteoFooterUnderKeyboard = keyboardLayoutShrink > 0 || Boolean(selected)
 
   const reload = useCallback(async () => {
     const data = await getOfflineSession(sectorInvId)
@@ -605,6 +613,10 @@ export function InventarioOfflinePage() {
   const resumenGeneral = useMemo(
     () => formatTotalesInventarioResumen(totalGeneral),
     [totalGeneral]
+  )
+  const resumenFisico = useMemo(
+    () => formatTotalesInventarioFisicos(sumarTotalesInventarioFisicos(misLineasRonda)),
+    [misLineasRonda]
   )
 
   const verificacionSimple =
@@ -1630,38 +1642,42 @@ export function InventarioOfflinePage() {
           postConteo ? 'flex min-h-0 flex-1 flex-col' : 'shrink-0'
         )}
       >
-        <div className="border-b border-brand-100 bg-gradient-to-r from-brand-50/80 via-white to-white px-4 py-3 sm:px-5">
-          <div className="flex items-center gap-3">
+        <div className="border-b border-brand-100 bg-gradient-to-r from-brand-50/80 via-white to-white px-3 py-1.5 sm:px-4">
+          <div className="flex items-center gap-2">
             <div className="min-w-0 flex-1">
-              <h1 className="truncate text-sm font-semibold text-slate-900">{sector.sector_nombre}</h1>
-              <div className="mt-1.5 flex items-center gap-1.5 overflow-x-auto text-xs scrollbar-none">
-                <span className="shrink-0 rounded-full bg-white px-2.5 py-1 font-medium text-slate-700 ring-1 ring-surface-border">
-                  Ronda {ronda}
-                </span>
-                {miContadorLabel && (
-                  <span className="shrink-0 rounded-full bg-violet-50 px-2.5 py-1 font-medium text-violet-900 ring-1 ring-violet-100">
-                    {miContadorLabel}
+              <div className="flex min-w-0 items-center gap-1.5 overflow-hidden">
+                <h1 className="min-w-0 shrink truncate text-sm font-semibold leading-tight text-slate-900">
+                  {sector.sector_nombre}
+                </h1>
+                <div className="flex min-w-0 items-center gap-1 overflow-x-auto text-[10px] scrollbar-none">
+                  <span className="shrink-0 rounded-full bg-white px-2 py-0.5 font-medium text-slate-700 ring-1 ring-surface-border">
+                    Ronda {ronda}
                   </span>
-                )}
-                <span className="shrink-0 rounded-full bg-amber-50 px-2.5 py-1 font-medium text-amber-900 ring-1 ring-amber-100">
-                  Offline
-                </span>
-                {verificacionSimple && (
-                  <span className="shrink-0 rounded-full bg-sky-50 px-2.5 py-1 font-medium text-sky-800 ring-1 ring-sky-100">
-                    Simple
+                  {miContadorLabel && (
+                    <span className="shrink-0 rounded-full bg-violet-50 px-2 py-0.5 font-medium text-violet-900 ring-1 ring-violet-100">
+                      {miContadorLabel}
+                    </span>
+                  )}
+                  <span className="shrink-0 rounded-full bg-amber-50 px-2 py-0.5 font-medium text-amber-900 ring-1 ring-amber-100">
+                    Offline
                   </span>
-                )}
-                {estado?.mi_finalizo && (
-                  <span className="shrink-0 rounded-full bg-emerald-50 px-2.5 py-1 font-medium text-emerald-800 ring-1 ring-emerald-100">
-                    Finalizado
-                  </span>
-                )}
+                  {verificacionSimple && (
+                    <span className="shrink-0 rounded-full bg-sky-50 px-2 py-0.5 font-medium text-sky-800 ring-1 ring-sky-100">
+                      Simple
+                    </span>
+                  )}
+                  {estado?.mi_finalizo && (
+                    <span className="shrink-0 rounded-full bg-emerald-50 px-2 py-0.5 font-medium text-emerald-800 ring-1 ring-emerald-100">
+                      Finalizado
+                    </span>
+                  )}
+                </div>
               </div>
             </div>
             <div className="relative shrink-0">
               <button
                 type="button"
-                className="rounded-lg p-2 text-slate-500 hover:bg-slate-100 hover:text-slate-800"
+                className="rounded-lg p-1.5 text-slate-500 hover:bg-slate-100 hover:text-slate-800"
                 disabled={busy}
                 aria-label="Más opciones"
                 aria-expanded={showHeaderMenu}
@@ -1673,7 +1689,7 @@ export function InventarioOfflinePage() {
                   })
                 }}
               >
-                <MoreVertical className="h-4 w-4" />
+                <MoreVertical className="h-3.5 w-3.5" />
               </button>
               {showHeaderMenu && (
                 <>
@@ -2454,10 +2470,11 @@ export function InventarioOfflinePage() {
                         ref={cantidadBultosRef}
                         label={tipoBulto === 'PALLET' ? 'Cant. pallets' : 'Cant. cajas'}
                         type="text"
-                        inputMode={tipoBulto === 'CAJA' ? 'text' : 'numeric'}
+                        inputMode="numeric"
                         value={cantidadBultos}
                         onChange={(e) => setCantidadBultos(e.target.value)}
                         onFocus={(e) => {
+                          setCantidadExprFocus('bultos')
                           scrollFocusedFieldIntoSheet(e.currentTarget)
                           const el = e.currentTarget
                           requestAnimationFrame(() => el.select())
@@ -2493,10 +2510,11 @@ export function InventarioOfflinePage() {
                         ref={unidadesPorBultoRef}
                         label="× cajas por pallet"
                         type="text"
-                        inputMode="text"
+                        inputMode="numeric"
                         value={unidadesPorBulto}
                         onChange={(e) => setUnidadesPorBulto(e.target.value)}
                         onFocus={(e) => {
+                          setCantidadExprFocus('unidades')
                           scrollFocusedFieldIntoSheet(e.currentTarget)
                           const el = e.currentTarget
                           requestAnimationFrame(() => el.select())
@@ -2532,10 +2550,11 @@ export function InventarioOfflinePage() {
                               : 'Botellas sueltas (opc.)'
                         }
                         type="text"
-                        inputMode={tipoBulto === 'PALLET' ? 'text' : 'numeric'}
+                        inputMode="numeric"
                         value={cantidadSuelta}
                         onChange={(e) => setCantidadSuelta(e.target.value)}
                         onFocus={(e) => {
+                          setCantidadExprFocus('suelta')
                           scrollFocusedFieldIntoSheet(e.currentTarget)
                           const el = e.currentTarget
                           requestAnimationFrame(() => el.select())
@@ -2568,12 +2587,52 @@ export function InventarioOfflinePage() {
                         </p>
                       )}
                     </div>
+                    {(tipoBulto === 'PALLET' || tipoBulto === 'CAJA') && (
+                      <div className="space-y-1.5">
+                        <span className="block text-sm font-medium text-transparent select-none" aria-hidden>
+                          ·
+                        </span>
+                        <CantidadExprOperators
+                          target={
+                            cantidadExprFocus === 'bultos'
+                              ? {
+                                  inputRef: cantidadBultosRef,
+                                  value: cantidadBultos,
+                                  onChange: setCantidadBultos
+                                }
+                              : cantidadExprFocus === 'unidades'
+                                ? {
+                                    inputRef: unidadesPorBultoRef,
+                                    value: unidadesPorBulto,
+                                    onChange: setUnidadesPorBulto
+                                  }
+                                : cantidadExprFocus === 'suelta'
+                                  ? {
+                                      inputRef: cantidadSueltaRef,
+                                      value: cantidadSuelta,
+                                      onChange: setCantidadSuelta
+                                    }
+                                  : tipoBulto === 'CAJA'
+                                    ? {
+                                        inputRef: cantidadBultosRef,
+                                        value: cantidadBultos,
+                                        onChange: setCantidadBultos
+                                      }
+                                    : {
+                                        inputRef: unidadesPorBultoRef,
+                                        value: unidadesPorBulto,
+                                        onChange: setUnidadesPorBulto
+                                      }
+                          }
+                        />
+                      </div>
+                    )}
                   </div>
                   <div className="col-span-2 flex items-end gap-2 sm:col-span-4">
                     <Button
                       type="button"
                       variant="secondary"
-                      className="h-[2.875rem] w-11 shrink-0 rounded-xl px-0"
+                      className="h-[2.875rem] w-11 shrink-0 rounded-xl px-0 border-red-200 bg-red-50 text-red-600 hover:bg-red-100 hover:text-red-700"
                       disabled={busy}
                       onClick={cancelarLineaForm}
                       aria-label="Cerrar"
@@ -2621,21 +2680,80 @@ export function InventarioOfflinePage() {
         </div>
       ) : null}
 
-      <div className="shrink-0 border-t border-slate-200 bg-gradient-to-t from-slate-200/90 via-slate-100 to-slate-50 px-4 pt-4 shadow-[0_-6px_16px_rgba(15,23,42,0.08)] sm:px-5 pb-[max(1rem,env(safe-area-inset-bottom))]">
+      <div
+        className={cn(
+          'border-t border-slate-200 bg-gradient-to-t from-slate-200/90 via-slate-100 to-slate-50 px-4 pt-4 shadow-[0_-6px_16px_rgba(15,23,42,0.08)] transition-transform duration-200 ease-out sm:px-5 pb-[max(1rem,env(safe-area-inset-bottom))]',
+          pinConteoFooterUnderKeyboard ? 'pointer-events-none fixed inset-x-0 z-[15]' : 'shrink-0'
+        )}
+        style={
+          pinConteoFooterUnderKeyboard
+            ? {
+                bottom: 0,
+                transform:
+                  keyboardLayoutShrink > 0
+                    ? `translateY(${keyboardLayoutShrink}px)`
+                    : 'translateY(100%)'
+              }
+            : undefined
+        }
+      >
         <div className="flex items-center justify-between gap-3">
-          <div className="flex min-w-0 items-center gap-3">
-            <div className="min-w-0">
-              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                Total contado
-              </p>
-              <p className="text-lg font-bold tabular-nums text-brand-700 sm:text-2xl">
-                {resumenGeneral}
-              </p>
-              <p className="mt-1 text-xs text-slate-500">
-                {misLineasRonda.length} línea{misLineasRonda.length === 1 ? '' : 's'} ·{' '}
-                {lineasPorProducto.length} producto{lineasPorProducto.length === 1 ? '' : 's'}
-              </p>
-            </div>
+          <button
+            type="button"
+            onClick={() => setTotalVistaFisica((v) => !v)}
+            className="min-w-0 flex-1 rounded-xl text-left active:bg-slate-200/50"
+            aria-label={
+              totalVistaFisica
+                ? 'Mostrar total en cajas'
+                : 'Mostrar total en pallets y cajas'
+            }
+          >
+            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+              {totalVistaFisica ? 'Total pallets + cajas' : 'Total contado'}
+            </p>
+            <p className="scrollbar-none-x overflow-x-auto whitespace-nowrap text-lg font-bold tabular-nums text-brand-700 sm:text-2xl">
+              {totalVistaFisica ? resumenFisico : resumenGeneral}
+            </p>
+            <p className="mt-1 text-xs text-slate-500">
+              {misLineasRonda.length} línea{misLineasRonda.length === 1 ? '' : 's'} ·{' '}
+              {lineasPorProducto.length} producto{lineasPorProducto.length === 1 ? '' : 's'}
+              <span className="text-slate-400"> · tocá para cambiar</span>
+            </p>
+          </button>
+          <div className="flex shrink-0 flex-row items-center gap-2">
+            {comparacion && !comparacion.coincide && !verificacionSimple && (
+              <Button className="rounded-xl" disabled={busy} onClick={() => void handleReconteo()}>
+                Iniciar reconteo
+              </Button>
+            )}
+            {puedeEditar && (misLineasRonda.length > 0 || enReconteo || verificacionSimple) && (
+              <Button className="rounded-xl" disabled={busy} onClick={() => void handleFinalizar()}>
+                <Check className="h-4 w-4" />
+                Finalizar
+              </Button>
+            )}
+            {estado?.mi_finalizo && !estado.companero_finalizo && !verificacionSimple && (
+              <Button
+                variant="secondary"
+                className="rounded-xl"
+                disabled={busy}
+                onClick={() => void handleReabrirConteo()}
+              >
+                <Pencil className="h-4 w-4" />
+                Editar
+              </Button>
+            )}
+            {estado?.mi_finalizo && verificacionSimple && (
+              <Button
+                variant="secondary"
+                className="rounded-xl"
+                disabled={busy}
+                onClick={() => void handleReabrirConteo()}
+              >
+                <Pencil className="h-4 w-4" />
+                Editar
+              </Button>
+            )}
             {postConteo && lineasPorProducto.length > 0 && (
               <button
                 type="button"
@@ -2649,41 +2767,6 @@ export function InventarioOfflinePage() {
               >
                 <Eye className="h-5 w-5" />
               </button>
-            )}
-          </div>
-          <div className="flex shrink-0 flex-col items-stretch gap-2 sm:flex-row sm:items-center">
-            {comparacion && !comparacion.coincide && !verificacionSimple && (
-              <Button className="rounded-xl" disabled={busy} onClick={() => void handleReconteo()}>
-                Iniciar reconteo
-              </Button>
-            )}
-            {puedeEditar && (misLineasRonda.length > 0 || enReconteo || verificacionSimple) && (
-              <Button className="rounded-xl" disabled={busy} onClick={() => void handleFinalizar()}>
-                <Check className="h-4 w-4" />
-                Finalicé este sector
-              </Button>
-            )}
-            {estado?.mi_finalizo && !estado.companero_finalizo && !verificacionSimple && (
-              <Button
-                variant="secondary"
-                className="rounded-xl"
-                disabled={busy}
-                onClick={() => void handleReabrirConteo()}
-              >
-                <Pencil className="h-4 w-4" />
-                Seguir editando
-              </Button>
-            )}
-            {estado?.mi_finalizo && verificacionSimple && (
-              <Button
-                variant="secondary"
-                className="rounded-xl"
-                disabled={busy}
-                onClick={() => void handleReabrirConteo()}
-              >
-                <Pencil className="h-4 w-4" />
-                Seguir editando
-              </Button>
             )}
           </div>
         </div>

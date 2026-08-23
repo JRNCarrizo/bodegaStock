@@ -6,6 +6,9 @@ import {
   sumBultosPieFromLineas,
   type LineaBultosPieInput
 } from '@/lib/desglose'
+import { isNativeApp } from '@/lib/nativeServer'
+import { cn } from '@/lib/utils'
+import { ScrollableProductName } from '@/components/ScrollableProductName'
 import { Badge, Card } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 
@@ -37,6 +40,8 @@ export type RegistroDetalleLinea = {
   extraKey?: string
   /** Si true, `extra` solo se muestra en el desglose expandido */
   extraSoloDesglose?: boolean
+  /** Contenido del desglose expandido (reemplaza `extra` ahí si ambos existen) */
+  desgloseExtra?: ReactNode
 }
 
 export function RegistroDetallePanel({
@@ -50,6 +55,7 @@ export function RegistroDetallePanel({
   meta,
   lineas,
   encabezadoExtra,
+  encabezadoSubline,
   antesProductos,
   despuesProductos,
   accionesTotal,
@@ -68,6 +74,8 @@ export function RegistroDetallePanel({
   meta?: ReactNode
   lineas?: RegistroDetalleLinea[]
   encabezadoExtra?: ReactNode
+  /** Segunda fila del encabezado en APK (debajo del título) */
+  encabezadoSubline?: ReactNode
   antesProductos?: ReactNode
   despuesProductos?: ReactNode
   /** Botones u otras acciones alineadas a la derecha del total (estilo carga de planilla) */
@@ -76,6 +84,7 @@ export function RegistroDetallePanel({
   productosCount?: number
 }) {
   const lineasLista = lineas ?? []
+  const nativeApp = isNativeApp()
   const [expandedProductos, setExpandedProductos] = useState<Set<number>>(() => new Set())
 
   const lineasPorProducto = useMemo(() => {
@@ -115,27 +124,70 @@ export function RegistroDetallePanel({
   }
 
   return (
-    <div className="mx-auto flex max-w-5xl flex-col gap-4">
-      <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-        <Button
-          variant="ghost"
-          size="sm"
-          className="-ml-2 h-8 shrink-0 rounded-lg px-2"
-          onClick={onVolver}
-        >
-          <ChevronLeft className="h-4 w-4" />
-          Volver
-        </Button>
-        <span className="hidden h-4 w-px bg-surface-border sm:block" aria-hidden />
-        <h1 className="text-base font-semibold text-slate-900 sm:text-lg">{titulo}</h1>
-        <Badge variant="muted">{fecha}</Badge>
-        {encabezadoExtra}
-        <span className="text-xs text-slate-400">
-          {cantidadProductos} producto{cantidadProductos === 1 ? '' : 's'}
-        </span>
-      </div>
+    <div
+      className={cn(
+        'mx-auto flex max-w-5xl flex-col',
+        nativeApp ? '-mt-1 gap-3 px-1' : 'gap-4'
+      )}
+    >
+      {nativeApp ? (
+        <div className="space-y-2">
+          <div className="flex items-center gap-1">
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-9 w-9 shrink-0 rounded-lg p-0"
+              onClick={onVolver}
+              aria-label="Volver"
+            >
+              <ChevronLeft className="h-5 w-5" />
+            </Button>
+            <div className="flex min-w-0 flex-1 items-center gap-2">
+              <h1 className="min-w-0 truncate text-base font-semibold text-slate-900">{titulo}</h1>
+              <Badge variant="muted" className="shrink-0">
+                {fecha}
+              </Badge>
+            </div>
+          </div>
+          <div className="flex flex-wrap items-center gap-2 pl-0.5">
+            {encabezadoSubline}
+            {encabezadoExtra}
+            <span className="text-[11px] text-slate-400">
+              {cantidadProductos} producto{cantidadProductos === 1 ? '' : 's'}
+            </span>
+          </div>
+        </div>
+      ) : (
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+          <Button
+            variant="ghost"
+            size="sm"
+            className="-ml-2 h-8 shrink-0 rounded-lg px-2"
+            onClick={onVolver}
+          >
+            <ChevronLeft className="h-4 w-4" />
+            Volver
+          </Button>
+          <span className="hidden h-4 w-px bg-surface-border sm:block" aria-hidden />
+          <h1 className="text-base font-semibold text-slate-900 sm:text-lg">{titulo}</h1>
+          <Badge variant="muted">{fecha}</Badge>
+          {encabezadoExtra}
+          <span className="text-xs text-slate-400">
+            {cantidadProductos} producto{cantidadProductos === 1 ? '' : 's'}
+          </span>
+        </div>
+      )}
 
-      {meta && <div className="flex flex-wrap items-center gap-1.5 text-xs">{meta}</div>}
+      {meta && (
+        <div
+          className={cn(
+            'flex flex-wrap items-center text-xs',
+            nativeApp ? 'gap-1' : 'gap-1.5'
+          )}
+        >
+          {meta}
+        </div>
+      )}
 
       {antesProductos}
 
@@ -161,11 +213,19 @@ export function RegistroDetallePanel({
 
             return (
               <div key={grupo.producto.producto_id}>
-                <div className="flex items-center gap-2 px-4 py-2.5 hover:bg-slate-50/80">
+                <div
+                  className={cn(
+                    'flex gap-2 px-4 py-2.5 hover:bg-slate-50/80',
+                    nativeApp ? 'items-start' : 'items-center'
+                  )}
+                >
                   <button
                     type="button"
                     onClick={() => toggleProductoExpand(grupo.producto.producto_id)}
-                    className="shrink-0 rounded p-1 text-slate-400 hover:bg-slate-200 hover:text-slate-700"
+                    className={cn(
+                      'shrink-0 rounded p-1 text-slate-400 hover:bg-slate-200 hover:text-slate-700',
+                      nativeApp && 'mt-0.5'
+                    )}
                     aria-expanded={isExpanded}
                     aria-label={isExpanded ? 'Ocultar desglose' : 'Ver desglose'}
                   >
@@ -175,42 +235,74 @@ export function RegistroDetallePanel({
                       <ChevronRight className="h-4 w-4" />
                     )}
                   </button>
-                  <button
-                    type="button"
-                    onClick={() => toggleProductoExpand(grupo.producto.producto_id)}
-                    className="min-w-0 flex-1 text-left"
-                  >
-                    <div className="flex min-w-0 items-baseline gap-2">
-                      <span className="shrink-0 font-mono text-sm font-semibold text-slate-900">
-                        {grupo.producto.codigo_interno}
-                      </span>
-                      <span className="min-w-0 truncate text-sm text-slate-600">
+                  {nativeApp ? (
+                    <button
+                      type="button"
+                      onClick={() => toggleProductoExpand(grupo.producto.producto_id)}
+                      className="min-w-0 flex-1 text-left"
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <span className="inline-flex max-w-[70%] truncate rounded-md bg-brand-600 px-2 py-0.5 font-mono text-xs font-bold tracking-wide text-white shadow-sm">
+                          {grupo.producto.codigo_interno}
+                        </span>
+                        <div className="flex shrink-0 items-center gap-2">
+                          {extrasFila}
+                          <Badge variant="default">
+                            {grupo.totalTextoGrupo ??
+                              formatCantidadConUnidad(grupo.total, grupo.cantidadUnidad)}
+                          </Badge>
+                        </div>
+                      </div>
+                      <ScrollableProductName className="mt-0.5 block w-full text-sm text-slate-600">
                         {grupo.producto.nombre}
-                      </span>
-                    </div>
-                    {!isExpanded && grupo.lineas.length > 1 && (
-                      <p className="text-xs text-slate-400">{grupo.lineas.length} líneas</p>
-                    )}
-                  </button>
-                  <div className="flex shrink-0 items-center gap-2">
-                    {extrasFila}
-                    <Badge variant="default">
-                      {grupo.totalTextoGrupo ??
-                        formatCantidadConUnidad(grupo.total, grupo.cantidadUnidad)}
-                    </Badge>
-                  </div>
+                      </ScrollableProductName>
+                      {!isExpanded && grupo.lineas.length > 1 && (
+                        <p className="mt-0.5 text-xs text-slate-400">{grupo.lineas.length} líneas</p>
+                      )}
+                    </button>
+                  ) : (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => toggleProductoExpand(grupo.producto.producto_id)}
+                        className="min-w-0 flex-1 text-left"
+                      >
+                        <div className="flex min-w-0 items-baseline gap-2">
+                          <span className="shrink-0 font-mono text-sm font-semibold text-slate-900">
+                            {grupo.producto.codigo_interno}
+                          </span>
+                          <span className="min-w-0 truncate text-sm text-slate-600">
+                            {grupo.producto.nombre}
+                          </span>
+                        </div>
+                        {!isExpanded && grupo.lineas.length > 1 && (
+                          <p className="text-xs text-slate-400">{grupo.lineas.length} líneas</p>
+                        )}
+                      </button>
+                      <div className="flex shrink-0 items-center gap-2">
+                        {extrasFila}
+                        <Badge variant="default">
+                          {grupo.totalTextoGrupo ??
+                            formatCantidadConUnidad(grupo.total, grupo.cantidadUnidad)}
+                        </Badge>
+                      </div>
+                    </>
+                  )}
                 </div>
                 {isExpanded && (
                   <ul className="divide-y divide-surface-border border-t border-surface-border bg-surface-muted/20">
-                    {grupo.lineas.map((l) => (
+                    {grupo.lineas.map((l) => {
+                      const desgloseContent =
+                        l.desgloseExtra ?? (l.extraSoloDesglose ? l.extra : undefined)
+                      return (
                       <li
                         key={l.id}
                         className="flex items-center gap-3 py-2.5 pl-11 pr-4 text-sm"
                       >
                         <span className="min-w-0 shrink text-slate-700">{l.etiqueta}</span>
-                        {l.extra ? (
+                        {desgloseContent ? (
                           <div className="flex min-w-0 flex-1 items-center justify-end gap-6 sm:gap-8">
-                            <div className="min-w-0 truncate text-right">{l.extra}</div>
+                            <div className="min-w-0 truncate text-right">{desgloseContent}</div>
                             <span className="shrink-0 font-semibold tabular-nums text-slate-900">
                               {formatCantidadConUnidad(l.cantidad, l.cantidadUnidad, l.cantidadTexto)}
                             </span>
@@ -221,7 +313,7 @@ export function RegistroDetallePanel({
                           </span>
                         )}
                       </li>
-                    ))}
+                    )})}
                   </ul>
                 )}
               </div>

@@ -22,6 +22,7 @@ import { ReorganizarStockForm } from '@/components/ReorganizarStockForm'
 import { SueltoStockHint } from '@/components/SueltoStockHint'
 import { formatCantidad } from '@/lib/desglose'
 import { downloadApiFile } from '@/lib/downloadFile'
+import { isNativeApp } from '@/lib/nativeServer'
 import { scrollElementFullyIntoView, focusAndScrollIntoView } from '@/lib/scroll'
 import { searchDelayMs } from '@/lib/searchDelay'
 import { api, cn } from '@/lib/utils'
@@ -158,12 +159,6 @@ function StockDetallePanel({
             </div>
 
             <div className="p-4">
-              {!canReorganizar && (
-                <p className="mb-3 text-xs text-slate-400">
-                  Ajuste y reorganización requieren permiso de ajustes de stock
-                </p>
-              )}
-
               {!sector.reorganizar.puede && sector.reorganizar.motivo && !showAjuste && (
                 <p className="mb-3 text-xs text-slate-400">{sector.reorganizar.motivo}</p>
               )}
@@ -273,6 +268,7 @@ type ConsultaModo = 'producto' | 'sector' | 'todos'
 const CONSULTA_PAGE_SIZE = 50
 
 export function ConsultaPage() {
+  const nativeApp = isNativeApp()
   const { hasPermiso } = useAuth()
   const canReorganizar = hasPermiso('ajustes.crear')
   const [modo, setModo] = useState<ConsultaModo>('producto')
@@ -726,7 +722,7 @@ export function ConsultaPage() {
   }, [registerMainContentFocus, modo])
 
   const modoTabs = (
-    <div className="flex flex-wrap items-center justify-between gap-3">
+    <div className={cn('flex flex-wrap items-center gap-2', !nativeApp && 'justify-between gap-3')}>
       <div className="flex flex-wrap gap-2">
         {(
           [
@@ -765,58 +761,60 @@ export function ConsultaPage() {
           </button>
         ))}
       </div>
-      <div className="flex flex-wrap items-center gap-3">
-        <label className="inline-flex cursor-pointer items-center gap-2 text-sm text-slate-600">
-          <input
-            type="checkbox"
-            checked={incluirCero}
-            onChange={(e) => {
-              setIncluirCero(e.target.checked)
-              if (modo === 'todos') setTodosPage(1)
-            }}
-            className="h-4 w-4 rounded border-surface-border text-brand-600 focus:ring-brand-500/30"
-          />
-          Incluir productos en cero
-        </label>
-        <Button
-          variant="secondary"
-          size="sm"
-          className="rounded-xl"
-          disabled={exporting}
-          onClick={() => void exportarStockProductos()}
-          title={
-            incluirCero
-              ? 'Excel con código interno, nombre y cantidad (incluye stock 0)'
-              : 'Excel con código interno, nombre y cantidad (solo con stock)'
-          }
-        >
-          {exporting ? (
-            <Loader2 className="h-4 w-4 animate-spin" />
-          ) : (
-            <Download className="h-4 w-4" />
-          )}
-          {exporting ? 'Exportando…' : 'Exportar Excel'}
-        </Button>
-        <Button
-          variant="secondary"
-          size="sm"
-          className="rounded-xl"
-          disabled={exportingSectores}
-          onClick={() => void exportarStockPorSectores()}
-          title={
-            incluirCero
-              ? 'Excel con una columna por sector (incluye stock 0)'
-              : 'Excel con una columna por sector (solo con stock)'
-          }
-        >
-          {exportingSectores ? (
-            <Loader2 className="h-4 w-4 animate-spin" />
-          ) : (
-            <Download className="h-4 w-4" />
-          )}
-          {exportingSectores ? 'Exportando…' : 'Exportar por sectores'}
-        </Button>
-      </div>
+      {!nativeApp && (
+        <div className="flex flex-wrap items-center gap-3">
+          <label className="inline-flex cursor-pointer items-center gap-2 text-sm text-slate-600">
+              <input
+                type="checkbox"
+                checked={incluirCero}
+                onChange={(e) => {
+                  setIncluirCero(e.target.checked)
+                  if (modo === 'todos') setTodosPage(1)
+                }}
+                className="h-4 w-4 rounded border-surface-border text-brand-600 focus:ring-brand-500/30"
+              />
+              Incluir productos en cero
+            </label>
+            <Button
+              variant="secondary"
+              size="sm"
+              className="rounded-xl"
+              disabled={exporting}
+              onClick={() => void exportarStockProductos()}
+              title={
+                incluirCero
+                  ? 'Excel con código interno, nombre y cantidad (incluye stock 0)'
+                  : 'Excel con código interno, nombre y cantidad (solo con stock)'
+              }
+            >
+              {exporting ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Download className="h-4 w-4" />
+              )}
+              {exporting ? 'Exportando…' : 'Exportar Excel'}
+            </Button>
+            <Button
+              variant="secondary"
+              size="sm"
+              className="rounded-xl"
+              disabled={exportingSectores}
+              onClick={() => void exportarStockPorSectores()}
+              title={
+                incluirCero
+                  ? 'Excel con una columna por sector (incluye stock 0)'
+                  : 'Excel con una columna por sector (solo con stock)'
+              }
+            >
+              {exportingSectores ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Download className="h-4 w-4" />
+              )}
+              {exportingSectores ? 'Exportando…' : 'Exportar por sectores'}
+            </Button>
+        </div>
+      )}
     </div>
   )
 
@@ -829,9 +827,11 @@ export function ConsultaPage() {
 
   const subtitulo =
     modo === 'producto'
-      ? incluirCero
-        ? 'Código interno, código de barras o nombre. Incluye productos sin stock.'
-        : 'Código interno, código de barras o nombre. Solo productos con stock.'
+      ? nativeApp
+        ? 'Código interno, código de barras o nombre.'
+        : incluirCero
+          ? 'Código interno, código de barras o nombre. Incluye productos sin stock.'
+          : 'Código interno, código de barras o nombre. Solo productos con stock.'
       : modo === 'sector'
         ? 'Elegí un sector para ver todos los productos con stock, filtrando por ubicación interna si aplica.'
         : incluirCero
@@ -845,15 +845,22 @@ export function ConsultaPage() {
     const loadingDetalle = loadingDetalleId === p.id
 
     return (
-      <li key={p.id} ref={isExpanded ? expandedItemRef : undefined}>
+      <li
+        key={p.id}
+        ref={isExpanded ? expandedItemRef : undefined}
+        className={cn(
+          'overflow-hidden rounded-xl border bg-white transition-[box-shadow,border-color]',
+          isExpanded
+            ? 'border-brand-200 shadow-md ring-1 ring-brand-100/80'
+            : isHighlighted
+              ? 'border-brand-300 shadow-card ring-2 ring-brand-200/50'
+              : 'border-surface-border shadow-card'
+        )}
+      >
         <div
           className={cn(
-            'flex items-center gap-3 px-4 py-3.5 transition-colors sm:gap-4 sm:px-6',
-            isExpanded
-              ? 'bg-brand-50/70'
-              : isHighlighted
-                ? 'bg-brand-50 ring-1 ring-inset ring-brand-200'
-                : 'hover:bg-slate-50/80'
+            'flex items-center gap-3 px-4 py-3.5 transition-colors sm:gap-4 sm:px-5',
+            isExpanded ? 'bg-brand-50/70' : 'hover:bg-slate-50/80'
           )}
         >
           <button
@@ -878,20 +885,22 @@ export function ConsultaPage() {
             )}
           </button>
 
-          <ProductImage
-            productoId={p.id}
-            hasImage={!!p.imagen_path}
-            alt={p.nombre}
-            className="h-12 w-12 shrink-0 rounded-xl ring-1 ring-surface-border"
-            clickable={!!p.imagen_path}
-            onPreview={(src) =>
-              setImagePreview({
-                src,
-                alt: p.nombre,
-                title: `${p.codigo_interno} — ${p.nombre}`
-              })
-            }
-          />
+          {!nativeApp && (
+            <ProductImage
+              productoId={p.id}
+              hasImage={!!p.imagen_path}
+              alt={p.nombre}
+              className="h-12 w-12 shrink-0 rounded-xl ring-1 ring-surface-border"
+              clickable={!!p.imagen_path}
+              onPreview={(src) =>
+                setImagePreview({
+                  src,
+                  alt: p.nombre,
+                  title: `${p.codigo_interno} — ${p.nombre}`
+                })
+              }
+            />
+          )}
 
           <button
             type="button"
@@ -939,9 +948,9 @@ export function ConsultaPage() {
         </div>
 
         {isExpanded && (
-          <div className="border-t border-brand-100/80 bg-gradient-to-b from-surface-muted/50 to-white px-4 py-5 sm:px-6">
-            <div className="ml-1 sm:ml-2">
-              <div className="mb-4 flex items-center gap-2">
+          <div className="border-t border-brand-100/90 bg-gradient-to-b from-surface-muted/50 to-white px-4 py-4 sm:px-5">
+            <div>
+              <div className="mb-3 flex items-center gap-2">
                 <div className="h-px flex-1 bg-brand-200/60" />
                 <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">
                   Stock por sector
@@ -996,30 +1005,32 @@ export function ConsultaPage() {
   }
 
   return (
-    <div className="mx-auto max-w-4xl space-y-6">
-      <section className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-        <div>
-          <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">
-            Consulta de stock
-          </p>
-          <h1 className="mt-1 text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">
-            {titulo}
-          </h1>
-          <p className="mt-2 max-w-xl text-sm leading-relaxed text-slate-500">{subtitulo}</p>
-        </div>
-        {modo === 'producto' && (
-          <div className="flex flex-wrap gap-1.5">
-            {['↑↓ navegar', 'Enter abrir', 'Esc cerrar'].map((hint) => (
-              <span
-                key={hint}
-                className="rounded-full border border-surface-border bg-white px-2.5 py-1 text-[11px] font-medium text-slate-500 shadow-card"
-              >
-                {hint}
-              </span>
-            ))}
+    <div className={cn('mx-auto max-w-4xl', nativeApp ? '-mt-1 space-y-3' : 'space-y-6')}>
+      {!nativeApp && (
+        <section className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">
+              Consulta de stock
+            </p>
+            <h1 className="mt-1 text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">
+              {titulo}
+            </h1>
+            <p className="mt-2 max-w-xl text-sm leading-relaxed text-slate-500">{subtitulo}</p>
           </div>
-        )}
-      </section>
+          {modo === 'producto' && (
+            <div className="flex flex-wrap gap-1.5">
+              {['↑↓ navegar', 'Enter abrir', 'Esc cerrar'].map((hint) => (
+                <span
+                  key={hint}
+                  className="rounded-full border border-surface-border bg-white px-2.5 py-1 text-[11px] font-medium text-slate-500 shadow-card"
+                >
+                  {hint}
+                </span>
+              ))}
+            </div>
+          )}
+        </section>
+      )}
 
       {error && (
         <div className="rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700 ring-1 ring-red-100">
@@ -1030,7 +1041,7 @@ export function ConsultaPage() {
       {modoTabs}
 
       {modo === 'sector' ? (
-        <ConsultaPorSectorPanel onSectorSelectedChange={setSectorDetailOpen} />
+        <ConsultaPorSectorPanel nativeApp={nativeApp} onSectorSelectedChange={setSectorDetailOpen} />
       ) : modo === 'todos' ? (
         <Card className="overflow-hidden shadow-panel">
           <div className="flex items-center justify-between gap-3 border-b border-surface-border bg-slate-50/80 px-5 py-3.5 sm:px-6">
@@ -1049,14 +1060,14 @@ export function ConsultaPage() {
               </span>
             )}
           </div>
-          <CardBody className="p-0">
+          <CardBody className="bg-surface-muted/35 p-2 sm:p-3">
             {loading ? (
               <div className="flex items-center justify-center gap-2 py-16 text-sm text-slate-500">
                 <Loader2 className="h-5 w-5 animate-spin text-brand-600" />
                 Cargando listado...
               </div>
             ) : resultados.length === 0 ? (
-              <div className="flex flex-col items-center px-6 py-14 text-center">
+              <div className="flex flex-col items-center rounded-xl border border-dashed border-surface-border bg-white px-6 py-14 text-center shadow-card">
                 <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-slate-100 text-slate-400">
                   <Package className="h-7 w-7" />
                 </div>
@@ -1064,7 +1075,7 @@ export function ConsultaPage() {
               </div>
             ) : (
               <>
-                <ul ref={resultadosListRef} className="divide-y divide-surface-border">
+                <ul ref={resultadosListRef} className="space-y-2">
                   {resultados.map((p, index) => renderProductoListItem(p, index))}
                 </ul>
                 <PaginationControls
@@ -1085,7 +1096,12 @@ export function ConsultaPage() {
       ) : (
         <>
       <Card className="overflow-hidden shadow-panel">
-        <div className="border-b border-brand-100 bg-gradient-to-r from-brand-50/80 via-white to-white px-5 py-4 sm:px-6">
+        <div
+          className={cn(
+            'border-b border-brand-100 bg-gradient-to-r from-brand-50/80 via-white to-white sm:px-6',
+            nativeApp ? 'px-3 py-2.5' : 'px-5 py-4'
+          )}
+        >
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
             <label className="relative block min-w-0 flex-1 cursor-text">
               <Search className="pointer-events-none absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-brand-400" />
@@ -1111,7 +1127,7 @@ export function ConsultaPage() {
           </div>
         </div>
 
-        {!search.trim() && (
+        {!search.trim() && !nativeApp && (
           <CardBody>
             <div className="flex flex-col items-center py-10 text-center">
               <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-brand-50 text-brand-600">
@@ -1145,9 +1161,9 @@ export function ConsultaPage() {
             )}
           </div>
 
-          <CardBody className="p-0">
+          <CardBody className="bg-surface-muted/35 p-2 sm:p-3">
             {!loading && resultados.length === 0 ? (
-              <div className="flex flex-col items-center px-6 py-14 text-center">
+              <div className="flex flex-col items-center rounded-xl border border-dashed border-surface-border bg-white px-6 py-14 text-center shadow-card">
                 <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-slate-100 text-slate-400">
                   <Package className="h-7 w-7" />
                 </div>
@@ -1157,7 +1173,7 @@ export function ConsultaPage() {
                 </p>
               </div>
             ) : (
-              <ul ref={resultadosListRef} className="divide-y divide-surface-border">
+              <ul ref={resultadosListRef} className="space-y-2">
                 {resultados.map((p, index) => renderProductoListItem(p, index))}
               </ul>
             )}

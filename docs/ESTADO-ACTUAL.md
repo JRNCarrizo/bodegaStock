@@ -1,10 +1,10 @@
 # ControlStock — Estado actual del proyecto
 
-> **Snapshot global** — agosto 2026 · release **v0.3.46**  
+> **Snapshot global** — agosto 2026 · release **v0.3.47**  
 > Leer este archivo primero antes de pedir cambios nuevos o retomar el proyecto en otro chat.
 
 **Repositorio:** [github.com/JRNCarrizo/bodegaStock](https://github.com/JRNCarrizo/bodegaStock)  
-**Release publicada:** [v0.3.46](https://github.com/JRNCarrizo/bodegaStock/releases/tag/v0.3.46)
+**Release publicada:** [v0.3.47](https://github.com/JRNCarrizo/bodegaStock/releases/tag/v0.3.47)
 
 ---
 
@@ -82,6 +82,7 @@ Detalle: [SERVIDOR-CLOUD-RAILWAY-FUTURO.md](SERVIDOR-CLOUD-RAILWAY-FUTURO.md) ·
 
 | Versión | Fecha | Lo principal |
 |---------|-------|--------------|
+| **0.3.47** | ago 2026 | Inventario APK: teclado numérico, operadores, total pallets+cajas |
 | **0.3.46** | ago 2026 | Retornos verificación UX; movimientos pallets+cajas; migrador nube Postgres |
 | **0.3.45** | ago 2026 | Roturas: cantidad y total sin palabra “cajas” (paridad con retornos) |
 | **0.3.44** | ago 2026 | APK Config limpia; sidebar opaca; roturas sector mínimo stock; pulido retornos/consulta |
@@ -198,11 +199,11 @@ npm run dist
 # → release/ControlStock-Setup-x.y.z.exe
 
 # Publicar GitHub
-.\scripts\publish-release.ps1 -Version "0.3.46"
+.\scripts\publish-release.ps1 -Version "0.3.47"
 ```
 
 Login inicial (base vacía): **admin** / **admin123**
 
 ---
 
-*Última actualización: 23 agosto 2026 — v0.3.46*
+*Última actualización: 23 agosto 2026 — v0.3.47*

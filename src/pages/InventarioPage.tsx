@@ -38,6 +38,8 @@ import {
   Box,
   X
 } from 'lucide-react'
+import { App as CapApp } from '@capacitor/app'
+import { Capacitor } from '@capacitor/core'
 import { BottleIcon } from '@/components/icons/BottleIcon'
 import { BarcodeScannerModal } from '@/components/BarcodeScannerModal'
 import { ProductImage } from '@/components/ProductImage'
@@ -46,6 +48,7 @@ import {
   RegistroDetalleObsChip
 } from '@/components/RegistroDetallePanel'
 import { ScrollableProductName } from '@/components/ScrollableProductName'
+import { CantidadExprOperators } from '@/components/CantidadExprOperators'
 import { SwipeableConteoLinea } from '@/components/SwipeableConteoLinea'
 import { SectionHelpButton } from '@/components/SectionHelpButton'
 import { Button } from '@/components/ui/Button'
@@ -57,9 +60,11 @@ import {
   formatCantidad,
   formatEtiqueta,
   formatTotalesInventarioResumen,
+  formatTotalesInventarioFisicos,
   formatValorLineaConteo,
   normalizarUnidadProducto,
   sumarTotalesInventarioLineas,
+  sumarTotalesInventarioFisicos,
   totalesInventarioCoinciden,
   type TipoBulto,
   type TotalesInventarioDesglose
@@ -94,8 +99,10 @@ import { INVENTARIO_POLL_MS, usePolling } from '@/hooks/usePolling'
 import { useProductoQuickSearch } from '@/hooks/useProductoQuickSearch'
 import { focusAndScrollIntoView, scrollProductoIntoListVisible } from '@/lib/scroll'
 import { codigoProductoExacto, textoProductoMatches } from '@/lib/productoSearch'
+import { isNativeApp } from '@/lib/nativeServer'
 import {
   scrollFocusedFieldIntoSheet,
+  useKeyboardLayoutShrink,
   useVisualViewportBottomInset
 } from '@/hooks/useVisualViewportBottomInset'
 
@@ -2717,6 +2724,7 @@ export function InventarioPage() {
   const { registerMainContentFocus } = useSidebarNav()
   const navigate = useNavigate()
   const { sectorInvId } = useParams<{ sectorInvId?: string }>()
+  const nativeApp = isNativeApp()
 
   const canCreate = hasPermiso('inventario.crear_sesion')
   const canSupervise = hasPermiso('inventario.supervisar')
@@ -3653,84 +3661,151 @@ export function InventarioPage() {
   }
 
   return (
-    <div className="mx-auto max-w-5xl space-y-6">
-      <section className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-        <div>
-          <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">
+    <div className={cn('mx-auto max-w-5xl', nativeApp ? '-mt-1 space-y-3' : 'space-y-6')}>
+      {nativeApp ? (
+        <div className="flex items-center gap-2">
+          <h1 className="min-w-0 flex-1 truncate text-xl font-bold tracking-tight text-slate-900">
             Inventario
-          </p>
-          <div className="mt-1 flex items-center gap-1.5">
-            <h1 className="text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">
-              Inventario
-            </h1>
-            <SectionHelpButton guideId="inventario" />
+          </h1>
+          <div className="flex shrink-0 items-center gap-1.5">
+            {!offlineSession && (canCount || canManageInventario) && (
+              <Button
+                variant="secondary"
+                className="h-9 rounded-xl px-2.5"
+                disabled={loading || refreshing}
+                onClick={() => {
+                  void (async () => {
+                    setRefreshing(true)
+                    try {
+                      await loadBase({ silent: true })
+                    } finally {
+                      setRefreshing(false)
+                    }
+                  })()
+                }}
+                aria-label="Actualizar listado"
+                title="Actualizar listado"
+              >
+                <RefreshCw className={cn('h-4 w-4', refreshing && 'animate-spin')} />
+              </Button>
+            )}
+            {canCreate && !activo && (
+              <Button
+                ref={newInventoryButtonRef}
+                className="h-9 rounded-xl px-3"
+                onClick={() => setView('create')}
+                onKeyDown={handleNewInventoryKeyDown}
+              >
+                <Plus className="h-4 w-4" />
+                Nuevo
+              </Button>
+            )}
           </div>
-          <p className="mt-2 max-w-xl text-sm leading-relaxed text-slate-500">
-            Conteo físico con doble verificación
-          </p>
         </div>
-        <div className="flex flex-wrap items-center gap-2">
-          {!offlineSession && (canCount || canManageInventario) && (
-            <Button
-              variant="secondary"
-              className="rounded-xl px-3"
-              disabled={loading || refreshing}
-              onClick={() => {
-                void (async () => {
-                  setRefreshing(true)
-                  try {
-                    await loadBase({ silent: true })
-                  } finally {
-                    setRefreshing(false)
-                  }
-                })()
-              }}
-              title="Actualizar listado"
-            >
-              <RefreshCw className={cn('h-4 w-4', refreshing && 'animate-spin')} />
-              Actualizar
-            </Button>
-          )}
-          {canCreate && !activo && (
-            <Button
-              ref={newInventoryButtonRef}
-              className="rounded-xl px-4"
-              onClick={() => setView('create')}
-              onKeyDown={handleNewInventoryKeyDown}
-            >
-              <Plus className="h-4 w-4" />
-              Nuevo inventario
-            </Button>
-          )}
-        </div>
-      </section>
+      ) : (
+        <section className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">
+              Inventario
+            </p>
+            <div className="mt-1 flex items-center gap-1.5">
+              <h1 className="text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">
+                Inventario
+              </h1>
+              <SectionHelpButton guideId="inventario" />
+            </div>
+            <p className="mt-2 max-w-xl text-sm leading-relaxed text-slate-500">
+              Conteo físico con doble verificación
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            {!offlineSession && (canCount || canManageInventario) && (
+              <Button
+                variant="secondary"
+                className="rounded-xl px-3"
+                disabled={loading || refreshing}
+                onClick={() => {
+                  void (async () => {
+                    setRefreshing(true)
+                    try {
+                      await loadBase({ silent: true })
+                    } finally {
+                      setRefreshing(false)
+                    }
+                  })()
+                }}
+                title="Actualizar listado"
+              >
+                <RefreshCw className={cn('h-4 w-4', refreshing && 'animate-spin')} />
+                Actualizar
+              </Button>
+            )}
+            {canCreate && !activo && (
+              <Button
+                ref={newInventoryButtonRef}
+                className="rounded-xl px-4"
+                onClick={() => setView('create')}
+                onKeyDown={handleNewInventoryKeyDown}
+              >
+                <Plus className="h-4 w-4" />
+                Nuevo inventario
+              </Button>
+            )}
+          </div>
+        </section>
+      )}
 
       {error && (
         <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>
       )}
 
       {offlineSession && (
-        <div className="rounded-lg border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-900">
-          Modo sin red al PC. Podés seguir con los sectores offline descargados en este celular.
+        <div
+          className={cn(
+            'rounded-lg border border-sky-200 bg-sky-50 text-sm text-sky-900',
+            nativeApp ? 'px-3 py-2 text-xs' : 'px-4 py-3'
+          )}
+        >
+          {nativeApp
+            ? 'Sin red al PC — sectores offline en este celular'
+            : 'Modo sin red al PC. Podés seguir con los sectores offline descargados en este celular.'}
         </div>
       )}
 
       {canCount && misSectores.length > 0 && (
         <Card className="overflow-hidden shadow-panel">
-          <div className="flex items-center justify-between gap-3 border-b border-slate-200 bg-gradient-to-r from-brand-50/90 via-white to-white px-4 py-3.5 sm:px-5">
+          <div
+            className={cn(
+              'flex items-center justify-between gap-3 border-b border-slate-200 bg-gradient-to-r from-brand-50/90 via-white to-white',
+              nativeApp ? 'px-3 py-2.5' : 'px-4 py-3.5 sm:px-5'
+            )}
+          >
             <div className="min-w-0">
               <div className="flex items-center gap-2">
-                <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-brand-600 text-white shadow-sm">
-                  <ClipboardList className="h-4 w-4" />
-                </div>
+                {!nativeApp && (
+                  <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-brand-600 text-white shadow-sm">
+                    <ClipboardList className="h-4 w-4" />
+                  </div>
+                )}
                 <h2 className="text-sm font-semibold text-slate-900">Mis sectores</h2>
               </div>
-              <p className="mt-1 text-xs text-slate-500">
-                {misSectores.length} asignado{misSectores.length === 1 ? '' : 's'} · tocá para contar
-              </p>
+              {!nativeApp && (
+                <p className="mt-1 text-xs text-slate-500">
+                  {misSectores.length} asignado{misSectores.length === 1 ? '' : 's'} · tocá para contar
+                </p>
+              )}
             </div>
+            {nativeApp && (
+              <span className="shrink-0 rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-600">
+                {misSectores.length}
+              </span>
+            )}
           </div>
-          <div className="space-y-2.5 bg-slate-50/80 p-2.5 sm:p-3">
+          <div
+            className={cn(
+              nativeApp ? 'space-y-2 bg-surface-muted/35 p-2' : 'space-y-2.5 bg-slate-50/80 p-2.5 sm:p-3'
+            )}
+          >
             {misSectores.map((sec) => {
               const offlineListo =
                 sec.modo_conectividad === 'OFFLINE' &&
@@ -3754,7 +3829,10 @@ export function InventarioPage() {
                     )
                   }}
                   className={cn(
-                    'flex w-full items-center gap-3 rounded-2xl border bg-white px-3.5 py-3.5 text-left shadow-sm transition-colors sm:px-4',
+                    'flex w-full items-center gap-3 text-left transition-colors',
+                    nativeApp
+                      ? 'rounded-xl border bg-white px-3 py-3 shadow-card active:bg-slate-50'
+                      : 'rounded-2xl border bg-white px-3.5 py-3.5 shadow-sm sm:px-4',
                     offlineListo
                       ? 'cursor-default border-emerald-200/80 bg-emerald-50/50'
                       : enCurso
@@ -3762,26 +3840,33 @@ export function InventarioPage() {
                         : 'border-slate-200/90 hover:bg-slate-50 active:bg-slate-100'
                   )}
                 >
-                  <div
-                    className={cn(
-                      'flex h-12 w-12 shrink-0 items-center justify-center rounded-xl shadow-sm',
-                      offlineListo && 'bg-emerald-600 text-white',
-                      !offlineListo && esOffline && 'bg-amber-500 text-white',
-                      !offlineListo && !esOffline && enCurso && 'bg-brand-600 text-white',
-                      !offlineListo && !esOffline && !enCurso && 'bg-slate-800 text-white'
-                    )}
-                  >
-                    {offlineListo ? (
-                      <Check className="h-6 w-6" />
-                    ) : esOffline ? (
-                      <WifiOff className="h-5 w-5" />
-                    ) : (
-                      <Warehouse className="h-5 w-5" />
-                    )}
-                  </div>
+                  {!nativeApp && (
+                    <div
+                      className={cn(
+                        'flex h-12 w-12 shrink-0 items-center justify-center rounded-xl shadow-sm',
+                        offlineListo && 'bg-emerald-600 text-white',
+                        !offlineListo && esOffline && 'bg-amber-500 text-white',
+                        !offlineListo && !esOffline && enCurso && 'bg-brand-600 text-white',
+                        !offlineListo && !esOffline && !enCurso && 'bg-slate-800 text-white'
+                      )}
+                    >
+                      {offlineListo ? (
+                        <Check className="h-6 w-6" />
+                      ) : esOffline ? (
+                        <WifiOff className="h-5 w-5" />
+                      ) : (
+                        <Warehouse className="h-5 w-5" />
+                      )}
+                    </div>
+                  )}
                   <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-center gap-1.5">
-                      <p className="truncate text-base font-semibold tracking-tight text-slate-900">
+                      <p
+                        className={cn(
+                          'truncate font-semibold tracking-tight text-slate-900',
+                          nativeApp ? 'text-sm' : 'text-base'
+                        )}
+                      >
                         {sec.sector_nombre}
                       </p>
                       {sec.sector_codigo &&
@@ -3842,7 +3927,12 @@ export function InventarioPage() {
                     </div>
                   </div>
                   {!offlineListo && (
-                    <ChevronRight className="h-5 w-5 shrink-0 text-slate-300" />
+                    <ChevronRight
+                      className={cn(
+                        'shrink-0 text-slate-300',
+                        nativeApp ? 'h-4 w-4' : 'h-5 w-5'
+                      )}
+                    />
                   )}
                 </button>
               )
@@ -3853,41 +3943,53 @@ export function InventarioPage() {
 
       {canManageInventario && (
       <Card className="overflow-hidden shadow-panel">
-        <div className="flex items-center justify-between gap-3 border-b border-slate-200 bg-slate-100 px-4 py-3.5 sm:px-5">
+        <div
+          className={cn(
+            'flex items-center justify-between gap-3 border-b border-slate-200 bg-slate-100',
+            nativeApp ? 'px-3 py-2.5' : 'px-4 py-3.5 sm:px-5'
+          )}
+        >
           <div className="min-w-0">
             <div className="flex items-center gap-2">
-              <BarChart3 className="h-4 w-4 text-slate-500" />
+              {!nativeApp && <BarChart3 className="h-4 w-4 text-slate-500" />}
               <h2 className="text-sm font-semibold text-slate-900">
                 {showArchivadas ? 'Sesiones ocultas' : 'Sesiones'}
               </h2>
             </div>
-            {!loading && sesiones.length > 0 && (
+            {!loading && sesiones.length > 0 && !nativeApp && (
               <p className="mt-0.5 text-xs text-slate-500">
                 {sesiones.length} registro{sesiones.length === 1 ? '' : 's'}
                 {sesiones.length > 6 ? ' · desplazá para ver el historial' : ''}
               </p>
             )}
           </div>
-          {isAdmin && (
-            <Button
-              variant="ghost"
-              size="sm"
-              className="shrink-0 rounded-lg text-slate-600"
-              onClick={() => setShowArchivadas((v) => !v)}
-            >
-              {showArchivadas ? (
-                <>
-                  <Archive className="h-4 w-4" />
-                  Ver activas
-                </>
-              ) : (
-                <>
-                  <EyeOff className="h-4 w-4" />
-                  Ver ocultas
-                </>
-              )}
-            </Button>
-          )}
+          <div className="flex shrink-0 items-center gap-1.5">
+            {nativeApp && !loading && sesiones.length > 0 && (
+              <span className="rounded-full bg-white px-2 py-0.5 text-[11px] font-medium text-slate-600 ring-1 ring-slate-200">
+                {sesiones.length}
+              </span>
+            )}
+            {isAdmin && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className={cn('rounded-lg text-slate-600', nativeApp && 'h-8 px-2')}
+                onClick={() => setShowArchivadas((v) => !v)}
+              >
+                {showArchivadas ? (
+                  <>
+                    <Archive className="h-4 w-4" />
+                    {!nativeApp && 'Ver activas'}
+                  </>
+                ) : (
+                  <>
+                    <EyeOff className="h-4 w-4" />
+                    {!nativeApp && 'Ver ocultas'}
+                  </>
+                )}
+              </Button>
+            )}
+          </div>
         </div>
         {loading ? (
           <div className="flex items-center justify-center gap-2 py-14 text-sm text-slate-500">
@@ -3902,17 +4004,92 @@ export function InventarioPage() {
             <p className="mt-4 text-sm font-medium text-slate-700">
               {showArchivadas ? 'No hay inventarios ocultos' : 'No hay sesiones de inventario'}
             </p>
-            <p className="mt-1 max-w-sm text-xs text-slate-500">
-              {showArchivadas
-                ? 'Los inventarios que ocultes del listado aparecen acá. El stock y los movimientos no se tocan.'
-                : 'Creá un inventario para iniciar el conteo físico con doble verificación'}
-            </p>
+            {!nativeApp && (
+              <p className="mt-1 max-w-sm text-xs text-slate-500">
+                {showArchivadas
+                  ? 'Los inventarios que ocultes del listado aparecen acá. El stock y los movimientos no se tocan.'
+                  : 'Creá un inventario para iniciar el conteo físico con doble verificación'}
+              </p>
+            )}
             {canCreate && !activo && !showArchivadas && (
               <Button className="mt-4 rounded-xl" size="sm" onClick={() => setView('create')}>
                 <Plus className="h-4 w-4" />
-                Nuevo inventario
+                {nativeApp ? 'Nuevo' : 'Nuevo inventario'}
               </Button>
             )}
+          </div>
+        ) : nativeApp ? (
+          <div className="bg-surface-muted/35 p-2">
+            <ul className="space-y-2">
+              {sesiones.map((ses, index) => {
+                const progresoPct =
+                  ses.sectores_total > 0
+                    ? Math.round((ses.sectores_ok / ses.sectores_total) * 100)
+                    : 0
+                const activa = ses.estado === 'EN_PROGRESO' || ses.estado === 'ABIERTA'
+                return (
+                  <li
+                    key={ses.id}
+                    className={cn(
+                      'overflow-hidden rounded-xl border bg-white shadow-card',
+                      activa ? 'border-brand-200 ring-1 ring-brand-100' : 'border-surface-border'
+                    )}
+                  >
+                    <button
+                      ref={(node) => {
+                        sessionButtonRefs.current[index] = node
+                      }}
+                      type="button"
+                      onClick={() => void loadSesion(ses.id)}
+                      onKeyDown={(e) => handleSessionKeyDown(e, index)}
+                      className="flex w-full items-start gap-3 px-3 py-3 text-left active:bg-slate-50"
+                    >
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2">
+                          <p className="min-w-0 flex-1 truncate text-sm font-semibold text-slate-900">
+                            {ses.nombre}
+                          </p>
+                          <Badge variant={estadoSesionBadgeVariant(ses.estado)}>
+                            {estadoSesionLabel(ses.estado)}
+                          </Badge>
+                        </div>
+                        <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-slate-500">
+                          <span className="inline-flex items-center gap-1">
+                            <Calendar className="h-3 w-3 shrink-0 text-slate-400" />
+                            {sesionFechasResumen(ses)}
+                          </span>
+                          <span>·</span>
+                          <span className="inline-flex items-center gap-1">
+                            <User className="h-3 w-3 shrink-0 text-slate-400" />
+                            {ses.creado_por_nombre}
+                          </span>
+                          {ses.archivada && (
+                            <>
+                              <span>·</span>
+                              <span className="font-medium text-slate-600">Oculto</span>
+                            </>
+                          )}
+                        </div>
+                        <div className="mt-2 flex items-center gap-2">
+                          <div className="h-1.5 min-w-0 flex-1 overflow-hidden rounded-full bg-slate-100">
+                            <div
+                              className={cn(
+                                'h-full rounded-full transition-all',
+                                progresoPct >= 100 ? 'bg-emerald-500' : 'bg-brand-600'
+                              )}
+                              style={{ width: `${progresoPct}%` }}
+                            />
+                          </div>
+                          <span className="shrink-0 text-[11px] font-medium tabular-nums text-slate-600">
+                            {ses.sectores_ok}/{ses.sectores_total}
+                          </span>
+                        </div>
+                      </div>
+                    </button>
+                  </li>
+                )
+              })}
+            </ul>
           </div>
         ) : (
           <div className="scrollbar-thin max-h-[28rem] overflow-y-auto overscroll-contain bg-slate-200/90 p-2 sm:p-2.5">
@@ -4012,9 +4189,11 @@ export function InventarioPage() {
             <p className="py-4 text-center text-sm text-slate-500">
               No tenés sectores asignados para contar en este momento.
             </p>
-            <p className="pb-2 text-center text-xs text-slate-400">
-              Si en el PC acaban de crear el inventario, tocá Actualizar o esperá unos segundos.
-            </p>
+            {!nativeApp && (
+              <p className="pb-2 text-center text-xs text-slate-400">
+                Si en el PC acaban de crear el inventario, tocá Actualizar o esperá unos segundos.
+              </p>
+            )}
           </CardBody>
         </Card>
       )}
@@ -4802,6 +4981,12 @@ function ConteoSectorView({
   const [showHeaderMenu, setShowHeaderMenu] = useState(false)
   const [tecladoNumerico, setTecladoNumerico] = useState(() => loadTecladoNumericoBusqueda())
   const [swipeOpenLineId, setSwipeOpenLineId] = useState<number | null>(null)
+  const [showVistaPrevia, setShowVistaPrevia] = useState(false)
+  const [vistaPreviaSearch, setVistaPreviaSearch] = useState('')
+  const [cantidadExprFocus, setCantidadExprFocus] = useState<
+    'bultos' | 'unidades' | 'suelta' | null
+  >(null)
+  const [totalVistaFisica, setTotalVistaFisica] = useState(false)
 
   const productSearchRef = useRef<HTMLInputElement>(null)
   const productResultsListRef = useRef<HTMLUListElement>(null)
@@ -4816,6 +5001,10 @@ function ConteoSectorView({
   const cargaPanelRef = useRef<HTMLDivElement>(null)
   const productLineFormRef = useRef<HTMLDivElement>(null)
   const keyboardInset = useVisualViewportBottomInset()
+  const keyboardLayoutShrink = useKeyboardLayoutShrink()
+  /** Teclado / sheet de carga: el footer sale del flujo para liberar altura a la lista. */
+  const pinConteoFooterUnderKeyboard =
+    keyboardLayoutShrink > 0 || Boolean(selectedProduct)
 
   function armKeyboardForCantidadModal() {
     pendingFocusCantidadRef.current = true
@@ -5123,10 +5312,22 @@ function ConteoSectorView({
     })
   }, [misLineas, enReconteo, referenciaReconteo, referenciaPorProducto])
 
+  const lineasPorProductoVistaPrevia = useMemo(() => {
+    const q = vistaPreviaSearch.trim()
+    if (!q) return lineasPorProducto
+    return lineasPorProducto.filter((g) =>
+      textoProductoMatches({ codigo_interno: g.codigo, nombre: g.nombre }, q)
+    )
+  }, [lineasPorProducto, vistaPreviaSearch])
+
   const totalGeneral = useMemo(() => sumarTotalesMisLineas(misLineas), [misLineas])
   const resumenGeneral = useMemo(
     () => formatTotalesInventarioResumen(totalGeneral),
     [totalGeneral]
+  )
+  const resumenFisico = useMemo(
+    () => formatTotalesInventarioFisicos(sumarTotalesInventarioFisicos(misLineas)),
+    [misLineas]
   )
 
   const usaUbicaciones = Boolean(sectorInfo?.usa_ubicaciones) && ubicaciones.length > 0
@@ -5152,6 +5353,48 @@ function ConteoSectorView({
 
   const puedeEditarRef = useRef(puedeEditar)
   puedeEditarRef.current = puedeEditar
+
+  /** Atrás del celular cierra la vista previa, no sale del sector. */
+  useEffect(() => {
+    if (!showVistaPrevia) return
+
+    const state = window.history.state as { bodegaVistaPrevia?: boolean } | null
+    if (!state?.bodegaVistaPrevia) {
+      window.history.pushState({ bodegaVistaPrevia: true }, '')
+    }
+
+    const onPopState = () => {
+      setShowVistaPrevia(false)
+      setVistaPreviaSearch('')
+    }
+    window.addEventListener('popstate', onPopState)
+
+    let removeCap: (() => void) | undefined
+    if (Capacitor.isNativePlatform()) {
+      void CapApp.addListener('backButton', () => {
+        window.history.back()
+      }).then((handle) => {
+        removeCap = () => {
+          void handle.remove()
+        }
+      })
+    }
+
+    return () => {
+      window.removeEventListener('popstate', onPopState)
+      removeCap?.()
+    }
+  }, [showVistaPrevia])
+
+  function closeVistaPrevia() {
+    const state = window.history.state as { bodegaVistaPrevia?: boolean } | null
+    if (state?.bodegaVistaPrevia) {
+      window.history.back()
+      return
+    }
+    setShowVistaPrevia(false)
+    setVistaPreviaSearch('')
+  }
 
   async function agregarLinea(): Promise<boolean> {
     if (!selectedProduct) {
@@ -5477,6 +5720,7 @@ function ConteoSectorView({
     }
     setError('')
     try {
+      closeVistaPrevia()
       await api(`/api/inventario/sectores/${inventarioSectorId}/reabrir-conteo`, { method: 'POST' })
       await loadSector({ silent: true })
       setTimeout(() => productSearchRef.current?.focus(), 80)
@@ -5502,148 +5746,161 @@ function ConteoSectorView({
     )
   }
 
-  const lineasListContent =
-    lineasPorProducto.length === 0 ? (
-      <div className="flex h-full min-h-[140px] flex-col items-center justify-center px-6 py-12 text-center">
-        <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-100 text-slate-400">
-          <Package className="h-6 w-6" />
+  const lineasListContent = (() => {
+    const renderGruposList = (grupos: typeof lineasPorProducto) =>
+      grupos.length === 0 ? (
+        <div className="flex h-full min-h-[140px] flex-col items-center justify-center px-6 py-12 text-center">
+          <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-100 text-slate-400">
+            <Package className="h-6 w-6" />
+          </div>
+          <p className="mt-3 text-sm font-medium text-slate-600">
+            {vistaPreviaSearch.trim() ? 'Sin resultados' : 'Sin líneas cargadas'}
+          </p>
+          <p className="mt-1 text-xs text-slate-500">
+            {vistaPreviaSearch.trim()
+              ? 'Probá otro código o nombre'
+              : 'Cada conteo es una línea independiente'}
+          </p>
         </div>
-        <p className="mt-3 text-sm font-medium text-slate-600">Sin líneas cargadas</p>
-        <p className="mt-1 text-xs text-slate-500">Cada conteo es una línea independiente</p>
-      </div>
-    ) : (
-      lineasPorProducto.map((grupo) => {
-        const isExpanded = expandedProductos.has(grupo.producto_id)
-        const ref = grupo.referencia
+      ) : (
+        grupos.map((grupo) => {
+          const isExpanded = expandedProductos.has(grupo.producto_id)
+          const ref = grupo.referencia
 
-        return (
-          <div
-            key={grupo.producto_id}
-            data-producto-id={grupo.producto_id}
-            className="border-b border-surface-border last:border-0"
-          >
+          return (
             <div
-              className={cn(
-                'flex items-center gap-3 px-4 py-3 transition-colors sm:px-5',
-                isExpanded ? 'bg-brand-50/50' : 'hover:bg-slate-50/80'
-              )}
+              key={grupo.producto_id}
+              data-producto-id={grupo.producto_id}
+              className="border-b border-surface-border last:border-0"
             >
-              <button
-                type="button"
-                onClick={() => toggleProductoExpand(grupo.producto_id)}
+              <div
                 className={cn(
-                  'shrink-0 rounded-lg p-1.5 transition-colors',
-                  isExpanded
-                    ? 'bg-brand-100 text-brand-700'
-                    : 'text-slate-400 hover:bg-slate-200 hover:text-slate-700'
+                  'flex items-center gap-3 px-4 py-3 transition-colors sm:px-5',
+                  isExpanded ? 'bg-brand-50/50' : 'hover:bg-slate-50/80'
                 )}
-                aria-expanded={isExpanded}
-                aria-label={isExpanded ? 'Ocultar líneas' : 'Ver líneas'}
               >
-                {isExpanded ? (
-                  <ChevronDown className="h-4 w-4" />
-                ) : (
-                  <ChevronRight className="h-4 w-4" />
-                )}
-              </button>
-              <button
-                type="button"
-                onClick={() => toggleProductoExpand(grupo.producto_id)}
-                className="min-w-0 flex-1 text-left"
-              >
-                <span className="inline-flex rounded-md bg-slate-100 px-2 py-0.5 font-mono text-xs font-semibold text-slate-700">
-                  {grupo.codigo}
+                <button
+                  type="button"
+                  onClick={() => toggleProductoExpand(grupo.producto_id)}
+                  className={cn(
+                    'shrink-0 rounded-lg p-1.5 transition-colors',
+                    isExpanded
+                      ? 'bg-brand-100 text-brand-700'
+                      : 'text-slate-400 hover:bg-slate-200 hover:text-slate-700'
+                  )}
+                  aria-expanded={isExpanded}
+                  aria-label={isExpanded ? 'Ocultar líneas' : 'Ver líneas'}
+                >
+                  {isExpanded ? (
+                    <ChevronDown className="h-4 w-4" />
+                  ) : (
+                    <ChevronRight className="h-4 w-4" />
+                  )}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => toggleProductoExpand(grupo.producto_id)}
+                  className="min-w-0 flex-1 text-left"
+                >
+                  <span className="inline-flex rounded-md bg-slate-100 px-2 py-0.5 font-mono text-xs font-semibold text-slate-700">
+                    {grupo.codigo}
+                  </span>
+                  <ScrollableProductName className="mt-1 text-sm font-semibold text-slate-900">
+                    {grupo.nombre}
+                  </ScrollableProductName>
+                  {!isExpanded && grupo.lineas.length > 1 && (
+                    <p className="mt-0.5 text-xs text-slate-500">{grupo.lineas.length} líneas</p>
+                  )}
+                </button>
+                <span className="inline-flex shrink-0 items-center rounded-lg bg-brand-50 px-2.5 py-1.5 text-sm font-bold tabular-nums text-brand-700 ring-1 ring-brand-100">
+                  {grupo.resumen}
                 </span>
-                <ScrollableProductName className="mt-1 text-sm font-semibold text-slate-900">
-                  {grupo.nombre}
-                </ScrollableProductName>
-                {!isExpanded && grupo.lineas.length > 1 && (
-                  <p className="mt-0.5 text-xs text-slate-500">{grupo.lineas.length} líneas</p>
-                )}
-              </button>
-              <span className="inline-flex shrink-0 items-center rounded-lg bg-brand-50 px-2.5 py-1.5 text-sm font-bold tabular-nums text-brand-700 ring-1 ring-brand-100">
-                {grupo.resumen}
-              </span>
-            </div>
-            {isExpanded && (
-              <div className="space-y-2 border-t border-brand-100/80 bg-gradient-to-b from-surface-muted/40 to-white px-4 py-3 sm:px-5">
-                {ref && miRol && enReconteo && (
-                  <p className="border-b border-slate-200/90 pb-1.5 text-[10px] leading-snug text-slate-500">
-                    <span className="text-slate-400">Ronda anterior ·</span>{' '}
-                    <span className="font-medium text-slate-600">
-                      Vos {resumenContadorDiff(ref, miRol)}
-                    </span>
-                    <span className="mx-1 text-slate-300">vs</span>
-                    <span className="font-medium text-slate-600">
-                      Compañero {resumenContadorDiff(ref, miRol === 1 ? 2 : 1)}
-                    </span>
-                  </p>
-                )}
-                {grupo.lineas.length === 0 ? (
-                  <div className="rounded-lg border border-dashed border-amber-200 bg-amber-50/40 px-3 py-4 text-center">
-                    <p className="text-sm text-slate-600">
-                      Sin líneas en esta ronda
-                      {enReconteo ? ' (contaste cero o no lo cargaste)' : ''}
+              </div>
+              {isExpanded && (
+                <div className="space-y-2 border-t border-brand-100/80 bg-gradient-to-b from-surface-muted/40 to-white px-4 py-3 sm:px-5">
+                  {ref && miRol && enReconteo && (
+                    <p className="border-b border-slate-200/90 pb-1.5 text-[10px] leading-snug text-slate-500">
+                      <span className="text-slate-400">Ronda anterior ·</span>{' '}
+                      <span className="font-medium text-slate-600">
+                        Vos {resumenContadorDiff(ref, miRol)}
+                      </span>
+                      <span className="mx-1 text-slate-300">vs</span>
+                      <span className="font-medium text-slate-600">
+                        Compañero {resumenContadorDiff(ref, miRol === 1 ? 2 : 1)}
+                      </span>
                     </p>
-                    {puedeEditar && (
-                      <Button
-                        type="button"
-                        size="sm"
-                        className="mt-2 rounded-xl"
-                        onClick={() => void empezarAgregarLineaProducto(grupo)}
-                      >
-                        <Plus className="h-4 w-4" />
-                        Agregar línea
-                      </Button>
-                    )}
-                  </div>
-                ) : (
-                  <ul className="space-y-2">
-                    {grupo.lineas.map((l, idx) => (
-                      <SwipeableConteoLinea
-                        key={l.id}
-                        disabled={!puedeEditar}
-                        open={swipeOpenLineId === l.id}
-                        onOpenChange={(open) => setSwipeOpenLineId(open ? l.id : null)}
-                        onEdit={() => void empezarEditarLinea(l)}
-                        onDelete={() => {
-                          setSwipeOpenLineId(null)
-                          void eliminarLinea(l.id)
-                        }}
-                      >
-                        <div className="min-w-0 flex-1 text-slate-800">
-                          <span className="text-xs text-slate-400">{idx + 1}.</span> {l.etiqueta}
-                          {l.ubicacion && (
-                            <span className="ml-1.5 text-xs text-slate-500">({l.ubicacion})</span>
-                          )}
-                        </div>
-                        <span className="shrink-0 rounded-md bg-slate-50 px-2 py-1 text-sm font-semibold tabular-nums text-slate-900 ring-1 ring-surface-border">
-                          {formatValorLineaConteo(l)}
-                        </span>
-                      </SwipeableConteoLinea>
-                    ))}
-                    {puedeEditar && (
-                      <li>
+                  )}
+                  {grupo.lineas.length === 0 ? (
+                    <div className="rounded-lg border border-dashed border-amber-200 bg-amber-50/40 px-3 py-4 text-center">
+                      <p className="text-sm text-slate-600">
+                        Sin líneas en esta ronda
+                        {enReconteo ? ' (contaste cero o no lo cargaste)' : ''}
+                      </p>
+                      {puedeEditar && (
                         <Button
                           type="button"
-                          variant="secondary"
                           size="sm"
-                          className="w-full rounded-xl"
+                          className="mt-2 rounded-xl"
                           onClick={() => void empezarAgregarLineaProducto(grupo)}
                         >
                           <Plus className="h-4 w-4" />
-                          Agregar otra línea
+                          Agregar línea
                         </Button>
-                      </li>
-                    )}
-                  </ul>
-                )}
-              </div>
-            )}
-          </div>
-        )
-      })
-    )
+                      )}
+                    </div>
+                  ) : (
+                    <ul className="space-y-2">
+                      {grupo.lineas.map((l, idx) => (
+                        <SwipeableConteoLinea
+                          key={l.id}
+                          disabled={!puedeEditar}
+                          open={swipeOpenLineId === l.id}
+                          onOpenChange={(open) => setSwipeOpenLineId(open ? l.id : null)}
+                          onEdit={() => void empezarEditarLinea(l)}
+                          onDelete={() => {
+                            setSwipeOpenLineId(null)
+                            void eliminarLinea(l.id)
+                          }}
+                        >
+                          <div className="min-w-0 flex-1 text-slate-800">
+                            <span className="text-xs text-slate-400">{idx + 1}.</span> {l.etiqueta}
+                            {l.ubicacion && (
+                              <span className="ml-1.5 text-xs text-slate-500">({l.ubicacion})</span>
+                            )}
+                          </div>
+                          <span className="shrink-0 rounded-md bg-slate-50 px-2 py-1 text-sm font-semibold tabular-nums text-slate-900 ring-1 ring-surface-border">
+                            {formatValorLineaConteo(l)}
+                          </span>
+                        </SwipeableConteoLinea>
+                      ))}
+                      {puedeEditar && (
+                        <li>
+                          <Button
+                            type="button"
+                            variant="secondary"
+                            size="sm"
+                            className="w-full rounded-xl"
+                            onClick={() => void empezarAgregarLineaProducto(grupo)}
+                          >
+                            <Plus className="h-4 w-4" />
+                            Agregar otra línea
+                          </Button>
+                        </li>
+                      )}
+                    </ul>
+                  )}
+                </div>
+              )}
+            </div>
+          )
+        })
+      )
+
+    return {
+      main: renderGruposList(lineasPorProducto),
+      preview: renderGruposList(lineasPorProductoVistaPrevia)
+    }
+  })()
 
   return (
     <div className="flex h-full min-h-0 flex-1 flex-col overflow-hidden bg-surface-muted/30">
@@ -5651,51 +5908,53 @@ function ConteoSectorView({
         ref={cargaPanelRef}
         className="relative z-20 shrink-0 overflow-visible border-b border-surface-border bg-white shadow-sm"
       >
-        <div className="border-b border-brand-100 bg-gradient-to-r from-brand-50/80 via-white to-white px-4 py-3 sm:px-5">
-          <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+        <div className="border-b border-brand-100 bg-gradient-to-r from-brand-50/80 via-white to-white px-3 py-1.5 sm:px-4">
+          <div className="flex items-center gap-2">
             <Button
               variant="ghost"
               size="sm"
-              className="-ml-2 h-8 rounded-lg px-2"
+              className="-ml-1.5 h-7 shrink-0 rounded-lg px-1.5 text-xs"
               onClick={onBack}
             >
               <ChevronLeft className="h-3.5 w-3.5" />
               Salir
             </Button>
             <div className="min-w-0 flex-1">
-              <h1 className="truncate text-sm font-semibold text-slate-900">
-                {String(sectorInfo?.sector_nombre)}
-              </h1>
-              <div className="mt-1 flex flex-wrap items-center gap-2 text-xs">
-                <span className="rounded-full bg-white px-2.5 py-1 font-medium text-slate-700 ring-1 ring-surface-border">
-                  Ronda {ronda}
-                </span>
-                {verificacionSimple && (
-                  <span className="rounded-full bg-sky-50 px-2.5 py-1 font-medium text-sky-800 ring-1 ring-sky-100">
-                    Simple
+              <div className="flex min-w-0 items-center gap-1.5 overflow-hidden">
+                <h1 className="min-w-0 shrink truncate text-sm font-semibold leading-tight text-slate-900">
+                  {String(sectorInfo?.sector_nombre)}
+                </h1>
+                <div className="flex min-w-0 items-center gap-1 overflow-x-auto text-[10px] scrollbar-none">
+                  <span className="shrink-0 rounded-full bg-white px-2 py-0.5 font-medium text-slate-700 ring-1 ring-surface-border">
+                    Ronda {ronda}
                   </span>
-                )}
-                <span className="inline-flex items-center gap-1 rounded-full bg-brand-50 px-2.5 py-1 font-medium text-brand-800 ring-1 ring-brand-100">
-                  <Warehouse className="h-3 w-3" />
-                  {ESTADO_SECTOR_LABEL[estado] ?? estado}
-                </span>
-                {ubicacionSeleccionada && (
-                  <span className="inline-flex items-center gap-1 rounded-full bg-violet-50 px-2.5 py-1 font-medium text-violet-800 ring-1 ring-violet-100">
-                    <MapPin className="h-3 w-3" />
-                    {ubicacionSeleccionada.nombre}
+                  {verificacionSimple && (
+                    <span className="shrink-0 rounded-full bg-sky-50 px-2 py-0.5 font-medium text-sky-800 ring-1 ring-sky-100">
+                      Simple
+                    </span>
+                  )}
+                  <span className="inline-flex shrink-0 items-center gap-0.5 rounded-full bg-brand-50 px-2 py-0.5 font-medium text-brand-800 ring-1 ring-brand-100">
+                    <Warehouse className="h-2.5 w-2.5" />
+                    {ESTADO_SECTOR_LABEL[estado] ?? estado}
                   </span>
-                )}
+                  {ubicacionSeleccionada && (
+                    <span className="inline-flex shrink-0 items-center gap-0.5 rounded-full bg-violet-50 px-2 py-0.5 font-medium text-violet-800 ring-1 ring-violet-100">
+                      <MapPin className="h-2.5 w-2.5" />
+                      {ubicacionSeleccionada.nombre}
+                    </span>
+                  )}
+                </div>
               </div>
             </div>
             <div className="relative shrink-0">
               <button
                 type="button"
-                className="rounded-lg p-2 text-slate-500 hover:bg-slate-100 hover:text-slate-800"
+                className="rounded-lg p-1.5 text-slate-500 hover:bg-slate-100 hover:text-slate-800"
                 aria-label="Más opciones"
                 aria-expanded={showHeaderMenu}
                 onClick={() => setShowHeaderMenu((v) => !v)}
               >
-                <MoreVertical className="h-4 w-4" />
+                <MoreVertical className="h-3.5 w-3.5" />
               </button>
               {showHeaderMenu && (
                 <>
@@ -5749,7 +6008,7 @@ function ConteoSectorView({
               onClick={() => void reabrirConteo()}
             >
               <Pencil className="h-3.5 w-3.5" />
-              Seguir editando
+              Editar
             </Button>
           </div>
         )}
@@ -5765,7 +6024,7 @@ function ConteoSectorView({
 
         {estado === 'ESPERANDO_COMPANERO' && !yoFinalice && miRol != null && !verificacionSimple && (
           <div className="border-b border-blue-100 bg-blue-50 px-4 py-2 text-sm text-blue-800 sm:px-5">
-            Tu compañero ya finalizó. Revisá tus líneas y tocá «Finalicé este sector» cuando estés listo.
+            Tu compañero ya finalizó. Revisá tus líneas y tocá «Finalizar» cuando estés listo.
           </div>
         )}
 
@@ -6052,10 +6311,11 @@ function ConteoSectorView({
                         ref={cantidadBultosRef}
                         label={tipoBulto === 'PALLET' ? 'Cant. pallets' : 'Cant. cajas'}
                         type="text"
-                        inputMode={tipoBulto === 'CAJA' ? 'text' : 'numeric'}
+                        inputMode="numeric"
                         value={cantidadBultos}
                         onChange={(e) => setCantidadBultos(e.target.value)}
                         onFocus={() => {
+                          setCantidadExprFocus('bultos')
                           scrollFocusedFieldIntoSheet(cantidadBultosRef.current)
                           const el = cantidadBultosRef.current
                           if (el) requestAnimationFrame(() => el.select())
@@ -6098,10 +6358,11 @@ function ConteoSectorView({
                         ref={unidadesRef}
                         label="× cajas por pallet"
                         type="text"
-                        inputMode="text"
+                        inputMode="numeric"
                         value={unidadesPorBulto}
                         onChange={(e) => setUnidadesPorBulto(e.target.value)}
                         onFocus={() => {
+                          setCantidadExprFocus('unidades')
                           scrollFocusedFieldIntoSheet(unidadesRef.current)
                           const el = unidadesRef.current
                           if (el) requestAnimationFrame(() => el.select())
@@ -6142,10 +6403,11 @@ function ConteoSectorView({
                               : 'Botellas sueltas (opc.)'
                         }
                         type="text"
-                        inputMode={tipoBulto === 'PALLET' ? 'text' : 'numeric'}
+                        inputMode="numeric"
                         value={cantidadSuelta}
                         onChange={(e) => setCantidadSuelta(e.target.value)}
                         onFocus={() => {
+                          setCantidadExprFocus('suelta')
                           scrollFocusedFieldIntoSheet(cantidadSueltaRef.current)
                           const el = cantidadSueltaRef.current
                           if (el) requestAnimationFrame(() => el.select())
@@ -6183,13 +6445,53 @@ function ConteoSectorView({
                         </p>
                       )}
                     </div>
+                    {(tipoBulto === 'PALLET' || tipoBulto === 'CAJA') && (
+                      <div className="space-y-1.5">
+                        <span className="block text-sm font-medium text-transparent select-none" aria-hidden>
+                          ·
+                        </span>
+                        <CantidadExprOperators
+                          target={
+                            cantidadExprFocus === 'bultos'
+                              ? {
+                                  inputRef: cantidadBultosRef,
+                                  value: cantidadBultos,
+                                  onChange: setCantidadBultos
+                                }
+                              : cantidadExprFocus === 'unidades'
+                                ? {
+                                    inputRef: unidadesRef,
+                                    value: unidadesPorBulto,
+                                    onChange: setUnidadesPorBulto
+                                  }
+                                : cantidadExprFocus === 'suelta'
+                                  ? {
+                                      inputRef: cantidadSueltaRef,
+                                      value: cantidadSuelta,
+                                      onChange: setCantidadSuelta
+                                    }
+                                  : tipoBulto === 'CAJA'
+                                    ? {
+                                        inputRef: cantidadBultosRef,
+                                        value: cantidadBultos,
+                                        onChange: setCantidadBultos
+                                      }
+                                    : {
+                                        inputRef: unidadesRef,
+                                        value: unidadesPorBulto,
+                                        onChange: setUnidadesPorBulto
+                                      }
+                          }
+                        />
+                      </div>
+                    )}
                   </div>
 
                   <div className="col-span-2 flex items-end gap-2 sm:col-span-2 lg:col-span-2">
                     <Button
                       type="button"
                       variant="secondary"
-                      className="h-[2.875rem] w-11 shrink-0 rounded-xl px-0"
+                      className="h-[2.875rem] w-11 shrink-0 rounded-xl px-0 border-red-200 bg-red-50 text-red-600 hover:bg-red-100 hover:text-red-700"
                       disabled={saving}
                       onClick={cancelarLineaForm}
                       aria-label="Cerrar"
@@ -6243,40 +6545,125 @@ function ConteoSectorView({
         ref={listScrollRef}
         className="relative z-0 min-h-0 flex-1 overflow-y-auto bg-white"
       >
-        {lineasListContent}
+        {lineasListContent.main}
       </div>
 
-      <div className="shrink-0 border-t border-slate-200 bg-gradient-to-t from-slate-200/90 via-slate-100 to-slate-50 px-4 py-4 shadow-[0_-6px_16px_rgba(15,23,42,0.08)] sm:px-5">
-        <div className="flex items-center justify-between gap-4">
-          <div>
+      <div
+        className={cn(
+          'border-t border-slate-200 bg-gradient-to-t from-slate-200/90 via-slate-100 to-slate-50 px-4 pt-4 shadow-[0_-6px_16px_rgba(15,23,42,0.08)] transition-transform duration-200 ease-out sm:px-5 pb-[max(1rem,env(safe-area-inset-bottom))]',
+          pinConteoFooterUnderKeyboard ? 'pointer-events-none fixed inset-x-0 z-[15]' : 'shrink-0'
+        )}
+        style={
+          pinConteoFooterUnderKeyboard
+            ? {
+                bottom: 0,
+                transform:
+                  keyboardLayoutShrink > 0
+                    ? `translateY(${keyboardLayoutShrink}px)`
+                    : 'translateY(100%)'
+              }
+            : undefined
+        }
+      >
+        <div className="flex items-center justify-between gap-3">
+          <button
+            type="button"
+            onClick={() => setTotalVistaFisica((v) => !v)}
+            className="min-w-0 flex-1 rounded-xl text-left active:bg-slate-200/50"
+            aria-label={
+              totalVistaFisica
+                ? 'Mostrar total en cajas'
+                : 'Mostrar total en pallets y cajas'
+            }
+          >
             <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-              Total contado
+              {totalVistaFisica ? 'Total pallets + cajas' : 'Total contado'}
             </p>
-            <p className="text-lg font-bold tabular-nums text-brand-700 sm:text-2xl">{resumenGeneral}</p>
-            <p className="mt-0.5 text-[11px] text-slate-400">Cajas y botellerio por separado</p>
+            <p className="scrollbar-none-x overflow-x-auto whitespace-nowrap text-lg font-bold tabular-nums text-brand-700 sm:text-2xl">
+              {totalVistaFisica ? resumenFisico : resumenGeneral}
+            </p>
             <p className="mt-1 text-xs text-slate-500">
               {misLineas.length} línea{misLineas.length === 1 ? '' : 's'} ·{' '}
               {lineasPorProducto.length} producto{lineasPorProducto.length === 1 ? '' : 's'}
+              <span className="text-slate-400"> · tocá para cambiar</span>
             </p>
+          </button>
+          <div className="flex shrink-0 flex-row items-center gap-2">
+            {puedeFinalizar && (
+              <Button className="rounded-xl" onClick={() => void finalizarSector()}>
+                <Check className="h-4 w-4" />
+                Finalizar
+              </Button>
+            )}
+            {esperandoCompanero && (
+              <Button
+                variant="secondary"
+                className="rounded-xl"
+                onClick={() => void reabrirConteo()}
+              >
+                <Pencil className="h-4 w-4" />
+                Editar
+              </Button>
+            )}
+            {yoFinalice && lineasPorProducto.length > 0 && (
+              <button
+                type="button"
+                title="Vista previa del conteo"
+                aria-label="Vista previa del conteo"
+                className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-brand-200 bg-white text-brand-700 shadow-sm transition-colors hover:border-brand-300 hover:bg-brand-50 active:bg-brand-100"
+                onClick={() => {
+                  setVistaPreviaSearch('')
+                  setShowVistaPrevia(true)
+                }}
+              >
+                <Eye className="h-5 w-5" />
+              </button>
+            )}
           </div>
-          {puedeFinalizar && (
-            <Button className="shrink-0 rounded-xl" onClick={() => void finalizarSector()}>
-              <Check className="h-4 w-4" />
-              Finalicé este sector
-            </Button>
-          )}
-          {esperandoCompanero && (
-            <Button
-              variant="secondary"
-              className="shrink-0 rounded-xl"
-              onClick={() => void reabrirConteo()}
-            >
-              <Pencil className="h-4 w-4" />
-              Seguir editando
-            </Button>
-          )}
         </div>
       </div>
+
+      {showVistaPrevia && (
+        <div className="fixed inset-0 z-[60] flex flex-col bg-white">
+          <div className="shrink-0 border-b border-surface-border px-4 py-3 sm:px-5">
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                className="rounded-lg p-1.5 text-slate-500 hover:bg-slate-100 hover:text-slate-800"
+                aria-label="Cerrar vista previa"
+                onClick={closeVistaPrevia}
+              >
+                <ChevronLeft className="h-4 w-4" />
+              </button>
+              <div className="min-w-0 flex-1">
+                <h2 className="truncate text-sm font-semibold text-slate-900">
+                  Vista previa del conteo
+                </h2>
+                <p className="mt-0.5 truncate text-xs text-slate-500">
+                  {lineasPorProducto.length} producto
+                  {lineasPorProducto.length === 1 ? '' : 's'} · tocá para ver desglose
+                </p>
+              </div>
+            </div>
+          </div>
+          <div className="shrink-0 border-b border-surface-border px-3 py-2.5 sm:px-4">
+            <div className="relative">
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-brand-400" />
+              <input
+                type="search"
+                value={vistaPreviaSearch}
+                onChange={(e) => setVistaPreviaSearch(e.target.value)}
+                placeholder="Buscar en lo contado — código o nombre"
+                className="w-full rounded-xl border border-surface-border bg-white py-2.5 pl-10 pr-3 text-base shadow-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20"
+                autoFocus
+              />
+            </div>
+          </div>
+          <div className="min-h-0 flex-1 overflow-y-auto bg-white">
+            {lineasListContent.preview}
+          </div>
+        </div>
+      )}
 
       {showScanner && (
         <BarcodeScannerModal

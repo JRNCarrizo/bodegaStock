@@ -106,6 +106,58 @@ export function formatTotalesInventarioResumen(
   return parts.length > 0 ? parts.join(' · ') : '0'
 }
 
+/** Totales físicos: pallets y cajas tal cual se cargaron (sin convertir pallet→cajas). */
+export type TotalesInventarioFisicos = {
+  pallets: number
+  cajas: number
+  suelto: number
+}
+
+export function sumarTotalesInventarioFisicos(
+  lineas: Array<{
+    tipo_bulto: TipoBulto | string
+    cantidad_bultos?: number | string | null
+    cantidad_suelta?: number | string | null
+  }>
+): TotalesInventarioFisicos {
+  let pallets = 0
+  let cajas = 0
+  let suelto = 0
+  for (const l of lineas) {
+    const tipo = String(l.tipo_bulto)
+    const bultos = Number(l.cantidad_bultos ?? 0)
+    const suelta = Number(l.cantidad_suelta ?? 0)
+    if (tipo === 'PALLET') {
+      if (bultos > 0) pallets += bultos
+      if (suelta > 0) cajas += suelta
+    } else if (tipo === 'CAJA') {
+      if (bultos > 0) cajas += bultos
+      if (suelta > 0) suelto += suelta
+    } else if (tipo === 'SUELTO') {
+      const n = suelta > 0 ? suelta : bultos
+      if (n > 0) suelto += n
+    }
+  }
+  return { pallets, cajas, suelto }
+}
+
+export function formatTotalesInventarioFisicos(
+  t: TotalesInventarioFisicos,
+  unidadProducto?: string | null
+): string {
+  const parts: string[] = []
+  if (t.pallets > 0) {
+    parts.push(`${formatCantidad(t.pallets)} pallet${t.pallets === 1 ? '' : 's'}`)
+  }
+  if (t.cajas > 0) {
+    parts.push(`${formatCantidad(t.cajas)} caja${t.cajas === 1 ? '' : 's'}`)
+  }
+  if (t.suelto > 0) {
+    parts.push(`${formatCantidad(t.suelto)} ${abreviaturaUnidadSuelto(unidadProducto)}`)
+  }
+  return parts.length > 0 ? parts.join(' · ') : '0'
+}
+
 export function totalesInventarioCoinciden(
   a: TotalesInventarioDesglose,
   b: TotalesInventarioDesglose

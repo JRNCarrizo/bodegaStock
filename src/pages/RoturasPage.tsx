@@ -30,9 +30,11 @@ import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { Card, CardBody } from '@/components/ui/Card'
 import { ProductImage } from '@/components/ProductImage'
+import { ScrollableProductName } from '@/components/ScrollableProductName'
 import { SectionHelpButton } from '@/components/SectionHelpButton'
 import { formatCantidad, formatDayTabLabel, formatTotalCajas, todayIsoDate } from '@/lib/desglose'
 import { downloadApiFile } from '@/lib/downloadFile'
+import { isNativeApp } from '@/lib/nativeServer'
 import { searchDelayMs } from '@/lib/searchDelay'
 import { api, cn } from '@/lib/utils'
 import type {
@@ -47,6 +49,10 @@ import { useAuth } from '@/context/AuthContext'
 import { useEscHandler } from '@/hooks/useEscHandler'
 import { useProductoQuickSearch } from '@/hooks/useProductoQuickSearch'
 import { useRegistroListKeyboard } from '@/hooks/useRegistroListKeyboard'
+import {
+  scrollFocusedFieldIntoSheet,
+  useVisualViewportBottomInset
+} from '@/hooks/useVisualViewportBottomInset'
 
 function newTempId(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
@@ -104,6 +110,16 @@ export function RoturasPage() {
   const productResultsListRef = useRef<HTMLUListElement>(null)
   const listScrollRef = useRef<HTMLDivElement>(null)
   const productLineFormRef = useRef<HTMLDivElement>(null)
+  const keyboardBridgeRef = useRef<HTMLInputElement>(null)
+  const pendingFocusCantidadRef = useRef(false)
+  const nativeApp = isNativeApp()
+  const keyboardInset = useVisualViewportBottomInset()
+
+  function armKeyboardForCantidadModal() {
+    if (!nativeApp) return
+    pendingFocusCantidadRef.current = true
+    keyboardBridgeRef.current?.focus({ preventScroll: true })
+  }
 
   const lineasPorProducto = useMemo(() => {
     const map = new Map<number, { producto: RoturaLineaDraft; lineas: RoturaLineaDraft[] }>()
@@ -147,8 +163,13 @@ export function RoturasPage() {
 
   function focusField(ref: React.RefObject<HTMLElement | null>) {
     requestAnimationFrame(() => {
-      ref.current?.focus()
-      ref.current?.scrollIntoView({ block: 'center', behavior: 'smooth' })
+      const el = ref.current
+      if (!el) return
+      el.focus()
+      el.scrollIntoView({ block: 'center', behavior: 'smooth' })
+      if (el instanceof HTMLInputElement) {
+        requestAnimationFrame(() => el.select())
+      }
     })
   }
 
@@ -287,11 +308,7 @@ export function RoturasPage() {
       return true
     }
     if (selectedProduct) {
-      setSelectedProduct(null)
-      setProductSearch('')
-      setCantidadCajas('')
-      setStockDisponible(null)
-      focusField(productSearchRef)
+      cancelarLineaForm()
       return true
     }
     volverAlListado()
@@ -335,7 +352,18 @@ export function RoturasPage() {
     else avanzarACarga()
   }
 
+  function cancelarLineaForm() {
+    setSelectedProduct(null)
+    setProductSearch('')
+    setCantidadCajas('')
+    setStockDisponible(null)
+    setStockPorSector({})
+    setError('')
+    setTimeout(() => productSearchRef.current?.focus(), 50)
+  }
+
   function selectProduct(p: Producto) {
+    armKeyboardForCantidadModal()
     setSelectedProduct(p)
     setProductSearch(p.codigo_interno)
     setProductResults([])
@@ -344,7 +372,9 @@ export function RoturasPage() {
     setError('')
     setStockDisponible(null)
     setStockPorSector({})
-    setTimeout(() => focusField(cantidadRef), 50)
+    if (!nativeApp) {
+      setTimeout(() => focusField(cantidadRef), 50)
+    }
 
     void (async () => {
       try {
@@ -378,6 +408,16 @@ export function RoturasPage() {
       }
     })()
   }
+
+  useEffect(() => {
+    if (!nativeApp || !selectedProduct || !pendingFocusCantidadRef.current) return
+    pendingFocusCantidadRef.current = false
+    const id = window.requestAnimationFrame(() => {
+      focusField(cantidadRef)
+      scrollFocusedFieldIntoSheet(cantidadRef.current, 0)
+    })
+    return () => window.cancelAnimationFrame(id)
+  }, [nativeApp, selectedProduct])
 
   function handleProductSearchKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
     if (selectedProduct) return
@@ -559,15 +599,30 @@ export function RoturasPage() {
         totalEtiqueta="Total"
         total={detalle.total_cajas}
         encabezadoExtra={
-          <span className="inline-flex items-center rounded-full bg-red-50 px-2.5 py-0.5 text-xs font-medium text-red-800 ring-1 ring-red-100">
-            Descuento aplicado
+          <span
+            className={cn(
+              'inline-flex items-center rounded-full font-medium text-red-800 ring-1 ring-red-100 bg-red-50',
+              nativeApp ? 'px-2 py-0.5 text-[10px]' : 'px-2.5 py-0.5 text-xs'
+            )}
+          >
+            Descuento
           </span>
+        }
+        encabezadoSubline={
+          nativeApp ? (
+            <span className="inline-flex max-w-[12rem] items-center gap-1 text-[11px] text-slate-500">
+              <User className="h-3 w-3 shrink-0 text-slate-400" />
+              <span className="truncate">{detalle.rotura.usuario_nombre}</span>
+            </span>
+          ) : undefined
         }
         meta={
           <>
-            <RegistroDetalleMetaChip icon={<User className="h-3.5 w-3.5 shrink-0 text-slate-400" />}>
-              {detalle.rotura.usuario_nombre}
-            </RegistroDetalleMetaChip>
+            {!nativeApp && (
+              <RegistroDetalleMetaChip icon={<User className="h-3.5 w-3.5 shrink-0 text-slate-400" />}>
+                {detalle.rotura.usuario_nombre}
+              </RegistroDetalleMetaChip>
+            )}
             {detalle.rotura.observacion && (
               <RegistroDetalleObsChip>{detalle.rotura.observacion}</RegistroDetalleObsChip>
             )}
@@ -675,7 +730,8 @@ export function RoturasPage() {
             <div key={grupo.producto.producto_id} className="border-b border-surface-border last:border-0">
               <div
                 className={cn(
-                  'flex items-center gap-3 px-4 py-2.5 transition-colors sm:px-5',
+                  'flex gap-3 px-4 py-2.5 transition-colors sm:px-5',
+                  nativeApp ? 'items-start' : 'items-center',
                   isExpanded ? 'bg-red-50/50' : 'hover:bg-slate-50/80'
                 )}
               >
@@ -688,29 +744,58 @@ export function RoturasPage() {
                       ? 'bg-red-100 text-red-700'
                       : 'text-slate-400 hover:bg-slate-200 hover:text-slate-700'
                   )}
+                  aria-expanded={isExpanded}
+                  aria-label={isExpanded ? 'Ocultar líneas' : 'Ver líneas'}
                 >
                   {isExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
                 </button>
-                <button
-                  type="button"
-                  onClick={() => toggleProductoExpand(grupo.producto.producto_id)}
-                  className="flex min-w-0 flex-1 items-center gap-2 text-left"
-                >
-                  <span className="shrink-0 rounded-md bg-slate-100 px-2 py-0.5 font-mono text-xs font-semibold text-slate-700">
-                    {grupo.producto.codigo_interno}
-                  </span>
-                  <span className="min-w-0 truncate text-sm font-semibold text-slate-900">
-                    {grupo.producto.nombre}
-                  </span>
-                  {!isExpanded && grupo.lineas.length > 1 && (
-                    <span className="shrink-0 text-xs text-slate-500">
-                      · {grupo.lineas.length} líneas
+                {nativeApp ? (
+                  <button
+                    type="button"
+                    onClick={() => toggleProductoExpand(grupo.producto.producto_id)}
+                    className="min-w-0 flex-1 text-left"
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <span className="inline-flex max-w-[70%] truncate rounded-md bg-brand-600 px-2 py-0.5 font-mono text-xs font-bold tracking-wide text-white shadow-sm">
+                        {grupo.producto.codigo_interno}
+                      </span>
+                      <span className="inline-flex shrink-0 items-center rounded-lg bg-red-50 px-2.5 py-1.5 text-sm font-bold tabular-nums text-red-700 ring-1 ring-red-100">
+                        {formatCantidad(grupo.total)}
+                      </span>
+                    </div>
+                    <ScrollableProductName className="mt-1 block w-full text-sm font-semibold text-slate-900">
+                      {grupo.producto.nombre}
+                    </ScrollableProductName>
+                    {!isExpanded && grupo.lineas.length > 1 && (
+                      <span className="mt-0.5 block text-xs text-slate-500">
+                        {grupo.lineas.length} líneas
+                      </span>
+                    )}
+                  </button>
+                ) : (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => toggleProductoExpand(grupo.producto.producto_id)}
+                      className="flex min-w-0 flex-1 items-center gap-2 text-left"
+                    >
+                      <span className="shrink-0 rounded-md bg-slate-100 px-2 py-0.5 font-mono text-xs font-semibold text-slate-700">
+                        {grupo.producto.codigo_interno}
+                      </span>
+                      <span className="min-w-0 truncate text-sm font-semibold text-slate-900">
+                        {grupo.producto.nombre}
+                      </span>
+                      {!isExpanded && grupo.lineas.length > 1 && (
+                        <span className="shrink-0 text-xs text-slate-500">
+                          · {grupo.lineas.length} líneas
+                        </span>
+                      )}
+                    </button>
+                    <span className="inline-flex shrink-0 items-center rounded-lg bg-red-50 px-2.5 py-1.5 text-sm font-bold tabular-nums text-red-700 ring-1 ring-red-100">
+                      {formatCantidad(grupo.total)}
                     </span>
-                  )}
-                </button>
-                <span className="inline-flex shrink-0 items-center rounded-lg bg-red-50 px-2.5 py-1.5 text-sm font-bold tabular-nums text-red-700 ring-1 ring-red-100">
-                  {formatCantidad(grupo.total)}
-                </span>
+                  </>
+                )}
               </div>
               {isExpanded && (
                 <ul className="space-y-2 border-t border-red-100/80 bg-gradient-to-b from-surface-muted/40 to-white px-4 py-3 sm:px-5">
@@ -719,18 +804,32 @@ export function RoturasPage() {
                       key={l.tempId}
                       className="flex items-center justify-between gap-3 rounded-lg border border-surface-border bg-white px-3 py-2.5 text-sm"
                     >
-                      <span className="text-slate-800">
-                        {formatCantidad(l.cantidad_cajas)} · {l.sector_nombre}
-                      </span>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        className="rounded-lg"
-                        onClick={() => quitarLinea(l.tempId)}
-                      >
-                        <Trash2 className="h-4 w-4 text-red-500" />
-                      </Button>
+                      <div className="min-w-0 text-slate-800">
+                        {formatCantidad(l.cantidad_cajas)}
+                        {!nativeApp && (
+                          <>
+                            {' · '}
+                            {l.sector_nombre}
+                          </>
+                        )}
+                      </div>
+                      <div className="flex shrink-0 items-center gap-2">
+                        {nativeApp && (
+                          <span className="inline-flex max-w-[8rem] items-center gap-1 truncate text-xs font-medium text-slate-600">
+                            <Warehouse className="h-3 w-3 shrink-0 text-slate-400" />
+                            {l.sector_nombre}
+                          </span>
+                        )}
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          className="rounded-lg"
+                          onClick={() => quitarLinea(l.tempId)}
+                        >
+                          <Trash2 className="h-4 w-4 text-red-500" />
+                        </Button>
+                      </div>
                     </li>
                   ))}
                 </ul>
@@ -741,7 +840,14 @@ export function RoturasPage() {
       )
 
     return (
-      <div className="-m-4 flex h-[calc(100vh-5rem)] flex-col bg-surface-muted/30 lg:-m-6">
+      <div
+        className={cn(
+          'flex flex-col bg-surface-muted/30',
+          nativeApp
+            ? 'fixed inset-x-0 bottom-0 top-14 z-10'
+            : '-m-4 h-[calc(100vh-5rem)] lg:-m-6'
+        )}
+      >
         <div className="relative z-20 shrink-0 overflow-visible border-b border-surface-border bg-white shadow-sm">
           <div className="border-b border-red-100 bg-gradient-to-r from-red-50/80 via-white to-white px-4 py-3 sm:px-5">
             <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
@@ -774,7 +880,7 @@ export function RoturasPage() {
           {error && (
             <div className="border-b border-red-100 bg-red-50 px-4 py-2 text-sm text-red-700 sm:px-5">{error}</div>
           )}
-          <div className="space-y-3 overflow-visible p-4 sm:p-5">
+          <div className={cn('space-y-3 overflow-visible', nativeApp ? 'p-3' : 'p-4 sm:p-5')}>
             <div className="relative flex flex-col gap-2 overflow-visible sm:flex-row">
               <div className="relative z-30 min-w-0 flex-1">
                 <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-brand-400" />
@@ -783,7 +889,11 @@ export function RoturasPage() {
                   type="search"
                   role="combobox"
                   aria-expanded={productResults.length > 0 && !selectedProduct}
-                  placeholder="Buscar producto — ↑↓ navegar · Enter seleccionar"
+                  placeholder={
+                    nativeApp
+                      ? 'Buscar producto...'
+                      : 'Buscar producto — ↑↓ navegar · Enter seleccionar'
+                  }
                   value={productSearch}
                   onChange={(e) => {
                     setProductSearch(e.target.value)
@@ -810,6 +920,7 @@ export function RoturasPage() {
                             index === productHighlightIndex ? 'bg-brand-50 text-brand-900' : 'hover:bg-slate-50'
                           )}
                           onMouseEnter={() => setProductHighlightIndex(index)}
+                          onPointerDown={armKeyboardForCantidadModal}
                           onClick={() => selectProduct(p)}
                         >
                           <span className="rounded bg-slate-100 px-1.5 py-0.5 font-mono text-xs font-semibold">
@@ -833,162 +944,247 @@ export function RoturasPage() {
                 Escanear
               </Button>
             </div>
-            {selectedProduct && (
-              <div
-                ref={productLineFormRef}
-                className="overflow-hidden rounded-xl border border-red-200 bg-gradient-to-br from-red-50/80 to-white p-4 shadow-card"
-              >
-                <div className="mb-4 flex items-center gap-3">
-                  <ProductImage
-                    productoId={selectedProduct.id}
-                    hasImage={!!selectedProduct.imagen_path}
-                    alt={selectedProduct.nombre}
-                    className="h-11 w-11 rounded-xl ring-1 ring-surface-border"
-                  />
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2">
-                      <span className="inline-flex rounded-md bg-white px-2 py-0.5 font-mono text-xs font-semibold text-slate-700 ring-1 ring-surface-border">
-                        {selectedProduct.codigo_interno}
-                      </span>
-                      <p className="ml-auto shrink-0 text-[10px] font-semibold uppercase tracking-wide text-red-600">
-                        Nueva línea
-                      </p>
-                    </div>
-                    <p className="mt-1 truncate text-sm font-semibold text-slate-900">
-                      {selectedProduct.nombre}
-                    </p>
-                  </div>
-                  <button
-                    type="button"
-                    className="rounded-lg p-1.5 text-slate-400 hover:bg-white hover:text-slate-600"
-                    onClick={() => {
-                      setSelectedProduct(null)
-                      setProductSearch('')
-                      setCantidadCajas('')
-                      setStockDisponible(null)
-                    }}
-                  >
-                    <X className="h-4 w-4" />
-                  </button>
-                </div>
 
-                <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:gap-3">
-                  <div className="w-full sm:w-[7.75rem] sm:shrink-0">
-                    <Input
-                      ref={cantidadRef}
-                      label="Cant. cajas"
-                      type="number"
-                      min="1"
-                      value={cantidadCajas}
-                      onChange={(e) => setCantidadCajas(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter') {
-                          e.preventDefault()
-                          focusField(lineSectorRef)
+            {nativeApp && (
+              <input
+                ref={keyboardBridgeRef}
+                type="text"
+                inputMode="numeric"
+                enterKeyHint="done"
+                aria-hidden
+                tabIndex={-1}
+                className="pointer-events-none fixed left-0 top-0 h-px w-px opacity-0"
+                value=""
+                onChange={() => {}}
+              />
+            )}
+
+            {selectedProduct && (
+              <>
+                {nativeApp && (
+                  <div
+                    className="fixed inset-0 z-40 bg-slate-900/45"
+                    aria-hidden
+                    onClick={cancelarLineaForm}
+                  />
+                )}
+                <div
+                  ref={productLineFormRef}
+                  className={cn(
+                    nativeApp
+                      ? 'fixed inset-x-0 z-50 mx-auto w-full max-w-3xl overflow-y-auto overscroll-contain rounded-t-2xl border-2 border-b-0 border-red-400 bg-white p-4 shadow-[0_-12px_40px_rgba(15,23,42,0.25)] ring-4 ring-red-500/15 transition-[bottom,max-height] duration-200 ease-out'
+                      : 'overflow-hidden rounded-xl border border-red-200 bg-gradient-to-br from-red-50/80 to-white p-4 shadow-card'
+                  )}
+                  style={
+                    nativeApp
+                      ? {
+                          bottom: keyboardInset,
+                          maxHeight: `calc(100dvh - ${keyboardInset}px - env(safe-area-inset-top, 0px) - 0.5rem)`
                         }
-                      }}
-                      placeholder="1"
-                      leading={<Box className="h-4 w-4 text-amber-600" aria-hidden />}
-                      className="[&_label]:text-xs"
-                    />
-                  </div>
-                  <div className="min-w-0 flex-1 space-y-1.5 sm:max-w-[16rem]">
-                    <label className="flex items-center gap-1.5 text-xs font-medium text-slate-600">
-                      <Warehouse className="h-3.5 w-3.5 text-slate-400" aria-hidden />
-                      Sector
-                      <span className="font-normal text-slate-400">
-                        (default: el de menos stock)
-                      </span>
-                    </label>
-                    <div className="relative">
-                      <div className="pointer-events-none absolute inset-y-0 left-0 z-[1] flex items-center pl-2.5 text-slate-400">
-                        <Warehouse className="h-4 w-4" aria-hidden />
+                      : undefined
+                  }
+                >
+                  <div className="mb-4 flex items-center gap-3">
+                    {!nativeApp && (
+                      <ProductImage
+                        productoId={selectedProduct.id}
+                        hasImage={!!selectedProduct.imagen_path}
+                        alt={selectedProduct.nombre}
+                        className="h-11 w-11 rounded-xl ring-1 ring-surface-border"
+                      />
+                    )}
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2">
+                        <span
+                          className={cn(
+                            'inline-flex rounded-md px-2 py-0.5 font-mono text-xs font-bold tracking-wide',
+                            nativeApp
+                              ? 'bg-brand-600 text-white shadow-sm'
+                              : 'bg-white font-semibold text-slate-700 ring-1 ring-surface-border'
+                          )}
+                        >
+                          {selectedProduct.codigo_interno}
+                        </span>
+                        <p className="ml-auto shrink-0 text-[10px] font-semibold uppercase tracking-wide text-red-600">
+                          Nueva línea
+                        </p>
                       </div>
-                      <select
-                        ref={lineSectorRef}
-                        value={lineSectorId}
-                        onChange={(e) => setLineSectorId(e.target.value)}
+                      <ScrollableProductName className="mt-1 text-sm font-semibold text-slate-900">
+                        {selectedProduct.nombre}
+                      </ScrollableProductName>
+                    </div>
+                    <button
+                      type="button"
+                      className="rounded-lg p-1.5 text-slate-400 hover:bg-white hover:text-slate-600"
+                      onClick={cancelarLineaForm}
+                    >
+                      <X className="h-4 w-4" />
+                    </button>
+                  </div>
+
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:gap-3">
+                    <div className="w-full sm:w-[7.75rem] sm:shrink-0">
+                      <Input
+                        ref={cantidadRef}
+                        label="Cant. cajas"
+                        type="number"
+                        min="1"
+                        value={cantidadCajas}
+                        onChange={(e) => setCantidadCajas(e.target.value)}
                         onKeyDown={(e) => {
                           if (e.key === 'Enter') {
                             e.preventDefault()
-                            agregarLineaYContinuar()
+                            focusField(lineSectorRef)
                           }
                         }}
-                        className="w-full rounded-lg border border-surface-border bg-white py-2 pl-9 pr-3 text-sm focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20"
+                        placeholder="1"
+                        leading={<Box className="h-4 w-4 text-amber-600" aria-hidden />}
+                        className="[&_label]:text-xs"
+                      />
+                    </div>
+                    <div className="min-w-0 flex-1 space-y-1.5 sm:max-w-[16rem]">
+                      <label className="flex items-center gap-1.5 text-xs font-medium text-slate-600">
+                        <Warehouse className="h-3.5 w-3.5 text-slate-400" aria-hidden />
+                        Sector
+                        {!nativeApp && (
+                          <span className="font-normal text-slate-400">
+                            (default: el de menos stock)
+                          </span>
+                        )}
+                      </label>
+                      <div className="relative">
+                        <div className="pointer-events-none absolute inset-y-0 left-0 z-[1] flex items-center pl-2.5 text-slate-400">
+                          <Warehouse className="h-4 w-4" aria-hidden />
+                        </div>
+                        <select
+                          ref={lineSectorRef}
+                          value={lineSectorId}
+                          onChange={(e) => setLineSectorId(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              e.preventDefault()
+                              agregarLineaYContinuar()
+                            }
+                          }}
+                          className="w-full rounded-lg border border-surface-border bg-white py-2 pl-9 pr-3 text-sm focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20"
+                        >
+                          <option value="">Seleccionar...</option>
+                          {sectores.map((s) => {
+                            const stock = stockPorSector[s.id]
+                            return (
+                              <option key={s.id} value={s.id}>
+                                {s.nombre}
+                                {stock != null ? ` (${formatCantidad(stock)})` : ''}
+                              </option>
+                            )
+                          })}
+                        </select>
+                      </div>
+                    </div>
+                    <div className="flex shrink-0 items-end sm:ml-auto">
+                      <Button
+                        type="button"
+                        size="sm"
+                        className="h-[2.625rem] w-full rounded-xl sm:w-auto sm:min-w-[7.5rem]"
+                        onClick={agregarLineaYContinuar}
                       >
-                        <option value="">Seleccionar...</option>
-                        {sectores.map((s) => {
-                          const stock = stockPorSector[s.id]
-                          return (
-                            <option key={s.id} value={s.id}>
-                              {s.nombre}
-                              {stock != null ? ` (${formatCantidad(stock)})` : ''}
-                            </option>
-                          )
-                        })}
-                      </select>
+                        <Plus className="h-4 w-4" />
+                        Agregar ↵
+                      </Button>
                     </div>
                   </div>
-                  <div className="flex shrink-0 items-end sm:ml-auto">
-                    <Button
-                      type="button"
-                      size="sm"
-                      className="h-[2.625rem] w-full rounded-xl sm:w-auto sm:min-w-[7.5rem]"
-                      onClick={agregarLineaYContinuar}
-                    >
-                      <Plus className="h-4 w-4" />
-                      Agregar ↵
-                    </Button>
-                  </div>
-                </div>
 
-                {stockDisponible != null && lineSectorId && (
-                  <p className="mt-3 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-slate-600">
-                    <span className="inline-flex items-center gap-1">
-                      <Warehouse className="h-3.5 w-3.5 text-slate-400" aria-hidden />
-                      Disponible en sector:
-                    </span>
-                    <strong
-                      className={cn(
-                        'inline-flex items-center gap-1 tabular-nums',
-                        stockDisponible <= 0 ? 'text-red-700' : 'text-slate-800'
-                      )}
-                    >
-                      {stockDisponible <= 0 && (
-                        <AlertTriangle className="h-3.5 w-3.5" aria-hidden />
-                      )}
-                      {formatTotalCajas(stockDisponible)}
-                    </strong>
-                  </p>
-                )}
-              </div>
+                  {stockDisponible != null && lineSectorId && (
+                    <p className="mt-3 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-slate-600">
+                      <span className="inline-flex items-center gap-1">
+                        <Warehouse className="h-3.5 w-3.5 text-slate-400" aria-hidden />
+                        Disponible en sector:
+                      </span>
+                      <strong
+                        className={cn(
+                          'inline-flex items-center gap-1 tabular-nums',
+                          stockDisponible <= 0 ? 'text-red-700' : 'text-slate-800'
+                        )}
+                      >
+                        {stockDisponible <= 0 && (
+                          <AlertTriangle className="h-3.5 w-3.5" aria-hidden />
+                        )}
+                        {formatTotalCajas(stockDisponible)}
+                      </strong>
+                    </p>
+                  )}
+                </div>
+              </>
             )}
           </div>
         </div>
         <div ref={listScrollRef} className="relative z-0 min-h-0 flex-1 overflow-y-auto bg-white">
           {lineasListContent}
         </div>
-        <div className="shrink-0 border-t border-surface-border bg-white px-4 py-4 shadow-[0_-4px_12px_rgba(0,0,0,0.04)] sm:px-5">
-          <div className="flex items-center justify-between gap-4">
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">Total a descontar</p>
-              <p className="text-2xl font-bold tabular-nums text-red-700">{formatCantidad(totalGeneral)}</p>
-              <p className="mt-1 text-xs text-slate-500">
-                {lineas.length} línea{lineas.length === 1 ? '' : 's'} cargada
-                {lineas.length === 1 ? '' : 's'}
-              </p>
+        <div
+          className={cn(
+            'shrink-0 border-t border-surface-border bg-white shadow-[0_-4px_12px_rgba(0,0,0,0.04)]',
+            nativeApp ? 'px-3 pt-3 pb-3' : 'px-4 py-4 sm:px-5'
+          )}
+        >
+          {nativeApp ? (
+            <div className="space-y-3">
+              <div className="flex items-end justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">
+                    Total a descontar
+                  </p>
+                  <p className="text-xl font-bold tabular-nums text-red-700">
+                    {formatCantidad(totalGeneral)}
+                  </p>
+                </div>
+                <p className="shrink-0 text-xs text-slate-500">
+                  {lineas.length} línea{lineas.length === 1 ? '' : 's'}
+                </p>
+              </div>
+              {hasPermiso('roturas.crear') && (
+                <div className="grid grid-cols-2 gap-2">
+                  <Button
+                    variant="secondary"
+                    className="h-11 rounded-xl"
+                    onClick={volverAlListado}
+                    disabled={saving}
+                  >
+                    Cancelar
+                  </Button>
+                  <Button
+                    className="h-11 rounded-xl"
+                    onClick={() => void confirmarRotura()}
+                    disabled={lineas.length === 0 || saving}
+                  >
+                    <Check className="h-4 w-4" />
+                    {saving ? '…' : 'Confirmar'}
+                  </Button>
+                </div>
+              )}
             </div>
-            {hasPermiso('roturas.crear') && (
-              <Button
-                className="rounded-xl"
-                onClick={() => void confirmarRotura()}
-                disabled={lineas.length === 0 || saving}
-              >
-                <Check className="h-4 w-4" />
-                {saving ? 'Registrando...' : 'Confirmar y descontar'}
-              </Button>
-            )}
-          </div>
+          ) : (
+            <div className="flex items-center justify-between gap-4">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">Total a descontar</p>
+                <p className="text-2xl font-bold tabular-nums text-red-700">{formatCantidad(totalGeneral)}</p>
+                <p className="mt-1 text-xs text-slate-500">
+                  {lineas.length} línea{lineas.length === 1 ? '' : 's'} cargada
+                  {lineas.length === 1 ? '' : 's'}
+                </p>
+              </div>
+              {hasPermiso('roturas.crear') && (
+                <Button
+                  className="rounded-xl"
+                  onClick={() => void confirmarRotura()}
+                  disabled={lineas.length === 0 || saving}
+                >
+                  <Check className="h-4 w-4" />
+                  {saving ? 'Registrando...' : 'Confirmar y descontar'}
+                </Button>
+              )}
+            </div>
+          )}
         </div>
         <BarcodeScannerModal
           open={showScanner}
@@ -1004,39 +1200,63 @@ export function RoturasPage() {
   }
 
   return (
-    <div className="mx-auto max-w-6xl space-y-6">
-      <section className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-        <div>
-          <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">Movimientos</p>
-          <div className="mt-1 flex items-center gap-1.5">
-            <h1 className="text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">
-              Roturas y pérdidas
-            </h1>
-            <SectionHelpButton guideId="roturas" />
-          </div>
-          <p className="mt-2 max-w-xl text-sm leading-relaxed text-slate-500">
-            Descuenta stock por cajas rotas o perdidas, con registro por día.
-          </p>
-        </div>
-        {hasPermiso('roturas.crear') && (
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="hidden rounded-full border border-surface-border bg-white px-2.5 py-1 text-[11px] font-medium text-slate-500 shadow-card sm:inline-flex">
-              Enter = nuevo registro
-            </span>
-            <Button className="rounded-xl px-4" onClick={abrirNuevoRegistro}>
+    <div className={cn('mx-auto max-w-6xl', nativeApp ? '-mt-1 space-y-3' : 'space-y-6')}>
+      {nativeApp ? (
+        <div className="flex items-center gap-3">
+          <h1 className="min-w-0 flex-1 truncate text-xl font-bold tracking-tight text-slate-900">
+            Roturas
+          </h1>
+          {hasPermiso('roturas.crear') && (
+            <Button className="h-10 shrink-0 rounded-xl px-3" onClick={abrirNuevoRegistro}>
               <Plus className="h-4 w-4" />
-              Nuevo registro
+              Nuevo
             </Button>
+          )}
+        </div>
+      ) : (
+        <section className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">Movimientos</p>
+            <div className="mt-1 flex items-center gap-1.5">
+              <h1 className="text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">
+                Roturas y pérdidas
+              </h1>
+              <SectionHelpButton guideId="roturas" />
+            </div>
+            <p className="mt-2 max-w-xl text-sm leading-relaxed text-slate-500">
+              Descuenta stock por cajas rotas o perdidas, con registro por día.
+            </p>
           </div>
-        )}
-      </section>
+          {hasPermiso('roturas.crear') && (
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="hidden rounded-full border border-surface-border bg-white px-2.5 py-1 text-[11px] font-medium text-slate-500 shadow-card sm:inline-flex">
+                Enter = nuevo registro
+              </span>
+              <Button className="rounded-xl px-4" onClick={abrirNuevoRegistro}>
+                <Plus className="h-4 w-4" />
+                Nuevo registro
+              </Button>
+            </div>
+          )}
+        </section>
+      )}
 
       <Card className="overflow-hidden shadow-panel">
-        <div className="border-b border-red-100 bg-gradient-to-r from-red-50/60 via-white to-white px-5 py-4 sm:px-6">
-          <div className="flex flex-col gap-3">
-            <div className="flex flex-wrap items-center gap-2">
-              <div className="relative min-w-[10rem] flex-1">
-                <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-brand-400" />
+        <div
+          className={cn(
+            'border-b border-red-100 bg-gradient-to-r from-red-50/60 via-white to-white sm:px-6',
+            nativeApp ? 'px-3 py-2.5' : 'px-5 py-4'
+          )}
+        >
+          <div className={cn('flex flex-col', nativeApp ? 'gap-2' : 'gap-3')}>
+            <div className={cn('flex gap-2', nativeApp ? 'flex-col' : 'flex-wrap items-center')}>
+              <div className={cn('relative flex-1', nativeApp ? 'min-w-0' : 'min-w-[10rem]')}>
+                <Search
+                  className={cn(
+                    'pointer-events-none absolute top-1/2 h-4 w-4 -translate-y-1/2 text-brand-400',
+                    nativeApp ? 'left-3' : 'left-3.5'
+                  )}
+                />
                 <input
                   ref={listSearchRef}
                   type="search"
@@ -1044,27 +1264,68 @@ export function RoturasPage() {
                   value={listSearch}
                   onChange={(e) => setListSearch(e.target.value)}
                   onKeyDown={registroListKb.handleListSearchKeyDown}
-                  className="w-full rounded-xl border border-surface-border bg-white py-2.5 pl-10 pr-4 text-sm shadow-sm focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20"
+                  className={cn(
+                    'w-full rounded-xl border border-surface-border bg-white text-sm shadow-sm focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20',
+                    nativeApp ? 'py-2 pl-9 pr-3' : 'py-2.5 pl-10 pr-4'
+                  )}
                 />
               </div>
-              <div className="flex shrink-0 items-center gap-1.5 rounded-xl border border-surface-border bg-white px-2 py-1.5 shadow-sm">
-                <span className="pl-1 text-xs font-medium text-slate-500">Desde</span>
+              <div
+                className={cn(
+                  'flex shrink-0 items-center gap-1.5 rounded-xl border border-surface-border bg-white shadow-sm',
+                  nativeApp ? 'w-full justify-between px-2 py-1' : 'px-2 py-1.5'
+                )}
+              >
+                <span
+                  className={cn(
+                    'font-medium text-slate-500',
+                    nativeApp ? 'pl-0.5 text-[11px]' : 'pl-1 text-xs'
+                  )}
+                >
+                  Desde
+                </span>
                 <input
                   type="date"
                   value={listFechaDesde}
                   onChange={(e) => setListFechaDesde(e.target.value)}
-                  className="rounded border-0 bg-transparent px-1 py-1 text-sm focus:outline-none focus:ring-0"
+                  className={cn(
+                    'rounded border-0 bg-transparent px-1 py-1 text-sm focus:outline-none focus:ring-0',
+                    nativeApp && 'min-w-0 flex-1'
+                  )}
                 />
                 <span className="text-slate-300">|</span>
-                <span className="text-xs font-medium text-slate-500">Hasta</span>
+                <span
+                  className={cn(
+                    'font-medium text-slate-500',
+                    nativeApp ? 'text-[11px]' : 'text-xs'
+                  )}
+                >
+                  Hasta
+                </span>
                 <input
                   type="date"
                   value={listFechaHasta}
                   onChange={(e) => setListFechaHasta(e.target.value)}
-                  className="rounded border-0 bg-transparent px-1 py-1 text-sm focus:outline-none focus:ring-0"
+                  className={cn(
+                    'rounded border-0 bg-transparent px-1 py-1 text-sm focus:outline-none focus:ring-0',
+                    nativeApp && 'min-w-0 flex-1'
+                  )}
                 />
+                {nativeApp && (listFechaDesde || listFechaHasta) && (
+                  <button
+                    type="button"
+                    className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
+                    onClick={() => {
+                      setListFechaDesde('')
+                      setListFechaHasta('')
+                    }}
+                    aria-label="Limpiar fechas"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                )}
               </div>
-              {(listFechaDesde || listFechaHasta) && (
+              {!nativeApp && (listFechaDesde || listFechaHasta) && (
                 <Button
                   variant="ghost"
                   size="sm"
@@ -1078,10 +1339,12 @@ export function RoturasPage() {
                 </Button>
               )}
             </div>
-            <p className="text-xs text-slate-500">
-              Una sola fecha filtra ese día · las dos juntas = rango
-              {hasPermiso('roturas.crear') && ' · Enter = nuevo registro'}
-            </p>
+            {!nativeApp && (
+              <p className="text-xs text-slate-500">
+                Una sola fecha filtra ese día · las dos juntas = rango
+                {hasPermiso('roturas.crear') && ' · Enter = nuevo registro'}
+              </p>
+            )}
             <DayTabsRow
               days={diasConRoturas}
               selectedDay={selectedDay}
@@ -1091,8 +1354,13 @@ export function RoturasPage() {
           </div>
         </div>
 
-        <div className="flex items-center justify-between gap-3 border-b border-surface-border bg-slate-50/80 px-5 py-3.5 sm:px-6">
-          <div>
+        <div
+          className={cn(
+            'flex items-center justify-between gap-3 border-b border-surface-border bg-slate-50/80 sm:px-6',
+            nativeApp ? 'px-3 py-2.5' : 'px-5 py-3.5'
+          )}
+        >
+          <div className="min-w-0">
             <h2 className="text-sm font-semibold text-slate-900">
               {diasConRoturas.length > 0 ? formatDayTabLabel(selectedDay) : 'Registros'}
             </h2>
@@ -1102,14 +1370,14 @@ export function RoturasPage() {
                 : `${roturas.length} registro(s)`}
             </p>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex shrink-0 items-center gap-2">
             {loadingList && <Loader2 className="h-5 w-5 shrink-0 animate-spin text-brand-600" />}
             {diasConRoturas.length > 0 && (
               <>
                 <Button
                   variant="secondary"
                   size="sm"
-                  className="rounded-lg"
+                  className={cn('rounded-lg', nativeApp && 'h-8 px-2.5 text-xs')}
                   disabled={exportingDia}
                   onClick={() => void exportarDia()}
                   title="Exportar Excel de productos del día"
@@ -1124,21 +1392,30 @@ export function RoturasPage() {
                 <Button
                   variant="secondary"
                   size="sm"
-                  className="rounded-lg"
+                  className={cn('rounded-lg', nativeApp && 'h-8 px-2.5 text-xs')}
                   disabled={loadingResumen}
                   onClick={() => void abrirResumenDia()}
                 >
                   <List className="h-4 w-4" />
-                  Productos del día
+                  {nativeApp ? 'Productos' : 'Productos del día'}
                 </Button>
               </>
             )}
           </div>
         </div>
 
-        <CardBody className="p-0">
+        <CardBody className={cn(nativeApp ? 'bg-surface-muted/35 p-2' : 'p-0')}>
           {error && (
-            <div className="border-b border-red-100 bg-red-50 px-6 py-3 text-sm text-red-700">{error}</div>
+            <div
+              className={cn(
+                'text-sm text-red-700',
+                nativeApp
+                  ? 'mb-2 rounded-xl border border-red-100 bg-red-50 px-4 py-3'
+                  : 'border-b border-red-100 bg-red-50 px-6 py-3'
+              )}
+            >
+              {error}
+            </div>
           )}
           {loadingList ? (
             <div className="flex items-center justify-center gap-2 py-16 text-sm text-slate-500">
@@ -1146,7 +1423,12 @@ export function RoturasPage() {
               Cargando registros...
             </div>
           ) : roturas.length === 0 ? (
-            <div className="flex flex-col items-center px-6 py-16 text-center">
+            <div
+              className={cn(
+                'flex flex-col items-center px-6 py-14 text-center',
+                nativeApp && 'rounded-xl border border-dashed border-surface-border bg-white shadow-card'
+              )}
+            >
               <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-red-50 text-red-400">
                 <AlertTriangle className="h-7 w-7" />
               </div>
@@ -1155,26 +1437,77 @@ export function RoturasPage() {
                   ? 'No hay registros con esos filtros'
                   : 'No hay registros de roturas'}
               </p>
-              <p className="mt-1 max-w-sm text-xs text-slate-500">
-                {listSearch || listFechaDesde || listFechaHasta
-                  ? 'Probá ampliar el rango de fechas o cambiar la búsqueda'
-                  : 'Registrá la primera rotura o pérdida para descontar stock'}
-              </p>
-              {!(listSearch || listFechaDesde || listFechaHasta) && hasPermiso('roturas.crear') && (
-                <Button className="mt-4 rounded-xl" size="sm" onClick={abrirNuevoRegistro}>
-                  <Plus className="h-4 w-4" />
-                  Nuevo registro
-                </Button>
+              {!nativeApp && (
+                <p className="mt-1 max-w-sm text-xs text-slate-500">
+                  {listSearch || listFechaDesde || listFechaHasta
+                    ? 'Probá ampliar el rango de fechas o cambiar la búsqueda'
+                    : 'Registrá la primera rotura o pérdida para descontar stock'}
+                </p>
               )}
+              {!(listSearch || listFechaDesde || listFechaHasta) &&
+                hasPermiso('roturas.crear') &&
+                !nativeApp && (
+                  <Button className="mt-4 rounded-xl" size="sm" onClick={abrirNuevoRegistro}>
+                    <Plus className="h-4 w-4" />
+                    Nuevo registro
+                  </Button>
+                )}
             </div>
           ) : roturasDelDia.length === 0 ? (
-            <div className="flex flex-col items-center px-6 py-16 text-center">
+            <div
+              className={cn(
+                'flex flex-col items-center px-6 py-14 text-center',
+                nativeApp && 'rounded-xl border border-dashed border-surface-border bg-white shadow-card'
+              )}
+            >
               <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-slate-100 text-slate-400">
                 <AlertTriangle className="h-7 w-7" />
               </div>
               <p className="mt-4 text-sm font-medium text-slate-700">Sin resultados para este día</p>
-              <p className="mt-1 text-xs text-slate-500">Probá otra fecha o ajustá la búsqueda</p>
+              {!nativeApp && (
+                <p className="mt-1 text-xs text-slate-500">Probá otra fecha o ajustá la búsqueda</p>
+              )}
             </div>
+          ) : nativeApp ? (
+            <ul className="space-y-2">
+              {roturasDelDia.map((r, index) => (
+                <li
+                  key={r.id}
+                  {...registroListKb.listItemProps(
+                    index,
+                    'overflow-hidden rounded-xl border border-surface-border bg-white shadow-card border-l-4 border-l-red-400'
+                  )}
+                >
+                  <button
+                    type="button"
+                    className="flex w-full items-start gap-3 px-3 py-3 text-left active:bg-slate-50"
+                    onClick={() => void abrirDetalle(r.id)}
+                  >
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-semibold text-slate-900">Rotura #{r.id}</p>
+                      {r.observacion?.trim() ? (
+                        <p className="mt-0.5 line-clamp-1 text-[11px] text-slate-500">{r.observacion}</p>
+                      ) : null}
+                      <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-slate-500">
+                        <span>
+                          {r.lineas_count} línea{r.lineas_count === 1 ? '' : 's'}
+                        </span>
+                        <span>·</span>
+                        <span className="inline-flex items-center gap-1">
+                          <User className="h-3 w-3" />
+                          {r.usuario_nombre}
+                        </span>
+                      </div>
+                    </div>
+                    <div className="flex shrink-0 flex-col items-end justify-center">
+                      <span className="inline-flex items-center rounded-lg bg-red-50 px-2.5 py-1 text-sm font-bold tabular-nums text-red-700 ring-1 ring-red-100">
+                        {formatCantidad(r.total_cajas)}
+                      </span>
+                    </div>
+                  </button>
+                </li>
+              ))}
+            </ul>
           ) : (
             <ul className="divide-y divide-surface-border">
               {roturasDelDia.map((r, index) => (

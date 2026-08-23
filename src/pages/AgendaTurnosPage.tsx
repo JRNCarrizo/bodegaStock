@@ -12,6 +12,8 @@ import {
   X
 } from 'lucide-react'
 import { api, cn } from '@/lib/utils'
+import { isNativeApp } from '@/lib/nativeServer'
+import { ScrollableProductName } from '@/components/ScrollableProductName'
 import { useAuth } from '@/context/AuthContext'
 import { useEscHandler } from '@/hooks/useEscHandler'
 import type {
@@ -30,10 +32,25 @@ const HISTORIAL_ROW_PX = 58
 /** Espacio reservado (header app, título, filtros, paginación, márgenes). */
 const HISTORIAL_CHROME_PX = 360
 
+function formatWeekRange(dias: string[]): string {
+  const first = parseIso(dias[0]!)
+  const last = parseIso(dias[6]!)
+  const sameMonth = first.getMonth() === last.getMonth()
+  const d1 = first.toLocaleDateString('es-AR', { day: 'numeric', month: 'short' })
+  const d2 = last.toLocaleDateString('es-AR', {
+    day: 'numeric',
+    month: sameMonth ? undefined : 'short'
+  })
+  return `${d1} – ${d2}`
+}
+
 function historialPageSizeFromViewport(): number {
   if (typeof window === 'undefined') return 10
-  const available = Math.max(200, window.innerHeight - HISTORIAL_CHROME_PX)
-  return Math.max(5, Math.min(40, Math.floor(available / HISTORIAL_ROW_PX)))
+  const native = isNativeApp()
+  const rowPx = native ? 82 : HISTORIAL_ROW_PX
+  const chromePx = native ? 420 : HISTORIAL_CHROME_PX
+  const available = Math.max(200, window.innerHeight - chromePx)
+  return Math.max(5, Math.min(40, Math.floor(available / rowPx)))
 }
 
 /** Celdas Lun–Dom del mes (null = vacío). */
@@ -165,18 +182,97 @@ function TurnoCard({
   canEdit,
   busyId,
   onOpen,
-  onEstado
+  onEstado,
+  compact = false
 }: {
   turno: AgendaTurno
   canEdit: boolean
   busyId: number | null
   onOpen: () => void
   onEstado: (estado: 'CONFIRMADO' | 'CANCELADO') => void
+  compact?: boolean
 }) {
   const busy = busyId === turno.id
   const showActions = canEdit && turno.estado === 'SOLICITADO'
   const editable = turno.estado === 'SOLICITADO'
   const lineaEnvio = lineaEnvioTexto(turno)
+
+  if (compact) {
+    return (
+      <div
+        className={cn(
+          'overflow-hidden rounded-xl border bg-white shadow-sm',
+          turno.estado === 'SOLICITADO' && 'border-amber-200',
+          turno.estado === 'CONFIRMADO' && 'border-emerald-200',
+          turno.estado === 'CANCELADO' && 'border-slate-200 opacity-80'
+        )}
+      >
+        <button
+          type="button"
+          onClick={() => {
+            if (editable) onOpen()
+          }}
+          disabled={!editable}
+          className={cn(
+            'flex w-full items-start gap-3 px-3 py-3 text-left',
+            editable && 'active:bg-slate-50'
+          )}
+        >
+          <div className="min-w-0 flex-1">
+            <ScrollableProductName
+              className={cn(
+                'text-sm font-semibold text-slate-900',
+                turno.estado === 'CANCELADO' && 'line-through text-slate-500'
+              )}
+            >
+              {turno.descripcion}
+            </ScrollableProductName>
+            <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-slate-500">
+              {turno.cantidad != null && (
+                <span className="font-medium tabular-nums text-slate-700">
+                  {turno.cantidad} {unidadLabel(turno.unidad)}
+                </span>
+              )}
+              <span className="inline-flex items-center gap-1">
+                <Truck className="h-3 w-3 shrink-0" />
+                {turno.transportista_nombre}
+              </span>
+            </div>
+          </div>
+          <span
+            className={cn(
+              'shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold ring-1',
+              ESTADO_STYLE[turno.estado]
+            )}
+          >
+            {ESTADO_LABEL[turno.estado]}
+          </span>
+        </button>
+        {showActions && (
+          <div className="grid grid-cols-2 gap-2 border-t border-surface-border px-3 py-2">
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => onEstado('CONFIRMADO')}
+              className="inline-flex h-9 items-center justify-center gap-1.5 rounded-lg bg-emerald-600 text-sm font-medium text-white disabled:opacity-50"
+            >
+              {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
+              Confirmar
+            </button>
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => onEstado('CANCELADO')}
+              className="inline-flex h-9 items-center justify-center gap-1.5 rounded-lg bg-slate-500 text-sm font-medium text-white disabled:opacity-50"
+            >
+              {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <X className="h-4 w-4" />}
+              Cancelar
+            </button>
+          </div>
+        )}
+      </div>
+    )
+  }
 
   return (
     <div
@@ -251,6 +347,7 @@ function TurnoCard({
 
 export function AgendaTurnosPage() {
   const { hasPermiso } = useAuth()
+  const nativeApp = isNativeApp()
   const canCreate = hasPermiso('agenda_turnos.crear')
   const canEdit = hasPermiso('agenda_turnos.editar')
 
@@ -592,6 +689,7 @@ export function AgendaTurnosPage() {
 
   const hoyIso = toIsoDate(new Date())
   const activos = transportistas.filter((t) => t.activo)
+  const isCurrentWeek = toIsoDate(anchorMonday) === toIsoDate(startOfWeekMonday(new Date()))
 
   function renderWeek(dias: string[], titulo: string) {
     const visibles = dias
@@ -700,55 +798,184 @@ export function AgendaTurnosPage() {
     )
   }
 
-  return (
-    <div className="mx-auto max-w-7xl space-y-6">
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div>
-          <h1 className="flex items-center gap-2 text-2xl font-bold tracking-tight text-slate-900">
-            <CalendarDays className="h-7 w-7 text-brand-600" />
-            Agenda de turnos
-          </h1>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          {canEdit && (
-            <Button type="button" variant="secondary" className="rounded-xl" onClick={openConfig}>
-              <Settings className="h-4 w-4" />
-              Días
-            </Button>
-          )}
-          {canCreate && (
-            <Button className="rounded-xl" onClick={() => openCreate()}>
-              <Plus className="h-4 w-4" />
-              Nuevo turno
-            </Button>
-          )}
-        </div>
-      </div>
+  function renderWeekNative(dias: string[]) {
+    const visibles = dias
+      .map((iso, weekdayIndex) => ({ iso, weekdayIndex }))
+      .filter(({ weekdayIndex }) => !inhabilSet.has(weekdayIndex))
 
-      <div className="flex flex-wrap gap-2 border-b border-surface-border pb-px">
+    if (visibles.length === 0) {
+      return (
+        <p className="rounded-xl border border-dashed border-surface-border bg-white px-4 py-10 text-center text-sm text-slate-400 shadow-card">
+          Todos los días de esta semana están anulados.
+        </p>
+      )
+    }
+
+    return (
+      <div className="space-y-2">
+        {visibles.map(({ iso, weekdayIndex }) => {
+          const items = byFecha.get(iso) ?? []
+          const isToday = iso === hoyIso
+          return (
+            <section
+              key={iso}
+              className={cn(
+                'overflow-hidden rounded-xl border bg-white shadow-card',
+                isToday ? 'border-brand-400 ring-2 ring-brand-100' : 'border-surface-border'
+              )}
+            >
+              <div className="flex items-center justify-between gap-2 border-b border-surface-border bg-slate-50/80 px-3 py-2.5">
+                <div className="min-w-0">
+                  <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                    {DIAS_LARGOS[weekdayIndex]}
+                  </p>
+                  <p
+                    className={cn(
+                      'text-sm font-bold text-slate-900',
+                      isToday && 'text-brand-700'
+                    )}
+                  >
+                    {formatDayLong(iso)}
+                  </p>
+                </div>
+                <div className="flex shrink-0 items-center gap-1">
+                  {items.length > 0 && (
+                    <span className="rounded-full bg-slate-200 px-2 py-0.5 text-[10px] font-semibold text-slate-700">
+                      {items.length}
+                    </span>
+                  )}
+                  {canCreate && (
+                    <button
+                      type="button"
+                      onClick={() => openCreate(iso)}
+                      className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-brand-600 text-white shadow-sm"
+                      title="Agendar"
+                      aria-label="Agendar turno"
+                    >
+                      <Plus className="h-4 w-4" />
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              <div className="space-y-2 p-2">
+                {items.length === 0 ? (
+                  <p className="px-1 py-4 text-center text-xs text-slate-400">Sin turnos</p>
+                ) : (
+                  items.map((t) => (
+                    <TurnoCard
+                      key={t.id}
+                      turno={t}
+                      canEdit={canEdit}
+                      busyId={estadoBusyId}
+                      compact
+                      onOpen={() => openEdit(t)}
+                      onEstado={(estado) => void cambiarEstado(t, estado)}
+                    />
+                  ))
+                )}
+              </div>
+            </section>
+          )
+        })}
+      </div>
+    )
+  }
+
+  return (
+    <div className={cn('mx-auto max-w-7xl', nativeApp ? '-mt-1 space-y-3' : 'space-y-6')}>
+      {nativeApp ? (
+        <div className="flex items-center gap-2">
+          <h1 className="min-w-0 flex-1 truncate text-xl font-bold tracking-tight text-slate-900">
+            Agenda
+          </h1>
+          <div className="flex shrink-0 items-center gap-1.5">
+            {canEdit && (
+              <Button
+                type="button"
+                variant="secondary"
+                className="h-9 rounded-xl px-2.5"
+                onClick={openConfig}
+                aria-label="Días anulados"
+              >
+                <Settings className="h-4 w-4" />
+              </Button>
+            )}
+            {canCreate && (
+              <Button className="h-9 rounded-xl px-3" onClick={() => openCreate()}>
+                <Plus className="h-4 w-4" />
+                Nuevo
+              </Button>
+            )}
+          </div>
+        </div>
+      ) : (
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <h1 className="flex items-center gap-2 text-2xl font-bold tracking-tight text-slate-900">
+              <CalendarDays className="h-7 w-7 text-brand-600" />
+              Agenda de turnos
+            </h1>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {canEdit && (
+              <Button type="button" variant="secondary" className="rounded-xl" onClick={openConfig}>
+                <Settings className="h-4 w-4" />
+                Días
+              </Button>
+            )}
+            {canCreate && (
+              <Button className="rounded-xl" onClick={() => openCreate()}>
+                <Plus className="h-4 w-4" />
+                Nuevo turno
+              </Button>
+            )}
+          </div>
+        </div>
+      )}
+
+      <div
+        className={cn(
+          nativeApp
+            ? 'grid grid-cols-2 gap-1 rounded-xl bg-slate-100 p-1'
+            : 'flex flex-wrap gap-2 border-b border-surface-border pb-px'
+        )}
+      >
         <button
           type="button"
           onClick={() => setTab('semana')}
           className={cn(
-            'rounded-t-lg px-4 py-2 text-sm font-medium',
+            nativeApp
+              ? 'rounded-lg py-2 text-sm font-semibold transition'
+              : 'rounded-t-lg px-4 py-2 text-sm font-medium',
             tab === 'semana'
-              ? 'bg-white text-brand-800 ring-1 ring-surface-border ring-b-white'
-              : 'text-slate-500 hover:text-slate-800'
+              ? nativeApp
+                ? 'bg-white text-brand-800 shadow-sm'
+                : 'bg-white text-brand-800 ring-1 ring-surface-border ring-b-white'
+              : nativeApp
+                ? 'text-slate-500'
+                : 'text-slate-500 hover:text-slate-800'
           )}
         >
-          Semanas
+          Semana
         </button>
         <button
           type="button"
           onClick={() => setTab('historial')}
           className={cn(
-            'inline-flex items-center gap-1.5 rounded-t-lg px-4 py-2 text-sm font-medium',
+            nativeApp
+              ? 'inline-flex items-center justify-center gap-1.5 rounded-lg py-2 text-sm font-semibold transition'
+              : 'inline-flex items-center gap-1.5 rounded-t-lg px-4 py-2 text-sm font-medium',
             tab === 'historial'
-              ? 'bg-white text-brand-800 ring-1 ring-surface-border ring-b-white'
-              : 'text-slate-500 hover:text-slate-800'
+              ? nativeApp
+                ? 'bg-white text-brand-800 shadow-sm'
+                : 'bg-white text-brand-800 ring-1 ring-surface-border ring-b-white'
+              : nativeApp
+                ? 'text-slate-500'
+                : 'text-slate-500 hover:text-slate-800'
           )}
         >
-          <History className="h-3.5 w-3.5" />
+          {!nativeApp && <History className="h-3.5 w-3.5" />}
           Historial
         </button>
       </div>
@@ -760,142 +987,200 @@ export function AgendaTurnosPage() {
       )}
 
       {tab === 'semana' && (
-        <Card className="border-slate-300 bg-slate-100/90 shadow-sm ring-1 ring-slate-200/80">
-          <CardBody className="space-y-8">
-            <div className="flex flex-wrap items-center gap-2">
+        nativeApp ? (
+          <div className="space-y-3">
+            <div className="flex items-center gap-1.5 rounded-xl border border-surface-border bg-white px-2 py-2 shadow-card">
               <Button
                 type="button"
                 variant="secondary"
                 size="sm"
-                className="rounded-xl"
+                className="h-9 w-9 shrink-0 rounded-xl px-0"
                 onClick={() => setAnchorMonday((d) => addDays(d, -7))}
+                aria-label="Semana anterior"
               >
                 <ChevronLeft className="h-4 w-4" />
               </Button>
-              <Button
+              <button
                 type="button"
-                variant="secondary"
-                size="sm"
-                className="rounded-xl"
                 onClick={() => setAnchorMonday(startOfWeekMonday(new Date()))}
+                className="min-w-0 flex-1 rounded-lg px-2 py-1 text-center active:bg-slate-50"
               >
-                Hoy
-              </Button>
+                <p className="text-sm font-semibold text-slate-900">{formatWeekRange(week1)}</p>
+                {isCurrentWeek ? (
+                  <p className="text-[10px] font-medium text-brand-600">Esta semana</p>
+                ) : (
+                  <p className="text-[10px] text-slate-400">Ir a hoy</p>
+                )}
+              </button>
               <Button
                 type="button"
                 variant="secondary"
                 size="sm"
-                className="rounded-xl"
+                className="h-9 w-9 shrink-0 rounded-xl px-0"
                 onClick={() => setAnchorMonday((d) => addDays(d, 7))}
+                aria-label="Semana siguiente"
               >
                 <ChevronRight className="h-4 w-4" />
               </Button>
             </div>
 
             {loading ? (
-              <div className="flex items-center gap-2 py-12 text-sm text-slate-500">
+              <div className="flex items-center gap-2 rounded-xl border border-surface-border bg-white px-4 py-10 text-sm text-slate-500 shadow-card">
                 <Loader2 className="h-4 w-4 animate-spin" />
                 Cargando agenda…
               </div>
             ) : (
-              <>
-                {renderWeek(week1, 'Semana actual')}
-                {renderWeek(week2, 'Semana siguiente')}
-              </>
+              renderWeekNative(week1)
             )}
-          </CardBody>
-        </Card>
+          </div>
+        ) : (
+          <Card className="border-slate-300 bg-slate-100/90 shadow-sm ring-1 ring-slate-200/80">
+            <CardBody className="space-y-8">
+              <div className="flex flex-wrap items-center gap-2">
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  className="rounded-xl"
+                  onClick={() => setAnchorMonday((d) => addDays(d, -7))}
+                >
+                  <ChevronLeft className="h-4 w-4" />
+                </Button>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  className="rounded-xl"
+                  onClick={() => setAnchorMonday(startOfWeekMonday(new Date()))}
+                >
+                  Hoy
+                </Button>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  className="rounded-xl"
+                  onClick={() => setAnchorMonday((d) => addDays(d, 7))}
+                >
+                  <ChevronRight className="h-4 w-4" />
+                </Button>
+              </div>
+
+              {loading ? (
+                <div className="flex items-center gap-2 py-12 text-sm text-slate-500">
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Cargando agenda…
+                </div>
+              ) : (
+                <>
+                  {renderWeek(week1, 'Semana actual')}
+                  {renderWeek(week2, 'Semana siguiente')}
+                </>
+              )}
+            </CardBody>
+          </Card>
+        )
       )}
 
       {tab === 'historial' && (
-        <Card>
-          <CardBody className="space-y-4">
-            <div className="flex flex-wrap items-end gap-3">
+        nativeApp ? (
+          <div className="space-y-3">
+            <div className="space-y-2 rounded-xl border border-surface-border bg-white px-3 py-2.5 shadow-card">
               <Input
-                label="Buscar"
                 value={historialQ}
                 onChange={(e) => setHistorialQ(e.target.value)}
-                placeholder="Descripción, transportista…"
-                className="min-w-[200px] flex-1"
+                placeholder="Buscar descripción o transportista…"
+                className="py-2"
               />
-              <label className="block text-sm">
-                <span className="mb-1.5 block font-medium text-slate-700">Estado</span>
+              <div className="flex gap-2">
                 <select
                   value={historialEstado}
                   onChange={(e) => setHistorialEstado(e.target.value as '' | AgendaTurnoEstado)}
-                  className="w-full rounded-xl border border-surface-border bg-white px-3 py-2.5 text-sm shadow-sm focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20"
+                  className="min-w-0 flex-1 rounded-xl border border-surface-border bg-white px-3 py-2 text-sm shadow-sm focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20"
                 >
-                  <option value="">Todos</option>
+                  <option value="">Todos los estados</option>
                   <option value="SOLICITADO">Solicitado</option>
                   <option value="CONFIRMADO">Confirmado</option>
                   <option value="CANCELADO">Cancelado</option>
                 </select>
-              </label>
-              <Button
-                type="button"
-                variant="secondary"
-                className="rounded-xl"
-                onClick={() => {
-                  if (historialFecha) {
-                    const d = parseIso(historialFecha)
-                    setCalMonth({ year: d.getFullYear(), month: d.getMonth() })
-                  } else {
-                    const n = new Date()
-                    setCalMonth({ year: n.getFullYear(), month: n.getMonth() })
-                  }
-                  setCalModal(true)
-                }}
-              >
-                <CalendarDays className="h-4 w-4" />
-                Calendario
-              </Button>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  className="h-10 shrink-0 rounded-xl px-3"
+                  onClick={() => {
+                    if (historialFecha) {
+                      const d = parseIso(historialFecha)
+                      setCalMonth({ year: d.getFullYear(), month: d.getMonth() })
+                    } else {
+                      const n = new Date()
+                      setCalMonth({ year: n.getFullYear(), month: n.getMonth() })
+                    }
+                    setCalModal(true)
+                  }}
+                  aria-label="Filtrar por fecha"
+                >
+                  <CalendarDays className="h-4 w-4" />
+                </Button>
+              </div>
+              {historialFecha && (
+                <div className="flex items-center gap-2">
+                  <span className="min-w-0 flex-1 truncate rounded-full bg-brand-50 px-2.5 py-1 text-[11px] font-semibold text-brand-800 ring-1 ring-brand-200">
+                    {formatDayLong(historialFecha)}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setHistorialFecha('')}
+                    className="shrink-0 text-xs font-medium text-slate-500"
+                  >
+                    Quitar
+                  </button>
+                </div>
+              )}
             </div>
 
-            {historialFecha && (
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="rounded-full bg-brand-50 px-3 py-1 text-xs font-semibold text-brand-800 ring-1 ring-brand-200">
-                  Día: {formatDayLong(historialFecha)}
-                </span>
-                <button
-                  type="button"
-                  onClick={() => setHistorialFecha('')}
-                  className="text-xs font-medium text-slate-500 hover:text-slate-800"
-                >
-                  Quitar filtro de fecha
-                </button>
-              </div>
-            )}
-
             {loading ? (
-              <div className="flex items-center gap-2 py-12 text-sm text-slate-500">
+              <div className="flex items-center gap-2 rounded-xl border border-surface-border bg-white px-4 py-10 text-sm text-slate-500 shadow-card">
                 <Loader2 className="h-4 w-4 animate-spin" />
                 Cargando…
               </div>
             ) : historialFiltrado.length === 0 ? (
-              <p className="py-10 text-center text-sm text-slate-400">Sin registros en el historial.</p>
+              <p className="rounded-xl border border-dashed border-surface-border bg-white px-4 py-10 text-center text-sm text-slate-400 shadow-card">
+                Sin registros en el historial.
+              </p>
             ) : (
-              <div className="overflow-hidden rounded-xl border border-surface-border bg-white">
-                <ul className="divide-y divide-surface-border">
+              <>
+                <ul className="space-y-2">
                   {historialPageItems.map((t) => (
                     <li key={t.id}>
                       <button
                         type="button"
                         onClick={() => openEdit(t)}
-                        className="flex min-h-[58px] w-full flex-wrap items-center gap-3 px-4 py-3 text-left text-sm hover:bg-surface-muted/50"
+                        className="flex w-full items-start gap-3 rounded-xl border border-surface-border bg-white px-3 py-3 text-left shadow-card active:bg-slate-50"
                       >
-                        <span className="w-28 shrink-0 font-medium text-slate-700">{t.fecha}</span>
-                        <span className="min-w-0 flex-1">
-                          <span className="font-medium text-slate-900">
-                            {lineaEnvioTexto(t)}
-                          </span>
-                          <span className="mt-0.5 block text-xs text-slate-500">
-                            {t.transportista_nombre}
-                            {t.notas ? ` · ${t.notas}` : ''}
-                          </span>
-                        </span>
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-start gap-2">
+                            <span className="shrink-0 rounded-md bg-slate-100 px-2 py-0.5 text-[11px] font-semibold tabular-nums text-slate-700">
+                              {t.fecha.slice(8, 10)}/{t.fecha.slice(5, 7)}
+                            </span>
+                            <ScrollableProductName className="min-w-0 flex-1 text-sm font-semibold text-slate-900">
+                              {t.descripcion}
+                            </ScrollableProductName>
+                          </div>
+                          <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-slate-500">
+                            {t.cantidad != null && (
+                              <span className="font-medium tabular-nums text-slate-700">
+                                {t.cantidad} {unidadLabel(t.unidad)}
+                              </span>
+                            )}
+                            <span className="inline-flex items-center gap-1">
+                              <Truck className="h-3 w-3 shrink-0" />
+                              {t.transportista_nombre}
+                            </span>
+                          </div>
+                        </div>
                         <span
                           className={cn(
-                            'rounded-full px-2.5 py-0.5 text-xs font-medium ring-1',
+                            'shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold ring-1',
                             ESTADO_STYLE[t.estado]
                           )}
                         >
@@ -914,444 +1199,723 @@ export function AgendaTurnosPage() {
                     disabled={loading}
                   />
                 )}
-              </div>
+              </>
             )}
-          </CardBody>
-        </Card>
-      )}
-
-      {modalOpen && (
-        <div className="fixed inset-0 z-50 flex items-end justify-center bg-slate-900/40 p-4 sm:items-center">
-          <div
-            role="dialog"
-            aria-modal="true"
-            className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-2xl bg-white p-5 shadow-xl ring-1 ring-surface-border"
-          >
-            <div className="mb-4 flex items-start justify-between gap-3">
-              <div>
-                <h2 className="text-lg font-semibold text-slate-900">
-                  {editing ? 'Editar turno' : 'Nuevo turno'}
-                </h2>
-                {!editing && (
-                  <p className="mt-0.5 text-xs text-slate-500">
-                    Se crea como <strong>Solicitado</strong>. Después confirmás o cancelás en la tarjeta.
-                  </p>
-                )}
-              </div>
-              <button
-                type="button"
-                onClick={() => setModalOpen(false)}
-                className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
-              >
-                <X className="h-5 w-5" />
-              </button>
-            </div>
-
-            <form className="space-y-4" onSubmit={(e) => void saveTurno(e)}>
-              {formError && (
-                <div className="rounded-xl bg-red-50 px-3 py-2 text-sm text-red-700 ring-1 ring-red-100">
-                  {formError}
-                </div>
-              )}
-
-              <Input
-                label="Fecha"
-                type="date"
-                required
-                value={form.fecha}
-                onChange={(e) => setForm((f) => ({ ...f, fecha: e.target.value }))}
-                disabled={!canEdit && !!editing}
-              />
-              <Input
-                label="Qué se envía"
-                required
-                placeholder="Ej. Etiquetas"
-                value={form.descripcion}
-                onChange={(e) => setForm((f) => ({ ...f, descripcion: e.target.value }))}
-                disabled={!canEdit && !!editing}
-              />
-              <div className="grid grid-cols-2 gap-3">
+          </div>
+        ) : (
+          <Card>
+            <CardBody className="space-y-4">
+              <div className="flex flex-wrap items-end gap-3">
                 <Input
-                  label="Cantidad (opcional)"
-                  type="number"
-                  min="0.01"
-                  step="any"
-                  value={form.cantidad}
-                  onChange={(e) => setForm((f) => ({ ...f, cantidad: e.target.value }))}
-                  disabled={!canEdit && !!editing}
+                  label="Buscar"
+                  value={historialQ}
+                  onChange={(e) => setHistorialQ(e.target.value)}
+                  placeholder="Descripción, transportista…"
+                  className="min-w-[200px] flex-1"
                 />
                 <label className="block text-sm">
-                  <span className="mb-1.5 block font-medium text-slate-700">Unidad</span>
+                  <span className="mb-1.5 block font-medium text-slate-700">Estado</span>
                   <select
-                    value={form.unidad}
-                    onChange={(e) =>
-                      setForm((f) => ({ ...f, unidad: e.target.value as AgendaTurnoUnidad }))
-                    }
-                    disabled={!canEdit && !!editing}
+                    value={historialEstado}
+                    onChange={(e) => setHistorialEstado(e.target.value as '' | AgendaTurnoEstado)}
                     className="w-full rounded-xl border border-surface-border bg-white px-3 py-2.5 text-sm shadow-sm focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20"
                   >
-                    {UNIDADES.map((u) => (
-                      <option key={u.value} value={u.value}>
-                        {u.label}
-                      </option>
-                    ))}
+                    <option value="">Todos</option>
+                    <option value="SOLICITADO">Solicitado</option>
+                    <option value="CONFIRMADO">Confirmado</option>
+                    <option value="CANCELADO">Cancelado</option>
                   </select>
                 </label>
-              </div>
-
-              <div>
-                <div className="mb-1.5 flex items-center justify-between">
-                  <span className="text-sm font-medium text-slate-700">Transportista</span>
-                  {canCreate && (
-                    <button
-                      type="button"
-                      onClick={() => setTrModal(true)}
-                      className="inline-flex items-center gap-1 text-xs font-medium text-brand-700 hover:underline"
-                    >
-                      <Truck className="h-3.5 w-3.5" />
-                      Nuevo
-                    </button>
-                  )}
-                </div>
-                <select
-                  required
-                  value={form.transportista_id}
-                  onChange={(e) =>
-                    setForm((f) => ({
-                      ...f,
-                      transportista_id: e.target.value ? Number(e.target.value) : ''
-                    }))
-                  }
-                  disabled={!canEdit && !!editing}
-                  className="w-full rounded-xl border border-surface-border bg-white px-3 py-2.5 text-sm shadow-sm focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20"
-                >
-                  <option value="">Elegir…</option>
-                  {activos.map((t) => (
-                    <option key={t.id} value={t.id}>
-                      {t.nombre}
-                    </option>
-                  ))}
-                  {editing &&
-                    !activos.some((t) => t.id === editing.transportista_id) && (
-                      <option value={editing.transportista_id}>
-                        {editing.transportista_nombre} (inactivo)
-                      </option>
-                    )}
-                </select>
-              </div>
-
-              <label className="block text-sm">
-                <span className="mb-1.5 block font-medium text-slate-700">Notas</span>
-                <textarea
-                  rows={2}
-                  value={form.notas}
-                  onChange={(e) => setForm((f) => ({ ...f, notas: e.target.value }))}
-                  disabled={!canEdit && !!editing}
-                  className="w-full rounded-xl border border-surface-border bg-white px-3 py-2.5 text-sm shadow-sm focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20"
-                  placeholder="Opcional"
-                />
-              </label>
-
-              <div className="flex justify-end gap-2 pt-2">
                 <Button
                   type="button"
                   variant="secondary"
                   className="rounded-xl"
-                  onClick={() => setModalOpen(false)}
+                  onClick={() => {
+                    if (historialFecha) {
+                      const d = parseIso(historialFecha)
+                      setCalMonth({ year: d.getFullYear(), month: d.getMonth() })
+                    } else {
+                      const n = new Date()
+                      setCalMonth({ year: n.getFullYear(), month: n.getMonth() })
+                    }
+                    setCalModal(true)
+                  }}
                 >
-                  Cerrar
+                  <CalendarDays className="h-4 w-4" />
+                  Calendario
                 </Button>
-                {(canCreate && !editing) || (canEdit && editing) ? (
-                  <Button type="submit" className="rounded-xl" disabled={saving}>
-                    {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-                    Guardar
-                  </Button>
-                ) : null}
               </div>
-            </form>
+
+              {historialFecha && (
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="rounded-full bg-brand-50 px-3 py-1 text-xs font-semibold text-brand-800 ring-1 ring-brand-200">
+                    Día: {formatDayLong(historialFecha)}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setHistorialFecha('')}
+                    className="text-xs font-medium text-slate-500 hover:text-slate-800"
+                  >
+                    Quitar filtro de fecha
+                  </button>
+                </div>
+              )}
+
+              {loading ? (
+                <div className="flex items-center gap-2 py-12 text-sm text-slate-500">
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Cargando…
+                </div>
+              ) : historialFiltrado.length === 0 ? (
+                <p className="py-10 text-center text-sm text-slate-400">Sin registros en el historial.</p>
+              ) : (
+                <div className="overflow-hidden rounded-xl border border-surface-border bg-white">
+                  <ul className="divide-y divide-surface-border">
+                    {historialPageItems.map((t) => (
+                      <li key={t.id}>
+                        <button
+                          type="button"
+                          onClick={() => openEdit(t)}
+                          className="flex min-h-[58px] w-full flex-wrap items-center gap-3 px-4 py-3 text-left text-sm hover:bg-surface-muted/50"
+                        >
+                          <span className="w-28 shrink-0 font-medium text-slate-700">{t.fecha}</span>
+                          <span className="min-w-0 flex-1">
+                            <span className="font-medium text-slate-900">
+                              {lineaEnvioTexto(t)}
+                            </span>
+                            <span className="mt-0.5 block text-xs text-slate-500">
+                              {t.transportista_nombre}
+                              {t.notas ? ` · ${t.notas}` : ''}
+                            </span>
+                          </span>
+                          <span
+                            className={cn(
+                              'rounded-full px-2.5 py-0.5 text-xs font-medium ring-1',
+                              ESTADO_STYLE[t.estado]
+                            )}
+                          >
+                            {ESTADO_LABEL[t.estado]}
+                          </span>
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                  {historialFiltrado.length > historialPageSize && (
+                    <PaginationControls
+                      page={historialPageSafe}
+                      pageSize={historialPageSize}
+                      total={historialFiltrado.length}
+                      onPageChange={setHistorialPage}
+                      disabled={loading}
+                    />
+                  )}
+                </div>
+              )}
+            </CardBody>
+          </Card>
+        )
+      )}
+
+      {modalOpen && (
+        <>
+          {nativeApp && (
+            <div
+              className="fixed inset-0 z-40 bg-slate-900/45"
+              aria-hidden
+              onClick={() => setModalOpen(false)}
+            />
+          )}
+          <div
+            className={cn(
+              nativeApp
+                ? 'fixed inset-x-0 bottom-0 z-50 mx-auto w-full max-w-3xl max-h-[92dvh] overflow-y-auto overscroll-contain rounded-t-2xl border-2 border-b-0 border-brand-400 bg-white p-4 pb-[max(1rem,env(safe-area-inset-bottom))] shadow-[0_-12px_40px_rgba(15,23,42,0.25)] ring-4 ring-brand-500/15'
+                : 'fixed inset-0 z-50 flex items-end justify-center bg-slate-900/40 p-4 sm:items-center'
+            )}
+          >
+            <div
+              role="dialog"
+              aria-modal="true"
+              className={cn(
+                nativeApp
+                  ? 'w-full'
+                  : 'max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-2xl bg-white p-5 shadow-xl ring-1 ring-surface-border'
+              )}
+            >
+              <div className="mb-4 flex items-start justify-between gap-3">
+                <div>
+                  <h2 className="text-lg font-semibold text-slate-900">
+                    {editing ? 'Editar turno' : 'Nuevo turno'}
+                  </h2>
+                  {!editing && !nativeApp && (
+                    <p className="mt-0.5 text-xs text-slate-500">
+                      Se crea como <strong>Solicitado</strong>. Después confirmás o cancelás en la tarjeta.
+                    </p>
+                  )}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setModalOpen(false)}
+                  className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
+
+              <form className="space-y-4" onSubmit={(e) => void saveTurno(e)}>
+                {formError && (
+                  <div className="rounded-xl bg-red-50 px-3 py-2 text-sm text-red-700 ring-1 ring-red-100">
+                    {formError}
+                  </div>
+                )}
+
+                <Input
+                  label="Fecha"
+                  type="date"
+                  required
+                  value={form.fecha}
+                  onChange={(e) => setForm((f) => ({ ...f, fecha: e.target.value }))}
+                  disabled={!canEdit && !!editing}
+                />
+                <Input
+                  label="Qué se envía"
+                  required
+                  placeholder="Ej. Etiquetas"
+                  value={form.descripcion}
+                  onChange={(e) => setForm((f) => ({ ...f, descripcion: e.target.value }))}
+                  disabled={!canEdit && !!editing}
+                />
+                <div className="grid grid-cols-2 gap-3">
+                  <Input
+                    label="Cantidad (opcional)"
+                    type="number"
+                    min="0.01"
+                    step="any"
+                    value={form.cantidad}
+                    onChange={(e) => setForm((f) => ({ ...f, cantidad: e.target.value }))}
+                    disabled={!canEdit && !!editing}
+                  />
+                  <label className="block text-sm">
+                    <span className="mb-1.5 block font-medium text-slate-700">Unidad</span>
+                    <select
+                      value={form.unidad}
+                      onChange={(e) =>
+                        setForm((f) => ({ ...f, unidad: e.target.value as AgendaTurnoUnidad }))
+                      }
+                      disabled={!canEdit && !!editing}
+                      className="w-full rounded-xl border border-surface-border bg-white px-3 py-2.5 text-sm shadow-sm focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20"
+                    >
+                      {UNIDADES.map((u) => (
+                        <option key={u.value} value={u.value}>
+                          {u.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                </div>
+
+                <div>
+                  <div className="mb-1.5 flex items-center justify-between">
+                    <span className="text-sm font-medium text-slate-700">Transportista</span>
+                    {canCreate && (
+                      <button
+                        type="button"
+                        onClick={() => setTrModal(true)}
+                        className="inline-flex items-center gap-1 text-xs font-medium text-brand-700 hover:underline"
+                      >
+                        <Truck className="h-3.5 w-3.5" />
+                        Nuevo
+                      </button>
+                    )}
+                  </div>
+                  <select
+                    required
+                    value={form.transportista_id}
+                    onChange={(e) =>
+                      setForm((f) => ({
+                        ...f,
+                        transportista_id: e.target.value ? Number(e.target.value) : ''
+                      }))
+                    }
+                    disabled={!canEdit && !!editing}
+                    className="w-full rounded-xl border border-surface-border bg-white px-3 py-2.5 text-sm shadow-sm focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20"
+                  >
+                    <option value="">Elegir…</option>
+                    {activos.map((t) => (
+                      <option key={t.id} value={t.id}>
+                        {t.nombre}
+                      </option>
+                    ))}
+                    {editing &&
+                      !activos.some((t) => t.id === editing.transportista_id) && (
+                        <option value={editing.transportista_id}>
+                          {editing.transportista_nombre} (inactivo)
+                        </option>
+                      )}
+                  </select>
+                </div>
+
+                <label className="block text-sm">
+                  <span className="mb-1.5 block font-medium text-slate-700">Notas</span>
+                  <textarea
+                    rows={2}
+                    value={form.notas}
+                    onChange={(e) => setForm((f) => ({ ...f, notas: e.target.value }))}
+                    disabled={!canEdit && !!editing}
+                    className="w-full rounded-xl border border-surface-border bg-white px-3 py-2.5 text-sm shadow-sm focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20"
+                    placeholder="Opcional"
+                  />
+                </label>
+
+                {nativeApp ? (
+                  <div className="grid grid-cols-2 gap-2 pt-2">
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      className="h-11 rounded-xl"
+                      onClick={() => setModalOpen(false)}
+                    >
+                      Cancelar
+                    </Button>
+                    {(canCreate && !editing) || (canEdit && editing) ? (
+                      <Button type="submit" className="h-11 rounded-xl" disabled={saving}>
+                        {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                        Guardar
+                      </Button>
+                    ) : (
+                      <Button
+                        type="button"
+                        className="h-11 rounded-xl"
+                        onClick={() => setModalOpen(false)}
+                      >
+                        Cerrar
+                      </Button>
+                    )}
+                  </div>
+                ) : (
+                  <div className="flex justify-end gap-2 pt-2">
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      className="rounded-xl"
+                      onClick={() => setModalOpen(false)}
+                    >
+                      Cerrar
+                    </Button>
+                    {(canCreate && !editing) || (canEdit && editing) ? (
+                      <Button type="submit" className="rounded-xl" disabled={saving}>
+                        {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                        Guardar
+                      </Button>
+                    ) : null}
+                  </div>
+                )}
+              </form>
+            </div>
           </div>
-        </div>
+        </>
       )}
 
       {calModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4">
+        <>
+          {nativeApp && (
+            <div
+              className="fixed inset-0 z-40 bg-slate-900/45"
+              aria-hidden
+              onClick={() => setCalModal(false)}
+            />
+          )}
           <div
-            role="dialog"
-            aria-modal="true"
-            className="w-full max-w-sm rounded-2xl bg-white p-4 shadow-xl ring-1 ring-surface-border sm:p-5"
+            className={cn(
+              nativeApp
+                ? 'fixed inset-x-0 bottom-0 z-50 mx-auto w-full max-w-sm max-h-[85dvh] overflow-y-auto overscroll-contain rounded-t-2xl border-2 border-b-0 border-brand-400 bg-white p-4 pb-[max(1rem,env(safe-area-inset-bottom))] shadow-[0_-12px_40px_rgba(15,23,42,0.25)] ring-4 ring-brand-500/15'
+                : 'fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4'
+            )}
           >
-            <div className="mb-3 flex items-center justify-between gap-2">
-              <h3 className="text-base font-semibold text-slate-900">Calendario</h3>
-              <button
-                type="button"
-                onClick={() => setCalModal(false)}
-                className="rounded-lg p-1 text-slate-400 hover:bg-slate-100"
-              >
-                <X className="h-5 w-5" />
-              </button>
-            </div>
-
-            <div className="mb-3 flex items-center justify-between gap-2">
-              <Button
-                type="button"
-                variant="secondary"
-                size="sm"
-                className="rounded-xl"
-                onClick={() =>
-                  setCalMonth((m) => {
-                    const d = new Date(m.year, m.month - 1, 1)
-                    return { year: d.getFullYear(), month: d.getMonth() }
-                  })
-                }
-              >
-                <ChevronLeft className="h-4 w-4" />
-              </Button>
-              <p className="text-sm font-semibold text-slate-800">
-                {monthTitle(calMonth.year, calMonth.month)}
-              </p>
-              <Button
-                type="button"
-                variant="secondary"
-                size="sm"
-                className="rounded-xl"
-                onClick={() =>
-                  setCalMonth((m) => {
-                    const d = new Date(m.year, m.month + 1, 1)
-                    return { year: d.getFullYear(), month: d.getMonth() }
-                  })
-                }
-              >
-                <ChevronRight className="h-4 w-4" />
-              </Button>
-            </div>
-
-            <div className="mb-1 grid grid-cols-7 gap-1">
-              {DIAS.map((d) => (
-                <div
-                  key={d}
-                  className="py-1 text-center text-[10px] font-semibold uppercase tracking-wide text-slate-400"
+            <div
+              role="dialog"
+              aria-modal="true"
+              className={cn(
+                nativeApp ? 'w-full' : 'w-full max-w-sm rounded-2xl bg-white p-4 shadow-xl ring-1 ring-surface-border sm:p-5'
+              )}
+            >
+              <div className="mb-3 flex items-center justify-between gap-2">
+                <h3 className="text-base font-semibold text-slate-900">Calendario</h3>
+                <button
+                  type="button"
+                  onClick={() => setCalModal(false)}
+                  className="rounded-lg p-1 text-slate-400 hover:bg-slate-100"
                 >
-                  {d}
-                </div>
-              ))}
-            </div>
-            <div className="grid grid-cols-7 gap-1">
-              {calCells.map((iso, idx) => {
-                if (!iso) {
-                  return <div key={`e-${idx}`} className="aspect-square" />
-                }
-                const count = historialCountsByFecha.get(iso) ?? 0
-                const selected = historialFecha === iso
-                const isToday = iso === toIsoDate(new Date())
-                const dayNum = parseIso(iso).getDate()
-                return (
-                  <button
-                    key={iso}
-                    type="button"
-                    onClick={() => {
-                      setHistorialFecha(iso)
-                      setCalModal(false)
-                    }}
-                    className={cn(
-                      'relative flex aspect-square flex-col items-center justify-center rounded-lg text-sm font-semibold transition',
-                      selected
-                        ? 'bg-brand-600 text-white'
-                        : count > 0
-                          ? 'bg-amber-50 text-slate-900 ring-1 ring-amber-200 hover:bg-amber-100'
-                          : 'text-slate-600 hover:bg-slate-100',
-                      isToday && !selected && 'ring-2 ring-brand-400'
-                    )}
-                    title={
-                      count > 0
-                        ? `${count} turno${count === 1 ? '' : 's'}`
-                        : 'Sin registros'
-                    }
-                  >
-                    {dayNum}
-                    {count > 0 && (
-                      <span
-                        className={cn(
-                          'mt-0.5 h-1.5 w-1.5 rounded-full',
-                          selected ? 'bg-white' : 'bg-amber-500'
-                        )}
-                      />
-                    )}
-                  </button>
-                )
-              })}
-            </div>
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
 
-            <p className="mt-3 text-center text-[11px] text-slate-400">
-              Punto = día con turnos. Tocá un día para filtrar el historial.
-            </p>
+              <div className="mb-3 flex items-center justify-between gap-2">
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  className="rounded-xl"
+                  onClick={() =>
+                    setCalMonth((m) => {
+                      const d = new Date(m.year, m.month - 1, 1)
+                      return { year: d.getFullYear(), month: d.getMonth() }
+                    })
+                  }
+                >
+                  <ChevronLeft className="h-4 w-4" />
+                </Button>
+                <p className="text-sm font-semibold text-slate-800">
+                  {monthTitle(calMonth.year, calMonth.month)}
+                </p>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  className="rounded-xl"
+                  onClick={() =>
+                    setCalMonth((m) => {
+                      const d = new Date(m.year, m.month + 1, 1)
+                      return { year: d.getFullYear(), month: d.getMonth() }
+                    })
+                  }
+                >
+                  <ChevronRight className="h-4 w-4" />
+                </Button>
+              </div>
+
+              <div className="mb-1 grid grid-cols-7 gap-1">
+                {DIAS.map((d) => (
+                  <div
+                    key={d}
+                    className="py-1 text-center text-[10px] font-semibold uppercase tracking-wide text-slate-400"
+                  >
+                    {d}
+                  </div>
+                ))}
+              </div>
+              <div className="grid grid-cols-7 gap-1">
+                {calCells.map((iso, idx) => {
+                  if (!iso) {
+                    return <div key={`e-${idx}`} className="aspect-square" />
+                  }
+                  const count = historialCountsByFecha.get(iso) ?? 0
+                  const selected = historialFecha === iso
+                  const isToday = iso === toIsoDate(new Date())
+                  const dayNum = parseIso(iso).getDate()
+                  return (
+                    <button
+                      key={iso}
+                      type="button"
+                      onClick={() => {
+                        setHistorialFecha(iso)
+                        setCalModal(false)
+                      }}
+                      className={cn(
+                        'relative flex aspect-square flex-col items-center justify-center rounded-lg text-sm font-semibold transition',
+                        selected
+                          ? 'bg-brand-600 text-white'
+                          : count > 0
+                            ? 'bg-amber-50 text-slate-900 ring-1 ring-amber-200 hover:bg-amber-100'
+                            : 'text-slate-600 hover:bg-slate-100',
+                        isToday && !selected && 'ring-2 ring-brand-400'
+                      )}
+                      title={
+                        count > 0
+                          ? `${count} turno${count === 1 ? '' : 's'}`
+                          : 'Sin registros'
+                      }
+                    >
+                      {dayNum}
+                      {count > 0 && (
+                        <span
+                          className={cn(
+                            'mt-0.5 h-1.5 w-1.5 rounded-full',
+                            selected ? 'bg-white' : 'bg-amber-500'
+                          )}
+                        />
+                      )}
+                    </button>
+                  )
+                })}
+              </div>
+
+              {!nativeApp && (
+                <p className="mt-3 text-center text-[11px] text-slate-400">
+                  Punto = día con turnos. Tocá un día para filtrar el historial.
+                </p>
+              )}
+            </div>
           </div>
-        </div>
+        </>
       )}
 
       {cfgModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4">
-          <form
-            onSubmit={(e) => void saveConfig(e)}
-            className="w-full max-w-md space-y-4 rounded-2xl bg-white p-5 shadow-xl ring-1 ring-surface-border"
-          >
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <h3 className="text-base font-semibold text-slate-900">Días anulados</h3>
-                <p className="mt-1 text-xs text-slate-500">
-                  Marcá los días en los que no se agenda (ej. sábado y domingo).
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={() => setCfgModal(false)}
-                className="rounded-lg p-1 text-slate-400 hover:bg-slate-100"
-              >
-                <X className="h-5 w-5" />
-              </button>
-            </div>
-
-            {cfgError && (
-              <div className="rounded-xl bg-red-50 px-3 py-2 text-sm text-red-700 ring-1 ring-red-100">
-                {cfgError}
-              </div>
+        <>
+          {nativeApp && (
+            <div
+              className="fixed inset-0 z-40 bg-slate-900/45"
+              aria-hidden
+              onClick={() => setCfgModal(false)}
+            />
+          )}
+          <div
+            className={cn(
+              nativeApp
+                ? 'fixed inset-x-0 bottom-0 z-50 mx-auto w-full max-w-md max-h-[88dvh] overflow-y-auto overscroll-contain rounded-t-2xl border-2 border-b-0 border-brand-400 bg-white p-4 pb-[max(1rem,env(safe-area-inset-bottom))] shadow-[0_-12px_40px_rgba(15,23,42,0.25)] ring-4 ring-brand-500/15'
+                : 'fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4'
             )}
+          >
+            <form
+              onSubmit={(e) => void saveConfig(e)}
+              className={cn(
+                nativeApp
+                  ? 'w-full space-y-4'
+                  : 'w-full max-w-md space-y-4 rounded-2xl bg-white p-5 shadow-xl ring-1 ring-surface-border'
+              )}
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <h3 className="text-base font-semibold text-slate-900">Días anulados</h3>
+                  {!nativeApp && (
+                    <p className="mt-1 text-xs text-slate-500">
+                      Marcá los días en los que no se agenda (ej. sábado y domingo).
+                    </p>
+                  )}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setCfgModal(false)}
+                  className="rounded-lg p-1 text-slate-400 hover:bg-slate-100"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
 
-            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-              {DIAS_LARGOS.map((label, idx) => {
-                const checked = cfgDias.includes(idx)
-                return (
-                  <label
-                    key={label}
-                    className={cn(
-                      'flex cursor-pointer items-center gap-2 rounded-xl border px-3 py-2.5 text-sm',
-                      checked
-                        ? 'border-slate-300 bg-slate-100 text-slate-700'
-                        : 'border-surface-border bg-white text-slate-800'
-                    )}
+              {cfgError && (
+                <div className="rounded-xl bg-red-50 px-3 py-2 text-sm text-red-700 ring-1 ring-red-100">
+                  {cfgError}
+                </div>
+              )}
+
+              <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+                {DIAS_LARGOS.map((label, idx) => {
+                  const checked = cfgDias.includes(idx)
+                  return (
+                    <label
+                      key={label}
+                      className={cn(
+                        'flex cursor-pointer items-center gap-2 rounded-xl border px-3 py-2.5 text-sm',
+                        checked
+                          ? 'border-slate-300 bg-slate-100 text-slate-700'
+                          : 'border-surface-border bg-white text-slate-800'
+                      )}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={() => {
+                          setCfgDias((prev) =>
+                            checked ? prev.filter((d) => d !== idx) : [...prev, idx].sort((a, b) => a - b)
+                          )
+                        }}
+                        className="rounded border-slate-300 text-brand-600 focus:ring-brand-500"
+                      />
+                      {label}
+                    </label>
+                  )
+                })}
+              </div>
+
+              {nativeApp ? (
+                <div className="grid grid-cols-2 gap-2 pt-1">
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    className="h-11 rounded-xl"
+                    onClick={() => setCfgModal(false)}
                   >
-                    <input
-                      type="checkbox"
-                      checked={checked}
-                      onChange={() => {
-                        setCfgDias((prev) =>
-                          checked ? prev.filter((d) => d !== idx) : [...prev, idx].sort((a, b) => a - b)
-                        )
-                      }}
-                      className="rounded border-slate-300 text-brand-600 focus:ring-brand-500"
-                    />
-                    {label}
-                  </label>
-                )
-              })}
-            </div>
-
-            <div className="flex justify-end gap-2 pt-1">
-              <Button
-                type="button"
-                variant="secondary"
-                className="rounded-xl"
-                onClick={() => setCfgModal(false)}
-              >
-                Cancelar
-              </Button>
-              <Button type="submit" className="rounded-xl" disabled={cfgSaving}>
-                {cfgSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-                Guardar
-              </Button>
-            </div>
-          </form>
-        </div>
+                    Cancelar
+                  </Button>
+                  <Button type="submit" className="h-11 rounded-xl" disabled={cfgSaving}>
+                    {cfgSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                    Guardar
+                  </Button>
+                </div>
+              ) : (
+                <div className="flex justify-end gap-2 pt-1">
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    className="rounded-xl"
+                    onClick={() => setCfgModal(false)}
+                  >
+                    Cancelar
+                  </Button>
+                  <Button type="submit" className="rounded-xl" disabled={cfgSaving}>
+                    {cfgSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                    Guardar
+                  </Button>
+                </div>
+              )}
+            </form>
+          </div>
+        </>
       )}
 
       {diaPanelIso && (
-        <div className="fixed inset-0 z-50 flex items-end justify-center bg-slate-900/40 p-4 sm:items-center">
+        <>
+          {nativeApp && (
+            <div
+              className="fixed inset-0 z-40 bg-slate-900/45"
+              aria-hidden
+              onClick={() => setDiaPanelIso(null)}
+            />
+          )}
           <div
-            role="dialog"
-            aria-modal="true"
-            className="max-h-[85vh] w-full max-w-md overflow-y-auto rounded-2xl bg-white p-5 shadow-xl ring-1 ring-surface-border"
-          >
-            <div className="mb-4 flex items-start justify-between gap-3">
-              <div>
-                <h3 className="text-base font-semibold text-slate-900">
-                  Turnos del {formatDayLong(diaPanelIso)}
-                </h3>
-                <p className="mt-0.5 text-xs text-slate-500">
-                  {(byFecha.get(diaPanelIso) ?? []).length} registro
-                  {(byFecha.get(diaPanelIso) ?? []).length === 1 ? '' : 's'}
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={() => setDiaPanelIso(null)}
-                className="rounded-lg p-1 text-slate-400 hover:bg-slate-100"
-              >
-                <X className="h-5 w-5" />
-              </button>
-            </div>
-            <div className="space-y-3">
-              {(byFecha.get(diaPanelIso) ?? []).map((t) => (
-                <TurnoCard
-                  key={t.id}
-                  turno={t}
-                  canEdit={canEdit}
-                  busyId={estadoBusyId}
-                  onOpen={() => {
-                    setDiaPanelIso(null)
-                    openEdit(t)
-                  }}
-                  onEstado={(estado) => void cambiarEstado(t, estado)}
-                />
-              ))}
-            </div>
-            {canCreate && (
-              <Button
-                type="button"
-                className="mt-4 w-full rounded-xl"
-                onClick={() => {
-                  const iso = diaPanelIso
-                  setDiaPanelIso(null)
-                  openCreate(iso)
-                }}
-              >
-                <Plus className="h-4 w-4" />
-                Agregar turno
-              </Button>
+            className={cn(
+              nativeApp
+                ? 'fixed inset-x-0 bottom-0 z-50 mx-auto w-full max-w-md max-h-[85dvh] overflow-y-auto overscroll-contain rounded-t-2xl border-2 border-b-0 border-brand-400 bg-white p-4 pb-[max(1rem,env(safe-area-inset-bottom))] shadow-[0_-12px_40px_rgba(15,23,42,0.25)] ring-4 ring-brand-500/15'
+                : 'fixed inset-0 z-50 flex items-end justify-center bg-slate-900/40 p-4 sm:items-center'
             )}
+          >
+            <div
+              role="dialog"
+              aria-modal="true"
+              className={cn(
+                nativeApp
+                  ? 'w-full'
+                  : 'max-h-[85vh] w-full max-w-md overflow-y-auto rounded-2xl bg-white p-5 shadow-xl ring-1 ring-surface-border'
+              )}
+            >
+              <div className="mb-4 flex items-start justify-between gap-3">
+                <div>
+                  <h3 className="text-base font-semibold text-slate-900">
+                    Turnos del {formatDayLong(diaPanelIso)}
+                  </h3>
+                  <p className="mt-0.5 text-xs text-slate-500">
+                    {(byFecha.get(diaPanelIso) ?? []).length} registro
+                    {(byFecha.get(diaPanelIso) ?? []).length === 1 ? '' : 's'}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setDiaPanelIso(null)}
+                  className="rounded-lg p-1 text-slate-400 hover:bg-slate-100"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
+              <div className="space-y-2">
+                {(byFecha.get(diaPanelIso) ?? []).map((t) => (
+                  <TurnoCard
+                    key={t.id}
+                    turno={t}
+                    canEdit={canEdit}
+                    busyId={estadoBusyId}
+                    compact={nativeApp}
+                    onOpen={() => {
+                      setDiaPanelIso(null)
+                      openEdit(t)
+                    }}
+                    onEstado={(estado) => void cambiarEstado(t, estado)}
+                  />
+                ))}
+              </div>
+              {canCreate && (
+                <Button
+                  type="button"
+                  className={cn('mt-4 w-full rounded-xl', nativeApp && 'h-11')}
+                  onClick={() => {
+                    const iso = diaPanelIso
+                    setDiaPanelIso(null)
+                    openCreate(iso)
+                  }}
+                >
+                  <Plus className="h-4 w-4" />
+                  Agregar turno
+                </Button>
+              )}
+            </div>
           </div>
-        </div>
+        </>
       )}
 
       {trModal && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/50 p-4">
-          <form
-            onSubmit={(e) => void saveTransportista(e)}
-            className="w-full max-w-sm space-y-4 rounded-2xl bg-white p-5 shadow-xl"
-          >
-            <h3 className="text-base font-semibold text-slate-900">Nuevo transportista</h3>
-            <Input
-              label="Nombre"
-              required
-              autoFocus
-              value={trNombre}
-              onChange={(e) => setTrNombre(e.target.value)}
-              placeholder="Ej. Russo, Transportes Catalina"
+        <>
+          {nativeApp && (
+            <div
+              className="fixed inset-0 z-[59] bg-slate-900/45"
+              aria-hidden
+              onClick={() => setTrModal(false)}
             />
-            <div className="flex justify-end gap-2">
-              <Button
-                type="button"
-                variant="secondary"
-                className="rounded-xl"
-                onClick={() => setTrModal(false)}
-              >
-                Cancelar
-              </Button>
-              <Button type="submit" className="rounded-xl" disabled={trSaving}>
-                {trSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-                Crear
-              </Button>
-            </div>
-          </form>
-        </div>
+          )}
+          <div
+            className={cn(
+              nativeApp
+                ? 'fixed inset-x-0 bottom-0 z-[60] mx-auto w-full max-w-sm overflow-y-auto overscroll-contain rounded-t-2xl border-2 border-b-0 border-brand-400 bg-white p-4 pb-[max(1rem,env(safe-area-inset-bottom))] shadow-[0_-12px_40px_rgba(15,23,42,0.25)] ring-4 ring-brand-500/15'
+                : 'fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/50 p-4'
+            )}
+          >
+            <form
+              onSubmit={(e) => void saveTransportista(e)}
+              className={cn(
+                nativeApp ? 'w-full space-y-4' : 'w-full max-w-sm space-y-4 rounded-2xl bg-white p-5 shadow-xl'
+              )}
+            >
+              <div className="flex items-center justify-between gap-2">
+                <h3 className="text-base font-semibold text-slate-900">Nuevo transportista</h3>
+                {nativeApp && (
+                  <button
+                    type="button"
+                    onClick={() => setTrModal(false)}
+                    className="rounded-lg p-1 text-slate-400 hover:bg-slate-100"
+                  >
+                    <X className="h-5 w-5" />
+                  </button>
+                )}
+              </div>
+              <Input
+                label="Nombre"
+                required
+                autoFocus
+                value={trNombre}
+                onChange={(e) => setTrNombre(e.target.value)}
+                placeholder="Ej. Russo, Transportes Catalina"
+              />
+              {nativeApp ? (
+                <div className="grid grid-cols-2 gap-2">
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    className="h-11 rounded-xl"
+                    onClick={() => setTrModal(false)}
+                  >
+                    Cancelar
+                  </Button>
+                  <Button type="submit" className="h-11 rounded-xl" disabled={trSaving}>
+                    {trSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                    Crear
+                  </Button>
+                </div>
+              ) : (
+                <div className="flex justify-end gap-2">
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    className="rounded-xl"
+                    onClick={() => setTrModal(false)}
+                  >
+                    Cancelar
+                  </Button>
+                  <Button type="submit" className="rounded-xl" disabled={trSaving}>
+                    {trSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                    Crear
+                  </Button>
+                </div>
+              )}
+            </form>
+          </div>
+        </>
       )}
     </div>
   )

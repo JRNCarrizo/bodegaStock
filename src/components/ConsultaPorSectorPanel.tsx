@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { App as CapApp } from '@capacitor/app'
 import { ChevronRight, Layers, Loader2, Search, Warehouse } from 'lucide-react'
 import { formatCantidad } from '@/lib/desglose'
 import { focusAndScrollIntoView } from '@/lib/scroll'
@@ -9,9 +10,13 @@ import { SectorStockView } from '@/components/SectorStockView'
 import { Badge, Card, CardBody } from '@/components/ui/Card'
 import { useEscHandler } from '@/hooks/useEscHandler'
 
+const CONSULTA_SECTOR_HISTORY_KEY = 'bodegaConsultaSector'
+
 export function ConsultaPorSectorPanel({
+  nativeApp = false,
   onSectorSelectedChange
 }: {
+  nativeApp?: boolean
   onSectorSelectedChange?: (selected: boolean) => void
 }) {
   const [sectores, setSectores] = useState<Sector[]>([])
@@ -52,6 +57,46 @@ export function ConsultaPorSectorPanel({
     onSectorSelectedChange?.(selectedSector !== null)
   }, [selectedSector, onSectorSelectedChange])
 
+  const goBackToSectorList = useCallback(() => {
+    if (nativeApp) {
+      const state = window.history.state as { [CONSULTA_SECTOR_HISTORY_KEY]?: boolean } | null
+      if (state?.[CONSULTA_SECTOR_HISTORY_KEY]) {
+        window.history.back()
+        return
+      }
+    }
+    setSelectedSector(null)
+  }, [nativeApp])
+
+  /** Atrás del celular vuelve al listado de sectores. */
+  useEffect(() => {
+    if (!nativeApp || !selectedSector) return
+
+    const state = window.history.state as { [CONSULTA_SECTOR_HISTORY_KEY]?: boolean } | null
+    if (!state?.[CONSULTA_SECTOR_HISTORY_KEY]) {
+      window.history.pushState({ [CONSULTA_SECTOR_HISTORY_KEY]: true }, '')
+    }
+
+    const onPopState = () => {
+      setSelectedSector(null)
+    }
+    window.addEventListener('popstate', onPopState)
+
+    let removeCap: (() => void) | undefined
+    void CapApp.addListener('backButton', () => {
+      window.history.back()
+    }).then((handle) => {
+      removeCap = () => {
+        void handle.remove()
+      }
+    })
+
+    return () => {
+      window.removeEventListener('popstate', onPopState)
+      removeCap?.()
+    }
+  }, [nativeApp, selectedSector])
+
   useEffect(() => {
     if (selectedSector !== null) return
     const timer = setTimeout(() => focusAndScrollIntoView(searchRef.current), 80)
@@ -59,7 +104,7 @@ export function ConsultaPorSectorPanel({
   }, [selectedSector])
 
   useEscHandler(selectedSector !== null, () => {
-    setSelectedSector(null)
+    goBackToSectorList()
     return true
   })
 
@@ -94,7 +139,8 @@ export function ConsultaPorSectorPanel({
     return (
       <SectorStockView
         sector={selectedSector}
-        onBack={() => setSelectedSector(null)}
+        nativeApp={nativeApp}
+        onBack={nativeApp ? undefined : () => setSelectedSector(null)}
       />
     )
   }
@@ -102,7 +148,12 @@ export function ConsultaPorSectorPanel({
   return (
     <div className="space-y-4">
       <Card className="overflow-hidden shadow-panel">
-        <div className="border-b border-brand-100 bg-gradient-to-r from-brand-50/80 via-white to-white px-5 py-4 sm:px-6">
+        <div
+          className={cn(
+            'border-b border-brand-100 bg-gradient-to-r from-brand-50/80 via-white to-white sm:px-6',
+            nativeApp ? 'px-3 py-2.5' : 'px-5 py-4'
+          )}
+        >
           <div className="relative">
             <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-brand-400" />
             <input
@@ -199,9 +250,11 @@ export function ConsultaPorSectorPanel({
           )}
         </CardBody>
       </Card>
-      <p className="text-center text-xs text-slate-400">
-        Elegí un sector para ver todos los productos con stock · Esc vuelve al listado
-      </p>
+      {!nativeApp && (
+        <p className="text-center text-xs text-slate-400">
+          Elegí un sector para ver todos los productos con stock · Esc vuelve al listado
+        </p>
+      )}
     </div>
   )
 }

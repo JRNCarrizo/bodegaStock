@@ -22,6 +22,7 @@ import { DayTabsRow } from '@/components/DayTabsRow'
 import { ProductQuickCreateModal } from '@/components/ProductQuickCreateModal'
 import { SectionHelpButton } from '@/components/SectionHelpButton'
 import { ProductImage } from '@/components/ProductImage'
+import { ScrollableProductName } from '@/components/ScrollableProductName'
 import { SwipeableConteoLinea } from '@/components/SwipeableConteoLinea'
 import {
   RegistroDetalleMetaChip,
@@ -33,6 +34,11 @@ import { Input } from '@/components/ui/Input'
 import { Card, CardBody } from '@/components/ui/Card'
 import { calcTotalEnCajas, botellasPorCajaDefault, cajasPorPalletDefault, formatCantidad, formatDayTabLabel, formatEtiqueta, formatTotalCajas, normalizarUnidadProducto, todayIsoDate, totalSueltoLineaConteo } from '@/lib/desglose'
 import { downloadApiFile } from '@/lib/downloadFile'
+import {
+  scrollFocusedFieldIntoSheet,
+  useVisualViewportBottomInset
+} from '@/hooks/useVisualViewportBottomInset'
+import { isNativeApp } from '@/lib/nativeServer'
 import { searchDelayMs } from '@/lib/searchDelay'
 import { api, cn } from '@/lib/utils'
 import { codigoProductoExacto } from '@/lib/productoSearch'
@@ -189,11 +195,21 @@ export function IngresosPage() {
   const createScrollRef = useRef<HTMLDivElement>(null)
   const cargaPanelRef = useRef<HTMLDivElement>(null)
   const productLineFormRef = useRef<HTMLDivElement>(null)
+  const keyboardBridgeRef = useRef<HTMLInputElement>(null)
+  const pendingFocusCantidadRef = useRef(false)
+  const nativeApp = isNativeApp()
+  const keyboardInset = useVisualViewportBottomInset()
 
   const sectorSeleccionado = sectores.find((s) => s.id === Number(sectorId))
   const sectoresOrdenados = useMemo(() => sortSectoresParaIngreso(sectores), [sectores])
   const usaUbicaciones =
     Boolean(sectorSeleccionado?.usa_ubicaciones) && ubicaciones.length > 0
+
+  function armKeyboardForCantidadModal() {
+    if (!nativeApp) return
+    pendingFocusCantidadRef.current = true
+    keyboardBridgeRef.current?.focus({ preventScroll: true })
+  }
 
   function focusField(ref: React.RefObject<HTMLElement | null>) {
     requestAnimationFrame(() => {
@@ -201,6 +217,9 @@ export function IngresosPage() {
       if (!el) return
       el.focus()
       el.scrollIntoView({ block: 'center', behavior: 'smooth' })
+      if (el instanceof HTMLInputElement) {
+        requestAnimationFrame(() => el.select())
+      }
     })
   }
 
@@ -559,16 +578,33 @@ export function IngresosPage() {
   }
 
   function handleTipoBultoChange(tipo: 'PALLET' | 'CAJA' | 'SUELTO') {
+    const targetEl =
+      tipo === 'SUELTO' ? cantidadSueltaRef.current : cantidadBultosRef.current
+    // Si el input con foco se va a ocultar, mover el foco ANTES del setState
+    // para que Android no cierre y reabra el teclado.
+    if (nativeApp && targetEl && document.activeElement !== targetEl) {
+      targetEl.focus({ preventScroll: true })
+    }
+
     setTipoBulto(tipo)
     if (tipo === 'SUELTO') {
       setCantidadBultos('')
       setUnidadesPorBulto('')
-      setTimeout(() => focusField(cantidadSueltaRef), 0)
+      setCantidadSuelta('')
     } else {
       setCantidadSuelta('')
       setUnidadesPorBulto(defaultUnidadesPorBulto(tipo, selectedProduct))
-      setTimeout(() => focusField(cantidadBultosRef), 0)
     }
+
+    requestAnimationFrame(() => {
+      const el =
+        tipo === 'SUELTO' ? cantidadSueltaRef.current : cantidadBultosRef.current
+      if (!el) return
+      if (document.activeElement !== el) el.focus({ preventScroll: true })
+      if (nativeApp) scrollFocusedFieldIntoSheet(el, 0)
+      else el.scrollIntoView({ block: 'center', behavior: 'smooth' })
+      el.select()
+    })
   }
 
   function selectProduct(p: Producto) {
@@ -581,6 +617,7 @@ export function IngresosPage() {
       focusField(ubicacionRef)
       return
     }
+    armKeyboardForCantidadModal()
     setEditingLineaTempId(null)
     setSelectedProduct(p)
     setProductSearch(p.codigo_interno)
@@ -588,7 +625,9 @@ export function IngresosPage() {
     setProductHighlightIndex(-1)
     resetLineaForm(p)
     setError('')
-    setTimeout(() => focusField(cantidadBultosRef), 50)
+    if (!nativeApp) {
+      setTimeout(() => focusField(cantidadBultosRef), 50)
+    }
 
     // Refresca defaults (botellas/caja) alineados al stock real.
     void api<Producto>(`/api/productos/${p.id}`)
@@ -599,6 +638,17 @@ export function IngresosPage() {
         /* keep list product */
       })
   }
+
+  useEffect(() => {
+    if (!nativeApp || !selectedProduct || !pendingFocusCantidadRef.current) return
+    pendingFocusCantidadRef.current = false
+    const id = window.requestAnimationFrame(() => {
+      const ref = tipoBulto === 'SUELTO' ? cantidadSueltaRef : cantidadBultosRef
+      focusField(ref)
+      scrollFocusedFieldIntoSheet(ref.current, 0)
+    })
+    return () => window.cancelAnimationFrame(id)
+  }, [nativeApp, selectedProduct, tipoBulto, editingLineaTempId])
 
   function cancelarLineaForm() {
     setEditingLineaTempId(null)
@@ -612,6 +662,7 @@ export function IngresosPage() {
 
   function empezarEditarLinea(l: IngresoLineaDraft) {
     setSwipeOpenLineId(null)
+    armKeyboardForCantidadModal()
     setEditingLineaTempId(l.tempId)
     setExpandedProductos((prev) => new Set(prev).add(l.producto_id))
     setSectorId(String(l.sector_id))
@@ -647,11 +698,13 @@ export function IngresosPage() {
       )
     }
     setError('')
-    scrollFieldIntoView(productLineFormRef)
-    setTimeout(
-      () => focusField(l.tipo_bulto === 'SUELTO' ? cantidadSueltaRef : cantidadBultosRef),
-      50
-    )
+    if (!nativeApp) {
+      scrollFieldIntoView(productLineFormRef)
+      setTimeout(
+        () => focusField(l.tipo_bulto === 'SUELTO' ? cantidadSueltaRef : cantidadBultosRef),
+        50
+      )
+    }
     void api<Producto>(`/api/productos/${l.producto_id}`)
       .then((fresh) => {
         setSelectedProduct((cur) => (cur?.id === fresh.id ? fresh : cur))
@@ -1180,9 +1233,9 @@ export function IngresosPage() {
                   <span className="shrink-0 rounded-md bg-slate-100 px-2 py-0.5 font-mono text-xs font-semibold text-slate-700">
                     {grupo.producto.codigo_interno}
                   </span>
-                  <span className="min-w-0 truncate text-sm font-semibold text-slate-900">
+                  <ScrollableProductName className="min-w-0 flex-1 text-sm font-semibold text-slate-900">
                     {grupo.producto.nombre}
-                  </span>
+                  </ScrollableProductName>
                   {!isExpanded && grupo.lineas.length > 1 && (
                     <span className="shrink-0 text-xs text-slate-500">
                       · {grupo.lineas.length} líneas
@@ -1236,7 +1289,14 @@ export function IngresosPage() {
       )
 
     return (
-      <div className="-m-4 flex h-[calc(100vh-5rem)] flex-col bg-surface-muted/30 lg:-m-6">
+      <div
+        className={cn(
+          'flex flex-col bg-surface-muted/30',
+          nativeApp
+            ? 'fixed inset-x-0 bottom-0 top-14 z-10'
+            : '-m-4 h-[calc(100vh-5rem)] lg:-m-6'
+        )}
+      >
         {/* Panel superior fijo: remito + buscador + formulario */}
         <div
           ref={cargaPanelRef}
@@ -1373,6 +1433,7 @@ export function IngresosPage() {
                               : 'hover:bg-slate-50'
                           )}
                           onMouseEnter={() => setProductHighlightIndex(index)}
+                          onPointerDown={armKeyboardForCantidadModal}
                           onClick={() => selectProduct(p)}
                         >
                           <span className="rounded bg-slate-100 px-1.5 py-0.5 font-mono text-xs font-semibold">
@@ -1401,18 +1462,54 @@ export function IngresosPage() {
               )}
             </div>
 
+            {nativeApp && (
+              <input
+                ref={keyboardBridgeRef}
+                type="text"
+                inputMode="numeric"
+                enterKeyHint="done"
+                aria-hidden
+                tabIndex={-1}
+                className="pointer-events-none fixed left-0 top-0 h-px w-px opacity-0"
+                value=""
+                onChange={() => {}}
+              />
+            )}
+
             {selectedProduct && (
-              <div
-                ref={productLineFormRef}
-                className="overflow-hidden rounded-xl border border-brand-200 bg-gradient-to-br from-brand-50/80 to-white p-4 shadow-card"
-              >
-                <div className="mb-4 flex items-center gap-3">
-                  <ProductImage
-                    productoId={selectedProduct.id}
-                    hasImage={!!selectedProduct.imagen_path}
-                    alt={selectedProduct.nombre}
-                    className="h-11 w-11 rounded-xl ring-1 ring-surface-border"
+              <>
+                {nativeApp && (
+                  <div
+                    className="fixed inset-0 z-40 bg-slate-900/45"
+                    aria-hidden
+                    onClick={cancelarLineaForm}
                   />
+                )}
+                <div
+                  ref={productLineFormRef}
+                  className={cn(
+                    nativeApp
+                      ? 'fixed inset-x-0 z-50 mx-auto w-full max-w-3xl overflow-y-auto overscroll-contain rounded-t-2xl border-2 border-b-0 border-brand-400 bg-white p-4 shadow-[0_-12px_40px_rgba(15,23,42,0.25)] ring-4 ring-brand-500/15 transition-[bottom,max-height] duration-200 ease-out'
+                      : 'overflow-hidden rounded-xl border border-brand-200 bg-gradient-to-br from-brand-50/80 to-white p-4 shadow-card'
+                  )}
+                  style={
+                    nativeApp
+                      ? {
+                          bottom: keyboardInset,
+                          maxHeight: `calc(100dvh - ${keyboardInset}px - env(safe-area-inset-top, 0px) - 0.5rem)`
+                        }
+                      : undefined
+                  }
+                >
+                <div className="mb-4 flex items-center gap-3">
+                  {!nativeApp && (
+                    <ProductImage
+                      productoId={selectedProduct.id}
+                      hasImage={!!selectedProduct.imagen_path}
+                      alt={selectedProduct.nombre}
+                      className="h-11 w-11 rounded-xl ring-1 ring-surface-border"
+                    />
+                  )}
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2">
                       <span className="inline-flex rounded-md bg-white px-2 py-0.5 font-mono text-xs font-semibold text-slate-700 ring-1 ring-surface-border">
@@ -1617,6 +1714,7 @@ export function IngresosPage() {
                   </div>
                 </div>
               </div>
+              </>
             )}
           </div>
         </div>
@@ -1628,46 +1726,96 @@ export function IngresosPage() {
           {lineasListContent}
         </div>
 
-        <div className="shrink-0 border-t border-surface-border bg-white px-4 py-4 shadow-[0_-4px_12px_rgba(0,0,0,0.04)] sm:px-5">
-          <div className="flex items-center justify-between gap-4">
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">
-                Total general
-              </p>
-              <p className="text-2xl font-bold tabular-nums text-brand-700">
-                {formatCantidad(totalGeneral)}
-              </p>
-              {totalSueltoGeneral > 0 && (
-                <p className="mt-0.5 text-xs font-medium text-slate-500">
-                  + {formatCantidad(totalSueltoGeneral)} unidades sueltas
+        <div
+          className={cn(
+            'shrink-0 border-t border-surface-border bg-white shadow-[0_-4px_12px_rgba(0,0,0,0.04)]',
+            nativeApp
+              ? 'px-3 pt-3 pb-3'
+              : 'px-4 py-4 sm:px-5'
+          )}
+        >
+          {nativeApp ? (
+            <div className="space-y-3">
+              <div className="flex items-end justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">
+                    Total
+                  </p>
+                  <p className="text-xl font-bold tabular-nums text-brand-700">
+                    {formatCantidad(totalGeneral)}
+                    {totalSueltoGeneral > 0 && (
+                      <span className="ml-1.5 text-sm font-medium text-slate-500">
+                        + {formatCantidad(totalSueltoGeneral)} sueltas
+                      </span>
+                    )}
+                  </p>
+                </div>
+                <p className="shrink-0 text-xs text-slate-500">
+                  {lineas.length} línea{lineas.length === 1 ? '' : 's'}
                 </p>
-              )}
-              <p className="mt-1 text-xs text-slate-500">
-                {lineas.length} línea{lineas.length === 1 ? '' : 's'} cargada
-                {lineas.length === 1 ? '' : 's'}
-              </p>
-            </div>
-            {hasPermiso('ingresos.crear') && (
-              <div className="flex shrink-0 flex-wrap gap-2">
-                <Button
-                  variant="secondary"
-                  className="rounded-xl"
-                  onClick={cancelarIngresoEnCurso}
-                  disabled={saving}
-                >
-                  Cancelar ingreso
-                </Button>
-                <Button
-                  className="rounded-xl"
-                  onClick={confirmarIngresoDirecto}
-                  disabled={lineas.length === 0 || saving}
-                >
-                  <Check className="h-4 w-4" />
-                  {saving ? 'Registrando...' : 'Confirmar ingreso'}
-                </Button>
               </div>
-            )}
-          </div>
+              {hasPermiso('ingresos.crear') && (
+                <div className="grid grid-cols-2 gap-2">
+                  <Button
+                    variant="secondary"
+                    className="h-11 rounded-xl"
+                    onClick={cancelarIngresoEnCurso}
+                    disabled={saving}
+                  >
+                    Cancelar
+                  </Button>
+                  <Button
+                    className="h-11 rounded-xl"
+                    onClick={confirmarIngresoDirecto}
+                    disabled={lineas.length === 0 || saving}
+                  >
+                    <Check className="h-4 w-4" />
+                    {saving ? '…' : 'Confirmar'}
+                  </Button>
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="flex items-center justify-between gap-4">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+                  Total general
+                </p>
+                <p className="text-2xl font-bold tabular-nums text-brand-700">
+                  {formatCantidad(totalGeneral)}
+                </p>
+                {totalSueltoGeneral > 0 && (
+                  <p className="mt-0.5 text-xs font-medium text-slate-500">
+                    + {formatCantidad(totalSueltoGeneral)} unidades sueltas
+                  </p>
+                )}
+                <p className="mt-1 text-xs text-slate-500">
+                  {lineas.length} línea{lineas.length === 1 ? '' : 's'} cargada
+                  {lineas.length === 1 ? '' : 's'}
+                </p>
+              </div>
+              {hasPermiso('ingresos.crear') && (
+                <div className="flex shrink-0 flex-wrap gap-2">
+                  <Button
+                    variant="secondary"
+                    className="rounded-xl"
+                    onClick={cancelarIngresoEnCurso}
+                    disabled={saving}
+                  >
+                    Cancelar
+                  </Button>
+                  <Button
+                    className="rounded-xl"
+                    onClick={confirmarIngresoDirecto}
+                    disabled={lineas.length === 0 || saving}
+                  >
+                    <Check className="h-4 w-4" />
+                    {saving ? 'Registrando...' : 'Confirmar'}
+                  </Button>
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
         <ProductQuickCreateModal
@@ -1680,60 +1828,94 @@ export function IngresosPage() {
   }
 
   return (
-    <div className="mx-auto max-w-6xl space-y-6">
-      <section className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-        <div>
-          <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">
-            Movimientos
-          </p>
-          <div className="mt-1 flex items-center gap-1.5">
-            <h1 className="text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">
-              Ingresos
-            </h1>
-            <SectionHelpButton guideId="ingresos" />
-          </div>
-          <p className="mt-2 max-w-xl text-sm leading-relaxed text-slate-500">
-            Entrada de mercadería archivada por día, con remito y destinos por línea.
-          </p>
+    <div className={cn('mx-auto max-w-6xl', nativeApp ? '-mt-1 space-y-3' : 'space-y-6')}>
+      {nativeApp ? (
+        <div className="flex items-center gap-3">
+          <h1 className="min-w-0 flex-1 truncate text-xl font-bold tracking-tight text-slate-900">
+            Ingresos
+          </h1>
+          {hasPermiso('ingresos.crear') && (
+            <Button
+              className="h-10 shrink-0 rounded-xl px-3"
+              onClick={() => {
+                if (tieneBorrador) continuarBorrador()
+                else abrirNuevoIngreso()
+              }}
+            >
+              {tieneBorrador ? (
+                <>
+                  <ClipboardList className="h-4 w-4" />
+                  Continuar
+                </>
+              ) : (
+                <>
+                  <Plus className="h-4 w-4" />
+                  Nuevo
+                </>
+              )}
+            </Button>
+          )}
         </div>
-        {hasPermiso('ingresos.crear') && (
-          <div className="flex flex-col items-stretch gap-2 sm:items-end">
-            <p className="text-xs text-slate-400 sm:text-right">
-              {tieneBorrador
-                ? 'Enter → continuar ingreso en curso'
-                : 'Enter → nuevo ingreso'}
+      ) : (
+        <section className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">
+              Movimientos
             </p>
-            <div className="flex flex-wrap items-center justify-end gap-2">
-              <Button
-                className="rounded-xl px-4"
-                onClick={() => {
-                  if (tieneBorrador) continuarBorrador()
-                  else abrirNuevoIngreso()
-                }}
-              >
-                {tieneBorrador ? (
-                  <>
-                    <ClipboardList className="h-4 w-4" />
-                    Continuar ingreso
-                  </>
-                ) : (
-                  <>
-                    <Plus className="h-4 w-4" />
-                    Nuevo ingreso
-                  </>
-                )}
-              </Button>
+            <div className="mt-1 flex items-center gap-1.5">
+              <h1 className="text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">
+                Ingresos
+              </h1>
+              <SectionHelpButton guideId="ingresos" />
             </div>
+            <p className="mt-2 max-w-xl text-sm leading-relaxed text-slate-500">
+              Entrada de mercadería archivada por día, con remito y destinos por línea.
+            </p>
           </div>
-        )}
-      </section>
+          {hasPermiso('ingresos.crear') && (
+            <div className="flex flex-col items-stretch gap-2 sm:items-end">
+              <p className="text-xs text-slate-400 sm:text-right">
+                {tieneBorrador
+                  ? 'Enter → continuar ingreso en curso'
+                  : 'Enter → nuevo ingreso'}
+              </p>
+              <div className="flex flex-wrap items-center justify-end gap-2">
+                <Button
+                  className="rounded-xl px-4"
+                  onClick={() => {
+                    if (tieneBorrador) continuarBorrador()
+                    else abrirNuevoIngreso()
+                  }}
+                >
+                  {tieneBorrador ? (
+                    <>
+                      <ClipboardList className="h-4 w-4" />
+                      Continuar ingreso
+                    </>
+                  ) : (
+                    <>
+                      <Plus className="h-4 w-4" />
+                      Nuevo ingreso
+                    </>
+                  )}
+                </Button>
+              </div>
+            </div>
+          )}
+        </section>
+      )}
 
       <Card className="overflow-hidden shadow-panel">
-        <div className="border-b border-brand-100 bg-gradient-to-r from-brand-50/80 via-white to-white px-5 py-4 sm:px-6">
-          <div className="flex flex-col gap-3">
-            <div className="flex flex-wrap items-center gap-2">
-              <div className="relative min-w-[10rem] flex-1">
-                <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-brand-400" />
+        <div
+          className={cn(
+            'border-b border-brand-100 bg-gradient-to-r from-brand-50/80 via-white to-white sm:px-6',
+            nativeApp ? 'px-3 py-2.5' : 'px-5 py-4'
+          )}
+        >
+          <div className={cn('flex flex-col', nativeApp ? 'gap-2' : 'gap-3')}>
+            <div className={cn('flex gap-2', nativeApp ? 'flex-col' : 'flex-wrap items-center')}>
+              <div className="relative min-w-0 flex-1">
+                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-brand-400" />
                 <input
                   ref={listSearchRef}
                   type="search"
@@ -1741,33 +1923,54 @@ export function IngresosPage() {
                   value={listSearch}
                   onChange={(e) => setListSearch(e.target.value)}
                   onKeyDown={registroListKb.handleListSearchKeyDown}
-                  className="w-full rounded-xl border border-surface-border bg-white py-2.5 pl-10 pr-4 text-sm shadow-sm focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20"
+                  className={cn(
+                    'w-full rounded-xl border border-surface-border bg-white pl-9 pr-3 text-sm shadow-sm focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20',
+                    nativeApp ? 'py-2' : 'py-2.5 pl-10 pr-4'
+                  )}
                 />
               </div>
 
-              <div className="flex shrink-0 items-center gap-1.5 rounded-xl border border-surface-border bg-white px-2 py-1.5 shadow-sm">
-                <span className="pl-1 text-xs font-medium text-slate-500">Desde</span>
+              <div
+                className={cn(
+                  'flex shrink-0 items-center gap-1.5 rounded-xl border border-surface-border bg-white shadow-sm',
+                  nativeApp ? 'w-full justify-between px-2 py-1' : 'px-2 py-1.5'
+                )}
+              >
+                <span className="pl-0.5 text-[11px] font-medium text-slate-500">Desde</span>
                 <input
                   id="ingresos-fecha-desde"
                   type="date"
                   value={listFechaDesde}
                   onChange={(e) => setListFechaDesde(e.target.value)}
                   title="Fecha desde — solo este campo = ese día"
-                  className="rounded border-0 bg-transparent px-1 py-1 text-sm focus:outline-none focus:ring-0"
+                  className="min-w-0 flex-1 rounded border-0 bg-transparent px-1 py-1 text-sm focus:outline-none focus:ring-0"
                 />
                 <span className="text-slate-300">|</span>
-                <span className="text-xs font-medium text-slate-500">Hasta</span>
+                <span className="text-[11px] font-medium text-slate-500">Hasta</span>
                 <input
                   id="ingresos-fecha-hasta"
                   type="date"
                   value={listFechaHasta}
                   onChange={(e) => setListFechaHasta(e.target.value)}
                   title="Fecha hasta — solo este campo = ese día"
-                  className="rounded border-0 bg-transparent px-1 py-1 text-sm focus:outline-none focus:ring-0"
+                  className="min-w-0 flex-1 rounded border-0 bg-transparent px-1 py-1 text-sm focus:outline-none focus:ring-0"
                 />
+                {(listFechaDesde || listFechaHasta) && (
+                  <button
+                    type="button"
+                    className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
+                    onClick={() => {
+                      setListFechaDesde('')
+                      setListFechaHasta('')
+                    }}
+                    aria-label="Limpiar fechas"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                )}
               </div>
 
-              {(listFechaDesde || listFechaHasta) && (
+              {!nativeApp && (listFechaDesde || listFechaHasta) && (
                 <Button
                   type="button"
                   variant="ghost"
@@ -1782,9 +1985,11 @@ export function IngresosPage() {
                 </Button>
               )}
             </div>
-            <p className="text-xs text-slate-500">
-              Una sola fecha filtra ese día · las dos juntas = rango
-            </p>
+            {!nativeApp && (
+              <p className="text-xs text-slate-500">
+                Una sola fecha filtra ese día · las dos juntas = rango
+              </p>
+            )}
 
             <DayTabsRow
               days={diasConIngresos}
@@ -1795,9 +2000,14 @@ export function IngresosPage() {
           </div>
         </div>
 
-        <div className="flex items-center justify-between gap-3 border-b border-surface-border bg-slate-50/80 px-5 py-3.5 sm:px-6">
+        <div
+          className={cn(
+            'flex items-center justify-between gap-3 border-b border-surface-border bg-slate-50/80 sm:px-6',
+            nativeApp ? 'px-3 py-2.5' : 'px-5 py-3.5'
+          )}
+        >
           <div>
-            <h2 className="text-sm font-semibold text-slate-900">
+            <h2 className={cn('font-semibold text-slate-900', nativeApp ? 'text-sm' : 'text-sm')}>
               {diasConIngresos.length > 0 ? formatDayTabLabel(selectedDay) : 'Registros'}
             </h2>
             <p className="text-xs text-slate-500">
@@ -1809,9 +2019,9 @@ export function IngresosPage() {
           {loadingList && <Loader2 className="h-5 w-5 shrink-0 animate-spin text-brand-600" />}
         </div>
 
-        <CardBody className="p-0">
+        <CardBody className={cn(nativeApp ? 'bg-surface-muted/35 p-2' : 'p-0')}>
           {error && (
-            <div className="border-b border-red-100 bg-red-50 px-6 py-3 text-sm text-red-700">
+            <div className="mb-2 rounded-xl border border-red-100 bg-red-50 px-4 py-3 text-sm text-red-700">
               {error}
             </div>
           )}
@@ -1821,7 +2031,12 @@ export function IngresosPage() {
               Cargando ingresos...
             </div>
           ) : ingresos.length === 0 ? (
-            <div className="flex flex-col items-center px-6 py-16 text-center">
+            <div
+              className={cn(
+                'flex flex-col items-center px-6 py-14 text-center',
+                nativeApp && 'rounded-xl border border-dashed border-surface-border bg-white shadow-card'
+              )}
+            >
               <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-slate-100 text-slate-400">
                 <Package className="h-7 w-7" />
               </div>
@@ -1830,13 +2045,16 @@ export function IngresosPage() {
                   ? 'No hay ingresos con esos filtros'
                   : 'No hay ingresos registrados'}
               </p>
-              <p className="mt-1 max-w-sm text-xs text-slate-500">
-                {listSearch || listFechaDesde || listFechaHasta
-                  ? 'Probá ampliar el rango de fechas o cambiar la búsqueda'
-                  : 'Cargá el primer ingreso para sumar stock'}
-              </p>
+              {!nativeApp && (
+                <p className="mt-1 max-w-sm text-xs text-slate-500">
+                  {listSearch || listFechaDesde || listFechaHasta
+                    ? 'Probá ampliar el rango de fechas o cambiar la búsqueda'
+                    : 'Cargá el primer ingreso para sumar stock'}
+                </p>
+              )}
               {!(listSearch || listFechaDesde || listFechaHasta) &&
-                hasPermiso('ingresos.crear') && (
+                hasPermiso('ingresos.crear') &&
+                !nativeApp && (
                   <Button className="mt-4 rounded-xl" size="sm" onClick={() => {
                     if (tieneBorrador) continuarBorrador()
                     else abrirNuevoIngreso()
@@ -1856,13 +2074,65 @@ export function IngresosPage() {
                 )}
             </div>
           ) : ingresosDelDia.length === 0 ? (
-            <div className="flex flex-col items-center px-6 py-16 text-center">
+            <div
+              className={cn(
+                'flex flex-col items-center px-6 py-14 text-center',
+                nativeApp && 'rounded-xl border border-dashed border-surface-border bg-white shadow-card'
+              )}
+            >
               <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-slate-100 text-slate-400">
                 <Package className="h-7 w-7" />
               </div>
               <p className="mt-4 text-sm font-medium text-slate-700">Sin resultados para este día</p>
-              <p className="mt-1 text-xs text-slate-500">Probá otra fecha o ajustá la búsqueda</p>
+              {!nativeApp && (
+                <p className="mt-1 text-xs text-slate-500">Probá otra fecha o ajustá la búsqueda</p>
+              )}
             </div>
+          ) : nativeApp ? (
+            <ul className="space-y-2">
+              {ingresosDelDia.map((i, index) => (
+                <li
+                  key={i.id}
+                  {...registroListKb.listItemProps(
+                    index,
+                    'overflow-hidden rounded-xl border border-surface-border bg-white shadow-card'
+                  )}
+                >
+                  <button
+                    type="button"
+                    className="flex w-full items-start gap-3 px-3 py-3 text-left active:bg-slate-50"
+                    onClick={() => verDetalle(i.id)}
+                  >
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2">
+                        <p className="truncate text-sm font-semibold text-slate-900">
+                          {i.numero_remito}
+                        </p>
+                        <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-600">
+                          <Warehouse className="h-3 w-3" />
+                          {i.sector_nombre}
+                        </span>
+                      </div>
+                      <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-slate-500">
+                        <span>
+                          {i.productos_count} producto{i.productos_count === 1 ? '' : 's'}
+                        </span>
+                        <span>·</span>
+                        <span className="inline-flex items-center gap-1">
+                          <User className="h-3 w-3" />
+                          {i.usuario_nombre}
+                        </span>
+                      </div>
+                    </div>
+                    <div className="flex shrink-0 flex-col items-end justify-center">
+                      <span className="inline-flex items-center rounded-lg bg-brand-50 px-2.5 py-1 text-sm font-bold tabular-nums text-brand-700 ring-1 ring-brand-100">
+                        {formatCantidad(i.total_unidades)}
+                      </span>
+                    </div>
+                  </button>
+                </li>
+              ))}
+            </ul>
           ) : (
             <ul className="divide-y divide-surface-border">
               {ingresosDelDia.map((i, index) => (

@@ -22,6 +22,7 @@ import type {
 } from '@/types'
 import { ProductImage } from '@/components/ProductImage'
 import { ReorganizarStockForm } from '@/components/ReorganizarStockForm'
+import { ScrollableProductName } from '@/components/ScrollableProductName'
 import { SueltoStockHint } from '@/components/SueltoStockHint'
 import { Button } from '@/components/ui/Button'
 import { Badge, Card, CardBody } from '@/components/ui/Card'
@@ -32,11 +33,13 @@ type UbicacionFilter = 'all' | 'sin' | number
 export function SectorStockView({
   sector,
   onBack,
-  autoFocusSearch = true
+  autoFocusSearch = true,
+  nativeApp = false
 }: {
   sector: Sector
   onBack?: () => void
   autoFocusSearch?: boolean
+  nativeApp?: boolean
 }) {
   const { hasPermiso } = useAuth()
   const canReorganizar = hasPermiso('ajustes.crear')
@@ -176,7 +179,7 @@ export function SectorStockView({
       <div className="shrink-0 border-b border-surface-border bg-white">
         <div className="border-b border-brand-100 bg-gradient-to-r from-brand-50/80 via-white to-white px-4 py-4 sm:px-6">
           <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-            {onBack && (
+            {onBack && !nativeApp && (
               <Button
                 variant="ghost"
                 size="sm"
@@ -219,59 +222,63 @@ export function SectorStockView({
         </div>
 
         {!!sector.usa_ubicaciones && (
-          <div className="flex flex-wrap items-center gap-2 px-4 py-3 sm:px-6">
-            <Layers className="h-3.5 w-3.5 shrink-0 text-slate-400" aria-hidden />
-            <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">
-              Filtrar
-            </span>
-            {loadingUbicaciones ? (
-              <Loader2 className="h-4 w-4 animate-spin text-brand-600" />
-            ) : (
-              <>
-                <button
-                  type="button"
-                  onClick={() => changeUbicacionFilter('all')}
-                  className={cn(
-                    'rounded-full border px-3 py-1 text-xs font-medium transition-colors',
-                    ubicacionFilter === 'all'
-                      ? 'border-brand-500 bg-brand-600 text-white'
-                      : 'border-surface-border bg-white text-slate-600 hover:border-brand-300'
-                  )}
-                >
-                  Todo el sector
-                </button>
-                {ubicaciones.map((u) => (
+          <div className="px-4 py-3 sm:px-6">
+            <div className="flex items-center gap-1.5">
+              <Layers className="h-3.5 w-3.5 shrink-0 text-slate-400" aria-hidden />
+              <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">
+                Filtrar
+              </span>
+              {ubicacionFilter !== 'all' && (
+                <span className="ml-auto text-xs text-slate-400">{filtroLabel}</span>
+              )}
+            </div>
+            <div className="mt-2 flex flex-wrap items-center gap-2">
+              {loadingUbicaciones ? (
+                <Loader2 className="h-4 w-4 animate-spin text-brand-600" />
+              ) : (
+                <>
                   <button
-                    key={u.id}
                     type="button"
-                    onClick={() => changeUbicacionFilter(u.id)}
+                    onClick={() => changeUbicacionFilter('all')}
                     className={cn(
                       'rounded-full border px-3 py-1 text-xs font-medium transition-colors',
-                      ubicacionFilter === u.id
+                      ubicacionFilter === 'all'
                         ? 'border-brand-500 bg-brand-600 text-white'
                         : 'border-surface-border bg-white text-slate-600 hover:border-brand-300'
                     )}
                   >
-                    {u.nombre}
+                    Todo el sector
                   </button>
-                ))}
-                <button
-                  type="button"
-                  onClick={() => changeUbicacionFilter('sin')}
-                  className={cn(
-                    'rounded-full border px-3 py-1 text-xs font-medium transition-colors',
-                    ubicacionFilter === 'sin'
-                      ? 'border-brand-500 bg-brand-600 text-white'
-                      : 'border-dashed border-surface-border bg-white text-slate-500 hover:border-brand-300'
-                  )}
-                >
-                  Sin ubicación
-                </button>
-              </>
-            )}
-            {ubicacionFilter !== 'all' && (
-              <span className="text-xs text-slate-400">· {filtroLabel}</span>
-            )}
+                  {ubicaciones.map((u) => (
+                    <button
+                      key={u.id}
+                      type="button"
+                      onClick={() => changeUbicacionFilter(u.id)}
+                      className={cn(
+                        'rounded-full border px-3 py-1 text-xs font-medium transition-colors',
+                        ubicacionFilter === u.id
+                          ? 'border-brand-500 bg-brand-600 text-white'
+                          : 'border-surface-border bg-white text-slate-600 hover:border-brand-300'
+                      )}
+                    >
+                      {u.nombre}
+                    </button>
+                  ))}
+                  <button
+                    type="button"
+                    onClick={() => changeUbicacionFilter('sin')}
+                    className={cn(
+                      'rounded-full border px-3 py-1 text-xs font-medium transition-colors',
+                      ubicacionFilter === 'sin'
+                        ? 'border-brand-500 bg-brand-600 text-white'
+                        : 'border-dashed border-surface-border bg-white text-slate-500 hover:border-brand-300'
+                    )}
+                  >
+                    Sin ubicación
+                  </button>
+                </>
+              )}
+            </div>
           </div>
         )}
       </div>
@@ -286,7 +293,7 @@ export function SectorStockView({
           {reorgError}
         </div>
       )}
-      {!!sector.usa_ubicaciones && ubicacionFilter === 'all' && (
+      {!!sector.usa_ubicaciones && ubicacionFilter === 'all' && !nativeApp && (
         <div className="shrink-0 border-b border-amber-100 bg-amber-50/80 px-4 py-2 text-xs text-amber-800 sm:px-6">
           Para armar / reorganizar sin mezclar posiciones, elegí una ubicación (o “Sin ubicación”).
         </div>
@@ -331,19 +338,27 @@ export function SectorStockView({
             </div>
           ) : (
             <Card className="overflow-hidden shadow-panel">
-              <CardBody className="p-0">
-                <ul className="divide-y divide-surface-border">
+              <CardBody className="bg-surface-muted/35 p-2 sm:p-3">
+                <ul className="space-y-2">
                   {productosStockFiltrados.map((producto) => {
                     const isExpanded = expandedStockProductos.has(producto.producto_id)
                     const showReorg = confirmProductoId === producto.producto_id
                     const puedeReorganizar =
                       canReorganizar && producto.reorganizar.puede && !showReorg
                     return (
-                      <li key={producto.producto_id}>
+                      <li
+                        key={producto.producto_id}
+                        className={cn(
+                          'overflow-hidden rounded-xl border bg-white transition-[box-shadow,border-color]',
+                          isExpanded
+                            ? 'border-brand-200 shadow-md ring-1 ring-brand-100/80'
+                            : 'border-surface-border shadow-card'
+                        )}
+                      >
                         <div
                           className={cn(
-                            'flex w-full items-center gap-3 px-4 py-3.5 text-left transition-colors sm:px-5',
-                            isExpanded ? 'bg-brand-50/60' : 'hover:bg-slate-50/80'
+                            'flex w-full items-start gap-3 px-4 py-3.5 text-left transition-colors sm:items-center sm:px-5',
+                            isExpanded ? 'bg-brand-50/70' : 'hover:bg-slate-50/80'
                           )}
                         >
                           <button
@@ -364,23 +379,25 @@ export function SectorStockView({
                                 <ChevronRight className="h-4 w-4" />
                               )}
                             </span>
-                            <ProductImage
-                              productoId={producto.producto_id}
-                              hasImage={!!producto.imagen_path}
-                              alt={producto.nombre}
-                              className="h-11 w-11 shrink-0 rounded-xl ring-1 ring-surface-border"
-                            />
+                            {!nativeApp && (
+                              <ProductImage
+                                productoId={producto.producto_id}
+                                hasImage={!!producto.imagen_path}
+                                alt={producto.nombre}
+                                className="h-11 w-11 shrink-0 rounded-xl ring-1 ring-surface-border"
+                              />
+                            )}
                             <div className="min-w-0 flex-1 text-left">
                               <span className="inline-flex rounded-md bg-slate-100 px-2 py-0.5 font-mono text-xs font-semibold text-slate-700">
                                 {producto.codigo_interno}
                               </span>
-                              <p className="mt-1 truncate text-sm font-semibold text-slate-900">
+                              <ScrollableProductName className="mt-1 text-sm font-semibold text-slate-900">
                                 {producto.nombre}
-                              </p>
+                              </ScrollableProductName>
                             </div>
                           </button>
-                          <div className="flex h-8 w-[9.5rem] shrink-0 items-center justify-end">
-                            {puedeReorganizar ? (
+                          <div className="flex shrink-0 flex-col items-end justify-center gap-2">
+                            {puedeReorganizar && (
                               <Button
                                 type="button"
                                 variant="secondary"
@@ -395,25 +412,26 @@ export function SectorStockView({
                                 }}
                               >
                                 <Layers className="h-3.5 w-3.5" />
-                                Armar / reorganizar
+                                <span className="hidden sm:inline">Armar / reorganizar</span>
+                                <span className="sm:hidden">Reorganizar</span>
                               </Button>
-                            ) : null}
-                          </div>
-                          <div className="flex w-[5.5rem] shrink-0 flex-col items-end justify-center text-right">
-                            <span className="inline-flex items-center rounded-lg bg-brand-50 px-2.5 py-1.5 text-sm font-bold tabular-nums text-brand-700 ring-1 ring-brand-100">
-                              {formatCantidad(producto.cantidad_total)}
-                            </span>
-                            <SueltoStockHint
-                              cantidad={producto.suelto_total}
-                              unidad={producto.unidad}
-                              className="mt-1"
-                            />
+                            )}
+                            <div className="flex flex-col items-end text-right">
+                              <span className="inline-flex items-center rounded-lg bg-brand-50 px-2.5 py-1.5 text-sm font-bold tabular-nums text-brand-700 ring-1 ring-brand-100">
+                                {formatCantidad(producto.cantidad_total)}
+                              </span>
+                              <SueltoStockHint
+                                cantidad={producto.suelto_total}
+                                unidad={producto.unidad}
+                                className="mt-1"
+                              />
+                            </div>
                           </div>
                         </div>
                         {isExpanded && (
-                          <div className="space-y-2 border-t border-brand-100/80 bg-gradient-to-b from-surface-muted/40 to-white px-4 py-3 sm:px-5">
-                            {!producto.reorganizar.puede && producto.reorganizar.motivo && (
-                              <p className="text-xs text-slate-400">{producto.reorganizar.motivo}</p>
+                          <div className="border-t border-brand-100/90 bg-gradient-to-b from-surface-muted/50 to-white px-4 py-3 sm:px-5">
+                            {!producto.reorganizar.puede && producto.reorganizar.motivo && !nativeApp && (
+                              <p className="mb-2 text-xs text-slate-400">{producto.reorganizar.motivo}</p>
                             )}
                             {showReorg && (
                               <ReorganizarStockForm
@@ -427,11 +445,20 @@ export function SectorStockView({
                                 onCancel={() => setConfirmProductoId(null)}
                               />
                             )}
+                            {producto.lineas.length > 0 && (
+                              <div className="mb-2 flex items-center gap-2">
+                                <div className="h-px flex-1 bg-brand-200/50" />
+                                <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
+                                  Posiciones
+                                </p>
+                                <div className="h-px flex-1 bg-brand-200/50" />
+                              </div>
+                            )}
                             <ul className="space-y-2">
                               {producto.lineas.map((linea, idx) => (
                                 <li
                                   key={linea.id}
-                                  className="flex items-center justify-between gap-3 rounded-lg border border-surface-border bg-white px-3 py-2 text-sm"
+                                  className="flex items-center justify-between gap-3 rounded-lg border border-surface-border/80 bg-white px-3 py-2 text-sm shadow-sm"
                                 >
                                   <div className="min-w-0">
                                     <div className="flex items-center gap-2">

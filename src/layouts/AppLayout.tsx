@@ -7,6 +7,7 @@ import { UpdateProgressBanner } from '@/components/UpdateProgressBanner'
 import { CONFIG_NAV_ITEM, NAV_ICONS, NAV_ITEMS } from '@/config/navigation'
 import { useAuth } from '@/context/AuthContext'
 import { navItemVisible } from '@/types'
+import { isNativeApp } from '@/lib/nativeServer'
 import { api, cn } from '@/lib/utils'
 import { getLogisticaTheme, resolveLogisticaCodigo, type LogisticaTheme } from '@/lib/logisticaTheme'
 import { Button } from '@/components/ui/Button'
@@ -125,6 +126,7 @@ function AppLayoutShell({
   const [changingLogistica, setChangingLogistica] = useState(false)
   const { sidebarActive } = useSidebarNav()
 
+  const nativeApp = isNativeApp()
   const logisticaTheme = getLogisticaTheme(
     resolveLogisticaCodigo(user?.logisticas, user?.logistica_activa_id)
   )
@@ -430,9 +432,11 @@ function AppLayoutShell({
             <Menu className="h-5 w-5" />
           </button>
 
-          <div className="lg:hidden">
-            <SidebarHeader compact {...sidebarHeaderProps} />
-          </div>
+          {!nativeApp && (
+            <div className="lg:hidden">
+              <SidebarHeader compact {...sidebarHeaderProps} />
+            </div>
+          )}
 
           <button
             type="button"
@@ -450,7 +454,7 @@ function AppLayoutShell({
           key={user?.logistica_activa_id ?? 'sin-logistica'}
           className="flex min-h-0 min-w-0 flex-1 flex-col"
         >
-          <InventarioActivoBanner />
+          {!isInventarioConteo && <InventarioActivoBanner />}
           <UpdateProgressBanner />
           {offlineSession && showOfflineBanner && (
             <div className="shrink-0 border-b border-sky-200 bg-sky-50 px-4 py-2 text-center text-xs font-medium text-sky-900 sm:text-sm">

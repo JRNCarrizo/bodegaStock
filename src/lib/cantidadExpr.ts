@@ -203,3 +203,28 @@ export function resolveCantidadExprField(
   }
   return { text: String(value), value }
 }
+
+/** Inserta un operador (o dígito) en la posición del cursor del input. */
+export function insertCantidadExprToken(
+  input: HTMLInputElement | null,
+  current: string,
+  token: string
+): { next: string; caret: number } {
+  if (!input) {
+    return { next: current + token, caret: current.length + token.length }
+  }
+  const start = input.selectionStart ?? current.length
+  const end = input.selectionEnd ?? current.length
+  const next = current.slice(0, start) + token + current.slice(end)
+  return { next, caret: start + token.length }
+}
+
+export function focusCantidadExprInput(input: HTMLInputElement | null, caret: number) {
+  if (!input) return
+  input.focus()
+  try {
+    input.setSelectionRange(caret, caret)
+  } catch {
+    // algunos navegadores fallan si el input no está visible
+  }
+}

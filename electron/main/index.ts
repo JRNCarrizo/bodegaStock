@@ -85,8 +85,10 @@ app.whenReady().then(async () => {
 
 app.on('window-all-closed', () => {
   if (process.platform === 'darwin') return
-  // Durante actualización el NSIS se encarga; no forzar app.exit acá.
-  if (isInstallingUpdate()) return
+  if (isInstallingUpdate()) {
+    app.exit(0)
+    return
+  }
   if (isShuttingDown) return
   isShuttingDown = true
   void gracefulShutdown().finally(() => {

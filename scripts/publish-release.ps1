@@ -1,5 +1,5 @@
 param(
-  [string]$Version = "0.3.48"
+  [string]$Version = "0.3.49"
 )
 
 $ErrorActionPreference = "Stop"
@@ -55,21 +55,15 @@ if (Test-Path $ymlPath) { $assets += (Resolve-Path $ymlPath).Path }
 $notes = @"
 ## ControlStock v$Version
 
-Corrección importante del botón **Buscar actualizaciones** y mejoras de UI acumuladas.
+Instalador Windows: cierra ControlStock antes de actualizar (sin cartel "programa en uso").
 
 ### Corregido
-- **Actualizaciones (Windows/APK):** ya no usa ``api.github.com`` (límite 60/h). Lee ``latest.yml`` del release; se limpian bloqueos heredados de v0.3.43.
-
-### Mejorado
-- **Consultas:** tocá el total del producto (sin desplegar) para ver pallets + cajas.
-- **Ingresos en curso:** mismo toggle total cajas ↔ pallets + cajas en el footer.
-- **Listas (planillas, retornos, roturas, movimientos):** botones solo icono + tooltip; cantidad a la derecha; verificar/autorizar en ámbar.
-- **Búsqueda productos:** prioriza código + cosecha (ej. ``420-23`` antes que ``4201``).
-- **Navegación con flechas:** resaltado más visible en listas.
+- **Actualizar desde la app:** la app se cierra primero y el Setup se abre solo después (ya no compiten en el administrador de tareas).
+- **Instalador NSIS:** reintenta cerrar ControlStock.exe antes de reemplazar archivos.
 
 ### Actualización
 - **Windows:** Configuración → Buscar actualizaciones, o Setup de este release
-- **APK:** ``ControlStock-$Version.apk`` (o Descargar APK desde el PC)
+- **APK:** ``ControlStock-$Version.apk``
 
 Login inicial (base vacía): **admin** / **admin123**
 "@

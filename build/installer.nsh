@@ -4,10 +4,15 @@
 
 !macro killControlStockProcesses
   DetailPrint "Cerrando ControlStock..."
+  StrCpy $R9 0
+kill_retry:
+  IntOp $R9 $R9 + 1
   nsExec::ExecToLog `"$SYSDIR\cmd.exe" /c taskkill /F /IM "${APP_EXECUTABLE_FILENAME}" /T >nul 2>&1 & exit /b 0`
-  Sleep 300
   nsExec::ExecToLog `"$SYSDIR\cmd.exe" /c taskkill /F /IM ControlStock.exe /T >nul 2>&1 & exit /b 0`
-  Sleep 500
+  Sleep 600
+  IntCmp $R9 8 kill_done kill_retry kill_done
+kill_done:
+  Sleep 400
 !macroend
 
 !macro skipBrokenOldUninstaller

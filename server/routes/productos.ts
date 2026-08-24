@@ -15,7 +15,7 @@ import {
   sendExcelFile
 } from '../utils/excel-export'
 import { resolveUnidadesPorCajaDefault } from '../utils/empaqueNombre'
-import { sqlProductoSearchClause } from '../utils/productoSearch'
+import { sqlProductoSearchClause, sqlProductoSearchOrderClause } from '../utils/productoSearch'
 import { ensureUnidadesPorCajaDefaultFromStock } from '../utils/stock'
 
 interface ProductoBody {
@@ -87,12 +87,18 @@ export async function productosRoutes(app: FastifyInstance): Promise<void> {
       whereSql += ' AND activo = 0'
     }
 
+    let orderSql = ' ORDER BY nombre COLLATE NOCASE ASC'
+    const orderParams: unknown[] = []
+
     if (q?.trim()) {
       const search = sqlProductoSearchClause(q)
       if (search) {
         whereSql += ` AND ${search.sql}`
         params.push(...search.params)
       }
+      const order = sqlProductoSearchOrderClause(q)
+      orderSql = ` ORDER BY ${order.sql}`
+      orderParams.push(...order.params)
     }
 
     const selectSql = `
@@ -101,11 +107,11 @@ export async function productosRoutes(app: FastifyInstance): Promise<void> {
              activo, created_at, updated_at
       FROM productos
       ${whereSql}
-      ORDER BY nombre COLLATE NOCASE ASC
+      ${orderSql}
     `
 
     if (page == null) {
-      return db.prepare(selectSql).all(...params)
+      return db.prepare(selectSql).all(...params, ...orderParams)
     }
 
     const requestedPage = Math.max(1, Number.parseInt(page, 10) || 1)
@@ -117,7 +123,12 @@ export async function productosRoutes(app: FastifyInstance): Promise<void> {
     const totalPages = Math.max(1, Math.ceil(total / pageSize))
     const currentPage = Math.min(requestedPage, totalPages)
     const offset = (currentPage - 1) * pageSize
-    const items = db.prepare(`${selectSql} LIMIT ? OFFSET ?`).all(...params, pageSize, offset)
+    const items = db.prepare(`${selectSql} LIMIT ? OFFSET ?`).all(
+      ...params,
+      ...orderParams,
+      pageSize,
+      offset
+    )
 
     return {
       items,

@@ -1,5 +1,5 @@
 param(
-  [string]$Version = "0.3.47"
+  [string]$Version = "0.3.48"
 )
 
 $ErrorActionPreference = "Stop"
@@ -55,13 +55,17 @@ if (Test-Path $ymlPath) { $assets += (Resolve-Path $ymlPath).Path }
 $notes = @"
 ## ControlStock v$Version
 
-Inventario APK: conteo más ágil y totales claros.
+Corrección importante del botón **Buscar actualizaciones** y mejoras de UI acumuladas.
+
+### Corregido
+- **Actualizaciones (Windows/APK):** ya no usa ``api.github.com`` (límite 60/h). Lee ``latest.yml`` del release; se limpian bloqueos heredados de v0.3.43.
 
 ### Mejorado
-- **Inventario (APK):** teclado numérico en cantidades; botones ``+ − × ÷`` al lado de cajas/botellas sueltas (aplican al campo enfocado)
-- **Total contado:** tocá para alternar cajas vs pallets + cajas (scroll lateral si se alarga)
-- **Footer conteo:** con teclado abierto libera altura para ver mejor los registros
-- **Agenda / cargas (APK):** UI compacta y formularios bottom-sheet alineados al teclado
+- **Consultas:** tocá el total del producto (sin desplegar) para ver pallets + cajas.
+- **Ingresos en curso:** mismo toggle total cajas ↔ pallets + cajas en el footer.
+- **Listas (planillas, retornos, roturas, movimientos):** botones solo icono + tooltip; cantidad a la derecha; verificar/autorizar en ámbar.
+- **Búsqueda productos:** prioriza código + cosecha (ej. ``420-23`` antes que ``4201``).
+- **Navegación con flechas:** resaltado más visible en listas.
 
 ### Actualización
 - **Windows:** Configuración → Buscar actualizaciones, o Setup de este release

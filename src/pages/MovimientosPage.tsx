@@ -49,6 +49,7 @@ import { isNativeApp } from '@/lib/nativeServer'
 import { searchDelayMs } from '@/lib/searchDelay'
 import { api, cn } from '@/lib/utils'
 import { codigoProductoExacto } from '@/lib/productoSearch'
+import { KB_HIGHLIGHT_ROW } from '@/lib/listKeyboardHighlight'
 import {
   scrollFocusedFieldIntoSheet,
   useVisualViewportBottomInset
@@ -2318,7 +2319,7 @@ export function MovimientosPage() {
                           type="button"
                           className={cn(
                             'flex w-full items-center gap-2 px-3 py-2.5 text-left text-sm',
-                            index === productHighlightIndex ? 'bg-brand-50 text-brand-900' : 'hover:bg-slate-50'
+                            index === productHighlightIndex ? KB_HIGHLIGHT_ROW : 'hover:bg-slate-50'
                           )}
                           onMouseEnter={() => setProductHighlightIndex(index)}
                           onPointerDown={armKeyboardForCantidadModal}
@@ -3124,7 +3125,9 @@ export function MovimientosPage() {
             </ul>
           ) : (
             <ul className="divide-y divide-surface-border">
-              {movimientosDelDia.map((m, index) => (
+              {movimientosDelDia.map((m, index) => {
+                const esPendiente = m.estado === 'PENDIENTE'
+                return (
                 <li
                   key={m.id}
                   {...registroListKb.listItemProps(
@@ -3157,22 +3160,43 @@ export function MovimientosPage() {
                       )}
                     </div>
                   </div>
-                  <div className="flex shrink-0 items-center gap-2 sm:justify-end">
-                    <span className="inline-flex min-w-[3rem] items-center justify-center rounded-lg bg-brand-50 px-2.5 py-1.5 text-sm font-bold tabular-nums text-brand-700 ring-1 ring-brand-100">
+                  <div className="flex w-full shrink-0 items-center gap-1.5 sm:w-auto sm:gap-2">
+                    {esPendiente && hasPermiso('movimientos_internos.crear') ? (
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        className="rounded-lg !px-2 !py-2 border-amber-500 bg-amber-500 text-white shadow-sm hover:bg-amber-600 hover:border-amber-600"
+                        onClick={() => void abrirDetalle(m.id)}
+                        title="Autorizar movimiento"
+                        aria-label="Autorizar movimiento"
+                      >
+                        <Check className="h-4 w-4" />
+                      </Button>
+                    ) : (
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        className="rounded-lg !px-2 !py-2"
+                        onClick={() => void abrirDetalle(m.id)}
+                        title="Ver detalle"
+                        aria-label="Ver detalle"
+                      >
+                        <Eye className="h-4 w-4" />
+                      </Button>
+                    )}
+                    <span
+                      className={cn(
+                        'ml-auto inline-flex min-w-[3rem] items-center justify-center rounded-lg px-2.5 py-1.5 text-sm font-bold tabular-nums ring-1 sm:ml-2',
+                        esPendiente
+                          ? 'bg-amber-100 text-amber-900 ring-amber-200'
+                          : 'bg-brand-50 text-brand-700 ring-brand-100'
+                      )}
+                    >
                       {formatMovimientoListBultos(m)}
                     </span>
-                    <Button
-                      variant="secondary"
-                      size="sm"
-                      className="rounded-lg"
-                      onClick={() => void abrirDetalle(m.id)}
-                    >
-                      <Eye className="h-4 w-4" />
-                      Ver
-                    </Button>
                   </div>
                 </li>
-              ))}
+              )})}
             </ul>
           )}
         </CardBody>

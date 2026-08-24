@@ -98,7 +98,12 @@ import { useInventarioActivo } from '@/context/InventarioActivoContext'
 import { INVENTARIO_POLL_MS, usePolling } from '@/hooks/usePolling'
 import { useProductoQuickSearch } from '@/hooks/useProductoQuickSearch'
 import { focusAndScrollIntoView, scrollProductoIntoListVisible } from '@/lib/scroll'
-import { codigoProductoExacto, textoProductoMatches } from '@/lib/productoSearch'
+import {
+  codigoProductoExacto,
+  filterProductosBySearchQuery,
+  textoProductoMatches
+} from '@/lib/productoSearch'
+import { KB_HIGHLIGHT_ROW } from '@/lib/listKeyboardHighlight'
 import { isNativeApp } from '@/lib/nativeServer'
 import {
   scrollFocusedFieldIntoSheet,
@@ -782,9 +787,7 @@ function InventarioReporteCierre({
   const unificadosFiltrados = useMemo(() => {
     const q = unificadosSearch.trim()
     if (!q) return totalesUnificados
-    return totalesUnificados.filter((p) =>
-      textoProductoMatches({ codigo_interno: p.codigo_interno, nombre: p.nombre }, q)
-    )
+    return filterProductosBySearchQuery(totalesUnificados, q)
   }, [totalesUnificados, unificadosSearch])
   const unificadosConDif = useMemo(
     () => totalesUnificados.filter((p) => !p.coincide).length,
@@ -6179,9 +6182,7 @@ function ConteoSectorView({
                           type="button"
                           className={cn(
                             'flex min-h-14 w-full items-center gap-3 px-3.5 py-3 text-left',
-                            index === productHighlightIndex
-                              ? 'bg-brand-50 text-brand-900'
-                              : 'hover:bg-slate-50'
+                            index === productHighlightIndex ? KB_HIGHLIGHT_ROW : 'hover:bg-slate-50'
                           )}
                           onMouseEnter={() => setProductHighlightIndex(index)}
                           onPointerDown={armKeyboardForCantidadModal}

@@ -32,7 +32,22 @@ import {
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { Card, CardBody } from '@/components/ui/Card'
-import { calcTotalEnCajas, botellasPorCajaDefault, cajasPorPalletDefault, formatCantidad, formatDayTabLabel, formatEtiqueta, formatTotalCajas, normalizarUnidadProducto, todayIsoDate, totalSueltoLineaConteo } from '@/lib/desglose'
+import {
+  calcTotalEnCajas,
+  botellasPorCajaDefault,
+  cajasPorPalletDefault,
+  formatCantidad,
+  formatDayTabLabel,
+  formatEtiqueta,
+  formatTotalCajas,
+  formatTotalesInventarioFisicos,
+  formatTotalesInventarioResumen,
+  normalizarUnidadProducto,
+  sumarTotalesInventarioFisicos,
+  sumarTotalesInventarioLineas,
+  todayIsoDate,
+  totalSueltoLineaConteo
+} from '@/lib/desglose'
 import { downloadApiFile } from '@/lib/downloadFile'
 import {
   scrollFocusedFieldIntoSheet,
@@ -42,6 +57,7 @@ import { isNativeApp } from '@/lib/nativeServer'
 import { searchDelayMs } from '@/lib/searchDelay'
 import { api, cn } from '@/lib/utils'
 import { codigoProductoExacto } from '@/lib/productoSearch'
+import { KB_HIGHLIGHT_ROW } from '@/lib/listKeyboardHighlight'
 import { clearDraft, readDraft, writeDraft } from '@/lib/draftStorage'
 import { resolveSectorIdParaIngreso, sortSectoresParaIngreso } from '@/lib/sectores'
 import type {
@@ -163,6 +179,7 @@ export function IngresosPage() {
     limit: 12
   })
   const [lineas, setLineas] = useState<IngresoLineaDraft[]>([])
+  const [totalVistaFisica, setTotalVistaFisica] = useState(false)
 
   const [tipoBulto, setTipoBulto] = useState<'PALLET' | 'CAJA' | 'SUELTO'>('PALLET')
   const [cantidadBultos, setCantidadBultos] = useState('')
@@ -439,12 +456,13 @@ export function IngresosPage() {
       .catch(() => setUbicaciones([]))
   }, [sectorId, sectorSeleccionado?.usa_ubicaciones])
 
-  const totalGeneral = useMemo(
-    () => lineas.reduce((s, l) => s + l.total_unidades, 0),
-    [lineas]
+  const totalGeneral = useMemo(() => sumarTotalesInventarioLineas(lineas), [lineas])
+  const resumenGeneral = useMemo(
+    () => formatTotalesInventarioResumen(totalGeneral),
+    [totalGeneral]
   )
-  const totalSueltoGeneral = useMemo(
-    () => lineas.reduce((s, l) => s + totalSueltoLineaConteo(l), 0),
+  const resumenFisico = useMemo(
+    () => formatTotalesInventarioFisicos(sumarTotalesInventarioFisicos(lineas)),
     [lineas]
   )
 
@@ -1428,9 +1446,7 @@ export function IngresosPage() {
                           type="button"
                           className={cn(
                             'flex w-full items-center gap-2 px-3 py-2.5 text-left text-sm',
-                            index === productHighlightIndex
-                              ? 'bg-brand-50 text-brand-900'
-                              : 'hover:bg-slate-50'
+                            index === productHighlightIndex ? KB_HIGHLIGHT_ROW : 'hover:bg-slate-50'
                           )}
                           onMouseEnter={() => setProductHighlightIndex(index)}
                           onPointerDown={armKeyboardForCantidadModal}
@@ -1737,22 +1753,27 @@ export function IngresosPage() {
           {nativeApp ? (
             <div className="space-y-3">
               <div className="flex items-end justify-between gap-3">
-                <div className="min-w-0">
+                <button
+                  type="button"
+                  onClick={() => setTotalVistaFisica((v) => !v)}
+                  className="min-w-0 flex-1 rounded-xl text-left active:bg-slate-100"
+                  aria-label={
+                    totalVistaFisica
+                      ? 'Mostrar total en cajas'
+                      : 'Mostrar total en pallets y cajas'
+                  }
+                >
                   <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">
-                    Total
+                    {totalVistaFisica ? 'Total pallets + cajas' : 'Total general'}
                   </p>
-                  <p className="text-xl font-bold tabular-nums text-brand-700">
-                    {formatCantidad(totalGeneral)}
-                    {totalSueltoGeneral > 0 && (
-                      <span className="ml-1.5 text-sm font-medium text-slate-500">
-                        + {formatCantidad(totalSueltoGeneral)} sueltas
-                      </span>
-                    )}
+                  <p className="scrollbar-none-x overflow-x-auto whitespace-nowrap text-xl font-bold tabular-nums text-brand-700">
+                    {totalVistaFisica ? resumenFisico : resumenGeneral}
                   </p>
-                </div>
-                <p className="shrink-0 text-xs text-slate-500">
-                  {lineas.length} línea{lineas.length === 1 ? '' : 's'}
-                </p>
+                  <p className="mt-0.5 text-xs text-slate-500">
+                    {lineas.length} línea{lineas.length === 1 ? '' : 's'}
+                    <span className="text-slate-400"> · tocá para cambiar</span>
+                  </p>
+                </button>
               </div>
               {hasPermiso('ingresos.crear') && (
                 <div className="grid grid-cols-2 gap-2">
@@ -1777,23 +1798,28 @@ export function IngresosPage() {
             </div>
           ) : (
             <div className="flex items-center justify-between gap-4">
-              <div>
+              <button
+                type="button"
+                onClick={() => setTotalVistaFisica((v) => !v)}
+                className="min-w-0 flex-1 rounded-xl text-left hover:bg-slate-50 active:bg-slate-100"
+                aria-label={
+                  totalVistaFisica
+                    ? 'Mostrar total en cajas'
+                    : 'Mostrar total en pallets y cajas'
+                }
+              >
                 <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">
-                  Total general
+                  {totalVistaFisica ? 'Total pallets + cajas' : 'Total general'}
                 </p>
-                <p className="text-2xl font-bold tabular-nums text-brand-700">
-                  {formatCantidad(totalGeneral)}
+                <p className="scrollbar-none-x overflow-x-auto whitespace-nowrap text-2xl font-bold tabular-nums text-brand-700">
+                  {totalVistaFisica ? resumenFisico : resumenGeneral}
                 </p>
-                {totalSueltoGeneral > 0 && (
-                  <p className="mt-0.5 text-xs font-medium text-slate-500">
-                    + {formatCantidad(totalSueltoGeneral)} unidades sueltas
-                  </p>
-                )}
                 <p className="mt-1 text-xs text-slate-500">
                   {lineas.length} línea{lineas.length === 1 ? '' : 's'} cargada
                   {lineas.length === 1 ? '' : 's'}
+                  <span className="text-slate-400"> · clic para cambiar</span>
                 </p>
-              </div>
+              </button>
               {hasPermiso('ingresos.crear') && (
                 <div className="flex shrink-0 flex-wrap gap-2">
                   <Button

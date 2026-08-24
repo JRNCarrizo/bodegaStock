@@ -65,7 +65,7 @@ function formatBytes(bytes: number): string {
 const GITHUB_RELEASES_URL = 'https://github.com/JRNCarrizo/bodegaStock/releases'
 
 function isGithubRateLimitMessage(message: string): boolean {
-  return /GitHub limitó|rate limit|Too Many|Esperá ~?\d+\s*min|saturar GitHub/i.test(message)
+  return /GitHub limitó|rate limit exceeded|Too Many Requests|HTTP 429/i.test(message)
 }
 
 function openGithubReleases(): void {
@@ -693,7 +693,7 @@ export function ConfiguracionPage() {
 
     setPhase('checking')
 
-    const result = await api.checkForUpdates()
+    const result = await api.checkForUpdates({ force: true })
     if (result.reason === 'dev') {
       setPhase('dev-mode')
       return
@@ -705,9 +705,7 @@ export function ConfiguracionPage() {
       setPhase('error')
       setErrorMessage(message)
       const rateLimited =
-        Boolean(result.rateLimited) ||
-        result.reason === 'cooldown' ||
-        isGithubRateLimitMessage(message)
+        Boolean(result.rateLimited) || isGithubRateLimitMessage(message)
       setUpdateRateLimited(rateLimited)
       if (result.retryAfterMs && result.retryAfterMs > 0) {
         setUpdateCooldownUntil(Date.now() + result.retryAfterMs)

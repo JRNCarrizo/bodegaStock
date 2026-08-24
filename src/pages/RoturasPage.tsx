@@ -36,6 +36,7 @@ import { formatCantidad, formatDayTabLabel, formatTotalCajas, todayIsoDate } fro
 import { downloadApiFile } from '@/lib/downloadFile'
 import { isNativeApp } from '@/lib/nativeServer'
 import { searchDelayMs } from '@/lib/searchDelay'
+import { KB_HIGHLIGHT_ROW } from '@/lib/listKeyboardHighlight'
 import { api, cn } from '@/lib/utils'
 import type {
   Producto,
@@ -917,7 +918,7 @@ export function RoturasPage() {
                           type="button"
                           className={cn(
                             'flex w-full items-center gap-2 px-3 py-2.5 text-left text-sm',
-                            index === productHighlightIndex ? 'bg-brand-50 text-brand-900' : 'hover:bg-slate-50'
+                            index === productHighlightIndex ? KB_HIGHLIGHT_ROW : 'hover:bg-slate-50'
                           )}
                           onMouseEnter={() => setProductHighlightIndex(index)}
                           onPointerDown={armKeyboardForCantidadModal}
@@ -1538,19 +1539,20 @@ export function RoturasPage() {
                       </span>
                     </div>
                   </div>
-                  <div className="flex shrink-0 items-center gap-2 sm:justify-end">
-                    <span className="inline-flex min-w-[3rem] items-center justify-center rounded-lg bg-red-50 px-2.5 py-1.5 text-sm font-bold tabular-nums text-red-700 ring-1 ring-red-100">
-                      {formatCantidad(r.total_cajas)}
-                    </span>
+                  <div className="flex w-full shrink-0 items-center gap-1.5 sm:w-auto sm:gap-2">
                     <Button
                       variant="secondary"
                       size="sm"
-                      className="rounded-lg"
+                      className="rounded-lg !px-2 !py-2"
                       onClick={() => void abrirDetalle(r.id)}
+                      title="Ver detalle"
+                      aria-label="Ver detalle"
                     >
                       <Eye className="h-4 w-4" />
-                      Ver
                     </Button>
+                    <span className="ml-auto inline-flex min-w-[3rem] items-center justify-center rounded-lg bg-red-50 px-2.5 py-1.5 text-sm font-bold tabular-nums text-red-700 ring-1 ring-red-100 sm:ml-2">
+                      {formatCantidad(r.total_cajas)}
+                    </span>
                   </div>
                 </li>
               ))}

@@ -147,8 +147,7 @@ function SectionHeading({
   )
 }
 
-const CARD_HIGHLIGHT =
-  'ring-2 ring-brand-500 ring-offset-2 ring-offset-slate-100/80 z-[1]'
+import { KB_HIGHLIGHT_MODULE } from '@/lib/listKeyboardHighlight'
 
 const CARD_SCROLL_MARGIN = 40
 
@@ -204,7 +203,7 @@ function ModuleCard({
         'focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-2',
         styles.card,
         styles.hoverBorder,
-        highlighted && CARD_HIGHLIGHT
+        highlighted && KB_HIGHLIGHT_MODULE
       )}
     >
       <div className="flex items-start justify-between gap-3">
@@ -435,7 +434,7 @@ export function DashboardPage() {
                       'focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-2',
                       card,
                       hoverBorder,
-                      cardHighlight === cardIndex && CARD_HIGHLIGHT
+                      cardHighlight === cardIndex && KB_HIGHLIGHT_MODULE
                     )}
                   >
                     <div className="flex items-center justify-between gap-3">

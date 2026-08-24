@@ -3,15 +3,16 @@ import { Capacitor, CapacitorHttp } from '@capacitor/core'
 import { Directory, Filesystem } from '@capacitor/filesystem'
 import { Preferences } from '@capacitor/preferences'
 import { ApkInstaller } from '@/plugins/apkInstaller'
+import {
+  fetchLatestReleaseVersion,
+  latestApkDownloadUrl,
+  normalizeReleaseVersion
+} from '@/lib/githubLatestRelease'
 
-const GITHUB_OWNER = 'JRNCarrizo'
-const GITHUB_REPO = 'bodegaStock'
 const APK_FILENAME = 'ControlStock-update.apk'
 const COOLDOWN_KEY = 'controlstock.apkUpdateCooldown'
-/** Entre consultas normales. */
-const CHECK_COOLDOWN_MS = 5 * 60 * 1000
-/** Tras 429/403. */
-const RATE_LIMIT_COOLDOWN_MS = 30 * 60 * 1000
+/** Evita doble clic seguido. */
+const CHECK_DEBOUNCE_MS = 45 * 1000
 
 export type ApkUpdateInfo = {
   version: string
@@ -22,11 +23,10 @@ export type ApkUpdateInfo = {
 
 type CooldownState = {
   lastCheckAt: number
-  blockedUntil: number
 }
 
 function normalizeVersion(v: string): string {
-  return v.trim().replace(/^v/i, '')
+  return normalizeReleaseVersion(v)
 }
 
 function minutesLeft(ms: number): number {
@@ -40,8 +40,7 @@ async function readCooldown(): Promise<CooldownState> {
       if (value) {
         const parsed = JSON.parse(value) as Partial<CooldownState>
         return {
-          lastCheckAt: typeof parsed.lastCheckAt === 'number' ? parsed.lastCheckAt : 0,
-          blockedUntil: typeof parsed.blockedUntil === 'number' ? parsed.blockedUntil : 0
+          lastCheckAt: typeof parsed.lastCheckAt === 'number' ? parsed.lastCheckAt : 0
         }
       }
     } else {
@@ -49,15 +48,14 @@ async function readCooldown(): Promise<CooldownState> {
       if (raw) {
         const parsed = JSON.parse(raw) as Partial<CooldownState>
         return {
-          lastCheckAt: typeof parsed.lastCheckAt === 'number' ? parsed.lastCheckAt : 0,
-          blockedUntil: typeof parsed.blockedUntil === 'number' ? parsed.blockedUntil : 0
+          lastCheckAt: typeof parsed.lastCheckAt === 'number' ? parsed.lastCheckAt : 0
         }
       }
     }
   } catch {
     /* ignore */
   }
-  return { lastCheckAt: 0, blockedUntil: 0 }
+  return { lastCheckAt: 0 }
 }
 
 async function writeCooldown(state: CooldownState): Promise<void> {
@@ -73,8 +71,7 @@ async function writeCooldown(state: CooldownState): Promise<void> {
 }
 
 function remainingMs(state: CooldownState, now = Date.now()): number {
-  const until = Math.max(state.lastCheckAt + CHECK_COOLDOWN_MS, state.blockedUntil)
-  return Math.max(0, until - now)
+  return Math.max(0, state.lastCheckAt + CHECK_DEBOUNCE_MS - now)
 }
 
 /** Compara semver simple a.b.c. >0 si a>b. */
@@ -102,67 +99,40 @@ export async function checkLatestApkRelease(): Promise<{
   const state = await readCooldown()
   const wait = remainingMs(state)
   if (wait > 0) {
-    const rateLimited = state.blockedUntil > Date.now()
-    throw new Error(
-      rateLimited
-        ? `GitHub limitó las consultas. Esperá ~${minutesLeft(wait)} min.`
-        : `Esperá ~${minutesLeft(wait)} min antes de volver a buscar (límite de GitHub).`
-    )
+    throw new Error(`Esperá ~${minutesLeft(wait)} min antes de volver a buscar.`)
   }
 
   const currentVersion = await getNativeAppVersion()
   const now = Date.now()
-  await writeCooldown({ ...state, lastCheckAt: now })
+  await writeCooldown({ lastCheckAt: now })
 
-  const res = await CapacitorHttp.get({
-    url: `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/releases/latest`,
-    headers: {
-      Accept: 'application/vnd.github+json',
-      'User-Agent': 'ControlStock-Android'
-    }
-  })
-
-  if (res.status < 200 || res.status >= 300) {
-    if (res.status === 403 || res.status === 429) {
-      await writeCooldown({
-        lastCheckAt: now,
-        blockedUntil: now + RATE_LIMIT_COOLDOWN_MS
+  let version: string
+  try {
+    version = normalizeVersion(
+      await fetchLatestReleaseVersion(async (url) => {
+        const res = await CapacitorHttp.get({
+          url,
+          headers: {
+            Accept: 'text/plain',
+            'User-Agent': 'ControlStock-Android'
+          }
+        })
+        if (res.status < 200 || res.status >= 300) {
+          throw new Error(`No se pudo leer latest.yml (HTTP ${res.status}).`)
+        }
+        return typeof res.data === 'string' ? res.data : String(res.data ?? '')
       })
-      throw new Error(
-        `GitHub limitó las consultas. Esperá ~${minutesLeft(RATE_LIMIT_COOLDOWN_MS)} min.`
-      )
-    }
-    throw new Error(`No se pudo consultar releases (HTTP ${res.status}).`)
+    )
+  } catch (err) {
+    throw err instanceof Error ? err : new Error('No se pudo consultar el release')
   }
 
-  const body =
-    typeof res.data === 'string'
-      ? (JSON.parse(res.data) as Record<string, unknown>)
-      : (res.data as Record<string, unknown>)
-
-  const tag = String(body.tag_name ?? body.name ?? '')
-  const version = normalizeVersion(tag)
-  if (!version) throw new Error('El release no tiene versión válida')
-
-  const assets = Array.isArray(body.assets) ? body.assets : []
-  const apk = assets.find((a) => {
-    const name = String((a as { name?: string }).name ?? '').toLowerCase()
-    return name.endsWith('.apk')
-  }) as { browser_download_url?: string; size?: number; name?: string } | undefined
-
-  if (!apk?.browser_download_url) {
-    throw new Error('El último release no incluye un APK para descargar.')
-  }
-
-  const notesRaw = body.body
-  const releaseNotes =
-    typeof notesRaw === 'string' && notesRaw.trim() ? notesRaw.trim().slice(0, 2000) : undefined
+  const downloadUrl = latestApkDownloadUrl(version)
 
   const latest: ApkUpdateInfo = {
     version,
-    downloadUrl: apk.browser_download_url,
-    releaseNotes,
-    size: typeof apk.size === 'number' ? apk.size : undefined
+    downloadUrl,
+    releaseNotes: undefined
   }
 
   return {

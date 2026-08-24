@@ -40,7 +40,7 @@ import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { api, cn } from '@/lib/utils'
 import { scrollProductoIntoListVisible } from '@/lib/scroll'
-import { textoProductoMatches } from '@/lib/productoSearch'
+import { filterProductosBySearchQuery, textoProductoMatches } from '@/lib/productoSearch'
 import {
   scrollFocusedFieldIntoSheet,
   useKeyboardLayoutShrink,
@@ -519,18 +519,7 @@ export function InventarioOfflinePage() {
     if (!paquete) return []
     const q = productSearch.trim()
     if (!q || selected) return []
-    return paquete.productos
-      .filter((p) =>
-        textoProductoMatches(
-          {
-            codigo_interno: p.codigo_interno,
-            codigo_barras: p.codigo_barras,
-            nombre: p.nombre
-          },
-          q
-        )
-      )
-      .slice(0, 20)
+    return filterProductosBySearchQuery(paquete.productos, q).slice(0, 20)
   }, [paquete, productSearch, selected])
 
   const misLineasRonda = useMemo(() => {

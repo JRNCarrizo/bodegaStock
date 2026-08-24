@@ -10,9 +10,14 @@ import {
   Search,
   Warehouse
 } from 'lucide-react'
-import { formatCantidad } from '@/lib/desglose'
+import {
+  formatCantidad,
+  formatTotalesInventarioFisicos,
+  formatTotalesInventarioResumen,
+  sumarTotalesInventarioFisicos
+} from '@/lib/desglose'
 import { api, cn } from '@/lib/utils'
-import { textoProductoMatches } from '@/lib/productoSearch'
+import { filterProductosBySearchQuery } from '@/lib/productoSearch'
 import type {
   ReorganizarDesglosePayload,
   Sector,
@@ -23,7 +28,6 @@ import type {
 import { ProductImage } from '@/components/ProductImage'
 import { ReorganizarStockForm } from '@/components/ReorganizarStockForm'
 import { ScrollableProductName } from '@/components/ScrollableProductName'
-import { SueltoStockHint } from '@/components/SueltoStockHint'
 import { Button } from '@/components/ui/Button'
 import { Badge, Card, CardBody } from '@/components/ui/Card'
 import { useAuth } from '@/context/AuthContext'
@@ -50,6 +54,7 @@ export function SectorStockView({
   const [loadingStock, setLoadingStock] = useState(false)
   const [stockError, setStockError] = useState('')
   const [expandedStockProductos, setExpandedStockProductos] = useState<Set<number>>(() => new Set())
+  const [totalVistaFisicaIds, setTotalVistaFisicaIds] = useState<Set<number>>(() => new Set())
   const [stockSearch, setStockSearch] = useState('')
   const [reorganizingProductoId, setReorganizingProductoId] = useState<number | null>(null)
   const [confirmProductoId, setConfirmProductoId] = useState<number | null>(null)
@@ -124,6 +129,20 @@ export function SectorStockView({
     })
   }
 
+  function toggleTotalVistaProducto(producto: SectorStockProducto) {
+    if (producto.lineas.length === 0) return
+    setTotalVistaFisicaIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(producto.producto_id)) next.delete(producto.producto_id)
+      else next.add(producto.producto_id)
+      return next
+    })
+  }
+
+  useEffect(() => {
+    setTotalVistaFisicaIds(new Set())
+  }, [stockDetalle, ubicacionFilter])
+
   async function confirmReorganizarProducto(
     producto: SectorStockProducto,
     desglose: ReorganizarDesglosePayload
@@ -154,12 +173,7 @@ export function SectorStockView({
     if (!stockDetalle) return []
     const q = stockSearch.trim()
     if (!q) return stockDetalle.productos
-    return stockDetalle.productos.filter((p) =>
-      textoProductoMatches(
-        { codigo_interno: p.codigo_interno, nombre: p.nombre },
-        q
-      )
-    )
+    return filterProductosBySearchQuery(stockDetalle.productos, q)
   }, [stockDetalle, stockSearch])
 
   const totalStockFiltrado = useMemo(
@@ -342,6 +356,19 @@ export function SectorStockView({
                 <ul className="space-y-2">
                   {productosStockFiltrados.map((producto) => {
                     const isExpanded = expandedStockProductos.has(producto.producto_id)
+                    const showTotalFisico = totalVistaFisicaIds.has(producto.producto_id)
+                    const puedeAlternarTotal =
+                      producto.lineas.length > 0 &&
+                      (producto.cantidad_total > 0 || producto.suelto_total > 0)
+                    const totalLabel = showTotalFisico
+                      ? formatTotalesInventarioFisicos(
+                          sumarTotalesInventarioFisicos(producto.lineas),
+                          producto.unidad
+                        )
+                      : formatTotalesInventarioResumen(
+                          { cajas: producto.cantidad_total, suelto: producto.suelto_total },
+                          producto.unidad
+                        )
                     const showReorg = confirmProductoId === producto.producto_id
                     const puedeReorganizar =
                       canReorganizar && producto.reorganizar.puede && !showReorg
@@ -416,16 +443,38 @@ export function SectorStockView({
                                 <span className="sm:hidden">Reorganizar</span>
                               </Button>
                             )}
-                            <div className="flex flex-col items-end text-right">
-                              <span className="inline-flex items-center rounded-lg bg-brand-50 px-2.5 py-1.5 text-sm font-bold tabular-nums text-brand-700 ring-1 ring-brand-100">
-                                {formatCantidad(producto.cantidad_total)}
+                            <button
+                              type="button"
+                              onClick={() => toggleTotalVistaProducto(producto)}
+                              disabled={!puedeAlternarTotal}
+                              className={cn(
+                                'flex flex-col items-end text-right',
+                                puedeAlternarTotal && 'rounded-lg active:bg-slate-100'
+                              )}
+                              aria-label={
+                                showTotalFisico
+                                  ? 'Mostrar total en cajas'
+                                  : 'Mostrar total en pallets y cajas'
+                              }
+                              title={
+                                puedeAlternarTotal
+                                  ? showTotalFisico
+                                    ? 'Ver total en cajas'
+                                    : 'Ver pallets y cajas'
+                                  : undefined
+                              }
+                            >
+                              <span className="inline-flex max-w-[11rem] items-center rounded-lg bg-brand-50 px-2.5 py-1.5 text-sm font-bold tabular-nums text-brand-700 ring-1 ring-brand-100">
+                                <span className="scrollbar-none-x max-w-full overflow-x-auto whitespace-nowrap">
+                                  {totalLabel}
+                                </span>
                               </span>
-                              <SueltoStockHint
-                                cantidad={producto.suelto_total}
-                                unidad={producto.unidad}
-                                className="mt-1"
-                              />
-                            </div>
+                              {puedeAlternarTotal ? (
+                                <span className="mt-1 text-[10px] font-medium text-slate-400">
+                                  tocá total
+                                </span>
+                              ) : null}
+                            </button>
                           </div>
                         </div>
                         {isExpanded && (

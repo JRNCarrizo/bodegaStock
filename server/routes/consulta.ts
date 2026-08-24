@@ -24,7 +24,7 @@ import {
   type AjusteStockLineaInput,
   type ReorganizarDesgloseInput
 } from '../utils/stock'
-import { sqlProductoSearchClause } from '../utils/productoSearch'
+import { sqlProductoSearchClause, sqlProductoSearchOrderClause } from '../utils/productoSearch'
 import { requireRequestLogistica } from '../utils/logisticas'
 
 interface StockLineaRow {
@@ -540,6 +540,7 @@ export async function consultaRoutes(app: FastifyInstance): Promise<void> {
     if (!search) {
       return reply.status(400).send({ error: 'Ingresá un término de búsqueda' })
     }
+    const order = sqlProductoSearchOrderClause(q, { prefix: 'p.' })
 
     const stockTotalSql = stockTotalProductoSql()
     const stockWhere = incluirCero
@@ -561,12 +562,12 @@ export async function consultaRoutes(app: FastifyInstance): Promise<void> {
       WHERE p.activo = 1
         AND ${search.sql}
         ${stockWhere}
-      ORDER BY p.nombre COLLATE NOCASE ASC
+      ORDER BY ${order.sql}
       LIMIT 25
     `).all(
       ...(incluirCero
-        ? [logisticaId, logisticaId, logisticaId, ...search.params]
-        : [logisticaId, logisticaId, logisticaId, ...search.params, logisticaId, logisticaId])
+        ? [logisticaId, logisticaId, logisticaId, ...search.params, ...order.params]
+        : [logisticaId, logisticaId, logisticaId, ...search.params, logisticaId, logisticaId, ...order.params])
     )
 
     return productos

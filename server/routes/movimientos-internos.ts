@@ -13,7 +13,7 @@ import {
   STOCK_SECTOR_VISIBLE_SQL,
   STOCK_LINEA_SUELTO_SQL
 } from '../utils/stock'
-import { sqlProductoSearchClause, sqlNormalizeCodigoExpr } from '../utils/productoSearch'
+import { sqlProductoSearchClause, sqlNormalizeCodigoExpr, sqlProductoSearchOrderClause } from '../utils/productoSearch'
 
 type MovimientoTipo = 'ENVIAR' | 'RECIBIR' | 'LISTA'
 type MovimientoEstado = 'ABIERTA' | 'PENDIENTE' | 'COMPLETADO' | 'CANCELADO'
@@ -518,9 +518,12 @@ export async function movimientosInternosRoutes(app: FastifyInstance): Promise<v
     if (search) {
       sql += ` AND ${search.sql}`
       params.push(...search.params)
+      const order = sqlProductoSearchOrderClause(q!.trim(), { prefix: 'p.' })
+      sql += ` ORDER BY ${order.sql} LIMIT 40`
+      params.push(...order.params)
+    } else {
+      sql += ' ORDER BY p.nombre COLLATE NOCASE ASC LIMIT 40'
     }
-
-    sql += ' ORDER BY p.nombre COLLATE NOCASE ASC LIMIT 40'
 
     const rows = db.prepare(sql).all(...params) as Array<{
       id: number

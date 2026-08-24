@@ -1,4 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent, type RefObject } from 'react'
+import { KB_HIGHLIGHT_LIST_ROW } from '@/lib/listKeyboardHighlight'
 import { useSidebarNav } from '@/context/SidebarNavContext'
 import { cn } from '@/lib/utils'
 import { focusAndScrollIntoView } from '@/lib/scroll'
@@ -201,7 +202,7 @@ export function useRegistroListKeyboard<T extends { id: number }>(options: {
       'data-registro-index': index,
       className: cn(
         className,
-        highlightIndex === index && 'bg-brand-50 ring-2 ring-inset ring-brand-200'
+        highlightIndex === index && KB_HIGHLIGHT_LIST_ROW
       ),
       onMouseEnter: () => {
         if (keyboardNavRef.current) return

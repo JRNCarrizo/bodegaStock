@@ -16,11 +16,10 @@ export default async function afterPack(context) {
   console.log(`[ControlStock] Icono embebido: ${exe}`)
 
   const updateYml = join(context.appOutDir, 'resources', 'app-update.yml')
-  writeFileSync(
+    writeFileSync(
     updateYml,
-    `provider: github
-owner: ${GITHUB_OWNER}
-repo: ${GITHUB_REPO}
+    `provider: generic
+url: https://github.com/${GITHUB_OWNER}/${GITHUB_REPO}/releases/latest/download
 updaterCacheDirName: controlstock-updater
 `,
     'utf-8'

@@ -20,11 +20,17 @@ import { PaginationControls } from '@/components/PaginationControls'
 import { ProductImage } from '@/components/ProductImage'
 import { ReorganizarStockForm } from '@/components/ReorganizarStockForm'
 import { SueltoStockHint } from '@/components/SueltoStockHint'
-import { formatCantidad } from '@/lib/desglose'
+import {
+  formatCantidad,
+  formatTotalesInventarioFisicos,
+  formatTotalesInventarioResumen,
+  sumarTotalesInventarioFisicos
+} from '@/lib/desglose'
 import { downloadApiFile } from '@/lib/downloadFile'
 import { isNativeApp } from '@/lib/nativeServer'
 import { scrollElementFullyIntoView, focusAndScrollIntoView } from '@/lib/scroll'
 import { searchDelayMs } from '@/lib/searchDelay'
+import { KB_HIGHLIGHT_CARD, KB_HIGHLIGHT_CARD_INNER } from '@/lib/listKeyboardHighlight'
 import { api, cn } from '@/lib/utils'
 import type {
   ConsultaDetalle,
@@ -267,6 +273,18 @@ type ConsultaModo = 'producto' | 'sector' | 'todos'
 
 const CONSULTA_PAGE_SIZE = 50
 
+function resumenConsultaGeneral(p: ConsultaResumen): string {
+  return formatTotalesInventarioResumen(
+    { cajas: p.stock_total, suelto: p.suelto_total },
+    p.unidad
+  )
+}
+
+function resumenConsultaFisico(detalle: ConsultaDetalle): string {
+  const lineas = detalle.sectores.flatMap((s) => s.lineas)
+  return formatTotalesInventarioFisicos(sumarTotalesInventarioFisicos(lineas), detalle.producto.unidad)
+}
+
 export function ConsultaPage() {
   const nativeApp = isNativeApp()
   const { hasPermiso } = useAuth()
@@ -278,6 +296,7 @@ export function ConsultaPage() {
   const [todosPage, setTodosPage] = useState(1)
   const [todosTotal, setTodosTotal] = useState(0)
   const [expandedId, setExpandedId] = useState<number | null>(null)
+  const [totalVistaFisicaIds, setTotalVistaFisicaIds] = useState<Set<number>>(() => new Set())
   const [detalleCache, setDetalleCache] = useState<Record<number, ConsultaDetalle>>({})
   const [loadingDetalleId, setLoadingDetalleId] = useState<number | null>(null)
   const [confirmSectorId, setConfirmSectorId] = useState<number | null>(null)
@@ -301,6 +320,8 @@ export function ConsultaPage() {
   const searchInputRef = useRef<HTMLInputElement>(null)
   const resultadosListRef = useRef<HTMLUListElement>(null)
   const expandedItemRef = useRef<HTMLLIElement | null>(null)
+  const detalleCacheRef = useRef(detalleCache)
+  detalleCacheRef.current = detalleCache
   const { registerEscHandler, registerMainContentFocus } = useSidebarNav()
 
   const expandedDetalle = expandedId != null ? detalleCache[expandedId] : undefined
@@ -397,8 +418,10 @@ export function ConsultaPage() {
     })
   }
 
-  async function cargarDetalle(productoId: number, force = false) {
-    if (!force && detalleCache[productoId]) return
+  async function cargarDetalle(productoId: number, force = false): Promise<ConsultaDetalle | null> {
+    if (!force && detalleCacheRef.current[productoId]) {
+      return detalleCacheRef.current[productoId]
+    }
 
     setLoadingDetalleId(productoId)
     setError('')
@@ -606,6 +629,30 @@ export function ConsultaPage() {
     }
     await expandProducto(producto)
   }
+
+  async function toggleTotalVistaProducto(producto: ConsultaResumen, index: number) {
+    setHighlightIndex(index)
+    const wantsFisico = !totalVistaFisicaIds.has(producto.id)
+    if (wantsFisico) {
+      const detalle = (await cargarDetalle(producto.id)) ?? detalleCacheRef.current[producto.id]
+      const lineas = detalle?.sectores.flatMap((s) => s.lineas) ?? []
+      if (lineas.length === 0) return
+    }
+    setTotalVistaFisicaIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(producto.id)) next.delete(producto.id)
+      else next.add(producto.id)
+      return next
+    })
+  }
+
+  useEffect(() => {
+    const ids = new Set(resultados.map((r) => r.id))
+    setTotalVistaFisicaIds((prev) => {
+      const next = new Set([...prev].filter((id) => ids.has(id)))
+      return next.size === prev.size ? prev : next
+    })
+  }, [resultados])
 
   function handleSearchKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
     if (showScanner || imagePreview) return
@@ -843,6 +890,12 @@ export function ConsultaPage() {
     const isHighlighted = index === highlightIndex
     const detalle = detalleCache[p.id]
     const loadingDetalle = loadingDetalleId === p.id
+    const showTotalFisico = totalVistaFisicaIds.has(p.id)
+    const totalLabel =
+      showTotalFisico && detalle
+        ? resumenConsultaFisico(detalle)
+        : resumenConsultaGeneral(p)
+    const puedeAlternarTotal = p.stock_total > 0 || p.suelto_total > 0
 
     return (
       <li
@@ -853,14 +906,14 @@ export function ConsultaPage() {
           isExpanded
             ? 'border-brand-200 shadow-md ring-1 ring-brand-100/80'
             : isHighlighted
-              ? 'border-brand-300 shadow-card ring-2 ring-brand-200/50'
+              ? KB_HIGHLIGHT_CARD
               : 'border-surface-border shadow-card'
         )}
       >
         <div
           className={cn(
             'flex items-center gap-3 px-4 py-3.5 transition-colors sm:gap-4 sm:px-5',
-            isExpanded ? 'bg-brand-50/70' : 'hover:bg-slate-50/80'
+            isExpanded ? 'bg-brand-50/70' : isHighlighted ? KB_HIGHLIGHT_CARD_INNER : 'hover:bg-slate-50/80'
           )}
         >
           <button
@@ -925,19 +978,38 @@ export function ConsultaPage() {
 
           <button
             type="button"
-            onClick={() => {
-              setHighlightIndex(index)
-              void toggleExpand(p)
-            }}
-            className="flex min-w-[5.5rem] shrink-0 flex-col items-end justify-center text-right"
+            onClick={() => void toggleTotalVistaProducto(p, index)}
+            disabled={!puedeAlternarTotal}
+            className={cn(
+              'flex min-w-[5.5rem] max-w-[11rem] shrink-0 flex-col items-end justify-center text-right',
+              puedeAlternarTotal && 'rounded-lg active:bg-slate-100'
+            )}
+            aria-label={
+              showTotalFisico ? 'Mostrar total en cajas' : 'Mostrar total en pallets y cajas'
+            }
+            title={
+              puedeAlternarTotal
+                ? showTotalFisico
+                  ? 'Ver total en cajas'
+                  : 'Ver pallets y cajas'
+                : undefined
+            }
           >
-            <span className="inline-flex min-w-[3rem] items-center justify-center rounded-lg bg-brand-50 px-2.5 py-1.5 text-sm font-bold tabular-nums text-brand-700 ring-1 ring-brand-100">
-              {formatCantidad(p.stock_total)}
+            <span className="inline-flex min-w-[3rem] max-w-full items-center justify-center rounded-lg bg-brand-50 px-2.5 py-1.5 text-sm font-bold tabular-nums text-brand-700 ring-1 ring-brand-100">
+              {loadingDetalleId === p.id && !detalle ? (
+                <Loader2 className="h-4 w-4 animate-spin text-brand-600" />
+              ) : (
+                <span className="scrollbar-none-x max-w-full overflow-x-auto whitespace-nowrap">
+                  {totalLabel}
+                </span>
+              )}
             </span>
-            <SueltoStockHint cantidad={p.suelto_total} unidad={p.unidad} className="mt-1" />
             {p.sectores_con_stock > 0 ? (
               <p className="mt-1 text-[11px] font-medium text-slate-500">
                 {p.sectores_con_stock} sector{p.sectores_con_stock === 1 ? '' : 'es'}
+                {puedeAlternarTotal ? (
+                  <span className="text-slate-400"> · tocá total</span>
+                ) : null}
               </p>
             ) : (
               <p className="invisible mt-1 text-[11px] font-medium" aria-hidden>

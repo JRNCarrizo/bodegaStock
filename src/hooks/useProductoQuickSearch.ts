@@ -1,5 +1,6 @@
 import { useEffect, useState, type Dispatch, type SetStateAction } from 'react'
 import { searchDelayMs } from '@/lib/searchDelay'
+import { sortProductosBySearchRelevance } from '@/lib/productoSearch'
 import { api } from '@/lib/utils'
 import type { Producto } from '@/types'
 
@@ -35,7 +36,9 @@ export function useProductoQuickSearch(
         const data = await api<Producto[]>(
           `/api/productos?q=${encodeURIComponent(q)}&activo=1`
         )
-        if (!cancelled) setResults(data.slice(0, limit))
+        if (!cancelled) {
+          setResults(sortProductosBySearchRelevance(data, q).slice(0, limit))
+        }
       } catch {
         if (!cancelled) setResults([])
       } finally {

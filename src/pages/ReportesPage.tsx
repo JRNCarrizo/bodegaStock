@@ -19,7 +19,8 @@ import { useAuth } from '@/context/AuthContext'
 import { useSidebarNav } from '@/context/SidebarNavContext'
 import { useEscHandler } from '@/hooks/useEscHandler'
 import { shouldAbrirFormularioConEnter } from '@/hooks/useRegistroListKeyboard'
-import { textoProductoMatches } from '@/lib/productoSearch'
+import { filterProductosBySearchQuery } from '@/lib/productoSearch'
+import { KB_HIGHLIGHT_MODULE } from '@/lib/listKeyboardHighlight'
 
 function formatSignedCantidad(value: number, sign: '+' | '-'): string {
   if (value === 0) return '0'
@@ -83,7 +84,7 @@ function StatCard({
         'overflow-hidden shadow-panel transition-all outline-none',
         accentClass,
         onClick && 'cursor-pointer hover:shadow-lg hover:-translate-y-0.5',
-        highlighted && 'ring-2 ring-brand-500 ring-offset-2'
+        highlighted && KB_HIGHLIGHT_MODULE
       )}
       role={onClick ? 'button' : undefined}
       tabIndex={onClick ? 0 : undefined}
@@ -159,12 +160,7 @@ function DetalleModal({
 
   const itemsFiltrados = useMemo(() => {
     if (!detalle) return []
-    return detalle.items.filter((item) =>
-      textoProductoMatches(
-        { nombre: item.nombre, codigo_interno: item.codigo_interno },
-        search
-      )
-    )
+    return filterProductosBySearchQuery(detalle.items, search)
   }, [detalle, search])
 
   useEffect(() => {

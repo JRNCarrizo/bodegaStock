@@ -4,6 +4,7 @@ import { ChevronRight, Layers, Loader2, Search, Warehouse } from 'lucide-react'
 import { formatCantidad } from '@/lib/desglose'
 import { focusAndScrollIntoView } from '@/lib/scroll'
 import { searchDelayMs } from '@/lib/searchDelay'
+import { KB_HIGHLIGHT_COMPACT } from '@/lib/listKeyboardHighlight'
 import { api, cn } from '@/lib/utils'
 import type { Sector } from '@/types'
 import { SectorStockView } from '@/components/SectorStockView'
@@ -198,7 +199,7 @@ export function ConsultaPorSectorPanel({
                     onClick={() => selectSector(s)}
                     className={cn(
                       'flex w-full cursor-pointer items-center gap-3 px-4 py-4 text-left transition-colors hover:bg-brand-50/40 sm:gap-4 sm:px-6',
-                      index === highlightIndex && 'bg-brand-50 ring-1 ring-inset ring-brand-200'
+                      index === highlightIndex && KB_HIGHLIGHT_COMPACT
                     )}
                   >
                     <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-brand-50 text-brand-600 ring-1 ring-brand-100">

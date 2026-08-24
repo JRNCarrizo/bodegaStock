@@ -61,6 +61,7 @@ export type UpdateCheckResult =
 
 export type UpdateCooldownInfo = {
   retryAfterMs: number
+  rateLimited?: boolean
   releasesUrl: string
 }
 
@@ -104,11 +105,12 @@ interface Window {
     resetDatabase?: (
       confirmacion: string
     ) => Promise<{ ok: true } | { ok: false; message?: string }>
-    checkForUpdates?: () => Promise<UpdateCheckResult>
-    getUpdateCooldown?: () => Promise<UpdateCooldownInfo>
+    checkForUpdates?: (opts?: { force?: boolean }) => Promise<UpdateCheckResult>
+    getUpdateCooldown?: (opts?: { force?: boolean }) => Promise<UpdateCooldownInfo>
+    clearUpdateCooldown?: () => Promise<{ ok: true }>
     downloadUpdate?: () => Promise<UpdateActionResult>
     installUpdate?: () => Promise<UpdateActionResult>
-    downloadLatestApk?: () => Promise<ApkDownloadResult>
+    downloadLatestApk?: (opts?: { force?: boolean }) => Promise<ApkDownloadResult>
     onUpdateStatus?: (callback: (status: UpdateStatusPayload) => void) => () => void
   }
 }

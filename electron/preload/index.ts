@@ -10,11 +10,12 @@ contextBridge.exposeInMainWorld('bodegaStock', {
   getAppInfo: () => ipcRenderer.invoke('app:get-info'),
   resetDatabase: (confirmacion: string) =>
     ipcRenderer.invoke('app:reset-database', { confirmacion }),
-  checkForUpdates: () => ipcRenderer.invoke('update:check'),
-  getUpdateCooldown: () => ipcRenderer.invoke('update:get-cooldown'),
+  checkForUpdates: (opts?: { force?: boolean }) => ipcRenderer.invoke('update:check', opts),
+  getUpdateCooldown: (opts?: { force?: boolean }) => ipcRenderer.invoke('update:get-cooldown', opts),
+  clearUpdateCooldown: () => ipcRenderer.invoke('update:clear-cooldown'),
   downloadUpdate: () => ipcRenderer.invoke('update:download'),
   installUpdate: () => ipcRenderer.invoke('update:install'),
-  downloadLatestApk: () => ipcRenderer.invoke('apk:download-latest'),
+  downloadLatestApk: (opts?: { force?: boolean }) => ipcRenderer.invoke('apk:download-latest', opts),
   onUpdateStatus: (callback: (status: unknown) => void) => {
     const listener = (_event: Electron.IpcRendererEvent, status: unknown) => callback(status)
     ipcRenderer.on('update-status', listener)

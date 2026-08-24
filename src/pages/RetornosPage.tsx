@@ -44,6 +44,7 @@ import { searchDelayMs } from '@/lib/searchDelay'
 import { clearDraft, readDraft, writeDraft } from '@/lib/draftStorage'
 import { api, cn } from '@/lib/utils'
 import { codigoProductoExacto } from '@/lib/productoSearch'
+import { KB_HIGHLIGHT_ROW } from '@/lib/listKeyboardHighlight'
 import type {
   Camionero,
   CamioneroVehiculo,
@@ -1987,9 +1988,7 @@ export function RetornosPage() {
                           type="button"
                           className={cn(
                             'flex w-full items-center gap-2 px-3 py-2.5 text-left text-sm',
-                            index === productHighlightIndex
-                              ? 'bg-brand-50 text-brand-900'
-                              : 'hover:bg-slate-50'
+                            index === productHighlightIndex ? KB_HIGHLIGHT_ROW : 'hover:bg-slate-50'
                           )}
                           onMouseEnter={() => setProductHighlightIndex(index)}
                           onPointerDown={armKeyboardForCantidadModal}
@@ -2765,10 +2764,48 @@ export function RetornosPage() {
                     </div>
                   </div>
 
-                  <div className="flex shrink-0 items-center gap-2 sm:justify-end">
+                  <div className="flex w-full shrink-0 items-center gap-1.5 sm:w-auto sm:gap-2">
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      className="rounded-lg !px-2 !py-2"
+                      disabled={exportingId === r.id}
+                      onClick={() => void exportarRetorno(r.id)}
+                      title="Exportar Excel"
+                      aria-label="Exportar Excel"
+                    >
+                      {exportingId === r.id ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <Download className="h-4 w-4" />
+                      )}
+                    </Button>
+                    {esPendiente && hasPermiso('retornos.verificar') ? (
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        className="rounded-lg !px-2 !py-2 border-amber-500 bg-amber-500 text-white shadow-sm hover:bg-amber-600 hover:border-amber-600"
+                        onClick={() => void abrirRetorno(r.id)}
+                        title="Verificar retorno"
+                        aria-label="Verificar retorno"
+                      >
+                        <Check className="h-4 w-4" />
+                      </Button>
+                    ) : (
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        className="rounded-lg !px-2 !py-2"
+                        onClick={() => void abrirRetorno(r.id)}
+                        title="Ver detalle"
+                        aria-label="Ver detalle"
+                      >
+                        <Eye className="h-4 w-4" />
+                      </Button>
+                    )}
                     <span
                       className={cn(
-                        'inline-flex min-w-[3rem] items-center justify-center rounded-lg px-2.5 py-1.5 text-sm font-bold tabular-nums ring-1',
+                        'ml-auto inline-flex min-w-[3rem] items-center justify-center rounded-lg px-2.5 py-1.5 text-sm font-bold tabular-nums ring-1 sm:ml-2',
                         esPendiente
                           ? 'bg-amber-100 text-amber-900 ring-amber-200'
                           : 'bg-brand-50 text-brand-700 ring-brand-100'
@@ -2776,39 +2813,6 @@ export function RetornosPage() {
                     >
                       {formatCantidad(r.total_cajas)}
                     </span>
-                    <Button
-                      variant="secondary"
-                      size="sm"
-                      className="rounded-lg"
-                      disabled={exportingId === r.id}
-                      onClick={() => void exportarRetorno(r.id)}
-                      title="Exportar Excel del registro"
-                    >
-                      {exportingId === r.id ? (
-                        <Loader2 className="h-4 w-4 animate-spin" />
-                      ) : (
-                        <Download className="h-4 w-4" />
-                      )}
-                      Exportar
-                    </Button>
-                    <Button
-                      variant={esPendiente ? 'primary' : 'secondary'}
-                      size="sm"
-                      className="rounded-lg"
-                      onClick={() => void abrirRetorno(r.id)}
-                    >
-                      {esPendiente && hasPermiso('retornos.verificar') ? (
-                        <>
-                          <Check className="h-4 w-4" />
-                          Verificar
-                        </>
-                      ) : (
-                        <>
-                          <Eye className="h-4 w-4" />
-                          Ver
-                        </>
-                      )}
-                    </Button>
                   </div>
                 </li>
               )})}

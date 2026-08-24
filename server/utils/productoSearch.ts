@@ -54,3 +54,48 @@ export function sqlProductoSearchClause(
   sql += ')'
   return { sql, params }
 }
+
+/**
+ * ORDER BY por relevancia: 420 → primero 420-23, después 4201-nv.
+ */
+export function sqlProductoSearchOrderClause(
+  q: string,
+  opts?: { prefix?: string }
+): { sql: string; params: string[] } {
+  const raw = q.trim()
+  const prefix = opts?.prefix ?? ''
+  const codigoCol = `${prefix}codigo_interno`
+  const nombreCol = `${prefix}nombre`
+  const qLower = raw.toLowerCase()
+  const qNorm = normalizeCodigoBusquedaSql(raw)
+  const normExpr = sqlNormalizeCodigoExpr(codigoCol)
+
+  const params = [
+    qLower,
+    `${qLower}-%`,
+    `${qLower}_%`,
+    `${qLower}.%`,
+    `${qLower}%`,
+    `%${qLower}%`,
+    `%${qNorm}%`,
+    `%${qLower}%`
+  ]
+
+  const sql = `
+    CASE
+      WHEN LOWER(${codigoCol}) = ? THEN 0
+      WHEN LOWER(${codigoCol}) LIKE ? THEN 10
+      WHEN LOWER(${codigoCol}) LIKE ? THEN 10
+      WHEN LOWER(${codigoCol}) LIKE ? THEN 10
+      WHEN LOWER(${codigoCol}) LIKE ? THEN 30
+      WHEN LOWER(${codigoCol}) LIKE ? THEN 40
+      WHEN ${normExpr} LIKE ? THEN 42
+      WHEN LOWER(${nombreCol}) LIKE ? THEN 60
+      ELSE 99
+    END ASC,
+    ${codigoCol} COLLATE NOCASE ASC,
+    ${nombreCol} COLLATE NOCASE ASC
+  `.trim()
+
+  return { sql, params }
+}

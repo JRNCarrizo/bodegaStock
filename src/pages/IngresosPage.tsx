@@ -2191,34 +2191,35 @@ export function IngresosPage() {
                     </div>
                   </div>
 
-                  <div className="flex shrink-0 items-center gap-2 sm:justify-end">
-                    <span className="inline-flex min-w-[3rem] items-center justify-center rounded-lg bg-brand-50 px-2.5 py-1.5 text-sm font-bold tabular-nums text-brand-700 ring-1 ring-brand-100">
-                      {formatCantidad(i.total_unidades)}
-                    </span>
+                  <div className="flex w-full shrink-0 items-center gap-1.5 sm:w-auto sm:gap-2">
                     <Button
                       variant="secondary"
                       size="sm"
-                      className="rounded-lg"
+                      className="rounded-lg !px-2 !py-2"
                       disabled={exportingId === i.id}
                       onClick={() => void exportarIngreso(i.id)}
-                      title="Exportar Excel del registro"
+                      title="Exportar Excel"
+                      aria-label="Exportar Excel"
                     >
                       {exportingId === i.id ? (
                         <Loader2 className="h-4 w-4 animate-spin" />
                       ) : (
                         <Download className="h-4 w-4" />
                       )}
-                      Exportar
                     </Button>
                     <Button
                       variant="secondary"
                       size="sm"
-                      className="rounded-lg"
+                      className="rounded-lg !px-2 !py-2"
                       onClick={() => verDetalle(i.id)}
+                      title="Ver detalle"
+                      aria-label="Ver detalle"
                     >
                       <Eye className="h-4 w-4" />
-                      Ver
                     </Button>
+                    <span className="ml-auto inline-flex min-w-[3rem] items-center justify-center rounded-lg bg-brand-50 px-2.5 py-1.5 text-sm font-bold tabular-nums text-brand-700 ring-1 ring-brand-100 sm:ml-2">
+                      {formatCantidad(i.total_unidades)}
+                    </span>
                   </div>
                 </li>
               ))}

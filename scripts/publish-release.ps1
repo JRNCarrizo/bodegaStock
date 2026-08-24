@@ -1,5 +1,5 @@
 param(
-  [string]$Version = "0.3.49"
+  [string]$Version = "0.3.50"
 )
 
 $ErrorActionPreference = "Stop"
@@ -55,11 +55,12 @@ if (Test-Path $ymlPath) { $assets += (Resolve-Path $ymlPath).Path }
 $notes = @"
 ## ControlStock v$Version
 
-Instalador Windows: cierra ControlStock antes de actualizar (sin cartel "programa en uso").
+Buscar actualizaciones sin falso rate limit; ingresos con botones solo icono.
 
 ### Corregido
-- **Actualizar desde la app:** la app se cierra primero y el Setup se abre solo después (ya no compiten en el administrador de tareas).
-- **Instalador NSIS:** reintenta cerrar ControlStock.exe antes de reemplazar archivos.
+- **Actualizaciones:** ya no trata errores 403 de GitHub como rate limit ni bloquea el botón 30 min.
+- **Feed de updates:** siempre usa ``latest.yml`` (generic), sin api.github.com.
+- **Ingresos (registros):** cantidad a la derecha; Exportar/Ver solo icono con tooltip.
 
 ### Actualización
 - **Windows:** Configuración → Buscar actualizaciones, o Setup de este release
@@ -76,12 +77,15 @@ try {
 } catch {
   $existing = $null
 }
+$notesPath = Join-Path $root "release\release-notes-$Version.md"
+$notes | Set-Content -Path $notesPath -Encoding utf8
+
 if ($LASTEXITCODE -eq 0 -and $existing) {
   Write-Host "El release $tag ya existe. Subiendo assets..." -ForegroundColor Yellow
   gh release upload $tag @assets --clobber
 } else {
   $global:LASTEXITCODE = 0
-  gh release create $tag @assets --title "ControlStock v$Version" --notes $notes
+  gh release create $tag @assets --title "ControlStock v$Version" --notes-file $notesPath
 }
 
 if ($LASTEXITCODE -eq 0) {

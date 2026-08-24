@@ -600,8 +600,10 @@ export function ConfiguracionPage() {
   useEffect(() => {
     if (!api?.getUpdateCooldown) return
     void api.getUpdateCooldown().then((info) => {
-      if (info.retryAfterMs > 0) {
+      // Solo informar; no bloquear el botón (la búsqueda usa force y limpia cooldown).
+      if (info.retryAfterMs > 0 && info.rateLimited) {
         setUpdateCooldownUntil(Date.now() + info.retryAfterMs)
+        setUpdateRateLimited(true)
       }
     })
   }, [api])
@@ -614,10 +616,7 @@ export function ConfiguracionPage() {
 
   const updateCooldownActive = updateCooldownUntil > nowTick
   const updateCheckDisabled =
-    phase === 'checking' ||
-    phase === 'downloading' ||
-    phase === 'installing' ||
-    updateCooldownActive
+    phase === 'checking' || phase === 'downloading' || phase === 'installing'
 
   useEffect(() => {
     if (api?.getAppInfo) {

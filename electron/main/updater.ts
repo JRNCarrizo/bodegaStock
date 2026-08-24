@@ -91,7 +91,9 @@ function isRateLimitError(err: unknown): boolean {
     err && typeof err === 'object' && 'statusCode' in err
       ? Number((err as { statusCode?: number }).statusCode)
       : NaN
-  if (status === 429 || status === 403) return true
+  // Solo 429 / texto explícito. GitHub CDN suele devolver 403 por redirects,
+  // y eso NO es el rate limit de api.github.com (60/h).
+  if (status === 429) return true
   if (/429|Too Many Requests|rate limit exceeded|secondary rate limit/i.test(message)) return true
   return false
 }
@@ -132,9 +134,7 @@ export function isInstallingUpdate(): boolean {
 function configureAutoUpdaterFeed(): boolean {
   if (!app.isPackaged) return false
 
-  const updateYml = join(process.resourcesPath, 'app-update.yml')
-  if (existsSync(updateYml)) return true
-
+  // Siempre forzar generic (latest.yml). No usar provider github/api.github.com.
   autoUpdater.setFeedURL({
     provider: 'generic',
     url: GENERIC_UPDATE_URL
@@ -157,6 +157,10 @@ function friendlyUpdateError(err: unknown): string {
   if (isRateLimitError(err)) {
     const retryAfterMs = getCooldownRemainingMs() || RATE_LIMIT_COOLDOWN_MS
     return cooldownMessage(retryAfterMs, true)
+  }
+
+  if (/\b403\b|Forbidden/i.test(message)) {
+    return 'GitHub rechazó la descarga temporalmente. Probá de nuevo o instalá el Setup a mano desde Releases.'
   }
 
   if (message.includes('404') || message.includes('Not Found')) {
@@ -333,6 +337,11 @@ export function setupAutoUpdater(getWindow: () => BrowserWindow | null) {
       const message = 'Ya hay una búsqueda de actualizaciones en curso.'
       sendStatus(getWindow(), { type: 'error', message })
       return { ok: false as const, reason: 'error' as const, message }
+    }
+
+    // "Buscar" desde la UI siempre fuerza: limpia bloqueos viejos (403 mal clasificados).
+    if (force) {
+      writeCooldownState({ lastCheckAt: 0, blockedUntil: 0 })
     }
 
     const retryAfterMs = getCooldownRemainingMs(Date.now(), { force })

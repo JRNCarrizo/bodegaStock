@@ -1,6 +1,6 @@
 {
   "name": "bodega-stock",
-  "version": "0.3.49",
+  "version": "0.3.50",
   "description": "Sistema de gestión de stock para bodega",
   "author": "JRNCarrizo",
   "main": "out/main/index.js",
@@ -79,11 +79,12 @@
     "appId": "com.jrncarrizo.bodegastock",
     "productName": "ControlStock",
     "copyright": "Copyright © 2026 JRNCarrizo",
-    "publish": {
-      "provider": "github",
-      "owner": "JRNCarrizo",
-      "repo": "bodegaStock"
-    },
+    "publish": [
+      {
+        "provider": "generic",
+        "url": "https://github.com/JRNCarrizo/bodegaStock/releases/latest/download"
+      }
+    ],
     "directories": {
       "output": "release",
       "buildResources": "build"

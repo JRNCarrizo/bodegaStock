@@ -1684,7 +1684,7 @@ export function ConfiguracionPage() {
               {isNative
                 ? '. En el celular: buscar → descargar APK → instalar (permití “apps desconocidas” si lo pide).'
                 : isElectron
-                  ? '. En PC también podés “Descargar APK” para repartirla a los celulares de la empresa.'
+                  ? '. Si el botón de descarga falla: cerrá ControlStock desde el Administrador de tareas, bajá el Setup desde Releases e instalá. La barra puede demorar ~1–2 min en la mitad (Defender).'
                   : '. Si esta versión fue instalada antes de v0.2.2, puede ser necesario actualizar manualmente una vez.'}
             </p>
           )}

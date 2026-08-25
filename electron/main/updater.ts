@@ -159,11 +159,14 @@ function resolveInstallerPath(info?: UpdateDownloadedEvent): string | null {
 function launchInstallerAfterAppExit(installerPath: string): void {
   const escaped = installerPath.replace(/"/g, '""')
   const comspec = process.env.ComSpec ?? 'cmd.exe'
-  // Mata el árbol de procesos, espera a que Windows libere el .exe, y recién ahí abre el Setup.
+  // Varias pasadas de taskkill + espera: si el .exe sigue vivo, NSIS se traba a mitad de barra.
   const script = [
     'taskkill /F /IM ControlStock.exe /T >nul 2>&1',
-    'taskkill /F /IM "ControlStock.exe" /T >nul 2>&1',
-    'timeout /t 4 /nobreak >nul',
+    'timeout /t 2 /nobreak >nul',
+    'taskkill /F /IM ControlStock.exe /T >nul 2>&1',
+    'timeout /t 2 /nobreak >nul',
+    'taskkill /F /IM ControlStock.exe /T >nul 2>&1',
+    'timeout /t 5 /nobreak >nul',
     `start "" "${escaped}"`
   ].join(' & ')
   spawn(comspec, ['/d', '/c', script], {
@@ -171,6 +174,15 @@ function launchInstallerAfterAppExit(installerPath: string): void {
     stdio: 'ignore',
     windowsHide: true
   }).unref()
+}
+
+async function closeLocalDbForUpdate(): Promise<void> {
+  try {
+    const { closeDatabase } = await import('../../server/db')
+    closeDatabase()
+  } catch {
+    /* ignore */
+  }
 }
 
 export function setupAutoUpdater(getWindow: () => BrowserWindow | null) {
@@ -182,6 +194,8 @@ export function setupAutoUpdater(getWindow: () => BrowserWindow | null) {
 
   autoUpdater.autoDownload = false
   autoUpdater.autoInstallOnAppQuit = false
+  // Diff + blockmap de GitHub a menudo falla/trunca; siempre bajamos el Setup completo.
+  autoUpdater.disableDifferentialDownload = true
 
   autoUpdater.on('checking-for-update', () => {
     sendStatus(getWindow(), { type: 'checking' })
@@ -342,12 +356,25 @@ export function setupAutoUpdater(getWindow: () => BrowserWindow | null) {
     try {
       await autoUpdater.downloadUpdate()
       return { ok: true as const }
-    } catch (err) {
-      return {
-        ok: false as const,
-        message: friendlyUpdateError(err)
+    } catch (firstErr) {
+      // Un reintento suele salvar cortes de GitHub CDN / HTTP2.
+      try {
+        await new Promise((r) => setTimeout(r, 1500))
+        await autoUpdater.downloadUpdate()
+        return { ok: true as const }
+      } catch {
+        return {
+          ok: false as const,
+          message: `${friendlyUpdateError(firstErr)} También podés abrir Releases e instalar el Setup a mano.`
+        }
       }
     }
+  })
+
+  ipcMain.handle('update:open-releases', async () => {
+    const { shell } = await import('electron')
+    await shell.openExternal(GITHUB_RELEASES_URL)
+    return { ok: true as const }
   })
 
   ipcMain.handle('update:install', async () => {
@@ -377,11 +404,14 @@ export function setupAutoUpdater(getWindow: () => BrowserWindow | null) {
       /* ignore */
     }
 
+    await closeLocalDbForUpdate()
+
     for (const win of BrowserWindow.getAllWindows()) {
       if (!win.isDestroyed()) win.destroy()
     }
 
     try {
+      // Primero el script externo (mata + Setup); después salimos nosotros.
       launchInstallerAfterAppExit(installerPath)
     } catch (err) {
       installingUpdate = false
@@ -393,10 +423,10 @@ export function setupAutoUpdater(getWindow: () => BrowserWindow | null) {
     // Salida dura: no esperar handles abiertos (servidor / sqlite).
     setTimeout(() => {
       app.exit(0)
-    }, 200)
+    }, 300)
     setTimeout(() => {
       process.exit(0)
-    }, 1500)
+    }, 2500)
 
     return { ok: true as const }
   })

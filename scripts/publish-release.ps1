@@ -1,5 +1,5 @@
 param(
-  [string]$Version = "0.3.55"
+  [string]$Version = "0.3.56"
 )
 
 $ErrorActionPreference = "Stop"
@@ -14,13 +14,13 @@ $exeCandidates = @(
 )
 
 if (-not (Get-Command gh -ErrorAction SilentlyContinue)) {
-  Write-Error "GitHub CLI no encontrado. Instalá con: winget install GitHub.cli"
+  Write-Error "GitHub CLI no encontrado. Instala con: winget install GitHub.cli"
 }
 
 $auth = gh auth status 2>&1
 if ($LASTEXITCODE -ne 0) {
   Write-Host ""
-  Write-Host "Primero iniciá sesión en GitHub:" -ForegroundColor Yellow
+  Write-Host "Primero inicia sesion en GitHub:" -ForegroundColor Yellow
   Write-Host "  gh auth login" -ForegroundColor Cyan
   Write-Host ""
   Write-Host $auth
@@ -41,13 +41,13 @@ if (-not $exePath) {
 }
 
 if (-not $exePath) {
-  Write-Error "No se encontró el instalador en release\* Setup $Version.exe"
+  Write-Error "No se encontro el instalador en release\* Setup $Version.exe"
 }
 
 $exe = (Resolve-Path $exePath).Path
 $exeSize = (Get-Item $exe).Length
 if ($exeSize -lt 100MB) {
-  Write-Error "Setup demasiado chico ($exeSize bytes). Regenerá con npm run dist."
+  Write-Error "Setup demasiado chico ($exeSize bytes). Regenera con npm run dist."
 }
 
 $apkPath = Join-Path $root "release\ControlStock-$Version.apk"
@@ -59,19 +59,19 @@ if (Test-Path $ymlPath) { $assets += (Resolve-Path $ymlPath).Path }
 $notes = @"
 ## ControlStock v$Version
 
-Stock inicial continuo día a día en Movimientos del día.
+Update mas robusto: cierre forzado, descarga completa del Setup y reintento automatico.
 
 ### Corregido
-- **Stock inicial:** se reconstruye como ``stock actual − movimientos desde ese día hasta hoy`` (agregado), así ``inicial(D+1) = balance(D)``.
-- Sin el salto raro entre días (ej. 899 → 998) ni el +1 por rotura del mismo día.
-- El total de la tarjeta ya no se arma sumando solo productos filtrados del detalle.
+- **Cierre antes de instalar:** varias pasadas de taskkill + espera hasta que el proceso muera (menos zombie en el Administrador de tareas y menos barra trabada a mitad).
+- **Descarga:** siempre Setup completo (sin differential/blockmap) + un reintento si GitHub corta.
+- **SQLite/API:** se cierran antes de lanzar el instalador.
 
-### Actualización
-1. Cerrá ControlStock (Administrador de tareas si hace falta).
-2. Descargá e instalá ``ControlStock-Setup-$Version.exe`` (~104 MB).
-3. O Configuración → Buscar actualizaciones.
+### Actualizacion
+1. Cerra ControlStock (Administrador de tareas si hace falta).
+2. Descarga e instala ``ControlStock-Setup-$Version.exe`` (~104 MB).
+3. O Configuracion -> Buscar actualizaciones.
 
-Login inicial (base vacía): **admin** / **admin123**
+Login inicial (base vacia): **admin** / **admin123**
 "@
 
 Write-Host "Publicando release $tag (Setup $([math]::Round($exeSize/1MB,2)) MB)..." -ForegroundColor Green
@@ -97,17 +97,17 @@ if ($LASTEXITCODE -ne 0) {
   exit $LASTEXITCODE
 }
 
-# Verificar que GitHub recibió el Setup completo (evitar truncado).
+# Verificar que GitHub recibio el Setup completo (evitar truncado).
 Start-Sleep -Seconds 2
-$remoteSize = [int64](gh api "repos/JRNCarrizo/bodegaStock/releases/tags/$tag" --jq '.assets[] | select(.name|test("Setup")) | .size')
+$remoteSize = [int64](gh api "repos/JRNCarrizo/bodegaStock/releases/tags/$tag" --jq ".assets[] | select(.name | contains(`"Setup`")) | .size")
 Write-Host "GitHub Setup size: $remoteSize (local $exeSize)" -ForegroundColor Cyan
 if ($remoteSize -ne $exeSize) {
-  Write-Host "Tamaño distinto — reintentando upload con clobber..." -ForegroundColor Yellow
+  Write-Host "Tamano distinto — reintentando upload con clobber..." -ForegroundColor Yellow
   gh release upload $tag $exe --clobber
   Start-Sleep -Seconds 3
-  $remoteSize = [int64](gh api "repos/JRNCarrizo/bodegaStock/releases/tags/$tag" --jq '.assets[] | select(.name|test("Setup")) | .size')
+  $remoteSize = [int64](gh api "repos/JRNCarrizo/bodegaStock/releases/tags/$tag" --jq ".assets[] | select(.name | contains(`"Setup`")) | .size")
   if ($remoteSize -ne $exeSize) {
-    Write-Error ("Setup en GitHub sigue truncado ({0} vs {1}). Subí a mano." -f $remoteSize, $exeSize)
+    Write-Error ("Setup en GitHub sigue truncado ({0} vs {1}). Subi a mano." -f $remoteSize, $exeSize)
   }
 }
 

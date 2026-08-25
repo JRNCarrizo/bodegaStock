@@ -1,5 +1,8 @@
 import type Database from 'better-sqlite3'
+import { todayIsoDateLocal } from './fechas'
 import { getProductoDefaults, lineaTotalEnCajas } from './stock'
+
+export { todayIsoDateLocal } from './fechas'
 
 export interface MovimientosDiaReport {
   fecha_desde: string
@@ -85,14 +88,6 @@ function movimientoLogisticaFilter(logisticaId?: number): { sql: string; params:
     ) `,
     params: [logisticaId, logisticaId]
   }
-}
-
-export function todayIsoDateLocal(): string {
-  const d = new Date()
-  const y = d.getFullYear()
-  const m = String(d.getMonth() + 1).padStart(2, '0')
-  const day = String(d.getDate()).padStart(2, '0')
-  return `${y}-${m}-${day}`
 }
 
 export function resolveReporteDateRange(

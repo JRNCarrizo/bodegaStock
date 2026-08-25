@@ -13,17 +13,14 @@ import {
   STOCK_SECTOR_VISIBLE_SQL,
   STOCK_LINEA_SUELTO_SQL
 } from '../utils/stock'
+import { todayIsoDateLocal } from '../utils/fechas'
 import { sqlProductoSearchClause, sqlNormalizeCodigoExpr, sqlProductoSearchOrderClause } from '../utils/productoSearch'
 
 type MovimientoTipo = 'ENVIAR' | 'RECIBIR' | 'LISTA'
 type MovimientoEstado = 'ABIERTA' | 'PENDIENTE' | 'COMPLETADO' | 'CANCELADO'
 
 function todayIsoDateServer(): string {
-  const d = new Date()
-  const y = d.getFullYear()
-  const m = String(d.getMonth() + 1).padStart(2, '0')
-  const day = String(d.getDate()).padStart(2, '0')
-  return `${y}-${m}-${day}`
+  return todayIsoDateLocal()
 }
 
 interface LineaBody {

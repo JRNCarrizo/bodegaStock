@@ -1,5 +1,5 @@
 param(
-  [string]$Version = "0.3.51"
+  [string]$Version = "0.3.52"
 )
 
 $ErrorActionPreference = "Stop"
@@ -55,19 +55,16 @@ if (Test-Path $ymlPath) { $assets += (Resolve-Path $ymlPath).Path }
 $notes = @"
 ## ControlStock v$Version
 
-Pulido de UI: tema logística, listas más claras y totales en ingresos.
+“Hoy” siempre en zona Argentina, en local y en Railway.
 
-### Mejoras
-- **Tema logística Nakbe’:** botones primarios y chips de filtro con la paleta del cliente.
-- **Ingresos:** toggle total cajas ↔ pallets+cajas en detalle/lista; totales recalculados bien.
-- **Consulta:** “Exportar stock”; botones de export arriba; sin chips de tecleo.
-- **Listas / admin:** botones solo icono (ingresos, sectores, productos); orden Agenda → Camioneros → Usuarios.
-- **Agenda de turnos:** Días / Nuevo turno en la misma fila que Semana / Historial.
-- **Limpieza:** sin indicadores de tecleo en Consulta, Movimientos del día y pantallas con “Nuevo…”.
+### Corregido
+- **Movimientos del día:** sin filtro de fecha ya no usa el día UTC del servidor (de noche en AR aparecía el día siguiente).
+- **Día operativo:** ``America/Argentina/Buenos_Aires`` en reportes, movimientos internos, exports y UI.
 
 ### Actualización
 - **Windows:** Configuración → Buscar actualizaciones, o Setup de este release
 - **APK:** ``ControlStock-$Version.apk``
+- **Nube Railway:** redeploy del servicio API con este commit
 
 Login inicial (base vacía): **admin** / **admin123**
 "@

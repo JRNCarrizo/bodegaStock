@@ -83,12 +83,10 @@ export function sendExcelFile(
     .send(buffer)
 }
 
+import { todayIsoDateLocal } from './fechas'
+
 export function todayFileStamp(): string {
-  const d = new Date()
-  const y = d.getFullYear()
-  const m = String(d.getMonth() + 1).padStart(2, '0')
-  const day = String(d.getDate()).padStart(2, '0')
-  return `${y}-${m}-${day}`
+  return todayIsoDateLocal()
 }
 
 /** Agrega una fila final de total al listado de productos. */

@@ -1,5 +1,5 @@
 param(
-  [string]$Version = "0.3.54"
+  [string]$Version = "0.3.55"
 )
 
 $ErrorActionPreference = "Stop"
@@ -59,12 +59,12 @@ if (Test-Path $ymlPath) { $assets += (Resolve-Path $ymlPath).Path }
 $notes = @"
 ## ControlStock v$Version
 
-Balance final coherente con stock inicial + movimientos del día.
+Stock inicial continuo día a día en Movimientos del día.
 
 ### Corregido
-- **Movimientos del día:** el balance final ahora es ``inicial + ingresos + retornos + ajustes − planillas − roturas`` (incluye ajustes de edición e inventario).
-- Sin movimientos, balance = stock inicial.
-- **Setup:** instalador completo (~104 MB). Si el .53 no abría, era un upload truncado.
+- **Stock inicial:** se reconstruye como ``stock actual − movimientos desde ese día hasta hoy`` (agregado), así ``inicial(D+1) = balance(D)``.
+- Sin el salto raro entre días (ej. 899 → 998) ni el +1 por rotura del mismo día.
+- El total de la tarjeta ya no se arma sumando solo productos filtrados del detalle.
 
 ### Actualización
 1. Cerrá ControlStock (Administrador de tareas si hace falta).
@@ -107,7 +107,7 @@ if ($remoteSize -ne $exeSize) {
   Start-Sleep -Seconds 3
   $remoteSize = [int64](gh api "repos/JRNCarrizo/bodegaStock/releases/tags/$tag" --jq '.assets[] | select(.name|test("Setup")) | .size')
   if ($remoteSize -ne $exeSize) {
-    Write-Error "Setup en GitHub sigue truncado ($remoteSize vs $exeSize). Subí a mano."
+    Write-Error ("Setup en GitHub sigue truncado ({0} vs {1}). Subí a mano." -f $remoteSize, $exeSize)
   }
 }
 

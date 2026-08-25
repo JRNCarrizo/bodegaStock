@@ -310,18 +310,34 @@ function qtyFromMap(map: Map<string, ReporteDetalleItem>, key: string): number {
   return map.get(key)?.cantidad_cajas ?? 0
 }
 
+/**
+ * Stock al inicio del período (`desde`).
+ *
+ * Fórmula: inicial(D) = stock_actual − neto(movimientos desde D hasta hoy).
+ * El neto del propio día D SÍ se revierte: a las 00:00 de D esos movimientos
+ * todavía no habían ocurrido. Así: sin movimientos en D ⇒ inicial(D)=inicial(D+1),
+ * y balance_final(D) = inicial(D+1).
+ *
+ * El detalle puede ocultar líneas ≤0; el total de la tarjeta NO se suma desde
+ * esas líneas (ver sumStockInicialAgregado) para no perder cajas por el filtro.
+ */
 function detalleStockInicial(
   db: Database.Database,
   desde: string,
-  hasta: string,
+  _hasta: string,
   logisticaId?: number
 ): ReporteDetalleItem[] {
+  const today = todayIsoDateLocal()
+  // Reverso hasta hoy (no solo hasta `hasta`): si no, un día pasado ignora
+  // movimientos posteriores y el inicial queda “pegado” al stock actual.
+  const finReverso = desde > today ? desde : today
+
   const actual = itemsToMap(detalleStockPorProducto(db, logisticaId))
-  const ingresos = itemsToMap(detalleIngresos(db, desde, hasta, logisticaId))
-  const retornos = itemsToMap(detalleRetornos(db, desde, hasta, logisticaId))
-  const planillas = itemsToMap(detallePlanillas(db, desde, hasta, logisticaId))
-  const roturas = itemsToMap(detalleRoturas(db, desde, hasta, logisticaId))
-  const inventario = itemsToMap(detalleAjusteInventario(db, desde, hasta, logisticaId))
+  const ingresos = itemsToMap(detalleIngresos(db, desde, finReverso, logisticaId))
+  const retornos = itemsToMap(detalleRetornos(db, desde, finReverso, logisticaId))
+  const planillas = itemsToMap(detallePlanillas(db, desde, finReverso, logisticaId))
+  const roturas = itemsToMap(detalleRoturas(db, desde, finReverso, logisticaId))
+  const inventario = itemsToMap(detalleAjusteInventario(db, desde, finReverso, logisticaId))
 
   const keys = new Set<string>([
     ...actual.keys(),
@@ -365,17 +381,47 @@ function detalleStockInicial(
   )
 }
 
-function sumStockInicialDetalle(
+function sumStockActualCajas(db: Database.Database, logisticaId?: number): number {
+  if (logisticaId == null) {
+    const row = db.prepare(`
+      SELECT COALESCE(SUM(ss.cantidad_total), 0) AS total
+      FROM stock_sector ss
+      JOIN productos p ON p.id = ss.producto_id
+      WHERE p.activo = 1
+    `).get() as { total: number }
+    return Number(row.total)
+  }
+  const row = db.prepare(`
+    SELECT COALESCE(SUM(ss.cantidad_total), 0) AS total
+    FROM stock_sector ss
+    JOIN productos p ON p.id = ss.producto_id
+    JOIN sectores s ON s.id = ss.sector_id
+    WHERE p.activo = 1 AND s.logistica_id = ?
+  `).get(logisticaId) as { total: number }
+  return Number(row.total)
+}
+
+/** Total de stock inicial por agregados (misma fórmula que el detalle, sin filtrar ≤0). */
+function sumStockInicialAgregado(
   db: Database.Database,
   desde: string,
-  hasta: string,
+  _hasta: string,
   logisticaId?: number
 ): number {
-  return roundCajas(
-    detalleStockInicial(db, desde, hasta, logisticaId).reduce(
-      (sum, item) => sum + item.cantidad_cajas,
-      0
-    )
+  const today = todayIsoDateLocal()
+  const finReverso = desde > today ? desde : today
+
+  const actual = sumStockActualCajas(db, logisticaId)
+  const ingresos = sumIngresoCajasInRange(db, desde, finReverso, logisticaId)
+  const retornos = sumRetornoCajasBuenEstadoInRange(db, desde, finReverso, logisticaId)
+  const planillas = sumPlanillaCajasInRange(db, desde, finReverso, logisticaId)
+  const roturas = sumRoturaCajasInRange(db, desde, finReverso, logisticaId)
+  const ajustes = sumAjustesCajasInRange(db, desde, finReverso, logisticaId).total
+
+  // inicial = actual − (ingresos + retornos + ajustes − planillas − roturas)
+  return Math.max(
+    0,
+    roundCajas(actual - ingresos - retornos - ajustes + planillas + roturas)
   )
 }
 
@@ -627,8 +673,9 @@ export function getMovimientosDiaReport(
   const roturas = sumRoturaCajasInRange(db, desde, hasta, logisticaId)
   const ajustesInfo = sumAjustesCajasInRange(db, desde, hasta, logisticaId)
 
-  const stock_inicial = sumStockInicialDetalle(db, desde, hasta, logisticaId)
-  // Misma ecuación que las tarjetas: evita desfasajes con getStockAtEndOfDay / cantidad_total.
+  const stock_inicial = sumStockInicialAgregado(db, desde, hasta, logisticaId)
+  // Continuidad: final(período) = inicial + movimientos del período
+  // (= stock al cierre de `hasta`; y final(D) = inicial(D+1)).
   const balance_final = Math.max(
     0,
     roundCajas(stock_inicial + ingresos + retornos + ajustesInfo.total - planillas - roturas)
@@ -698,7 +745,7 @@ export function getReporteDetalle(
       break
     case 'stock_inicial':
       items = detalleStockInicial(db, desde, hasta, logisticaId)
-      total = roundCajas(items.reduce((sum, item) => sum + item.cantidad_cajas, 0))
+      total = report.stock_inicial
       break
     case 'balance_final':
       items = detalleBalanceFinal(db, desde, hasta, logisticaId)

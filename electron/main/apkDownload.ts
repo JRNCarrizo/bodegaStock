@@ -9,14 +9,16 @@ import {
   normalizeReleaseVersion
 } from '@/lib/githubLatestRelease'
 
-const CHECK_DEBOUNCE_MS = 45 * 1000
+const CHECK_DEBOUNCE_MS = 20 * 1000
 
 type CooldownState = {
   lastCheckAt: number
 }
 
-function minutesLeft(ms: number): number {
-  return Math.max(1, Math.ceil(ms / 60_000))
+function waitLabel(ms: number): string {
+  const secs = Math.max(1, Math.ceil(ms / 1000))
+  if (secs < 60) return `~${secs} s`
+  return `~${Math.ceil(secs / 60)} min`
 }
 
 function cooldownPath(): string {
@@ -55,7 +57,7 @@ async function fetchLatestApk(force = false): Promise<{
   const state = readCooldown()
   const wait = force ? 0 : remainingMs(state)
   if (wait > 0) {
-    throw new Error(`Esperá ~${minutesLeft(wait)} min antes de volver a descargar el APK.`)
+    throw new Error(`Esperá ${waitLabel(wait)} antes de volver a descargar el APK.`)
   }
 
   const now = Date.now()
@@ -72,7 +74,7 @@ export function setupApkDownloadIpc(getWindow: () => BrowserWindow | null): void
   ipcMain.handle('apk:download-latest', async (_event, payload?: { force?: boolean }) => {
     const win = getWindow()
     try {
-      const latest = await fetchLatestApk(Boolean(payload?.force))
+      const latest = await fetchLatestApk(true)
 
       const result = await dialog.showSaveDialog(win ?? undefined, {
         title: 'Guardar APK para celulares',

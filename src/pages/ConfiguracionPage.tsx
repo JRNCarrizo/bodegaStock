@@ -64,10 +64,6 @@ function formatBytes(bytes: number): string {
 
 const GITHUB_RELEASES_URL = 'https://github.com/JRNCarrizo/bodegaStock/releases'
 
-function isGithubRateLimitMessage(message: string): boolean {
-  return /GitHub limitó|rate limit exceeded|Too Many Requests|HTTP 429/i.test(message)
-}
-
 function openGithubReleases(): void {
   window.open(GITHUB_RELEASES_URL, '_blank')
 }
@@ -263,9 +259,6 @@ export function ConfiguracionPage() {
   const [apkDistError, setApkDistError] = useState('')
   const [downloadDetail, setDownloadDetail] = useState('')
   const [errorMessage, setErrorMessage] = useState('')
-  const [updateRateLimited, setUpdateRateLimited] = useState(false)
-  const [updateCooldownUntil, setUpdateCooldownUntil] = useState(0)
-  const [nowTick, setNowTick] = useState(() => Date.now())
   const [dobleVerificacionRetornos, setDobleVerificacionRetornos] = useState(true)
   const [dobleVerificacionMovimientos, setDobleVerificacionMovimientos] = useState(true)
   const [loadingOpCfg, setLoadingOpCfg] = useState(true)
@@ -552,7 +545,6 @@ export function ConfiguracionPage() {
       case 'checking':
         setPhase('checking')
         setErrorMessage('')
-        setUpdateRateLimited(false)
         break
       case 'available':
         setPhase('available')
@@ -581,14 +573,6 @@ export function ConfiguracionPage() {
       case 'error':
         setPhase('error')
         setErrorMessage(status.message)
-        {
-          const rateLimited =
-            Boolean(status.rateLimited) || isGithubRateLimitMessage(status.message)
-          setUpdateRateLimited(rateLimited)
-          if (status.retryAfterMs && status.retryAfterMs > 0) {
-            setUpdateCooldownUntil(Date.now() + status.retryAfterMs)
-          }
-        }
         break
     }
   }, [])
@@ -598,23 +582,10 @@ export function ConfiguracionPage() {
   }, [])
 
   useEffect(() => {
-    if (!api?.getUpdateCooldown) return
-    void api.getUpdateCooldown().then((info) => {
-      // Solo informar; no bloquear el botón (la búsqueda usa force y limpia cooldown).
-      if (info.retryAfterMs > 0 && info.rateLimited) {
-        setUpdateCooldownUntil(Date.now() + info.retryAfterMs)
-        setUpdateRateLimited(true)
-      }
-    })
+    // Limpiar bloqueos viejos guardados por versiones anteriores.
+    void api?.clearUpdateCooldown?.()
   }, [api])
 
-  useEffect(() => {
-    if (updateCooldownUntil <= Date.now()) return
-    const id = window.setInterval(() => setNowTick(Date.now()), 15_000)
-    return () => window.clearInterval(id)
-  }, [updateCooldownUntil])
-
-  const updateCooldownActive = updateCooldownUntil > nowTick
   const updateCheckDisabled =
     phase === 'checking' || phase === 'downloading' || phase === 'installing'
 
@@ -651,7 +622,6 @@ export function ConfiguracionPage() {
 
   async function buscarActualizaciones() {
     setErrorMessage('')
-    setUpdateRateLimited(false)
     setApkLocalPath(null)
 
     if (isNativeApp()) {
@@ -676,11 +646,6 @@ export function ConfiguracionPage() {
           err instanceof Error ? err.message : 'No se pudo buscar actualización'
         setPhase('error')
         setErrorMessage(message)
-        const rateLimited = isGithubRateLimitMessage(message)
-        setUpdateRateLimited(rateLimited)
-        if (rateLimited) {
-          setUpdateCooldownUntil(Date.now() + 30 * 60 * 1000)
-        }
       }
       return
     }
@@ -691,6 +656,7 @@ export function ConfiguracionPage() {
     }
 
     setPhase('checking')
+    void api.clearUpdateCooldown?.()
 
     const result = await api.checkForUpdates({ force: true })
     if (result.reason === 'dev') {
@@ -703,12 +669,6 @@ export function ConfiguracionPage() {
         'No se pudo comprobar actualizaciones. Verifique que la app esté instalada y que exista un servidor de releases configurado.'
       setPhase('error')
       setErrorMessage(message)
-      const rateLimited =
-        Boolean(result.rateLimited) || isGithubRateLimitMessage(message)
-      setUpdateRateLimited(rateLimited)
-      if (result.retryAfterMs && result.retryAfterMs > 0) {
-        setUpdateCooldownUntil(Date.now() + result.retryAfterMs)
-      }
     }
   }
 
@@ -737,6 +697,7 @@ export function ConfiguracionPage() {
     if (!api?.downloadUpdate) return
     setPhase('downloading')
     setDownloadPercent(0)
+    void api.clearUpdateCooldown?.()
     const result = await api.downloadUpdate()
     if (!result.ok) {
       setPhase('error')
@@ -1655,26 +1616,16 @@ export function ConfiguracionPage() {
           {phase === 'error' && errorMessage && (
             <div className="space-y-3 rounded-xl bg-red-50 px-4 py-3 text-sm text-red-800 ring-1 ring-red-100">
               <p>{errorMessage}</p>
-              {(updateRateLimited || isGithubRateLimitMessage(errorMessage)) && (
-                <Button
-                  type="button"
-                  variant="secondary"
-                  size="sm"
-                  className="rounded-xl"
-                  onClick={() => openGithubReleases()}
-                >
-                  Abrir Releases
-                </Button>
-              )}
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                className="rounded-xl"
+                onClick={() => openGithubReleases()}
+              >
+                Abrir Releases
+              </Button>
             </div>
-          )}
-
-          {updateCooldownActive && phase !== 'error' && (
-            <p className="text-xs text-slate-500">
-              Próxima búsqueda disponible en ~
-              {Math.max(1, Math.ceil((updateCooldownUntil - nowTick) / 60_000))} min (límite de
-              GitHub).
-            </p>
           )}
 
           <div className="flex flex-wrap gap-2 pt-1">

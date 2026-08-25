@@ -1,5 +1,5 @@
 param(
-  [string]$Version = "0.3.52"
+  [string]$Version = "0.3.53"
 )
 
 $ErrorActionPreference = "Stop"
@@ -55,16 +55,19 @@ if (Test-Path $ymlPath) { $assets += (Resolve-Path $ymlPath).Path }
 $notes = @"
 ## ControlStock v$Version
 
-“Hoy” siempre en zona Argentina, en local y en Railway.
+Sin bloqueo falso de 30 min al actualizar, y el Setup cierra la app de verdad.
 
 ### Corregido
-- **Movimientos del día:** sin filtro de fecha ya no usa el día UTC del servidor (de noche en AR aparecía el día siguiente).
-- **Día operativo:** ``America/Argentina/Buenos_Aires`` en reportes, movimientos internos, exports y UI.
+- **Actualizaciones:** eliminado el cooldown de 30 min (era de cuando se usaba api.github.com). Ya no bloquea buscar/descargar.
+- **Instalador:** cierra ``ControlStock.exe`` con más fuerza (taskkill + PowerShell) antes de instalar.
+- **Cierre de la app:** al salir o al instalar, fuerza el cierre para que no quede zombie en el Administrador de tareas.
 
-### Actualización
-- **Windows:** Configuración → Buscar actualizaciones, o Setup de este release
-- **APK:** ``ControlStock-$Version.apk``
-- **Nube Railway:** redeploy del servicio API con este commit
+### Actualización (importante)
+1. Si la app vieja no te deja actualizar sola: descargá el Setup de este release.
+2. En Administrador de tareas, finalizá ``ControlStock`` si sigue abierto.
+3. Ejecutá ``ControlStock-Setup-$Version.exe``.
+
+Opcional: borrá ``%APPDATA%\ControlStock\update-github-cooldown.json`` si todavía ves mensajes viejos.
 
 Login inicial (base vacía): **admin** / **admin123**
 "@

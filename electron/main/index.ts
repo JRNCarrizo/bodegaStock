@@ -17,7 +17,7 @@ if (!isDev) {
 let mainWindow: BrowserWindow | null = null
 let isShuttingDown = false
 
-async function gracefulShutdown(timeoutMs = 2500): Promise<void> {
+async function gracefulShutdown(timeoutMs = 1200): Promise<void> {
   try {
     await Promise.race([
       shutdownNetworkServer(),
@@ -26,6 +26,11 @@ async function gracefulShutdown(timeoutMs = 2500): Promise<void> {
   } catch {
     /* ignore */
   }
+}
+
+function forceQuitSoon(): void {
+  setTimeout(() => app.exit(0), 50)
+  setTimeout(() => process.exit(0), 2000)
 }
 
 function createWindow(): void {
@@ -86,23 +91,23 @@ app.whenReady().then(async () => {
 app.on('window-all-closed', () => {
   if (process.platform === 'darwin') return
   if (isInstallingUpdate()) {
-    app.exit(0)
+    forceQuitSoon()
     return
   }
   if (isShuttingDown) return
   isShuttingDown = true
   void gracefulShutdown().finally(() => {
-    app.exit(0)
+    forceQuitSoon()
   })
 })
 
 app.on('before-quit', (event) => {
-  // Durante update el Setup ya está abierto; no interferir con el quit.
+  // Durante update el Setup ya se lanza desde un script externo.
   if (isInstallingUpdate()) return
   if (isShuttingDown) return
   event.preventDefault()
   isShuttingDown = true
   void gracefulShutdown().finally(() => {
-    app.exit(0)
+    forceQuitSoon()
   })
 })

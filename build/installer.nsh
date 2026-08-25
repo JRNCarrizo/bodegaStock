@@ -1,18 +1,19 @@
-; ControlStock — cierre forzado + evita el desinstalador viejo que falla al actualizar.
-; El diálogo "no se puede cerrar" sale cuando uninstallOldVersion reintenta 5 veces
-; porque el Uninstall.exe anterior aborta en modo silencioso.
+; ControlStock — cierre forzado antes de instalar / desinstalar.
+; Evita el cartel "ControlStock está en ejecución" al actualizar.
 
 !macro killControlStockProcesses
   DetailPrint "Cerrando ControlStock..."
+  ; Varias pasadas: Electron a veces deja hijos vivos un instante.
   StrCpy $R9 0
 kill_retry:
   IntOp $R9 $R9 + 1
-  nsExec::ExecToLog `"$SYSDIR\cmd.exe" /c taskkill /F /IM "${APP_EXECUTABLE_FILENAME}" /T >nul 2>&1 & exit /b 0`
+  nsExec::ExecToLog `"$SYSDIR\taskkill.exe" /F /IM ControlStock.exe /T`
   nsExec::ExecToLog `"$SYSDIR\cmd.exe" /c taskkill /F /IM ControlStock.exe /T >nul 2>&1 & exit /b 0`
-  Sleep 600
-  IntCmp $R9 8 kill_done kill_retry kill_done
+  nsExec::ExecToLog `"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -ExecutionPolicy Bypass -Command "Get-Process -ErrorAction SilentlyContinue | Where-Object { $_.ProcessName -like 'ControlStock*' } | Stop-Process -Force -ErrorAction SilentlyContinue"`
+  Sleep 700
+  IntCmp $R9 12 kill_done kill_retry kill_done
 kill_done:
-  Sleep 400
+  Sleep 800
 !macroend
 
 !macro skipBrokenOldUninstaller
@@ -28,7 +29,6 @@ kill_done:
   DeleteRegValue HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\${PRODUCT_FILENAME}" "QuietUninstallString"
 !macroend
 
-; Pantalla de bienvenida visible (barra de progreso en el paso siguiente).
 !macro customWelcomePage
   !insertmacro MUI_PAGE_WELCOME
 !macroend

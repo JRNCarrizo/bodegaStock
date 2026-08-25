@@ -1,5 +1,5 @@
 param(
-  [string]$Version = "0.3.53"
+  [string]$Version = "0.3.54"
 )
 
 $ErrorActionPreference = "Stop"
@@ -45,6 +45,10 @@ if (-not $exePath) {
 }
 
 $exe = (Resolve-Path $exePath).Path
+$exeSize = (Get-Item $exe).Length
+if ($exeSize -lt 100MB) {
+  Write-Error "Setup demasiado chico ($exeSize bytes). Regenerá con npm run dist."
+}
 
 $apkPath = Join-Path $root "release\ControlStock-$Version.apk"
 $assets = @($exe)
@@ -55,24 +59,22 @@ if (Test-Path $ymlPath) { $assets += (Resolve-Path $ymlPath).Path }
 $notes = @"
 ## ControlStock v$Version
 
-Sin bloqueo falso de 30 min al actualizar, y el Setup cierra la app de verdad.
+Balance final coherente con stock inicial + movimientos del día.
 
 ### Corregido
-- **Actualizaciones:** eliminado el cooldown de 30 min (era de cuando se usaba api.github.com). Ya no bloquea buscar/descargar.
-- **Instalador:** cierra ``ControlStock.exe`` con más fuerza (taskkill + PowerShell) antes de instalar.
-- **Cierre de la app:** al salir o al instalar, fuerza el cierre para que no quede zombie en el Administrador de tareas.
+- **Movimientos del día:** el balance final ahora es ``inicial + ingresos + retornos + ajustes − planillas − roturas`` (incluye ajustes de edición e inventario).
+- Sin movimientos, balance = stock inicial.
+- **Setup:** instalador completo (~104 MB). Si el .53 no abría, era un upload truncado.
 
-### Actualización (importante)
-1. Si la app vieja no te deja actualizar sola: descargá el Setup de este release.
-2. En Administrador de tareas, finalizá ``ControlStock`` si sigue abierto.
-3. Ejecutá ``ControlStock-Setup-$Version.exe``.
-
-Opcional: borrá ``%APPDATA%\ControlStock\update-github-cooldown.json`` si todavía ves mensajes viejos.
+### Actualización
+1. Cerrá ControlStock (Administrador de tareas si hace falta).
+2. Descargá e instalá ``ControlStock-Setup-$Version.exe`` (~104 MB).
+3. O Configuración → Buscar actualizaciones.
 
 Login inicial (base vacía): **admin** / **admin123**
 "@
 
-Write-Host "Publicando release $tag..." -ForegroundColor Green
+Write-Host "Publicando release $tag (Setup $([math]::Round($exeSize/1MB,2)) MB)..." -ForegroundColor Green
 
 $existing = $null
 try {
@@ -91,8 +93,22 @@ if ($LASTEXITCODE -eq 0 -and $existing) {
   gh release create $tag @assets --title "ControlStock v$Version" --notes-file $notesPath
 }
 
-if ($LASTEXITCODE -eq 0) {
-  Write-Host "Listo: https://github.com/JRNCarrizo/bodegaStock/releases/tag/$tag" -ForegroundColor Green
-} else {
+if ($LASTEXITCODE -ne 0) {
   exit $LASTEXITCODE
 }
+
+# Verificar que GitHub recibió el Setup completo (evitar truncado).
+Start-Sleep -Seconds 2
+$remoteSize = [int64](gh api "repos/JRNCarrizo/bodegaStock/releases/tags/$tag" --jq '.assets[] | select(.name|test("Setup")) | .size')
+Write-Host "GitHub Setup size: $remoteSize (local $exeSize)" -ForegroundColor Cyan
+if ($remoteSize -ne $exeSize) {
+  Write-Host "Tamaño distinto — reintentando upload con clobber..." -ForegroundColor Yellow
+  gh release upload $tag $exe --clobber
+  Start-Sleep -Seconds 3
+  $remoteSize = [int64](gh api "repos/JRNCarrizo/bodegaStock/releases/tags/$tag" --jq '.assets[] | select(.name|test("Setup")) | .size')
+  if ($remoteSize -ne $exeSize) {
+    Write-Error "Setup en GitHub sigue truncado ($remoteSize vs $exeSize). Subí a mano."
+  }
+}
+
+Write-Host "Listo: https://github.com/JRNCarrizo/bodegaStock/releases/tag/$tag" -ForegroundColor Green

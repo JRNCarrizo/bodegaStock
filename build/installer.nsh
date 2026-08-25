@@ -1,6 +1,5 @@
 ; ControlStock — cierre forzado antes de instalar / desinstalar.
 ; Evita el cartel "ControlStock está en ejecución" al actualizar.
-; Nota NSIS: $$ = literal $ (para no confudir con variables NSIS).
 
 !macro killControlStockProcesses
   DetailPrint "Cerrando ControlStock..."
@@ -8,12 +7,10 @@
 kill_retry:
   IntOp $R9 $R9 + 1
   nsExec::ExecToLog `"$SYSDIR\taskkill.exe" /F /IM ControlStock.exe /T`
-  nsExec::ExecToLog `"$SYSDIR\cmd.exe" /c taskkill /F /IM ControlStock.exe /T >nul 2>&1 & exit /b 0`
-  nsExec::ExecToLog `"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -ExecutionPolicy Bypass -Command "Get-Process -Name ControlStock* -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue"`
-  Sleep 700
-  IntCmp $R9 12 kill_done kill_retry kill_done
+  Sleep 400
+  IntCmp $R9 6 kill_done kill_retry kill_done
 kill_done:
-  Sleep 800
+  Sleep 500
 !macroend
 
 !macro skipBrokenOldUninstaller

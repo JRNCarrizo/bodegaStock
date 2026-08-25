@@ -4,7 +4,7 @@ Sistema de gestión de stock para bodega con aplicación de escritorio (Electron
 
 ## Estado del proyecto
 
-**v0.3.53** — [Release en GitHub](https://github.com/JRNCarrizo/bodegaStock/releases/tag/v0.3.53)
+**v0.3.54** — [Release en GitHub](https://github.com/JRNCarrizo/bodegaStock/releases/tag/v0.3.54)
 
 | En planta hoy | Preparado para más adelante |
 |---------------|----------------------------|
@@ -16,6 +16,7 @@ Sistema de gestión de stock para bodega con aplicación de escritorio (Electron
 
 ### Reciente (resumen)
 
+- **v0.3.54:** balance final = inicial + movimientos (incl. ajustes); Setup completo.
 - **v0.3.53:** sin bloqueo falso de 30 min al actualizar; Setup cierra ControlStock de verdad.
 - **v0.3.52:** “hoy” en zona Argentina (local y Railway); Movimientos del día sin correr el día de noche.
 - **v0.3.51:** UI logística (tema Nakbe’), listas más limpias, totales pallets+cajas en ingresos, sin chips de tecleo.
@@ -96,7 +97,7 @@ Genera `release/ControlStock-Setup-x.y.z.exe` y `release/latest.yml`.
 
 ```powershell
 gh auth login
-.\scripts\publish-release.ps1 -Version "0.3.53"
+.\scripts\publish-release.ps1 -Version "0.3.54"
 ```
 
 O tag + GitHub Actions: **Actions → Release → Run workflow**

@@ -123,22 +123,6 @@ function lineaEnCajas(db: Database.Database, row: LineaStockRow): number {
   return lineaTotalEnCajas(row, botellasPorCaja)
 }
 
-function getStockTotalCajas(db: Database.Database, logisticaId?: number): number {
-  if (logisticaId == null) {
-    const row = db.prepare(`
-      SELECT COALESCE(SUM(cantidad_total), 0) AS total FROM stock_sector
-    `).get() as { total: number }
-    return row.total
-  }
-  const row = db.prepare(`
-    SELECT COALESCE(SUM(ss.cantidad_total), 0) AS total
-    FROM stock_sector ss
-    JOIN sectores s ON s.id = ss.sector_id
-    WHERE s.logistica_id = ?
-  `).get(logisticaId) as { total: number }
-  return row.total
-}
-
 function sumIngresoCajasInRange(
   db: Database.Database,
   desde: string,
@@ -157,19 +141,6 @@ function sumIngresoCajasInRange(
   return rows.reduce((sum, row) => sum + lineaEnCajas(db, row), 0)
 }
 
-function sumIngresoCajasAfter(db: Database.Database, fecha: string, logisticaId?: number): number {
-  const lf = docLogisticaFilter('i', logisticaId)
-  const rows = db.prepare(`
-    SELECT
-      il.producto_id, il.tipo_bulto, il.cantidad_bultos, il.unidades_por_bulto,
-      il.cantidad_suelta, il.total_unidades
-    FROM ingreso_lineas il
-    JOIN ingresos i ON i.id = il.ingreso_id
-    WHERE i.fecha > ?${lf.sql}
-  `).all(fecha, ...lf.params) as LineaStockRow[]
-  return rows.reduce((sum, row) => sum + lineaEnCajas(db, row), 0)
-}
-
 function sumPlanillaCajasInRange(
   db: Database.Database,
   desde: string,
@@ -185,19 +156,6 @@ function sumPlanillaCajasInRange(
     JOIN planillas p ON p.id = pl.planilla_id
     WHERE p.fecha >= ? AND p.fecha <= ?${lf.sql}
   `).all(desde, hasta, ...lf.params) as LineaStockRow[]
-  return rows.reduce((sum, row) => sum + lineaEnCajas(db, row), 0)
-}
-
-function sumPlanillaCajasAfter(db: Database.Database, fecha: string, logisticaId?: number): number {
-  const lf = docLogisticaFilter('p', logisticaId)
-  const rows = db.prepare(`
-    SELECT
-      pl.producto_id, pl.tipo_bulto, pl.cantidad_bultos, pl.unidades_por_bulto,
-      pl.cantidad_suelta, pl.total_unidades, pl.modo_salida
-    FROM planilla_lineas pl
-    JOIN planillas p ON p.id = pl.planilla_id
-    WHERE p.fecha > ?${lf.sql}
-  `).all(fecha, ...lf.params) as LineaStockRow[]
   return rows.reduce((sum, row) => sum + lineaEnCajas(db, row), 0)
 }
 
@@ -230,34 +188,6 @@ function sumRetornoCajasBuenEstadoInRange(
   }, 0)
 }
 
-function sumRetornoCajasBuenEstadoAfter(
-  db: Database.Database,
-  fecha: string,
-  logisticaId?: number
-): number {
-  const lf = docLogisticaFilter('r', logisticaId)
-  const rows = db.prepare(`
-    SELECT
-      rl.producto_id,
-      rl.tipo_bulto,
-      rl.cantidad_bultos,
-      rl.unidades_por_bulto,
-      rl.cantidad_suelta,
-      COALESCE(rl.cantidad_verificada, rl.total_unidades) AS total_unidades
-    FROM retorno_lineas rl
-    JOIN retornos r ON r.id = rl.retorno_id
-    WHERE r.estado = 'VERIFICADO'
-      AND r.fecha > ?
-      AND COALESCE(rl.estado_verificado, rl.estado_condicion) = 'BUEN_ESTADO'
-      AND rl.linea_verificada = 1${lf.sql}
-  `).all(fecha, ...lf.params) as LineaStockRow[]
-
-  return rows.reduce((sum, row) => {
-    const { botellasPorCaja } = getProductoDefaults(db, row.producto_id)
-    return sum + lineaTotalEnCajas(row, botellasPorCaja)
-  }, 0)
-}
-
 function sumRoturaCajasInRange(
   db: Database.Database,
   desde: string,
@@ -271,28 +201,6 @@ function sumRoturaCajasInRange(
     JOIN roturas r ON r.id = rl.rotura_id
     WHERE r.fecha >= ? AND r.fecha <= ?${lf.sql}
   `).get(desde, hasta, ...lf.params) as { total: number }
-  return row.total
-}
-
-function sumRoturaCajasAfter(db: Database.Database, fecha: string, logisticaId?: number): number {
-  const lf = docLogisticaFilter('r', logisticaId)
-  const row = db.prepare(`
-    SELECT COALESCE(SUM(rl.cantidad_cajas), 0) AS total
-    FROM rotura_lineas rl
-    JOIN roturas r ON r.id = rl.rotura_id
-    WHERE r.fecha > ?${lf.sql}
-  `).get(fecha, ...lf.params) as { total: number }
-  return row.total
-}
-
-function sumAjustesCajasAfter(db: Database.Database, fecha: string, logisticaId?: number): number {
-  const lf = movimientoLogisticaFilter(logisticaId)
-  const row = db.prepare(`
-    SELECT COALESCE(SUM(m.cantidad), 0) AS total
-    FROM movimientos m
-    WHERE m.tipo IN ('AJUSTE_INVENTARIO', 'AJUSTE_MANUAL')
-      AND date(m.created_at) > date(?)${lf.sql}
-  `).get(fecha, ...lf.params) as { total: number }
   return row.total
 }
 
@@ -316,27 +224,6 @@ function sumAjustesCajasInRange(
       AND date(m.created_at) <= date(?)${lf.sql}
   `).get(desde, hasta, ...lf.params) as { total: number; cnt: number }
   return { total: row.total, count: Number(row.cnt) }
-}
-
-function netMovimientoAfterDate(db: Database.Database, fecha: string, logisticaId?: number): number {
-  const ingresos = sumIngresoCajasAfter(db, fecha, logisticaId)
-  const retornos = sumRetornoCajasBuenEstadoAfter(db, fecha, logisticaId)
-  const planillas = sumPlanillaCajasAfter(db, fecha, logisticaId)
-  const roturas = sumRoturaCajasAfter(db, fecha, logisticaId)
-  const ajustes = sumAjustesCajasAfter(db, fecha, logisticaId)
-  return ingresos + retornos + ajustes - planillas - roturas
-}
-
-/** Stock al cierre del día `fecha` (incluye movimientos de ese día). */
-function getStockAtEndOfDay(
-  db: Database.Database,
-  fecha: string,
-  today: string,
-  logisticaId?: number
-): number {
-  if (fecha > today) return 0
-  if (fecha >= today) return getStockTotalCajas(db, logisticaId)
-  return getStockTotalCajas(db, logisticaId) - netMovimientoAfterDate(db, fecha, logisticaId)
 }
 
 function aggregateByProducto(
@@ -489,6 +376,63 @@ function sumStockInicialDetalle(
       (sum, item) => sum + item.cantidad_cajas,
       0
     )
+  )
+}
+
+/** Stock al cierre del período: inicial + movimientos del rango (misma lógica que las tarjetas). */
+function detalleBalanceFinal(
+  db: Database.Database,
+  desde: string,
+  hasta: string,
+  logisticaId?: number
+): ReporteDetalleItem[] {
+  const inicial = itemsToMap(detalleStockInicial(db, desde, hasta, logisticaId))
+  const ingresos = itemsToMap(detalleIngresos(db, desde, hasta, logisticaId))
+  const retornos = itemsToMap(detalleRetornos(db, desde, hasta, logisticaId))
+  const planillas = itemsToMap(detallePlanillas(db, desde, hasta, logisticaId))
+  const roturas = itemsToMap(detalleRoturas(db, desde, hasta, logisticaId))
+  const ajustes = itemsToMap(detalleAjusteInventario(db, desde, hasta, logisticaId))
+
+  const keys = new Set<string>([
+    ...inicial.keys(),
+    ...ingresos.keys(),
+    ...retornos.keys(),
+    ...planillas.keys(),
+    ...roturas.keys(),
+    ...ajustes.keys()
+  ])
+
+  const items: ReporteDetalleItem[] = []
+
+  for (const key of keys) {
+    const ref =
+      inicial.get(key) ??
+      ingresos.get(key) ??
+      retornos.get(key) ??
+      planillas.get(key) ??
+      roturas.get(key) ??
+      ajustes.get(key)
+    if (!ref) continue
+
+    const final = roundCajas(
+      qtyFromMap(inicial, key) +
+        qtyFromMap(ingresos, key) +
+        qtyFromMap(retornos, key) +
+        qtyFromMap(ajustes, key) -
+        qtyFromMap(planillas, key) -
+        qtyFromMap(roturas, key)
+    )
+    if (final <= 0) continue
+
+    items.push({
+      codigo_interno: ref.codigo_interno,
+      nombre: ref.nombre,
+      cantidad_cajas: final
+    })
+  }
+
+  return items.sort((a, b) =>
+    a.nombre.localeCompare(b.nombre, 'es', { sensitivity: 'base' })
   )
 }
 
@@ -684,7 +628,11 @@ export function getMovimientosDiaReport(
   const ajustesInfo = sumAjustesCajasInRange(db, desde, hasta, logisticaId)
 
   const stock_inicial = sumStockInicialDetalle(db, desde, hasta, logisticaId)
-  const balance_final = Math.max(0, getStockAtEndOfDay(db, hasta, today, logisticaId))
+  // Misma ecuación que las tarjetas: evita desfasajes con getStockAtEndOfDay / cantidad_total.
+  const balance_final = Math.max(
+    0,
+    roundCajas(stock_inicial + ingresos + retornos + ajustesInfo.total - planillas - roturas)
+  )
 
   const lf = docLogisticaFilter('r', logisticaId)
   const perdidosRow = db.prepare(`
@@ -753,8 +701,8 @@ export function getReporteDetalle(
       total = roundCajas(items.reduce((sum, item) => sum + item.cantidad_cajas, 0))
       break
     case 'balance_final':
+      items = detalleBalanceFinal(db, desde, hasta, logisticaId)
       total = report.balance_final
-      items = detalleStockPorProducto(db, logisticaId)
       break
     case 'ajustes':
       items = detalleAjustes(db, desde, hasta, logisticaId)

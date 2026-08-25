@@ -51,6 +51,7 @@ export function RegistroDetallePanel({
   totalEtiqueta,
   total,
   totalTexto,
+  totalFisicoTexto,
   totalSuelto,
   meta,
   lineas,
@@ -69,6 +70,11 @@ export function RegistroDetallePanel({
   total: number
   /** Si está, reemplaza el total numérico en cajas (ej. pallets + cajas). */
   totalTexto?: string
+  /**
+   * Si está, el total se puede tocar para alternar cajas ↔ pallets+cajas
+   * (mismo comportamiento que en carga de ingresos / inventario).
+   */
+  totalFisicoTexto?: string
   /** Botellas/unidades sueltas aparte del total principal. */
   totalSuelto?: number
   meta?: ReactNode
@@ -86,6 +92,8 @@ export function RegistroDetallePanel({
   const lineasLista = lineas ?? []
   const nativeApp = isNativeApp()
   const [expandedProductos, setExpandedProductos] = useState<Set<number>>(() => new Set())
+  const [totalVistaFisica, setTotalVistaFisica] = useState(false)
+  const puedeToggleTotal = Boolean(totalFisicoTexto?.trim())
 
   const lineasPorProducto = useMemo(() => {
     const map = new Map<number, { producto: RegistroDetalleLinea; lineas: RegistroDetalleLinea[] }>()
@@ -112,7 +120,13 @@ export function RegistroDetallePanel({
   }, [lineasLista])
 
   const cantidadProductos = productosCount ?? lineasPorProducto.length
-  const totalLabel = totalEtiqueta === 'Total' ? 'Total general' : totalEtiqueta
+  const totalCajasLabel = totalEtiqueta === 'Total' ? 'Total general' : totalEtiqueta
+  const totalLabel =
+    puedeToggleTotal && totalVistaFisica ? 'Total pallets + cajas' : totalCajasLabel
+  const totalMostrado =
+    puedeToggleTotal && totalVistaFisica
+      ? totalFisicoTexto!
+      : (totalTexto ?? formatCantidad(total))
 
   function toggleProductoExpand(productoId: number) {
     setExpandedProductos((prev) => {
@@ -325,21 +339,49 @@ export function RegistroDetallePanel({
 
       <div className="rounded-xl border border-surface-border bg-white px-4 py-4 shadow-sm sm:px-5">
         <div className="flex flex-wrap items-center justify-between gap-4">
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">
-              {totalLabel}
-            </p>
-            <div className="flex flex-wrap items-baseline gap-x-3 gap-y-0.5">
-              <p className="text-2xl font-bold tabular-nums text-brand-700">
-                {totalTexto ?? formatCantidad(total)}
+          {puedeToggleTotal ? (
+            <button
+              type="button"
+              onClick={() => setTotalVistaFisica((v) => !v)}
+              className="min-w-0 rounded-xl text-left active:bg-slate-50"
+              aria-label={
+                totalVistaFisica
+                  ? 'Mostrar total en cajas'
+                  : 'Mostrar total en pallets y cajas'
+              }
+            >
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+                {totalLabel}
               </p>
-              {totalSuelto != null && totalSuelto > 0 && (
-                <p className="text-sm font-medium text-slate-500">
-                  + {formatCantidad(totalSuelto)} botellas sueltas
+              <div className="flex flex-wrap items-baseline gap-x-3 gap-y-0.5">
+                <p className="text-2xl font-bold tabular-nums text-brand-700">{totalMostrado}</p>
+                {!(puedeToggleTotal && totalVistaFisica) &&
+                  totalSuelto != null &&
+                  totalSuelto > 0 && (
+                    <p className="text-sm font-medium text-slate-500">
+                      + {formatCantidad(totalSuelto)} botellas sueltas
+                    </p>
+                  )}
+              </div>
+              <p className="mt-0.5 text-xs text-slate-400">tocá para cambiar</p>
+            </button>
+          ) : (
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+                {totalLabel}
+              </p>
+              <div className="flex flex-wrap items-baseline gap-x-3 gap-y-0.5">
+                <p className="text-2xl font-bold tabular-nums text-brand-700">
+                  {totalMostrado}
                 </p>
-              )}
+                {totalSuelto != null && totalSuelto > 0 && (
+                  <p className="text-sm font-medium text-slate-500">
+                    + {formatCantidad(totalSuelto)} botellas sueltas
+                  </p>
+                )}
+              </div>
             </div>
-          </div>
+          )}
           {accionesTotal && (
             <div className="flex shrink-0 flex-wrap items-center gap-2">{accionesTotal}</div>
           )}

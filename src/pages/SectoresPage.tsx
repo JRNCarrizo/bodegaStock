@@ -804,15 +804,10 @@ export function SectoresPage() {
         </div>
         <div className="flex flex-wrap items-center gap-2">
           {hasPermiso('sectores.crear') && (
-            <>
-              <span className="hidden rounded-full border border-surface-border bg-white px-2.5 py-1 text-[11px] font-medium text-slate-500 shadow-card sm:inline-flex">
-                Enter = nuevo sector
-              </span>
               <Button className="rounded-xl px-4" onClick={openCreate}>
                 <Plus className="h-4 w-4" />
                 Nuevo sector
               </Button>
-            </>
           )}
         </div>
       </section>
@@ -904,23 +899,23 @@ export function SectoresPage() {
                       )
                     )}
                   >
-                    {!!s.usa_ubicaciones && (
-                      <span
-                        className={cn(
-                          'shrink-0 self-start rounded-lg p-1.5 sm:self-center',
-                          isExpanded
+                    <span
+                      className={cn(
+                        'shrink-0 self-start rounded-lg p-1.5 sm:self-center',
+                        s.usa_ubicaciones
+                          ? isExpanded
                             ? 'bg-brand-100 text-brand-700'
                             : 'text-slate-400'
-                        )}
-                        aria-hidden
-                      >
-                        {isExpanded ? (
-                          <ChevronDown className="h-4 w-4" />
-                        ) : (
-                          <ChevronRight className="h-4 w-4" />
-                        )}
-                      </span>
-                    )}
+                          : 'invisible'
+                      )}
+                      aria-hidden
+                    >
+                      {isExpanded ? (
+                        <ChevronDown className="h-4 w-4" />
+                      ) : (
+                        <ChevronRight className="h-4 w-4" />
+                      )}
+                    </span>
 
                     <div className="flex min-w-0 flex-1 items-start gap-3">
                       <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-brand-50 text-brand-600 ring-1 ring-brand-100">
@@ -979,11 +974,12 @@ export function SectoresPage() {
                         <Button
                           variant="secondary"
                           size="sm"
-                          className="rounded-lg"
+                          className="rounded-lg !px-2 !py-2"
                           onClick={() => openEdit(s)}
+                          title="Editar"
+                          aria-label="Editar"
                         >
                           <Pencil className="h-4 w-4" />
-                          Editar
                         </Button>
                       )}
                     </div>

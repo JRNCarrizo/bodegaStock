@@ -16,6 +16,7 @@ import { useSidebarNav } from '@/context/SidebarNavContext'
 import { Card } from '@/components/ui/Card'
 import { AppCopyrightFooter } from '@/components/AppCopyrightFooter'
 import { shouldAbrirFormularioConEnter } from '@/hooks/useRegistroListKeyboard'
+import { getLogisticaTheme, resolveLogisticaCodigo } from '@/lib/logisticaTheme'
 import { cn } from '@/lib/utils'
 import { focusAndScrollIntoView } from '@/lib/scroll'
 import type { NavItem } from '@/types'
@@ -232,6 +233,9 @@ export function DashboardPage() {
   const { registerEscHandler, registerMainContentFocus, focusSidebar, sidebarActive } =
     useSidebarNav()
   const firstName = user?.nombre?.split(' ')[0] ?? 'Usuario'
+  const logisticaTheme = getLogisticaTheme(
+    resolveLogisticaCodigo(user?.logisticas, user?.logistica_activa_id)
+  )
   const [cardHighlight, setCardHighlight] = useState(-1)
   const keyboardNavRef = useRef(false)
   const navigableCountRef = useRef(0)
@@ -374,7 +378,13 @@ export function DashboardPage() {
 
           <div className="relative flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between">
             <div className="flex gap-4">
-              <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-brand-600 text-white shadow-md ring-4 ring-brand-600/15">
+              <div
+                className={cn(
+                  'flex h-12 w-12 shrink-0 items-center justify-center rounded-xl text-white shadow-md ring-4',
+                  logisticaTheme.logoBg,
+                  logisticaTheme.logoRing
+                )}
+              >
                 <Sparkles className="h-5 w-5" />
               </div>
               <div>

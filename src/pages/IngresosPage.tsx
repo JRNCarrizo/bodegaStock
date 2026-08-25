@@ -180,6 +180,7 @@ export function IngresosPage() {
   })
   const [lineas, setLineas] = useState<IngresoLineaDraft[]>([])
   const [totalVistaFisica, setTotalVistaFisica] = useState(false)
+  const [totalVistaFisicaIds, setTotalVistaFisicaIds] = useState<Set<number>>(() => new Set())
 
   const [tipoBulto, setTipoBulto] = useState<'PALLET' | 'CAJA' | 'SUELTO'>('PALLET')
   const [cantidadBultos, setCantidadBultos] = useState('')
@@ -481,6 +482,30 @@ export function IngresosPage() {
     () => ingresosDelDia.reduce((s, i) => s + Number(i.total_unidades || 0), 0),
     [ingresosDelDia]
   )
+
+  function labelTotalIngresoLista(i: IngresoListItem): string {
+    const showFisico = totalVistaFisicaIds.has(i.id)
+    if (showFisico) {
+      return formatTotalesInventarioFisicos({
+        pallets: Number(i.total_pallets ?? 0),
+        cajas: Number(i.total_cajas_fisicas ?? 0),
+        suelto: Number(i.total_suelto ?? 0)
+      })
+    }
+    return formatTotalesInventarioResumen({
+      cajas: Number(i.total_unidades || 0),
+      suelto: Number(i.total_suelto ?? 0)
+    })
+  }
+
+  function toggleTotalIngresoLista(id: number) {
+    setTotalVistaFisicaIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
 
   const conteoPorDia = useMemo(() => {
     const map = new Map<string, number>()
@@ -1081,6 +1106,20 @@ export function IngresosPage() {
   }
 
   if (view === 'detail' && detalle) {
+    const resumenFisicoDetalle = formatTotalesInventarioFisicos(
+      sumarTotalesInventarioFisicos(detalle.lineas)
+    )
+    const resumenGeneralDetalle = formatTotalesInventarioResumen(
+      sumarTotalesInventarioLineas(
+        detalle.lineas.map((l) => ({
+          tipo_bulto: (l.tipo_bulto as 'PALLET' | 'CAJA' | 'SUELTO') || 'CAJA',
+          cantidad_bultos: l.cantidad_bultos,
+          unidades_por_bulto: l.unidades_por_bulto,
+          cantidad_suelta: l.cantidad_suelta
+        }))
+      )
+    )
+
     return (
       <RegistroDetallePanel
         onVolver={volverAlListadoDesdeDetalle}
@@ -1088,6 +1127,8 @@ export function IngresosPage() {
         fecha={detalle.ingreso.fecha}
         totalEtiqueta="Total"
         total={detalle.total_unidades}
+        totalTexto={resumenGeneralDetalle}
+        totalFisicoTexto={resumenFisicoDetalle}
         meta={
           <>
             <RegistroDetalleMetaChip
@@ -1899,33 +1940,26 @@ export function IngresosPage() {
             </p>
           </div>
           {hasPermiso('ingresos.crear') && (
-            <div className="flex flex-col items-stretch gap-2 sm:items-end">
-              <p className="text-xs text-slate-400 sm:text-right">
-                {tieneBorrador
-                  ? 'Enter → continuar ingreso en curso'
-                  : 'Enter → nuevo ingreso'}
-              </p>
-              <div className="flex flex-wrap items-center justify-end gap-2">
-                <Button
-                  className="rounded-xl px-4"
-                  onClick={() => {
-                    if (tieneBorrador) continuarBorrador()
-                    else abrirNuevoIngreso()
-                  }}
-                >
-                  {tieneBorrador ? (
-                    <>
-                      <ClipboardList className="h-4 w-4" />
-                      Continuar ingreso
-                    </>
-                  ) : (
-                    <>
-                      <Plus className="h-4 w-4" />
-                      Nuevo ingreso
-                    </>
-                  )}
-                </Button>
-              </div>
+            <div className="flex flex-wrap items-center justify-end gap-2">
+              <Button
+                className="rounded-xl px-4"
+                onClick={() => {
+                  if (tieneBorrador) continuarBorrador()
+                  else abrirNuevoIngreso()
+                }}
+              >
+                {tieneBorrador ? (
+                  <>
+                    <ClipboardList className="h-4 w-4" />
+                    Continuar ingreso
+                  </>
+                ) : (
+                  <>
+                    <Plus className="h-4 w-4" />
+                    Nuevo ingreso
+                  </>
+                )}
+              </Button>
             </div>
           )}
         </section>
@@ -2116,7 +2150,9 @@ export function IngresosPage() {
             </div>
           ) : nativeApp ? (
             <ul className="space-y-2">
-              {ingresosDelDia.map((i, index) => (
+              {ingresosDelDia.map((i, index) => {
+                const showFisico = totalVistaFisicaIds.has(i.id)
+                return (
                 <li
                   key={i.id}
                   {...registroListKb.listItemProps(
@@ -2124,12 +2160,12 @@ export function IngresosPage() {
                     'overflow-hidden rounded-xl border border-surface-border bg-white shadow-card'
                   )}
                 >
-                  <button
-                    type="button"
-                    className="flex w-full items-start gap-3 px-3 py-3 text-left active:bg-slate-50"
-                    onClick={() => verDetalle(i.id)}
-                  >
-                    <div className="min-w-0 flex-1">
+                  <div className="flex w-full items-stretch gap-0">
+                    <button
+                      type="button"
+                      className="min-w-0 flex-1 px-3 py-3 text-left active:bg-slate-50"
+                      onClick={() => verDetalle(i.id)}
+                    >
                       <div className="flex items-center gap-2">
                         <p className="truncate text-sm font-semibold text-slate-900">
                           {i.numero_remito}
@@ -2149,19 +2185,36 @@ export function IngresosPage() {
                           {i.usuario_nombre}
                         </span>
                       </div>
-                    </div>
-                    <div className="flex shrink-0 flex-col items-end justify-center">
-                      <span className="inline-flex items-center rounded-lg bg-brand-50 px-2.5 py-1 text-sm font-bold tabular-nums text-brand-700 ring-1 ring-brand-100">
-                        {formatCantidad(i.total_unidades)}
+                    </button>
+                    <button
+                      type="button"
+                      className="flex shrink-0 flex-col items-end justify-center px-3 py-3 active:bg-slate-50"
+                      onClick={() => toggleTotalIngresoLista(i.id)}
+                      title={
+                        showFisico
+                          ? 'Mostrar total en cajas'
+                          : 'Mostrar total en pallets y cajas'
+                      }
+                      aria-label={
+                        showFisico
+                          ? 'Mostrar total en cajas'
+                          : 'Mostrar total en pallets y cajas'
+                      }
+                    >
+                      <span className="inline-flex max-w-[9.5rem] items-center justify-end rounded-lg bg-brand-50 px-2.5 py-1 text-right text-sm font-bold tabular-nums leading-tight text-brand-700 ring-1 ring-brand-100">
+                        {labelTotalIngresoLista(i)}
                       </span>
-                    </div>
-                  </button>
+                    </button>
+                  </div>
                 </li>
-              ))}
+                )
+              })}
             </ul>
           ) : (
             <ul className="divide-y divide-surface-border">
-              {ingresosDelDia.map((i, index) => (
+              {ingresosDelDia.map((i, index) => {
+                const showFisico = totalVistaFisicaIds.has(i.id)
+                return (
                 <li
                   key={i.id}
                   {...registroListKb.listItemProps(
@@ -2217,12 +2270,27 @@ export function IngresosPage() {
                     >
                       <Eye className="h-4 w-4" />
                     </Button>
-                    <span className="ml-auto inline-flex min-w-[3rem] items-center justify-center rounded-lg bg-brand-50 px-2.5 py-1.5 text-sm font-bold tabular-nums text-brand-700 ring-1 ring-brand-100 sm:ml-2">
-                      {formatCantidad(i.total_unidades)}
-                    </span>
+                    <button
+                      type="button"
+                      className="ml-auto inline-flex min-w-[3rem] max-w-[12rem] items-center justify-center rounded-lg bg-brand-50 px-2.5 py-1.5 text-right text-sm font-bold tabular-nums leading-tight text-brand-700 ring-1 ring-brand-100 hover:bg-brand-100 sm:ml-2"
+                      onClick={() => toggleTotalIngresoLista(i.id)}
+                      title={
+                        showFisico
+                          ? 'Mostrar total en cajas'
+                          : 'Mostrar total en pallets y cajas'
+                      }
+                      aria-label={
+                        showFisico
+                          ? 'Mostrar total en cajas'
+                          : 'Mostrar total en pallets y cajas'
+                      }
+                    >
+                      {labelTotalIngresoLista(i)}
+                    </button>
                   </div>
                 </li>
-              ))}
+                )
+              })}
             </ul>
           )}
         </CardBody>

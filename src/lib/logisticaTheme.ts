@@ -28,6 +28,12 @@ export interface LogisticaTheme {
   footerAvatarBg: string
   footerAvatarText: string
   footerAvatarRing: string
+  /** Botón primario (Nuevo…, Confirmar, etc.) */
+  btnPrimary: string
+  btnPrimaryFocus: string
+  /** Chips / filtros seleccionados (Consulta, etc.) */
+  chipSelected: string
+  chipIdle: string
 }
 
 const ESMERALDA_THEME: LogisticaTheme = {
@@ -54,7 +60,11 @@ const ESMERALDA_THEME: LogisticaTheme = {
   navKeyboardIcon: '[&>svg]:text-brand-600',
   footerAvatarBg: 'bg-brand-100',
   footerAvatarText: 'text-brand-800',
-  footerAvatarRing: 'ring-brand-50'
+  footerAvatarRing: 'ring-brand-50',
+  btnPrimary: 'bg-brand-600 text-white hover:bg-brand-700 shadow-sm',
+  btnPrimaryFocus: 'focus-visible:ring-brand-500',
+  chipSelected: 'border-brand-500 bg-brand-600 text-white shadow-sm',
+  chipIdle: 'border-surface-border bg-white text-slate-600 hover:border-brand-300'
 }
 
 const NAKBE_THEME: LogisticaTheme = {
@@ -81,7 +91,11 @@ const NAKBE_THEME: LogisticaTheme = {
   navKeyboardIcon: '[&>svg]:text-teal-600',
   footerAvatarBg: 'bg-teal-100',
   footerAvatarText: 'text-teal-900',
-  footerAvatarRing: 'ring-teal-50'
+  footerAvatarRing: 'ring-teal-50',
+  btnPrimary: 'bg-teal-600 text-white hover:bg-teal-700 shadow-sm',
+  btnPrimaryFocus: 'focus-visible:ring-teal-500',
+  chipSelected: 'border-teal-500 bg-teal-600 text-white shadow-sm',
+  chipIdle: 'border-surface-border bg-white text-slate-600 hover:border-teal-300'
 }
 
 export function getLogisticaTheme(codigo?: string | null): LogisticaTheme {

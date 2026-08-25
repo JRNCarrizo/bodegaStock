@@ -310,6 +310,11 @@ export interface IngresoListItem {
   sector_nombre: string
   usuario_nombre: string
   total_unidades: number
+  /** Pallets cargados (sin convertir a cajas). */
+  total_pallets?: number
+  /** Cajas físicas (cajas sueltas + extras de pallet). */
+  total_cajas_fisicas?: number
+  total_suelto?: number
   lineas_count: number
   productos_count: number
   created_at: string
@@ -324,6 +329,11 @@ export interface IngresoDetalleLinea {
   ubicacion_nombre: string | null
   etiqueta: string
   total_unidades: number
+  tipo_bulto?: 'PALLET' | 'CAJA' | 'SUELTO' | string
+  cantidad_bultos?: number | null
+  unidades_por_bulto?: number | null
+  cantidad_suelta?: number | null
+  unidad?: string
 }
 
 export interface IngresoDetalle {

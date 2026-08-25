@@ -1230,9 +1230,6 @@ export function RoturasPage() {
           </div>
           {hasPermiso('roturas.crear') && (
             <div className="flex flex-wrap items-center gap-2">
-              <span className="hidden rounded-full border border-surface-border bg-white px-2.5 py-1 text-[11px] font-medium text-slate-500 shadow-card sm:inline-flex">
-                Enter = nuevo registro
-              </span>
               <Button className="rounded-xl px-4" onClick={abrirNuevoRegistro}>
                 <Plus className="h-4 w-4" />
                 Nuevo registro
@@ -1343,7 +1340,6 @@ export function RoturasPage() {
             {!nativeApp && (
               <p className="text-xs text-slate-500">
                 Una sola fecha filtra ese día · las dos juntas = rango
-                {hasPermiso('roturas.crear') && ' · Enter = nuevo registro'}
               </p>
             )}
             <DayTabsRow

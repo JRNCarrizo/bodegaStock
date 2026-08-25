@@ -999,11 +999,12 @@ export function ProductosPage() {
                       <Button
                         variant="secondary"
                         size="sm"
-                        className="rounded-lg"
+                        className="rounded-lg !px-2 !py-2"
                         onClick={() => void openEdit(p)}
+                        title="Editar"
+                        aria-label="Editar"
                       >
                         <Pencil className="h-4 w-4" />
-                        Editar
                       </Button>
                     )}
                   </div>

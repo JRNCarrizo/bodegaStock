@@ -784,9 +784,6 @@ export function CamionerosPage() {
         </div>
         {hasPermiso('camioneros.crear') && (
           <div className="flex flex-wrap items-center gap-2">
-            <span className="hidden rounded-full border border-surface-border bg-white px-2.5 py-1 text-[11px] font-medium text-slate-500 shadow-card sm:inline-flex">
-              Enter = nuevo camionero
-            </span>
             <Button className="rounded-xl px-4" onClick={openCreate}>
               <Plus className="h-4 w-4" />
               Nuevo camionero

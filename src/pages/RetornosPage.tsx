@@ -2374,32 +2374,25 @@ export function RetornosPage() {
             </p>
           </div>
           {hasPermiso('retornos.crear') && (
-            <div className="flex flex-col items-stretch gap-2 sm:items-end">
-              <p className="text-xs text-slate-400 sm:text-right">
-                {tieneBorrador
-                  ? 'Enter → continuar retorno en curso'
-                  : 'Enter → nuevo retorno'}
-              </p>
-              <Button
-                className="rounded-xl px-4"
-                onClick={() => {
-                  if (tieneBorrador) continuarBorrador()
-                  else abrirNuevoRetorno()
-                }}
-              >
-                {tieneBorrador ? (
-                  <>
-                    <ClipboardList className="h-4 w-4" />
-                    Continuar retorno
-                  </>
-                ) : (
-                  <>
-                    <Plus className="h-4 w-4" />
-                    Nuevo retorno
-                  </>
-                )}
-              </Button>
-            </div>
+            <Button
+              className="rounded-xl px-4"
+              onClick={() => {
+                if (tieneBorrador) continuarBorrador()
+                else abrirNuevoRetorno()
+              }}
+            >
+              {tieneBorrador ? (
+                <>
+                  <ClipboardList className="h-4 w-4" />
+                  Continuar retorno
+                </>
+              ) : (
+                <>
+                  <Plus className="h-4 w-4" />
+                  Nuevo retorno
+                </>
+              )}
+            </Button>
           )}
         </section>
       )}
@@ -2485,7 +2478,6 @@ export function RetornosPage() {
             {!nativeApp && (
               <p className="text-xs text-slate-500">
                 Una sola fecha filtra ese día · las dos juntas = rango
-                {hasPermiso('retornos.crear') && ' · Enter = nuevo retorno'}
               </p>
             )}
 

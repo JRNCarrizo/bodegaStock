@@ -10,11 +10,11 @@ export const SECCIONES_ASIGNABLES = [
   { id: 'movimientos', label: 'Movimientos', group: 'Movimientos' },
   { id: 'inventario', label: 'Inventario (conteo)', group: 'Inventario' },
   { id: 'ajustes', label: 'Ajustes de stock', group: 'Inventario' },
-  { id: 'camioneros', label: 'Camioneros', group: 'Administración' },
   { id: 'agenda_turnos', label: 'Agenda de turnos', group: 'Administración' },
-  { id: 'reportes', label: 'Movimientos del día', group: 'Reportes' },
+  { id: 'camioneros', label: 'Camioneros', group: 'Administración' },
   { id: 'usuarios', label: 'Usuarios', group: 'Administración' },
-  { id: 'configuracion', label: 'Configuración', group: 'Administración' }
+  { id: 'configuracion', label: 'Configuración', group: 'Administración' },
+  { id: 'reportes', label: 'Movimientos del día', group: 'Reportes' }
 ] as const
 
 export type SeccionId = (typeof SECCIONES_ASIGNABLES)[number]['id']

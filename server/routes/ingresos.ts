@@ -156,16 +156,51 @@ export async function ingresosRoutes(app: FastifyInstance): Promise<void> {
         u.nombre AS usuario_nombre,
         COALESCE(st.total_unidades, 0) AS total_unidades,
         COALESCE(st.lineas_count, 0) AS lineas_count,
-        COALESCE(st.productos_count, 0) AS productos_count
+        COALESCE(st.productos_count, 0) AS productos_count,
+        COALESCE(st.total_pallets, 0) AS total_pallets,
+        COALESCE(st.total_cajas_fisicas, 0) AS total_cajas_fisicas,
+        COALESCE(st.total_suelto, 0) AS total_suelto
       FROM ingresos i
       JOIN sectores s ON s.id = i.sector_id
       JOIN usuarios u ON u.id = i.usuario_id
       LEFT JOIN (
         SELECT
           ingreso_id,
-          SUM(total_unidades) AS total_unidades,
           COUNT(*) AS lineas_count,
-          COUNT(DISTINCT producto_id) AS productos_count
+          COUNT(DISTINCT producto_id) AS productos_count,
+          SUM(
+            CASE
+              WHEN UPPER(TRIM(tipo_bulto)) = 'PALLET' THEN
+                COALESCE(cantidad_bultos, 0) * COALESCE(unidades_por_bulto, 0)
+                + COALESCE(cantidad_suelta, 0)
+              WHEN UPPER(TRIM(tipo_bulto)) = 'CAJA' THEN
+                COALESCE(cantidad_bultos, 0)
+              ELSE 0
+            END
+          ) AS total_unidades,
+          SUM(
+            CASE
+              WHEN UPPER(TRIM(tipo_bulto)) = 'PALLET' THEN COALESCE(cantidad_bultos, 0)
+              ELSE 0
+            END
+          ) AS total_pallets,
+          SUM(
+            CASE
+              WHEN UPPER(TRIM(tipo_bulto)) = 'CAJA' THEN COALESCE(cantidad_bultos, 0)
+              WHEN UPPER(TRIM(tipo_bulto)) = 'PALLET' THEN COALESCE(cantidad_suelta, 0)
+              ELSE 0
+            END
+          ) AS total_cajas_fisicas,
+          SUM(
+            CASE
+              WHEN UPPER(TRIM(tipo_bulto)) = 'CAJA' THEN COALESCE(cantidad_suelta, 0)
+              WHEN UPPER(TRIM(tipo_bulto)) = 'SUELTO' THEN COALESCE(
+                NULLIF(cantidad_suelta, 0),
+                COALESCE(cantidad_bultos, 0)
+              )
+              ELSE 0
+            END
+          ) AS total_suelto
         FROM ingreso_lineas
         GROUP BY ingreso_id
       ) st ON st.ingreso_id = i.id
@@ -205,7 +240,19 @@ export async function ingresosRoutes(app: FastifyInstance): Promise<void> {
 
     sql += ' ORDER BY i.fecha DESC, i.created_at DESC'
 
-    return db.prepare(sql).all(...params)
+    return db.prepare(sql).all(...params).map((row) => {
+      const r = row as {
+        total_pallets?: number | null
+        total_cajas_fisicas?: number | null
+        total_suelto?: number | null
+      } & Record<string, unknown>
+      return {
+        ...r,
+        total_pallets: Number(r.total_pallets ?? 0),
+        total_cajas_fisicas: Number(r.total_cajas_fisicas ?? 0),
+        total_suelto: Number(r.total_suelto ?? 0)
+      }
+    })
   })
 
   app.get('/api/ingresos/:id', {

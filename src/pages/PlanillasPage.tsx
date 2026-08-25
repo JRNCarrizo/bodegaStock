@@ -1668,13 +1668,7 @@ export function PlanillasPage() {
             </p>
           </div>
           {hasPermiso('planillas.crear') && (
-            <div className="flex flex-col items-stretch gap-2 sm:items-end">
-              <p className="text-xs text-slate-400 sm:text-right">
-                {tieneBorrador
-                  ? 'Enter → continuar planilla en curso'
-                  : 'Enter → nueva planilla'}
-              </p>
-              <Button
+            <Button
                 className="rounded-xl px-4"
                 onClick={() => {
                   if (tieneBorrador) continuarBorrador()
@@ -1693,7 +1687,6 @@ export function PlanillasPage() {
                   </>
                 )}
               </Button>
-            </div>
           )}
         </section>
       )}
@@ -1779,7 +1772,6 @@ export function PlanillasPage() {
             {!nativeApp && (
               <p className="text-xs text-slate-500">
                 Una sola fecha filtra ese día · las dos juntas = rango
-                {hasPermiso('planillas.crear') && ' · Enter = nueva planilla'}
               </p>
             )}
 

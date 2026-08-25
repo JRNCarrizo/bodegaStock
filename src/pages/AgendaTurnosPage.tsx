@@ -910,74 +910,78 @@ export function AgendaTurnosPage() {
           </div>
         </div>
       ) : (
-        <div className="flex flex-wrap items-start justify-between gap-4">
-          <div>
-            <h1 className="flex items-center gap-2 text-2xl font-bold tracking-tight text-slate-900">
-              <CalendarDays className="h-7 w-7 text-brand-600" />
-              Agenda de turnos
-            </h1>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            {canEdit && (
-              <Button type="button" variant="secondary" className="rounded-xl" onClick={openConfig}>
-                <Settings className="h-4 w-4" />
-                Días
-              </Button>
-            )}
-            {canCreate && (
-              <Button className="rounded-xl" onClick={() => openCreate()}>
-                <Plus className="h-4 w-4" />
-                Nuevo turno
-              </Button>
-            )}
-          </div>
-        </div>
+        <h1 className="flex items-center gap-2 text-2xl font-bold tracking-tight text-slate-900">
+          <CalendarDays className="h-7 w-7 text-brand-600" />
+          Agenda de turnos
+        </h1>
       )}
 
       <div
         className={cn(
           nativeApp
             ? 'grid grid-cols-2 gap-1 rounded-xl bg-slate-100 p-1'
-            : 'flex flex-wrap gap-2 border-b border-surface-border pb-px'
+            : 'flex flex-wrap items-center justify-between gap-3 border-b border-surface-border pb-px'
         )}
       >
-        <button
-          type="button"
-          onClick={() => setTab('semana')}
+        <div
           className={cn(
-            nativeApp
-              ? 'rounded-lg py-2 text-sm font-semibold transition'
-              : 'rounded-t-lg px-4 py-2 text-sm font-medium',
-            tab === 'semana'
-              ? nativeApp
-                ? 'bg-white text-brand-800 shadow-sm'
-                : 'bg-white text-brand-800 ring-1 ring-surface-border ring-b-white'
-              : nativeApp
-                ? 'text-slate-500'
-                : 'text-slate-500 hover:text-slate-800'
+            nativeApp ? 'contents' : 'flex flex-wrap gap-2'
           )}
         >
-          Semana
-        </button>
-        <button
-          type="button"
-          onClick={() => setTab('historial')}
-          className={cn(
-            nativeApp
-              ? 'inline-flex items-center justify-center gap-1.5 rounded-lg py-2 text-sm font-semibold transition'
-              : 'inline-flex items-center gap-1.5 rounded-t-lg px-4 py-2 text-sm font-medium',
-            tab === 'historial'
-              ? nativeApp
-                ? 'bg-white text-brand-800 shadow-sm'
-                : 'bg-white text-brand-800 ring-1 ring-surface-border ring-b-white'
-              : nativeApp
-                ? 'text-slate-500'
-                : 'text-slate-500 hover:text-slate-800'
-          )}
-        >
-          {!nativeApp && <History className="h-3.5 w-3.5" />}
-          Historial
-        </button>
+          <button
+            type="button"
+            onClick={() => setTab('semana')}
+            className={cn(
+              nativeApp
+                ? 'rounded-lg py-2 text-sm font-semibold transition'
+                : 'rounded-t-lg px-4 py-2 text-sm font-medium',
+              tab === 'semana'
+                ? nativeApp
+                  ? 'bg-white text-brand-800 shadow-sm'
+                  : 'bg-white text-brand-800 ring-1 ring-surface-border ring-b-white'
+                : nativeApp
+                  ? 'text-slate-500'
+                  : 'text-slate-500 hover:text-slate-800'
+            )}
+          >
+            Semana
+          </button>
+          <button
+            type="button"
+            onClick={() => setTab('historial')}
+            className={cn(
+              nativeApp
+                ? 'inline-flex items-center justify-center gap-1.5 rounded-lg py-2 text-sm font-semibold transition'
+                : 'inline-flex items-center gap-1.5 rounded-t-lg px-4 py-2 text-sm font-medium',
+              tab === 'historial'
+                ? nativeApp
+                  ? 'bg-white text-brand-800 shadow-sm'
+                  : 'bg-white text-brand-800 ring-1 ring-surface-border ring-b-white'
+                : nativeApp
+                  ? 'text-slate-500'
+                  : 'text-slate-500 hover:text-slate-800'
+            )}
+          >
+            {!nativeApp && <History className="h-3.5 w-3.5" />}
+            Historial
+          </button>
+        </div>
+        {!nativeApp && (canEdit || canCreate) && (
+          <div className="flex flex-wrap items-center gap-2 pb-1">
+            {canEdit && (
+              <Button type="button" variant="secondary" size="sm" className="rounded-xl" onClick={openConfig}>
+                <Settings className="h-4 w-4" />
+                Días
+              </Button>
+            )}
+            {canCreate && (
+              <Button size="sm" className="rounded-xl" onClick={() => openCreate()}>
+                <Plus className="h-4 w-4" />
+                Nuevo turno
+              </Button>
+            )}
+          </div>
+        )}
       </div>
 
       {error && (

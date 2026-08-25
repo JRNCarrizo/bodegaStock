@@ -2883,24 +2883,19 @@ export function MovimientosPage() {
             </p>
           </div>
           {hasPermiso('movimientos_internos.crear') && (
-            <div className="flex flex-col items-stretch gap-2 sm:items-end">
-              <p className="text-xs text-slate-400 sm:text-right">
-                Enter → {tieneListaAbierta ? 'continuar lista' : 'crear lista'} · ↓ navega movimientos
-              </p>
-              <Button
-                type="button"
-                className="rounded-xl px-4"
-                disabled={loadingEditor}
-                onClick={() => void abrirListaEditor()}
-              >
-                {loadingEditor ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  <ClipboardList className="h-4 w-4" />
-                )}
-                {tieneListaAbierta ? 'Continuar lista abierta' : 'Crear lista de movimientos'}
-              </Button>
-            </div>
+            <Button
+              type="button"
+              className="rounded-xl px-4"
+              disabled={loadingEditor}
+              onClick={() => void abrirListaEditor()}
+            >
+              {loadingEditor ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <ClipboardList className="h-4 w-4" />
+              )}
+              {tieneListaAbierta ? 'Continuar lista abierta' : 'Crear lista de movimientos'}
+            </Button>
           )}
         </section>
       )}

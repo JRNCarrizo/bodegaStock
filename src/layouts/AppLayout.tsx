@@ -10,6 +10,7 @@ import { navItemVisible } from '@/types'
 import { isNativeApp } from '@/lib/nativeServer'
 import { api, cn } from '@/lib/utils'
 import { getLogisticaTheme, resolveLogisticaCodigo, type LogisticaTheme } from '@/lib/logisticaTheme'
+import { LogisticaThemeProvider } from '@/context/LogisticaThemeContext'
 import { Button } from '@/components/ui/Button'
 import type { NavItem } from '@/types'
 
@@ -250,6 +251,7 @@ function AppLayoutShell({
   }, [canViewAgenda, refreshAgendaPendientes])
 
   return (
+    <LogisticaThemeProvider theme={logisticaTheme}>
     <div className="flex h-screen bg-surface-muted">
       <aside
         className={cn(
@@ -475,6 +477,7 @@ function AppLayoutShell({
         </div>
       </div>
     </div>
+    </LogisticaThemeProvider>
   )
 }
 

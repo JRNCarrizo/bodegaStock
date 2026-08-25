@@ -28,6 +28,7 @@ import type {
 import { ProductImage } from '@/components/ProductImage'
 import { ReorganizarStockForm } from '@/components/ReorganizarStockForm'
 import { ScrollableProductName } from '@/components/ScrollableProductName'
+import { useLogisticaTheme } from '@/context/LogisticaThemeContext'
 import { Button } from '@/components/ui/Button'
 import { Badge, Card, CardBody } from '@/components/ui/Card'
 import { useAuth } from '@/context/AuthContext'
@@ -46,6 +47,7 @@ export function SectorStockView({
   nativeApp?: boolean
 }) {
   const { hasPermiso } = useAuth()
+  const theme = useLogisticaTheme()
   const canReorganizar = hasPermiso('ajustes.crear')
   const [ubicaciones, setUbicaciones] = useState<SectorUbicacion[]>([])
   const [loadingUbicaciones, setLoadingUbicaciones] = useState(false)
@@ -256,9 +258,7 @@ export function SectorStockView({
                     onClick={() => changeUbicacionFilter('all')}
                     className={cn(
                       'rounded-full border px-3 py-1 text-xs font-medium transition-colors',
-                      ubicacionFilter === 'all'
-                        ? 'border-brand-500 bg-brand-600 text-white'
-                        : 'border-surface-border bg-white text-slate-600 hover:border-brand-300'
+                      ubicacionFilter === 'all' ? theme.chipSelected : theme.chipIdle
                     )}
                   >
                     Todo el sector
@@ -270,9 +270,7 @@ export function SectorStockView({
                       onClick={() => changeUbicacionFilter(u.id)}
                       className={cn(
                         'rounded-full border px-3 py-1 text-xs font-medium transition-colors',
-                        ubicacionFilter === u.id
-                          ? 'border-brand-500 bg-brand-600 text-white'
-                          : 'border-surface-border bg-white text-slate-600 hover:border-brand-300'
+                        ubicacionFilter === u.id ? theme.chipSelected : theme.chipIdle
                       )}
                     >
                       {u.nombre}
@@ -284,8 +282,8 @@ export function SectorStockView({
                     className={cn(
                       'rounded-full border px-3 py-1 text-xs font-medium transition-colors',
                       ubicacionFilter === 'sin'
-                        ? 'border-brand-500 bg-brand-600 text-white'
-                        : 'border-dashed border-surface-border bg-white text-slate-500 hover:border-brand-300'
+                        ? theme.chipSelected
+                        : cn(theme.chipIdle, 'border-dashed text-slate-500')
                     )}
                   >
                     Sin ubicación

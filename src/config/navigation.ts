@@ -36,7 +36,6 @@ export const NAV_ITEMS: NavItem[] = [
   { id: 'roturas', label: 'Roturas y pérdidas', path: '/roturas', permiso: 'roturas.ver', group: 'Movimientos' },
   { id: 'movimientos', label: 'Movimientos', path: '/movimientos', permiso: 'movimientos_internos.ver', group: 'Movimientos' },
   { id: 'inventario', label: 'Inventario', path: '/inventario', permisos: ['inventario.ver', 'inventario.contar'], group: 'Inventario' },
-  { id: 'camioneros', label: 'Camioneros', path: '/camioneros', permiso: 'camioneros.ver', group: 'Administración' },
   {
     id: 'agenda_turnos',
     label: 'Agenda de turnos',
@@ -45,6 +44,7 @@ export const NAV_ITEMS: NavItem[] = [
     permiso: 'agenda_turnos.ver',
     group: 'Administración'
   },
+  { id: 'camioneros', label: 'Camioneros', path: '/camioneros', permiso: 'camioneros.ver', group: 'Administración' },
   { id: 'usuarios', label: 'Usuarios', path: '/usuarios', permiso: 'usuarios.ver', group: 'Administración' },
   { id: 'reportes', label: 'Movimientos del día', path: '/reportes', permiso: 'reportes.ver', group: 'Reportes' }
 ]

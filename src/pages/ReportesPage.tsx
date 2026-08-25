@@ -15,7 +15,6 @@ import { Card, CardBody } from '@/components/ui/Card'
 import { formatCantidad, formatPeriodoFechas, todayIsoDate } from '@/lib/desglose'
 import { api, cn } from '@/lib/utils'
 import type { MovimientosDiaReport, ReporteDetalle, ReporteDetalleTipo } from '@/types'
-import { useAuth } from '@/context/AuthContext'
 import { useSidebarNav } from '@/context/SidebarNavContext'
 import { useEscHandler } from '@/hooks/useEscHandler'
 import { shouldAbrirFormularioConEnter } from '@/hooks/useRegistroListKeyboard'
@@ -60,7 +59,6 @@ function StatCard({
   accentClass,
   iconClass,
   valueClass,
-  actions,
   onClick,
   highlighted,
   cardIndex,
@@ -72,7 +70,6 @@ function StatCard({
   accentClass: string
   iconClass: string
   valueClass?: string
-  actions?: React.ReactNode
   onClick?: () => void
   highlighted?: boolean
   cardIndex?: number
@@ -106,18 +103,13 @@ function StatCard({
       }
     >
       <CardBody className="flex h-full flex-col p-5">
-        <div className="flex items-start justify-between gap-3">
-          <div
-            className={cn(
-              'flex h-11 w-11 shrink-0 items-center justify-center rounded-xl shadow-sm',
-              iconClass
-            )}
-          >
-            <Icon className="h-5 w-5" />
-          </div>
-          <div onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
-            {actions}
-          </div>
+        <div
+          className={cn(
+            'flex h-11 w-11 shrink-0 items-center justify-center rounded-xl shadow-sm',
+            iconClass
+          )}
+        >
+          <Icon className="h-5 w-5" />
         </div>
         <p className="mt-4 text-xs font-semibold uppercase tracking-wide text-slate-500">{title}</p>
         <p className={cn('mt-1 text-3xl font-bold tabular-nums tracking-tight', valueClass ?? 'text-slate-900')}>
@@ -310,10 +302,8 @@ const REPORTE_CARD_TIPOS: ReporteDetalleTipo[] = [
 ]
 
 export function ReportesPage() {
-  const { hasPermiso } = useAuth()
   const { registerEscHandler, registerMainContentFocus, focusSidebar, sidebarActive } =
     useSidebarNav()
-  const canExport = hasPermiso('reportes.exportar')
 
   const [fechaDesde, setFechaDesde] = useState('')
   const [fechaHasta, setFechaHasta] = useState('')
@@ -479,25 +469,6 @@ export function ReportesPage() {
     })
   }
 
-  function handleExport(label: string) {
-    if (!canExport) return
-    window.alert(`Exportación de ${label} — próximamente`)
-  }
-
-  const exportBtn = (label: string) => (
-    <Button
-      type="button"
-      variant="secondary"
-      size="sm"
-      className="h-8 rounded-lg text-xs"
-      disabled={!canExport}
-      title={canExport ? `Exportar ${label}` : 'Requiere permiso de exportación'}
-      onClick={() => handleExport(label)}
-    >
-      Exportar
-    </Button>
-  )
-
   const periodoLabel = report
     ? formatPeriodoFechas(report.fecha_desde, report.fecha_hasta)
     : formatPeriodoFechas(fechaDesde || todayIsoDate(), fechaHasta || todayIsoDate())
@@ -512,18 +483,6 @@ export function ReportesPage() {
         <p className="mt-2 max-w-xl text-sm leading-relaxed text-slate-500">
           Estadísticas de stock por período: ingresos, salidas, retornos y balance.
         </p>
-        {report && !loading && (
-          <div className="mt-3 flex flex-wrap gap-1.5">
-            {['↑↓←→ navegar', 'Enter detalle', 'Esc cerrar'].map((hint) => (
-              <span
-                key={hint}
-                className="rounded-full border border-surface-border bg-white px-2.5 py-1 text-[11px] font-medium text-slate-500 shadow-card"
-              >
-                {hint}
-              </span>
-            ))}
-          </div>
-        )}
       </section>
 
       <Card className="overflow-hidden shadow-panel">
@@ -625,7 +584,6 @@ export function ReportesPage() {
             icon={Package}
             accentClass="border border-blue-100 bg-gradient-to-br from-blue-50/80 to-white"
             iconClass="bg-blue-600 text-white"
-            actions={exportBtn('stock inicial')}
             onClick={() => void abrirDetalle('stock_inicial')}
           />
           <StatCard
@@ -638,7 +596,6 @@ export function ReportesPage() {
             accentClass="border border-emerald-100 bg-gradient-to-br from-emerald-50/80 to-white"
             iconClass="bg-emerald-600 text-white"
             valueClass="text-emerald-700"
-            actions={exportBtn('ingresos')}
             onClick={() => void abrirDetalle('ingresos')}
           />
           <StatCard
@@ -651,7 +608,6 @@ export function ReportesPage() {
             accentClass="border border-amber-100 bg-gradient-to-br from-amber-50/80 to-white"
             iconClass="bg-amber-600 text-white"
             valueClass="text-amber-700"
-            actions={exportBtn('retornos')}
             onClick={() => void abrirDetalle('retornos')}
           />
           <StatCard
@@ -664,7 +620,6 @@ export function ReportesPage() {
             accentClass="border border-red-100 bg-gradient-to-br from-red-50/80 to-white"
             iconClass="bg-red-600 text-white"
             valueClass="text-red-700"
-            actions={exportBtn('planillas')}
             onClick={() => void abrirDetalle('planillas')}
           />
           <StatCard
@@ -677,7 +632,6 @@ export function ReportesPage() {
             accentClass="border border-violet-100 bg-gradient-to-br from-violet-50/80 to-white"
             iconClass="bg-violet-600 text-white"
             valueClass="text-violet-700"
-            actions={exportBtn('roturas y pérdidas')}
             onClick={() => void abrirDetalle('roturas')}
           />
           <StatCard

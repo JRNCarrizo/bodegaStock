@@ -1,8 +1,9 @@
 import { cn } from '@/lib/utils'
+import { useLogisticaTheme } from '@/context/LogisticaThemeContext'
 import { forwardRef, type ButtonHTMLAttributes } from 'react'
 
 const variants = {
-  primary: 'bg-brand-600 text-white hover:bg-brand-700 shadow-sm',
+  primary: '', // se completa con el tema de logística
   secondary: 'bg-white text-slate-700 border border-surface-border hover:bg-slate-50',
   ghost: 'text-slate-600 hover:bg-slate-100',
   danger: 'bg-red-600 text-white hover:bg-red-700'
@@ -23,14 +24,21 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
   { className, variant = 'primary', size = 'md', ...props },
   ref
 ) {
+  const theme = useLogisticaTheme()
+  const variantClass =
+    variant === 'primary' ? theme.btnPrimary : variants[variant]
+  const focusClass =
+    variant === 'primary' ? theme.btnPrimaryFocus : 'focus-visible:ring-brand-500'
+
   return (
     <button
       ref={ref}
       className={cn(
         'inline-flex items-center justify-center gap-2 rounded-lg font-medium transition-colors',
-        'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-2',
+        'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2',
+        focusClass,
         'disabled:pointer-events-none disabled:opacity-50',
-        variants[variant],
+        variantClass,
         sizes[size],
         className
       )}

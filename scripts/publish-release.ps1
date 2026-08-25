@@ -1,5 +1,5 @@
 param(
-  [string]$Version = "0.3.50"
+  [string]$Version = "0.3.51"
 )
 
 $ErrorActionPreference = "Stop"
@@ -55,12 +55,15 @@ if (Test-Path $ymlPath) { $assets += (Resolve-Path $ymlPath).Path }
 $notes = @"
 ## ControlStock v$Version
 
-Buscar actualizaciones sin falso rate limit; ingresos con botones solo icono.
+Pulido de UI: tema logística, listas más claras y totales en ingresos.
 
-### Corregido
-- **Actualizaciones:** ya no trata errores 403 de GitHub como rate limit ni bloquea el botón 30 min.
-- **Feed de updates:** siempre usa ``latest.yml`` (generic), sin api.github.com.
-- **Ingresos (registros):** cantidad a la derecha; Exportar/Ver solo icono con tooltip.
+### Mejoras
+- **Tema logística Nakbe’:** botones primarios y chips de filtro con la paleta del cliente.
+- **Ingresos:** toggle total cajas ↔ pallets+cajas en detalle/lista; totales recalculados bien.
+- **Consulta:** “Exportar stock”; botones de export arriba; sin chips de tecleo.
+- **Listas / admin:** botones solo icono (ingresos, sectores, productos); orden Agenda → Camioneros → Usuarios.
+- **Agenda de turnos:** Días / Nuevo turno en la misma fila que Semana / Historial.
+- **Limpieza:** sin indicadores de tecleo en Consulta, Movimientos del día y pantallas con “Nuevo…”.
 
 ### Actualización
 - **Windows:** Configuración → Buscar actualizaciones, o Setup de este release

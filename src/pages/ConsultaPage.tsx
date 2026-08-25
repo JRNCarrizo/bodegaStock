@@ -42,6 +42,7 @@ import { ScrollableProductName } from '@/components/ScrollableProductName'
 import { Card, CardBody } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { useAuth } from '@/context/AuthContext'
+import { useLogisticaTheme } from '@/context/LogisticaThemeContext'
 import { useSidebarNav } from '@/context/SidebarNavContext'
 import { useEscHandler } from '@/hooks/useEscHandler'
 
@@ -288,6 +289,7 @@ function resumenConsultaFisico(detalle: ConsultaDetalle): string {
 export function ConsultaPage() {
   const nativeApp = isNativeApp()
   const { hasPermiso } = useAuth()
+  const theme = useLogisticaTheme()
   const canReorganizar = hasPermiso('ajustes.crear')
   const [modo, setModo] = useState<ConsultaModo>('producto')
   const [sectorDetailOpen, setSectorDetailOpen] = useState(false)
@@ -799,9 +801,7 @@ export function ConsultaPage() {
             }}
             className={cn(
               'rounded-full border px-4 py-2 text-sm font-medium transition-colors',
-              modo === tab.id
-                ? 'border-brand-500 bg-brand-600 text-white shadow-sm'
-                : 'border-surface-border bg-white text-slate-600 hover:border-brand-300'
+              modo === tab.id ? theme.chipSelected : theme.chipIdle
             )}
           >
             {tab.label}
@@ -809,61 +809,64 @@ export function ConsultaPage() {
         ))}
       </div>
       {!nativeApp && (
-        <div className="flex flex-wrap items-center gap-3">
-          <label className="inline-flex cursor-pointer items-center gap-2 text-sm text-slate-600">
-              <input
-                type="checkbox"
-                checked={incluirCero}
-                onChange={(e) => {
-                  setIncluirCero(e.target.checked)
-                  if (modo === 'todos') setTodosPage(1)
-                }}
-                className="h-4 w-4 rounded border-surface-border text-brand-600 focus:ring-brand-500/30"
-              />
-              Incluir productos en cero
-            </label>
-            <Button
-              variant="secondary"
-              size="sm"
-              className="rounded-xl"
-              disabled={exporting}
-              onClick={() => void exportarStockProductos()}
-              title={
-                incluirCero
-                  ? 'Excel con código interno, nombre y cantidad (incluye stock 0)'
-                  : 'Excel con código interno, nombre y cantidad (solo con stock)'
-              }
-            >
-              {exporting ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <Download className="h-4 w-4" />
-              )}
-              {exporting ? 'Exportando…' : 'Exportar Excel'}
-            </Button>
-            <Button
-              variant="secondary"
-              size="sm"
-              className="rounded-xl"
-              disabled={exportingSectores}
-              onClick={() => void exportarStockPorSectores()}
-              title={
-                incluirCero
-                  ? 'Excel con una columna por sector (incluye stock 0)'
-                  : 'Excel con una columna por sector (solo con stock)'
-              }
-            >
-              {exportingSectores ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <Download className="h-4 w-4" />
-              )}
-              {exportingSectores ? 'Exportando…' : 'Exportar por sectores'}
-            </Button>
-        </div>
+        <label className="inline-flex cursor-pointer items-center gap-2 text-sm text-slate-600">
+          <input
+            type="checkbox"
+            checked={incluirCero}
+            onChange={(e) => {
+              setIncluirCero(e.target.checked)
+              if (modo === 'todos') setTodosPage(1)
+            }}
+            className="h-4 w-4 rounded border-surface-border text-brand-600 focus:ring-brand-500/30"
+          />
+          Incluir productos en cero
+        </label>
       )}
     </div>
   )
+
+  const exportActions = !nativeApp ? (
+    <div className="flex flex-wrap items-center gap-2">
+      <Button
+        variant="secondary"
+        size="sm"
+        className="rounded-xl"
+        disabled={exporting}
+        onClick={() => void exportarStockProductos()}
+        title={
+          incluirCero
+            ? 'Excel con código interno, nombre y cantidad (incluye stock 0)'
+            : 'Excel con código interno, nombre y cantidad (solo con stock)'
+        }
+      >
+        {exporting ? (
+          <Loader2 className="h-4 w-4 animate-spin" />
+        ) : (
+          <Download className="h-4 w-4" />
+        )}
+        {exporting ? 'Exportando…' : 'Exportar stock'}
+      </Button>
+      <Button
+        variant="secondary"
+        size="sm"
+        className="rounded-xl"
+        disabled={exportingSectores}
+        onClick={() => void exportarStockPorSectores()}
+        title={
+          incluirCero
+            ? 'Excel con una columna por sector (incluye stock 0)'
+            : 'Excel con una columna por sector (solo con stock)'
+        }
+      >
+        {exportingSectores ? (
+          <Loader2 className="h-4 w-4 animate-spin" />
+        ) : (
+          <Download className="h-4 w-4" />
+        )}
+        {exportingSectores ? 'Exportando…' : 'Exportar por sectores'}
+      </Button>
+    </div>
+  ) : null
 
   const titulo =
     modo === 'producto'
@@ -1089,18 +1092,7 @@ export function ConsultaPage() {
             </h1>
             <p className="mt-2 max-w-xl text-sm leading-relaxed text-slate-500">{subtitulo}</p>
           </div>
-          {modo === 'producto' && (
-            <div className="flex flex-wrap gap-1.5">
-              {['↑↓ navegar', 'Enter abrir', 'Esc cerrar'].map((hint) => (
-                <span
-                  key={hint}
-                  className="rounded-full border border-surface-border bg-white px-2.5 py-1 text-[11px] font-medium text-slate-500 shadow-card"
-                >
-                  {hint}
-                </span>
-              ))}
-            </div>
-          )}
+          {exportActions}
         </section>
       )}
 

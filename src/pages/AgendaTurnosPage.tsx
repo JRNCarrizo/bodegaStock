@@ -962,7 +962,7 @@ export function AgendaTurnosPage() {
   }
 
   return (
-    <div className={cn('mx-auto max-w-7xl', nativeApp ? '-mt-1 space-y-3' : 'space-y-6')}>
+    <div className={cn('mx-auto max-w-7xl', nativeApp ? '-mt-1 space-y-3' : 'space-y-3')}>
       {nativeApp ? (
         <div className="flex items-center gap-2">
           <h1 className="min-w-0 flex-1 truncate text-xl font-bold tracking-tight text-slate-900">
@@ -989,38 +989,101 @@ export function AgendaTurnosPage() {
           </div>
         </div>
       ) : (
-        <h1 className="flex items-center gap-2 text-2xl font-bold tracking-tight text-slate-900">
-          <CalendarDays className="h-7 w-7 text-brand-600" />
-          Agenda de turnos
-        </h1>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="flex items-center gap-4">
+            <h1 className="flex items-center gap-2 text-xl font-bold tracking-tight text-slate-900">
+              <CalendarDays className="h-5 w-5 text-brand-600" />
+              Agenda de turnos
+            </h1>
+            <div className="flex rounded-lg bg-slate-200/80 p-0.5 text-xs font-semibold">
+              <button
+                type="button"
+                onClick={() => setTab('semana')}
+                className={cn(
+                  'rounded-md px-3 py-1 transition-all',
+                  tab === 'semana'
+                    ? 'bg-white text-brand-800 shadow-xs'
+                    : 'text-slate-600 hover:text-slate-900'
+                )}
+              >
+                Semana
+              </button>
+              <button
+                type="button"
+                onClick={() => setTab('historial')}
+                className={cn(
+                  'inline-flex items-center gap-1 rounded-md px-3 py-1 transition-all',
+                  tab === 'historial'
+                    ? 'bg-white text-brand-800 shadow-xs'
+                    : 'text-slate-600 hover:text-slate-900'
+                )}
+              >
+                <History className="h-3 w-3" />
+                Historial
+              </button>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+            {tab === 'semana' && (
+              <div className="flex items-center gap-1">
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  className="h-8 rounded-lg px-2"
+                  onClick={() => setAnchorMonday((d) => addDays(d, -7))}
+                  title="Semana anterior"
+                >
+                  <ChevronLeft className="h-4 w-4" />
+                </Button>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  className="h-8 rounded-lg px-2.5 text-xs font-medium"
+                  onClick={() => setAnchorMonday(startOfWeekMonday(new Date()))}
+                >
+                  Hoy
+                </Button>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  className="h-8 rounded-lg px-2"
+                  onClick={() => setAnchorMonday((d) => addDays(d, 7))}
+                  title="Semana siguiente"
+                >
+                  <ChevronRight className="h-4 w-4" />
+                </Button>
+              </div>
+            )}
+            {canEdit && (
+              <Button type="button" variant="secondary" size="sm" className="h-8 rounded-lg text-xs" onClick={openConfig}>
+                <Settings className="h-3.5 w-3.5" />
+                Días
+              </Button>
+            )}
+            {canCreate && (
+              <Button size="sm" className="h-8 rounded-lg text-xs" onClick={() => openCreate()}>
+                <Plus className="h-3.5 w-3.5" />
+                Nuevo turno
+              </Button>
+            )}
+          </div>
+        </div>
       )}
 
-      <div
-        className={cn(
-          nativeApp
-            ? 'grid grid-cols-2 gap-1 rounded-xl bg-slate-100 p-1'
-            : 'flex flex-wrap items-center justify-between gap-3 border-b border-surface-border pb-px'
-        )}
-      >
-        <div
-          className={cn(
-            nativeApp ? 'contents' : 'flex flex-wrap gap-2'
-          )}
-        >
+      {nativeApp && (
+        <div className="grid grid-cols-2 gap-1 rounded-xl bg-slate-100 p-1">
           <button
             type="button"
             onClick={() => setTab('semana')}
             className={cn(
-              nativeApp
-                ? 'rounded-lg py-2 text-sm font-semibold transition'
-                : 'rounded-t-lg px-4 py-2 text-sm font-medium',
+              'rounded-lg py-2 text-sm font-semibold transition',
               tab === 'semana'
-                ? nativeApp
-                  ? 'bg-white text-brand-800 shadow-sm'
-                  : 'bg-white text-brand-800 ring-1 ring-surface-border ring-b-white'
-                : nativeApp
-                  ? 'text-slate-500'
-                  : 'text-slate-500 hover:text-slate-800'
+                ? 'bg-white text-brand-800 shadow-sm'
+                : 'text-slate-500'
             )}
           >
             Semana
@@ -1029,42 +1092,19 @@ export function AgendaTurnosPage() {
             type="button"
             onClick={() => setTab('historial')}
             className={cn(
-              nativeApp
-                ? 'inline-flex items-center justify-center gap-1.5 rounded-lg py-2 text-sm font-semibold transition'
-                : 'inline-flex items-center gap-1.5 rounded-t-lg px-4 py-2 text-sm font-medium',
+              'inline-flex items-center justify-center gap-1.5 rounded-lg py-2 text-sm font-semibold transition',
               tab === 'historial'
-                ? nativeApp
-                  ? 'bg-white text-brand-800 shadow-sm'
-                  : 'bg-white text-brand-800 ring-1 ring-surface-border ring-b-white'
-                : nativeApp
-                  ? 'text-slate-500'
-                  : 'text-slate-500 hover:text-slate-800'
+                ? 'bg-white text-brand-800 shadow-sm'
+                : 'text-slate-500'
             )}
           >
-            {!nativeApp && <History className="h-3.5 w-3.5" />}
             Historial
           </button>
         </div>
-        {!nativeApp && (canEdit || canCreate) && (
-          <div className="flex flex-wrap items-center gap-2 pb-1">
-            {canEdit && (
-              <Button type="button" variant="secondary" size="sm" className="rounded-xl" onClick={openConfig}>
-                <Settings className="h-4 w-4" />
-                Días
-              </Button>
-            )}
-            {canCreate && (
-              <Button size="sm" className="rounded-xl" onClick={() => openCreate()}>
-                <Plus className="h-4 w-4" />
-                Nuevo turno
-              </Button>
-            )}
-          </div>
-        )}
-      </div>
+      )}
 
       {error && (
-        <div className="rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700 ring-1 ring-red-100">
+        <div className="rounded-xl bg-red-50 px-4 py-2.5 text-sm text-red-700 ring-1 ring-red-100">
           {error}
         </div>
       )}
@@ -1118,39 +1158,9 @@ export function AgendaTurnosPage() {
           </div>
         ) : (
           <Card className="border-slate-300 bg-slate-100/90 shadow-sm ring-1 ring-slate-200/80">
-            <CardBody className="space-y-8">
-              <div className="flex flex-wrap items-center gap-2">
-                <Button
-                  type="button"
-                  variant="secondary"
-                  size="sm"
-                  className="rounded-xl"
-                  onClick={() => setAnchorMonday((d) => addDays(d, -7))}
-                >
-                  <ChevronLeft className="h-4 w-4" />
-                </Button>
-                <Button
-                  type="button"
-                  variant="secondary"
-                  size="sm"
-                  className="rounded-xl"
-                  onClick={() => setAnchorMonday(startOfWeekMonday(new Date()))}
-                >
-                  Hoy
-                </Button>
-                <Button
-                  type="button"
-                  variant="secondary"
-                  size="sm"
-                  className="rounded-xl"
-                  onClick={() => setAnchorMonday((d) => addDays(d, 7))}
-                >
-                  <ChevronRight className="h-4 w-4" />
-                </Button>
-              </div>
-
+            <CardBody className="space-y-5 p-4">
               {loading ? (
-                <div className="flex items-center gap-2 py-12 text-sm text-slate-500">
+                <div className="flex items-center gap-2 py-8 text-sm text-slate-500">
                   <Loader2 className="h-4 w-4 animate-spin" />
                   Cargando agenda…
                 </div>

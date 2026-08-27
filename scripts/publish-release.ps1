@@ -104,7 +104,7 @@ if ($LASTEXITCODE -ne 0) {
 
 # Verificar que GitHub recibio el Setup completo (evitar truncado).
 Start-Sleep -Seconds 2
-$jqFilter = '.assets[] | select(.name | test("Setup")) | .size'
+$jqFilter = '.assets[] | select(.name | contains("Setup")) | .size'
 $remoteSize = [int64](gh api "repos/JRNCarrizo/bodegaStock/releases/tags/$tag" --jq $jqFilter)
 Write-Host "GitHub Setup size: $remoteSize (local $exeSize)" -ForegroundColor Cyan
 if ($remoteSize -ne $exeSize) {

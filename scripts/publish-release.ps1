@@ -112,7 +112,7 @@ if ($remoteSize -ne $exeSize) {
   Start-Sleep -Seconds 3
   $remoteSize = [int64](gh api "repos/JRNCarrizo/bodegaStock/releases/tags/$tag" --jq ".assets[] | select(.name | contains(`"Setup`")) | .size")
   if ($remoteSize -ne $exeSize) {
-    Write-Error ("Setup en GitHub sigue truncado ({0} vs {1}). Subi a mano." -f $remoteSize, $exeSize)
+    Write-Error "Setup en GitHub sigue truncado ($remoteSize vs $exeSize). Subi a mano."
   }
 }
 

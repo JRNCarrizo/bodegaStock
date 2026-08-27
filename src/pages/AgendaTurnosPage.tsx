@@ -197,7 +197,7 @@ function TurnoCard({
   const busy = busyId === turno.id
   const showSolicitadoActions = canEdit && turno.estado === 'SOLICITADO'
   const showCanceladoActions = canEdit && turno.estado === 'CANCELADO' && !!onEliminar
-  const editable = turno.estado === 'SOLICITADO'
+  const editable = canEdit && turno.estado !== 'CONFIRMADO'
   const lineaEnvio = lineaEnvioTexto(turno)
 
   if (compact) {
@@ -308,10 +308,15 @@ function TurnoCard({
 
   return (
     <div
+      onClick={(e) => {
+        if ((e.target as HTMLElement).closest('button')) return
+        if (editable) onOpen()
+      }}
       className={cn(
         'group relative flex h-[4.5rem] shrink-0 flex-col justify-between rounded-lg border px-2 py-1.5 shadow-xs transition-all',
         ESTADO_STYLE[turno.estado],
-        turno.estado === 'CANCELADO' && 'opacity-80'
+        turno.estado === 'CANCELADO' && 'opacity-80',
+        editable && 'cursor-pointer hover:ring-2 hover:ring-brand-400/50'
       )}
     >
       <div className="flex items-start justify-between gap-1">
@@ -621,8 +626,8 @@ export function AgendaTurnosPage() {
   }
 
   function openEdit(turno: AgendaTurno) {
-    // Solo se edita si sigue solicitado; confirmado/cancelado no abren el modal.
-    if (turno.estado !== 'SOLICITADO') return
+    // Se puede editar si no está confirmado.
+    if (!canEdit || turno.estado === 'CONFIRMADO') return
     setEditing(turno)
     setForm({
       fecha: turno.fecha,

@@ -174,7 +174,7 @@ CREATE TABLE IF NOT EXISTS planillas (
   fecha TEXT NOT NULL,
   numero TEXT NOT NULL,
   observacion TEXT,
-  camionero_id INTEGER NOT NULL REFERENCES camioneros(id),
+  camionero_id INTEGER REFERENCES camioneros(id),
   vehiculo_id INTEGER REFERENCES camionero_vehiculos(id),
   usuario_id INTEGER NOT NULL REFERENCES usuarios(id),
   logistica_id INTEGER REFERENCES logisticas(id),
@@ -447,7 +447,7 @@ CREATE TABLE IF NOT EXISTS agenda_turnos (
   descripcion TEXT NOT NULL,
   cantidad REAL,
   unidad TEXT NOT NULL CHECK (unidad IN ('PALLETS', 'CAJAS', 'BULTOS')),
-  transportista_id INTEGER NOT NULL REFERENCES insumos_transportistas(id),
+  transportista_id INTEGER REFERENCES insumos_transportistas(id),
   notas TEXT,
   estado TEXT NOT NULL DEFAULT 'SOLICITADO'
     CHECK (estado IN ('SOLICITADO', 'CONFIRMADO', 'CANCELADO')),

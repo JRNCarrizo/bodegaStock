@@ -139,7 +139,7 @@ export function runMigrations(db: Database.Database): void {
         fecha TEXT NOT NULL,
         numero TEXT NOT NULL,
         observacion TEXT,
-        camionero_id INTEGER NOT NULL REFERENCES camioneros(id),
+        camionero_id INTEGER REFERENCES camioneros(id),
         vehiculo_id INTEGER REFERENCES camionero_vehiculos(id),
         usuario_id INTEGER NOT NULL REFERENCES usuarios(id),
         created_at TEXT NOT NULL DEFAULT (datetime('now'))
@@ -830,6 +830,51 @@ export function runMigrations(db: Database.Database): void {
 
   migrateMultiLogistica(db)
   migrateAgendaTurnos(db)
+  migratePlanillasCamioneroNullable(db)
+}
+
+function migratePlanillasCamioneroNullable(db: Database.Database): void {
+  if (!tableExists(db, 'planillas')) return
+
+  if (isPostgresDb()) {
+    try {
+      db.exec('ALTER TABLE planillas ALTER COLUMN camionero_id DROP NOT NULL')
+    } catch {
+      // Ignorar si ya era nullable
+    }
+    return
+  }
+
+  if (!columnNotNull(db, 'planillas', 'camionero_id')) return
+
+  db.pragma('foreign_keys = OFF')
+  try {
+    db.exec(`
+      CREATE TABLE planillas_flexible (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        fecha TEXT NOT NULL,
+        numero TEXT NOT NULL,
+        observacion TEXT,
+        camionero_id INTEGER REFERENCES camioneros(id),
+        vehiculo_id INTEGER REFERENCES camionero_vehiculos(id),
+        usuario_id INTEGER NOT NULL REFERENCES usuarios(id),
+        logistica_id INTEGER REFERENCES logisticas(id),
+        created_at TEXT NOT NULL DEFAULT (datetime('now'))
+      )
+    `)
+    db.exec(`
+      INSERT INTO planillas_flexible (
+        id, fecha, numero, observacion, camionero_id, vehiculo_id, usuario_id, logistica_id, created_at
+      )
+      SELECT
+        id, fecha, numero, observacion, camionero_id, vehiculo_id, usuario_id, logistica_id, created_at
+      FROM planillas
+    `)
+    db.exec('DROP TABLE planillas')
+    db.exec('ALTER TABLE planillas_flexible RENAME TO planillas')
+  } finally {
+    db.pragma('foreign_keys = ON')
+  }
 }
 
 function migrateAgendaTurnos(db: Database.Database): void {
@@ -852,7 +897,7 @@ function migrateAgendaTurnos(db: Database.Database): void {
         descripcion TEXT NOT NULL,
         cantidad REAL,
         unidad TEXT NOT NULL CHECK (unidad IN ('PALLETS', 'CAJAS', 'BULTOS')),
-        transportista_id INTEGER NOT NULL REFERENCES insumos_transportistas(id),
+        transportista_id INTEGER REFERENCES insumos_transportistas(id),
         notas TEXT,
         estado TEXT NOT NULL DEFAULT 'SOLICITADO'
           CHECK (estado IN ('SOLICITADO', 'CONFIRMADO', 'CANCELADO')),
@@ -865,7 +910,22 @@ function migrateAgendaTurnos(db: Database.Database): void {
     return
   }
 
-  if (!columnNotNull(db, 'agenda_turnos', 'cantidad')) return
+  if (isPostgresDb()) {
+    try {
+      db.exec('ALTER TABLE agenda_turnos ALTER COLUMN cantidad DROP NOT NULL')
+    } catch {}
+    try {
+      db.exec('ALTER TABLE agenda_turnos ALTER COLUMN transportista_id DROP NOT NULL')
+    } catch {}
+    return
+  }
+
+  if (
+    !columnNotNull(db, 'agenda_turnos', 'cantidad') &&
+    !columnNotNull(db, 'agenda_turnos', 'transportista_id')
+  ) {
+    return
+  }
 
   db.pragma('foreign_keys = OFF')
   try {
@@ -876,7 +936,7 @@ function migrateAgendaTurnos(db: Database.Database): void {
         descripcion TEXT NOT NULL,
         cantidad REAL,
         unidad TEXT NOT NULL CHECK (unidad IN ('PALLETS', 'CAJAS', 'BULTOS')),
-        transportista_id INTEGER NOT NULL REFERENCES insumos_transportistas(id),
+        transportista_id INTEGER REFERENCES insumos_transportistas(id),
         notas TEXT,
         estado TEXT NOT NULL DEFAULT 'SOLICITADO'
           CHECK (estado IN ('SOLICITADO', 'CONFIRMADO', 'CANCELADO')),

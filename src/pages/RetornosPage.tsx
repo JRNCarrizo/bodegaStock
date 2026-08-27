@@ -2411,7 +2411,7 @@ export function RetornosPage() {
                 <input
                   ref={listSearchRef}
                   type="search"
-                  placeholder="Buscar por camionero o planilla..."
+                  placeholder="Buscar por camionero, planilla, vehículo u observación..."
                   value={listSearch}
                   onChange={(e) => setListSearch(e.target.value)}
                   onKeyDown={registroListKb.handleListSearchKeyDown}

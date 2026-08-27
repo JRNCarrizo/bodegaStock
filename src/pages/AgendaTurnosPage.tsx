@@ -183,6 +183,7 @@ function TurnoCard({
   busyId,
   onOpen,
   onEstado,
+  onEliminar,
   compact = false
 }: {
   turno: AgendaTurno
@@ -190,10 +191,12 @@ function TurnoCard({
   busyId: number | null
   onOpen: () => void
   onEstado: (estado: 'CONFIRMADO' | 'CANCELADO') => void
+  onEliminar?: () => void
   compact?: boolean
 }) {
   const busy = busyId === turno.id
-  const showActions = canEdit && turno.estado === 'SOLICITADO'
+  const showSolicitadoActions = canEdit && turno.estado === 'SOLICITADO'
+  const showCanceladoActions = canEdit && turno.estado === 'CANCELADO' && !!onEliminar
   const editable = turno.estado === 'SOLICITADO'
   const lineaEnvio = lineaEnvioTexto(turno)
 
@@ -214,7 +217,7 @@ function TurnoCard({
           }}
           disabled={!editable}
           className={cn(
-            'flex w-full items-start gap-3 px-3 py-3 text-left',
+            'flex w-full items-start gap-3 px-3 py-2.5 text-left',
             editable && 'active:bg-slate-50'
           )}
         >
@@ -227,28 +230,44 @@ function TurnoCard({
             >
               {turno.descripcion}
             </ScrollableProductName>
-            <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-slate-500">
+            <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-slate-500">
               {turno.cantidad != null && (
                 <span className="font-medium tabular-nums text-slate-700">
                   {turno.cantidad} {unidadLabel(turno.unidad)}
                 </span>
               )}
-              <span className="inline-flex items-center gap-1">
-                <Truck className="h-3 w-3 shrink-0" />
-                {turno.transportista_nombre}
-              </span>
+              {turno.transportista_nombre && (
+                <span className="inline-flex items-center gap-1">
+                  <Truck className="h-3 w-3 shrink-0" />
+                  {turno.transportista_nombre}
+                </span>
+              )}
             </div>
-          </div>
-          <span
-            className={cn(
-              'shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold ring-1',
-              ESTADO_STYLE[turno.estado]
+            {turno.notas?.trim() && (
+              <div className="scrollbar-none-x mt-1 overflow-x-auto whitespace-nowrap text-[11px] italic text-slate-500">
+                {turno.notas}
+              </div>
             )}
-          >
-            {ESTADO_LABEL[turno.estado]}
-          </span>
+          </div>
+          {turno.estado === 'CONFIRMADO' ? (
+            <span
+              className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-emerald-600 text-white shadow-xs"
+              title="Confirmado"
+            >
+              <Check className="h-3.5 w-3.5 stroke-[3]" />
+            </span>
+          ) : (
+            <span
+              className={cn(
+                'shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold ring-1',
+                ESTADO_STYLE[turno.estado]
+              )}
+            >
+              {ESTADO_LABEL[turno.estado]}
+            </span>
+          )}
         </button>
-        {showActions && (
+        {showSolicitadoActions && (
           <div className="grid grid-cols-2 gap-2 border-t border-surface-border px-3 py-2">
             <button
               type="button"
@@ -270,6 +289,19 @@ function TurnoCard({
             </button>
           </div>
         )}
+        {showCanceladoActions && (
+          <div className="border-t border-surface-border px-3 py-2">
+            <button
+              type="button"
+              disabled={busy}
+              onClick={onEliminar}
+              className="inline-flex h-8 w-full items-center justify-center gap-1.5 rounded-lg border border-red-200 bg-red-50 text-xs font-semibold text-red-700 hover:bg-red-100 disabled:opacity-50"
+            >
+              {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <X className="h-3.5 w-3.5 stroke-[2.5]" />}
+              Eliminar de la lista
+            </button>
+          </div>
+        )}
       </div>
     )
   }
@@ -277,68 +309,106 @@ function TurnoCard({
   return (
     <div
       className={cn(
-        'flex h-[6.75rem] flex-col rounded-lg px-2 py-2 ring-2',
+        'group relative flex h-[4.5rem] shrink-0 flex-col justify-between rounded-lg border px-2 py-1.5 shadow-xs transition-all',
         ESTADO_STYLE[turno.estado],
-        turno.estado === 'CANCELADO' && 'opacity-75'
+        turno.estado === 'CANCELADO' && 'opacity-80'
       )}
     >
-      <p className="shrink-0 text-[10px] font-semibold uppercase tracking-wide opacity-70">
-        {ESTADO_LABEL[turno.estado]}
-      </p>
-      <button
-        type="button"
-        onClick={() => {
-          if (editable) onOpen()
-        }}
-        disabled={!editable}
-        title={editable ? 'Editar' : 'Confirmado: no se puede editar'}
-        className={cn(
-          'mt-1 w-full min-w-0 space-y-0.5 text-left',
-          editable ? 'cursor-pointer' : 'cursor-default'
+      <div className="flex items-start justify-between gap-1">
+        <button
+          type="button"
+          onClick={() => {
+            if (editable) onOpen()
+          }}
+          disabled={!editable}
+          title={editable ? 'Editar turno' : undefined}
+          className={cn(
+            'min-w-0 flex-1 text-left',
+            editable ? 'cursor-pointer' : 'cursor-default'
+          )}
+        >
+          <div
+            className={cn(
+              'scrollbar-none-x overflow-x-auto whitespace-nowrap text-xs font-semibold text-slate-900',
+              turno.estado === 'CANCELADO' && 'line-through text-slate-500'
+            )}
+          >
+            {lineaEnvio}
+          </div>
+        </button>
+        {turno.estado === 'CONFIRMADO' ? (
+          <span
+            className="inline-flex h-4 items-center justify-center rounded bg-emerald-600 px-1 text-white shadow-xs"
+            title="Confirmado"
+          >
+            <Check className="h-3 w-3 stroke-[3]" />
+          </span>
+        ) : (
+          <span className="inline-flex h-4 items-center justify-center rounded px-1.5 text-[9px] font-bold uppercase tracking-wide opacity-80 ring-1 ring-black/5">
+            {ESTADO_LABEL[turno.estado]}
+          </span>
         )}
-      >
-        <div
-          className={cn(
-            'scrollbar-none-x overflow-x-auto whitespace-nowrap text-xs font-semibold text-slate-900',
-            turno.estado === 'CANCELADO' && 'line-through text-slate-500'
+      </div>
+
+      <div className="flex h-5 items-center justify-between gap-1">
+        <div className="min-w-0 flex-1 truncate text-[10px] text-slate-600">
+          {turno.transportista_nombre ? (
+            <span className="inline-flex items-center gap-0.5 truncate">
+              <Truck className="h-2.5 w-2.5 shrink-0 text-slate-400" />
+              <span className={cn(turno.estado === 'CANCELADO' && 'line-through')}>
+                {turno.transportista_nombre}
+              </span>
+            </span>
+          ) : (
+            <span className="italic text-slate-400">Sin transportista</span>
           )}
-        >
-          {lineaEnvio}
         </div>
-        <p
-          className={cn(
-            'truncate text-[11px] text-slate-600',
-            turno.estado === 'CANCELADO' && 'line-through'
+
+        <div className="flex h-5 shrink-0 items-center gap-1">
+          {showSolicitadoActions && (
+            <>
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => onEstado('CONFIRMADO')}
+                title="Confirmar"
+                aria-label="Confirmar"
+                className="inline-flex h-5 w-5 items-center justify-center rounded bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-50"
+              >
+                {busy ? <Loader2 className="h-2.5 w-2.5 animate-spin" /> : <Check className="h-3 w-3" />}
+              </button>
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => onEstado('CANCELADO')}
+                title="Cancelar"
+                aria-label="Cancelar"
+                className="inline-flex h-5 w-5 items-center justify-center rounded bg-slate-500 text-white hover:bg-slate-600 disabled:opacity-50"
+              >
+                {busy ? <Loader2 className="h-2.5 w-2.5 animate-spin" /> : <X className="h-3 w-3" />}
+              </button>
+            </>
           )}
-        >
-          {turno.transportista_nombre}
-        </p>
-      </button>
-      {/* Altura fija de acciones: con o sin botones, el día no cambia de tamaño */}
-      <div className="mt-auto flex h-7 shrink-0 items-center justify-end gap-1.5">
-        {showActions ? (
-          <>
+          {showCanceladoActions && (
             <button
               type="button"
               disabled={busy}
-              onClick={() => onEstado('CONFIRMADO')}
-              title="Confirmar"
-              aria-label="Confirmar"
-              className="inline-flex h-7 w-7 items-center justify-center rounded-md bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-50"
+              onClick={onEliminar}
+              title="Eliminar de la lista"
+              aria-label="Eliminar turno cancelado"
+              className="inline-flex h-5 w-5 items-center justify-center rounded bg-red-100 text-red-700 hover:bg-red-200 hover:text-red-800 disabled:opacity-50"
             >
-              {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}
+              {busy ? <Loader2 className="h-2.5 w-2.5 animate-spin" /> : <X className="h-3.5 w-3.5 stroke-[2.5]" />}
             </button>
-            <button
-              type="button"
-              disabled={busy}
-              onClick={() => onEstado('CANCELADO')}
-              title="Cancelar"
-              aria-label="Cancelar"
-              className="inline-flex h-7 w-7 items-center justify-center rounded-md bg-slate-500 text-white hover:bg-slate-600 disabled:opacity-50"
-            >
-              {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <X className="h-3.5 w-3.5" />}
-            </button>
-          </>
+          )}
+        </div>
+      </div>
+
+      <div className="min-h-[14px]">
+        {turno.notas?.trim() ? (
+          <div className="scrollbar-none-x overflow-x-auto whitespace-nowrap text-[10px] italic text-slate-500">
+            {turno.notas}
+          </div>
         ) : null}
       </div>
     </div>
@@ -474,7 +544,7 @@ export function AgendaTurnosPage() {
       if (!q) return true
       return (
         t.descripcion.toLowerCase().includes(q) ||
-        t.transportista_nombre.toLowerCase().includes(q) ||
+        (t.transportista_nombre ?? '').toLowerCase().includes(q) ||
         (t.notas ?? '').toLowerCase().includes(q)
       )
     })
@@ -559,7 +629,7 @@ export function AgendaTurnosPage() {
       descripcion: turno.descripcion,
       cantidad: turno.cantidad != null ? String(turno.cantidad) : '',
       unidad: turno.unidad,
-      transportista_id: turno.transportista_id,
+      transportista_id: turno.transportista_id ?? '',
       notas: turno.notas ?? '',
       estado: turno.estado
     })
@@ -610,6 +680,24 @@ export function AgendaTurnosPage() {
     }
   }
 
+  async function eliminarTurno(turno: AgendaTurno) {
+    if (!canEdit) return
+    setEstadoBusyId(turno.id)
+    setError('')
+    try {
+      await api(`/api/agenda-turnos/${turno.id}`, {
+        method: 'DELETE'
+      })
+      setTurnos((list) => list.filter((t) => t.id !== turno.id))
+      setHistorial((list) => list.filter((t) => t.id !== turno.id))
+      notifyAgendaPendientesChanged()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'No se pudo eliminar el turno')
+    } finally {
+      setEstadoBusyId(null)
+    }
+  }
+
   async function saveTurno(e: React.FormEvent) {
     e.preventDefault()
     setFormError('')
@@ -626,10 +714,6 @@ export function AgendaTurnosPage() {
         return
       }
     }
-    if (!form.transportista_id) {
-      setFormError('Elegí un transportista')
-      return
-    }
     if (inhabilSet.has(mondayIndexFromIso(form.fecha))) {
       setFormError('Ese día está anulado (no laborable).')
       return
@@ -642,7 +726,10 @@ export function AgendaTurnosPage() {
         descripcion: form.descripcion.trim(),
         cantidad,
         unidad: form.unidad,
-        transportista_id: Number(form.transportista_id),
+        transportista_id:
+          form.transportista_id != null && form.transportista_id !== ''
+            ? Number(form.transportista_id)
+            : null,
         notas: form.notas.trim() || null
       }
       if (editing) {
@@ -718,20 +805,18 @@ export function AgendaTurnosPage() {
         >
           {visibles.map(({ iso, weekdayIndex }) => {
             const items = byFecha.get(iso) ?? []
-            const primary = pickPrimaryTurno(items)
-            const extra = Math.max(0, items.length - (primary ? 1 : 0))
             const isToday = iso === hoyIso
             return (
               <div
                 key={iso}
                 className={cn(
-                  'flex h-[13.5rem] flex-col overflow-hidden rounded-xl border-2 bg-white p-2.5 shadow-md',
+                  'flex flex-col overflow-hidden rounded-xl border-2 bg-white p-2 shadow-md',
                   isToday
                     ? 'border-brand-500 shadow-brand-100/80 ring-2 ring-brand-200'
                     : 'border-slate-300 shadow-slate-200/70'
                 )}
               >
-                <div className="mb-2 flex shrink-0 items-start justify-between gap-1">
+                <div className="mb-1.5 flex shrink-0 items-start justify-between gap-1 border-b border-slate-100 pb-1">
                   <div className="min-w-0">
                     <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">
                       {DIAS[weekdayIndex]}
@@ -764,30 +849,23 @@ export function AgendaTurnosPage() {
                   </div>
                 </div>
 
-                {!primary ? (
-                  <div className="flex flex-1 items-center justify-center rounded-lg border border-dashed border-slate-300 bg-slate-50/80">
+                {items.length === 0 ? (
+                  <div className="flex h-[228px] items-center justify-center rounded-lg border border-dashed border-slate-300 bg-slate-50/80">
                     <p className="text-[11px] font-medium text-slate-400">Sin turnos</p>
                   </div>
                 ) : (
-                  <div className="flex min-h-0 flex-1 flex-col gap-1.5">
-                    <TurnoCard
-                      turno={primary}
-                      canEdit={canEdit}
-                      busyId={estadoBusyId}
-                      onOpen={() => openEdit(primary)}
-                      onEstado={(estado) => void cambiarEstado(primary, estado)}
-                    />
-                    <div className="mt-auto h-[26px] shrink-0">
-                      {extra > 0 ? (
-                        <button
-                          type="button"
-                          onClick={() => setDiaPanelIso(iso)}
-                          className="h-full w-full rounded-md border border-dashed border-slate-400 bg-slate-100 px-1.5 text-[11px] font-semibold text-slate-700 hover:border-brand-400 hover:bg-brand-50 hover:text-brand-800"
-                        >
-                          +{extra} más
-                        </button>
-                      ) : null}
-                    </div>
+                  <div className="scrollbar-thin flex h-[228px] max-h-[228px] min-h-[228px] flex-col gap-1.5 overflow-y-auto pr-0.5">
+                    {items.map((t) => (
+                      <TurnoCard
+                        key={t.id}
+                        turno={t}
+                        canEdit={canEdit}
+                        busyId={estadoBusyId}
+                        onOpen={() => openEdit(t)}
+                        onEstado={(estado) => void cambiarEstado(t, estado)}
+                        onEliminar={() => void eliminarTurno(t)}
+                      />
+                    ))}
                   </div>
                 )}
               </div>
@@ -871,6 +949,7 @@ export function AgendaTurnosPage() {
                       compact
                       onOpen={() => openEdit(t)}
                       onEstado={(estado) => void cambiarEstado(t, estado)}
+                      onEliminar={() => void eliminarTurno(t)}
                     />
                   ))
                 )}
@@ -1156,41 +1235,76 @@ export function AgendaTurnosPage() {
                 <ul className="space-y-2">
                   {historialPageItems.map((t) => (
                     <li key={t.id}>
-                      <button
-                        type="button"
-                        onClick={() => openEdit(t)}
-                        className="flex w-full items-start gap-3 rounded-xl border border-surface-border bg-white px-3 py-3 text-left shadow-card active:bg-slate-50"
-                      >
-                        <div className="min-w-0 flex-1">
-                          <div className="flex items-start gap-2">
-                            <span className="shrink-0 rounded-md bg-slate-100 px-2 py-0.5 text-[11px] font-semibold tabular-nums text-slate-700">
-                              {t.fecha.slice(8, 10)}/{t.fecha.slice(5, 7)}
-                            </span>
-                            <ScrollableProductName className="min-w-0 flex-1 text-sm font-semibold text-slate-900">
-                              {t.descripcion}
-                            </ScrollableProductName>
-                          </div>
-                          <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-slate-500">
-                            {t.cantidad != null && (
-                              <span className="font-medium tabular-nums text-slate-700">
-                                {t.cantidad} {unidadLabel(t.unidad)}
-                              </span>
-                            )}
-                            <span className="inline-flex items-center gap-1">
-                              <Truck className="h-3 w-3 shrink-0" />
-                              {t.transportista_nombre}
-                            </span>
-                          </div>
-                        </div>
-                        <span
-                          className={cn(
-                            'shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold ring-1',
-                            ESTADO_STYLE[t.estado]
-                          )}
+                      <div className="overflow-hidden rounded-xl border border-surface-border bg-white shadow-card">
+                        <button
+                          type="button"
+                          onClick={() => openEdit(t)}
+                          className="flex w-full items-start gap-3 px-3 py-3 text-left active:bg-slate-50"
                         >
-                          {ESTADO_LABEL[t.estado]}
-                        </span>
-                      </button>
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-start gap-2">
+                              <span className="shrink-0 rounded-md bg-slate-100 px-2 py-0.5 text-[11px] font-semibold tabular-nums text-slate-700">
+                                {t.fecha.slice(8, 10)}/{t.fecha.slice(5, 7)}
+                              </span>
+                              <ScrollableProductName className="min-w-0 flex-1 text-sm font-semibold text-slate-900">
+                                {t.descripcion}
+                              </ScrollableProductName>
+                            </div>
+                            <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-slate-500">
+                              {t.cantidad != null && (
+                                <span className="font-medium tabular-nums text-slate-700">
+                                  {t.cantidad} {unidadLabel(t.unidad)}
+                                </span>
+                              )}
+                              {t.transportista_nombre && (
+                                <span className="inline-flex items-center gap-1">
+                                  <Truck className="h-3 w-3 shrink-0" />
+                                  {t.transportista_nombre}
+                                </span>
+                              )}
+                            </div>
+                            {t.notas?.trim() && (
+                              <div className="scrollbar-none-x mt-1 overflow-x-auto whitespace-nowrap text-[11px] italic text-slate-500">
+                                {t.notas}
+                              </div>
+                            )}
+                          </div>
+                          {t.estado === 'CONFIRMADO' ? (
+                            <span
+                              className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-emerald-600 text-white shadow-xs"
+                              title="Confirmado"
+                            >
+                              <Check className="h-3.5 w-3.5 stroke-[3]" />
+                            </span>
+                          ) : (
+                            <span
+                              className={cn(
+                                'shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold ring-1',
+                                ESTADO_STYLE[t.estado]
+                              )}
+                            >
+                              {ESTADO_LABEL[t.estado]}
+                            </span>
+                          )}
+                        </button>
+                        {canEdit && t.estado === 'CANCELADO' && (
+                          <div className="border-t border-surface-border px-3 py-1.5">
+                            <button
+                              type="button"
+                              disabled={estadoBusyId === t.id}
+                              onClick={() => void eliminarTurno(t)}
+                              className="inline-flex h-7 w-full items-center justify-center gap-1.5 rounded-lg border border-red-200 bg-red-50 text-xs font-semibold text-red-700 hover:bg-red-100 disabled:opacity-50"
+                            >
+                              {estadoBusyId === t.id ? (
+                                <Loader2 className="h-3 w-3 animate-spin" />
+                              ) : (
+                                <X className="h-3 w-3 stroke-[2.5]" />
+                              )}
+                              Eliminar de la lista
+                            </button>
+                          </div>
+                        )}
+                      </div>
                     </li>
                   ))}
                 </ul>
@@ -1276,11 +1390,11 @@ export function AgendaTurnosPage() {
                 <div className="overflow-hidden rounded-xl border border-surface-border bg-white">
                   <ul className="divide-y divide-surface-border">
                     {historialPageItems.map((t) => (
-                      <li key={t.id}>
+                      <li key={t.id} className="flex items-center">
                         <button
                           type="button"
                           onClick={() => openEdit(t)}
-                          className="flex min-h-[58px] w-full flex-wrap items-center gap-3 px-4 py-3 text-left text-sm hover:bg-surface-muted/50"
+                          className="flex min-h-[58px] flex-1 flex-wrap items-center gap-3 px-4 py-3 text-left text-sm hover:bg-surface-muted/50"
                         >
                           <span className="w-28 shrink-0 font-medium text-slate-700">{t.fecha}</span>
                           <span className="min-w-0 flex-1">
@@ -1288,19 +1402,53 @@ export function AgendaTurnosPage() {
                               {lineaEnvioTexto(t)}
                             </span>
                             <span className="mt-0.5 block text-xs text-slate-500">
-                              {t.transportista_nombre}
+                              {t.transportista_nombre ? (
+                                <span className="inline-flex items-center gap-1">
+                                  <Truck className="h-3 w-3 shrink-0 text-slate-400" />
+                                  {t.transportista_nombre}
+                                </span>
+                              ) : (
+                                <span className="italic text-slate-400">Sin transportista</span>
+                              )}
                               {t.notas ? ` · ${t.notas}` : ''}
                             </span>
                           </span>
-                          <span
-                            className={cn(
-                              'rounded-full px-2.5 py-0.5 text-xs font-medium ring-1',
-                              ESTADO_STYLE[t.estado]
-                            )}
-                          >
-                            {ESTADO_LABEL[t.estado]}
-                          </span>
+                          {t.estado === 'CONFIRMADO' ? (
+                            <span
+                              className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-emerald-600 text-white shadow-xs"
+                              title="Confirmado"
+                            >
+                              <Check className="h-4 w-4 stroke-[3]" />
+                            </span>
+                          ) : (
+                            <span
+                              className={cn(
+                                'rounded-full px-2.5 py-0.5 text-xs font-medium ring-1',
+                                ESTADO_STYLE[t.estado]
+                              )}
+                            >
+                              {ESTADO_LABEL[t.estado]}
+                            </span>
+                          )}
                         </button>
+                        {canEdit && t.estado === 'CANCELADO' && (
+                          <div className="pr-3">
+                            <button
+                              type="button"
+                              disabled={estadoBusyId === t.id}
+                              onClick={() => void eliminarTurno(t)}
+                              title="Eliminar de la lista"
+                              aria-label="Eliminar turno cancelado"
+                              className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-red-200 bg-red-50 text-red-700 hover:bg-red-100 disabled:opacity-50"
+                            >
+                              {estadoBusyId === t.id ? (
+                                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                              ) : (
+                                <X className="h-4 w-4 stroke-[2.5]" />
+                              )}
+                            </button>
+                          </div>
+                        )}
                       </li>
                     ))}
                   </ul>
@@ -1419,7 +1567,7 @@ export function AgendaTurnosPage() {
 
                 <div>
                   <div className="mb-1.5 flex items-center justify-between">
-                    <span className="text-sm font-medium text-slate-700">Transportista</span>
+                    <span className="text-sm font-medium text-slate-700">Transportista (opcional)</span>
                     {canCreate && (
                       <button
                         type="button"
@@ -1432,8 +1580,7 @@ export function AgendaTurnosPage() {
                     )}
                   </div>
                   <select
-                    required
-                    value={form.transportista_id}
+                    value={form.transportista_id ?? ''}
                     onChange={(e) =>
                       setForm((f) => ({
                         ...f,
@@ -1443,16 +1590,17 @@ export function AgendaTurnosPage() {
                     disabled={!canEdit && !!editing}
                     className="w-full rounded-xl border border-surface-border bg-white px-3 py-2.5 text-sm shadow-sm focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20"
                   >
-                    <option value="">Elegir…</option>
+                    <option value="">Sin transportista</option>
                     {activos.map((t) => (
                       <option key={t.id} value={t.id}>
                         {t.nombre}
                       </option>
                     ))}
                     {editing &&
+                      editing.transportista_id != null &&
                       !activos.some((t) => t.id === editing.transportista_id) && (
                         <option value={editing.transportista_id}>
-                          {editing.transportista_nombre} (inactivo)
+                          {editing.transportista_nombre ?? `ID ${editing.transportista_id}`} (inactivo)
                         </option>
                       )}
                   </select>
@@ -1822,6 +1970,7 @@ export function AgendaTurnosPage() {
                       openEdit(t)
                     }}
                     onEstado={(estado) => void cambiarEstado(t, estado)}
+                    onEliminar={() => void eliminarTurno(t)}
                   />
                 ))}
               </div>

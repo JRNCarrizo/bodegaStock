@@ -184,7 +184,7 @@ export async function planillasRoutes(app: FastifyInstance): Promise<void> {
           SELECT COUNT(*) FROM planilla_lineas pl WHERE pl.planilla_id = p.id
         ), 0) AS lineas_count
       FROM planillas p
-      JOIN camioneros c ON c.id = p.camionero_id
+      LEFT JOIN camioneros c ON c.id = p.camionero_id
       JOIN usuarios u ON u.id = p.usuario_id
       LEFT JOIN camionero_vehiculos cv ON cv.id = p.vehiculo_id
       WHERE 1=1
@@ -195,9 +195,9 @@ export async function planillasRoutes(app: FastifyInstance): Promise<void> {
     params.push(logisticaId)
 
     if (q?.trim()) {
-      sql += ' AND (p.numero LIKE ? OR p.observacion LIKE ? OR c.nombre LIKE ? OR c.numero_interno LIKE ?)'
+      sql += ' AND (p.numero LIKE ? OR p.observacion LIKE ? OR c.nombre LIKE ? OR c.numero_interno LIKE ? OR cv.alias LIKE ? OR cv.patente LIKE ?)'
       const term = `%${q.trim()}%`
-      params.push(term, term, term, term)
+      params.push(term, term, term, term, term, term)
     }
 
     if (fecha_desde?.trim() && fecha_hasta?.trim()) {
@@ -238,7 +238,7 @@ export async function planillasRoutes(app: FastifyInstance): Promise<void> {
         cv.alias AS vehiculo_alias,
         cv.patente AS vehiculo_patente
       FROM planillas p
-      JOIN camioneros c ON c.id = p.camionero_id
+      LEFT JOIN camioneros c ON c.id = p.camionero_id
       JOIN usuarios u ON u.id = p.usuario_id
       LEFT JOIN camionero_vehiculos cv ON cv.id = p.vehiculo_id
       WHERE p.id = ? AND p.logistica_id = ?
@@ -320,7 +320,7 @@ export async function planillasRoutes(app: FastifyInstance): Promise<void> {
         cv.alias AS vehiculo_alias,
         cv.patente AS vehiculo_patente
       FROM planillas p
-      JOIN camioneros c ON c.id = p.camionero_id
+      LEFT JOIN camioneros c ON c.id = p.camionero_id
       LEFT JOIN camionero_vehiculos cv ON cv.id = p.vehiculo_id
       WHERE p.id = ? AND p.logistica_id = ?
     `).get(id, logisticaId) as
@@ -329,8 +329,8 @@ export async function planillasRoutes(app: FastifyInstance): Promise<void> {
           fecha: string
           numero: string
           observacion: string | null
-          camionero_nombre: string
-          camionero_numero: string
+          camionero_nombre: string | null
+          camionero_numero: string | null
           vehiculo_alias: string | null
           vehiculo_patente: string | null
         }
@@ -368,7 +368,12 @@ export async function planillasRoutes(app: FastifyInstance): Promise<void> {
       resumenSheet('Resumen', [
         ['Fecha', planilla.fecha],
         ['Nº planilla', planilla.numero],
-        ['Camionero', `${planilla.camionero_numero} — ${planilla.camionero_nombre}`],
+        [
+          'Camionero',
+          planilla.camionero_nombre
+            ? `${planilla.camionero_numero ? planilla.camionero_numero + ' — ' : ''}${planilla.camionero_nombre}`
+            : 'Sin camionero'
+        ],
         ['Alias vehículo', planilla.vehiculo_alias],
         ['Observación', planilla.observacion],
         ['Total', total]
@@ -551,9 +556,9 @@ export async function planillasRoutes(app: FastifyInstance): Promise<void> {
     const body = request.body as PlanillaBody
     const user = request.user!
 
-    if (!body.fecha?.trim() || !body.numero?.trim() || !body.camionero_id) {
+    if (!body.fecha?.trim() || !body.numero?.trim()) {
       return reply.status(400).send({
-        error: 'Fecha, número de planilla y camionero son requeridos'
+        error: 'Fecha y número de planilla son requeridos'
       })
     }
 
@@ -563,28 +568,32 @@ export async function planillasRoutes(app: FastifyInstance): Promise<void> {
 
     const db = getDb()
     const logisticaId = requireRequestLogistica(request)
+    const camioneroId = body.camionero_id ? Number(body.camionero_id) : null
 
-    try {
-      assertCamioneroEnLogistica(db, body.camionero_id!, logisticaId)
-    } catch (e) {
-      return reply.status(400).send({
-        error: e instanceof Error ? e.message : 'Camionero no válido'
-      })
+    if (camioneroId) {
+      try {
+        assertCamioneroEnLogistica(db, camioneroId, logisticaId)
+      } catch (e) {
+        return reply.status(400).send({
+          error: e instanceof Error ? e.message : 'Camionero no válido'
+        })
+      }
+
+      const camionero = db.prepare(`
+        SELECT id FROM camioneros WHERE id = ? AND activo = 1 AND logistica_id = ?
+      `).get(camioneroId, logisticaId)
+
+      if (!camionero) {
+        return reply.status(400).send({ error: 'Camionero no válido' })
+      }
     }
 
-    const camionero = db.prepare(`
-      SELECT id FROM camioneros WHERE id = ? AND activo = 1 AND logistica_id = ?
-    `).get(body.camionero_id, logisticaId)
-
-    if (!camionero) {
-      return reply.status(400).send({ error: 'Camionero no válido' })
-    }
-
-    if (body.vehiculo_id) {
+    const vehiculoId = camioneroId && body.vehiculo_id ? Number(body.vehiculo_id) : null
+    if (vehiculoId && camioneroId) {
       const vehiculo = db.prepare(`
         SELECT id FROM camionero_vehiculos
         WHERE id = ? AND camionero_id = ? AND activo = 1
-      `).get(body.vehiculo_id, body.camionero_id)
+      `).get(vehiculoId, camioneroId)
       if (!vehiculo) {
         return reply.status(400).send({ error: 'Vehículo no válido para el camionero' })
       }
@@ -618,8 +627,8 @@ export async function planillasRoutes(app: FastifyInstance): Promise<void> {
           body.fecha.trim(),
           body.numero.trim(),
           observacion,
-          body.camionero_id,
-          body.vehiculo_id ?? null,
+          camioneroId,
+          vehiculoId,
           user.id,
           logisticaId
         )
@@ -657,7 +666,7 @@ export async function planillasRoutes(app: FastifyInstance): Promise<void> {
             planilla_id: planillaId,
             planilla_linea_id: planillaLineaId,
             usuario_id: user.id,
-            camionero_id: body.camionero_id!,
+            camionero_id: camioneroId,
             observacion
           })
         })

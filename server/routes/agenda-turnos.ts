@@ -56,7 +56,7 @@ const TURNO_SELECT = `
     t.created_at,
     t.updated_at
   FROM agenda_turnos t
-  JOIN insumos_transportistas tr ON tr.id = t.transportista_id
+  LEFT JOIN insumos_transportistas tr ON tr.id = t.transportista_id
   LEFT JOIN usuarios u ON u.id = t.creado_por_id
 `
 
@@ -216,7 +216,10 @@ export async function agendaTurnosRoutes(app: FastifyInstance): Promise<void> {
     const descripcion = String(body.descripcion ?? '').trim()
     const cantidadParsed = parseCantidadOpcional(body.cantidad)
     const unidad = String(body.unidad ?? 'PALLETS').trim().toUpperCase()
-    const transportistaId = Number(body.transportista_id)
+    const transportistaId =
+      body.transportista_id != null && String(body.transportista_id).trim() !== ''
+        ? Number(body.transportista_id)
+        : null
     const notas = body.notas != null ? String(body.notas).trim() || null : null
 
     if (!isFechaIso(fecha)) {
@@ -232,9 +235,6 @@ export async function agendaTurnosRoutes(app: FastifyInstance): Promise<void> {
     if (!UNIDADES.has(unidad)) {
       return reply.status(400).send({ error: 'Unidad inválida' })
     }
-    if (!Number.isFinite(transportistaId)) {
-      return reply.status(400).send({ error: 'Transportista obligatorio' })
-    }
 
     const db = getDb()
     if (isAgendaDiaInhabil(db, fecha)) {
@@ -243,14 +243,19 @@ export async function agendaTurnosRoutes(app: FastifyInstance): Promise<void> {
       })
     }
 
-    const transportista = db
-      .prepare('SELECT id, activo FROM insumos_transportistas WHERE id = ?')
-      .get(transportistaId) as { id: number; activo: number } | undefined
-    if (!transportista) {
-      return reply.status(400).send({ error: 'Transportista no encontrado' })
-    }
-    if (!transportista.activo) {
-      return reply.status(400).send({ error: 'El transportista está inactivo' })
+    if (transportistaId != null) {
+      if (!Number.isFinite(transportistaId)) {
+        return reply.status(400).send({ error: 'Transportista inválido' })
+      }
+      const transportista = db
+        .prepare('SELECT id, activo FROM insumos_transportistas WHERE id = ?')
+        .get(transportistaId) as { id: number; activo: number } | undefined
+      if (!transportista) {
+        return reply.status(400).send({ error: 'Transportista no encontrado' })
+      }
+      if (!transportista.activo) {
+        return reply.status(400).send({ error: 'El transportista está inactivo' })
+      }
     }
 
     const userId = request.user?.id ?? null
@@ -288,8 +293,11 @@ export async function agendaTurnosRoutes(app: FastifyInstance): Promise<void> {
     }
     const unidad =
       body.unidad != null ? String(body.unidad).trim().toUpperCase() : undefined
+    const hasTransportista = Object.prototype.hasOwnProperty.call(body, 'transportista_id')
     const transportistaId =
-      body.transportista_id != null ? Number(body.transportista_id) : undefined
+      hasTransportista && body.transportista_id != null && String(body.transportista_id).trim() !== ''
+        ? Number(body.transportista_id)
+        : null
     const notas =
       body.notas === undefined
         ? undefined
@@ -316,7 +324,7 @@ export async function agendaTurnosRoutes(app: FastifyInstance): Promise<void> {
     if (estado !== undefined && !ESTADOS.has(estado)) {
       return reply.status(400).send({ error: 'Estado inválido' })
     }
-    if (transportistaId !== undefined) {
+    if (hasTransportista && transportistaId != null) {
       if (!Number.isFinite(transportistaId)) {
         return reply.status(400).send({ error: 'Transportista inválido' })
       }
@@ -334,7 +342,7 @@ export async function agendaTurnosRoutes(app: FastifyInstance): Promise<void> {
         descripcion = COALESCE(?, descripcion),
         cantidad = CASE WHEN ? THEN ? ELSE cantidad END,
         unidad = COALESCE(?, unidad),
-        transportista_id = COALESCE(?, transportista_id),
+        transportista_id = CASE WHEN ? THEN ? ELSE transportista_id END,
         notas = CASE WHEN ? THEN ? ELSE notas END,
         estado = COALESCE(?, estado),
         updated_at = datetime('now')
@@ -345,7 +353,8 @@ export async function agendaTurnosRoutes(app: FastifyInstance): Promise<void> {
       hasCantidad ? 1 : 0,
       hasCantidad ? cantidad : null,
       unidad ?? null,
-      transportistaId ?? null,
+      hasTransportista ? 1 : 0,
+      transportistaId,
       body.notas !== undefined ? 1 : 0,
       notas,
       estado ?? null,
@@ -353,5 +362,18 @@ export async function agendaTurnosRoutes(app: FastifyInstance): Promise<void> {
     )
 
     return db.prepare(`${TURNO_SELECT} WHERE t.id = ?`).get(id)
+  })
+
+  app.delete('/api/agenda-turnos/:id', {
+    preHandler: requirePermiso('agenda_turnos.editar')
+  }, async (request, reply) => {
+    const id = Number((request.params as { id: string }).id)
+    if (!Number.isFinite(id)) return reply.status(400).send({ error: 'ID inválido' })
+    const db = getDb()
+    const existing = db.prepare('SELECT id FROM agenda_turnos WHERE id = ?').get(id)
+    if (!existing) return reply.status(404).send({ error: 'Turno no encontrado' })
+
+    db.prepare('DELETE FROM agenda_turnos WHERE id = ?').run(id)
+    return { ok: true, id }
   })
 }

@@ -2832,7 +2832,7 @@ export function applyProductDeduction(
     planilla_id: number
     planilla_linea_id: number
     usuario_id: number
-    camionero_id: number
+    camionero_id: number | null
     observacion: string | null
   }
 ): DescuentoAplicado[] {

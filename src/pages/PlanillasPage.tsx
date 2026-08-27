@@ -641,10 +641,6 @@ export function PlanillasPage() {
       setError('Completá fecha y número de planilla')
       return false
     }
-    if (!camioneroId) {
-      setError('Seleccioná el camionero')
-      return false
-    }
     setError('')
     return true
   }
@@ -842,8 +838,8 @@ export function PlanillasPage() {
           fecha,
           numero,
           observacion: observacion || null,
-          camionero_id: Number(camioneroId),
-          vehiculo_id: vehiculoId ? Number(vehiculoId) : null,
+          camionero_id: camioneroId ? Number(camioneroId) : null,
+          vehiculo_id: camioneroId && vehiculoId ? Number(vehiculoId) : null,
           lineas: lineas.map((l) => ({
             producto_id: l.producto_id,
             modo_salida: l.modo_salida,
@@ -926,7 +922,7 @@ export function PlanillasPage() {
             <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">Alta</p>
             <h1 className="mt-1 text-2xl font-bold tracking-tight text-slate-900">Nueva planilla</h1>
             <p className="mt-1 text-sm text-slate-500">
-              Salida de mercadería con camionero asignado · Enter avanza · Esc vuelve
+              Salida de mercadería · Enter avanza · Esc vuelve
             </p>
           </div>
 
@@ -944,7 +940,7 @@ export function PlanillasPage() {
                 </div>
                 <div>
                   <p className="text-sm font-semibold text-slate-900">Datos de la planilla</p>
-                  <p className="text-xs text-slate-500">Fecha, número, camionero y vehículo</p>
+                  <p className="text-xs text-slate-500">Fecha, número, camionero (opcional) y vehículo</p>
                 </div>
               </div>
             </div>
@@ -966,7 +962,7 @@ export function PlanillasPage() {
                 placeholder="ej. PLA-2024-001"
               />
               <div>
-                <label className="mb-1 block text-sm font-medium text-slate-700">Camionero *</label>
+                <label className="mb-1 block text-sm font-medium text-slate-700">Camionero (opcional)</label>
                 <select
                   ref={camioneroRef}
                   value={camioneroId}
@@ -977,7 +973,7 @@ export function PlanillasPage() {
                   onKeyDown={handleCamioneroKeyDown}
                   className="w-full rounded-xl border border-surface-border px-3 py-2.5 text-sm shadow-sm focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20"
                 >
-                  <option value="">Seleccionar camionero...</option>
+                  <option value="">Sin camionero (Retiro particular / Cliente)</option>
                   {camioneros.map((c) => (
                     <option key={c.id} value={c.id}>
                       {c.numero_interno} — {c.nombre} ({c.empresa})
@@ -997,7 +993,7 @@ export function PlanillasPage() {
                 >
                   <option value="">
                     {!camioneroId
-                      ? 'Elegí un camionero primero'
+                      ? 'Sin camionero asignado'
                       : vehiculos.length === 0
                         ? 'Sin vehículos activos'
                         : 'Sin vehículo específico'}
@@ -1142,10 +1138,17 @@ export function PlanillasPage() {
                 <span className="rounded-full bg-white px-2.5 py-1 font-medium text-slate-700 ring-1 ring-surface-border">
                   Planilla {numero}
                 </span>
-                <span className="inline-flex items-center gap-1 rounded-full bg-brand-50 px-2.5 py-1 font-medium text-brand-800 ring-1 ring-brand-100">
-                  <Truck className="h-3 w-3" />
-                  {camioneroSeleccionado?.nombre}
-                </span>
+                {camioneroSeleccionado ? (
+                  <span className="inline-flex items-center gap-1 rounded-full bg-brand-50 px-2.5 py-1 font-medium text-brand-800 ring-1 ring-brand-100">
+                    <Truck className="h-3 w-3" />
+                    {camioneroSeleccionado.nombre}
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2.5 py-1 font-medium text-slate-700 ring-1 ring-surface-border">
+                    <Truck className="h-3 w-3 text-slate-400" />
+                    Sin camionero
+                  </span>
+                )}
                 {vehiculoSeleccionado && (
                   <span className="inline-flex items-center rounded-full bg-slate-100 px-2.5 py-1 font-medium text-slate-700 ring-1 ring-surface-border">
                     {labelVehiculoOperativo(vehiculoSeleccionado)}
@@ -1541,17 +1544,21 @@ export function PlanillasPage() {
                   <div className="sm:col-span-2">
                     <span className="text-slate-500">Camionero:</span>{' '}
                     <strong>
-                      {camioneroSeleccionado?.numero_interno} — {camioneroSeleccionado?.nombre}
+                      {camioneroSeleccionado
+                        ? `${camioneroSeleccionado.numero_interno} — ${camioneroSeleccionado.nombre}`
+                        : 'Sin camionero (Retiro particular / Cliente)'}
                     </strong>
                   </div>
-                  <div className="sm:col-span-2">
-                    <span className="text-slate-500">Vehículo:</span>{' '}
-                    <strong>
-                      {vehiculoSeleccionado
-                        ? labelVehiculoOperativo(vehiculoSeleccionado)
-                        : 'Sin vehículo asignado'}
-                    </strong>
-                  </div>
+                  {camioneroSeleccionado && (
+                    <div className="sm:col-span-2">
+                      <span className="text-slate-500">Vehículo:</span>{' '}
+                      <strong>
+                        {vehiculoSeleccionado
+                          ? labelVehiculoOperativo(vehiculoSeleccionado)
+                          : 'Sin vehículo asignado'}
+                      </strong>
+                    </div>
+                  )}
                 </div>
 
                 {previewData.map((pl, idx) => (
@@ -1664,7 +1671,7 @@ export function PlanillasPage() {
               <SectionHelpButton guideId="planillas" />
             </div>
             <p className="mt-2 max-w-xl text-sm leading-relaxed text-slate-500">
-              Salidas de mercadería con descuento automático de stock por camionero y vehículo.
+              Salidas de mercadería con descuento automático de stock por camionero, cliente o retiro particular.
             </p>
           </div>
           {hasPermiso('planillas.crear') && (
@@ -1705,7 +1712,7 @@ export function PlanillasPage() {
                 <input
                   ref={listSearchRef}
                   type="search"
-                  placeholder="Buscar por planilla o camionero..."
+                  placeholder="Buscar por planilla, camionero, vehículo u observación..."
                   value={listSearch}
                   onChange={(e) => setListSearch(e.target.value)}
                   onKeyDown={registroListKb.handleListSearchKeyDown}
@@ -1901,10 +1908,17 @@ export function PlanillasPage() {
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2">
                         <p className="truncate text-sm font-semibold text-slate-900">{p.numero}</p>
-                        <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-brand-50 px-2 py-0.5 text-[11px] font-medium text-brand-800 ring-1 ring-brand-100">
-                          <Truck className="h-3 w-3" />
-                          {p.camionero_nombre}
-                        </span>
+                        {p.camionero_nombre ? (
+                          <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-brand-50 px-2 py-0.5 text-[11px] font-medium text-brand-800 ring-1 ring-brand-100">
+                            <Truck className="h-3 w-3" />
+                            {p.camionero_nombre}
+                          </span>
+                        ) : (
+                          <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-600">
+                            <Truck className="h-3 w-3 text-slate-400" />
+                            Sin camionero
+                          </span>
+                        )}
                       </div>
                       <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-slate-500">
                         {p.vehiculo_modelo || p.vehiculo_alias ? (
@@ -1945,10 +1959,17 @@ export function PlanillasPage() {
                   <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-center gap-2">
                       <p className="text-base font-semibold text-slate-900">{p.numero}</p>
-                      <span className="inline-flex items-center gap-1 rounded-full bg-brand-50 px-2.5 py-0.5 text-xs font-medium text-brand-800 ring-1 ring-brand-100">
-                        <Truck className="h-3 w-3" />
-                        {p.camionero_nombre}
-                      </span>
+                      {p.camionero_nombre ? (
+                        <span className="inline-flex items-center gap-1 rounded-full bg-brand-50 px-2.5 py-0.5 text-xs font-medium text-brand-800 ring-1 ring-brand-100">
+                          <Truck className="h-3 w-3" />
+                          {p.camionero_nombre}
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-medium text-slate-600">
+                          <Truck className="h-3 w-3 text-slate-400" />
+                          Sin camionero
+                        </span>
+                      )}
                       {p.vehiculo_modelo || p.vehiculo_alias ? (
                         <span className="inline-flex items-center rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-medium text-slate-600">
                           {labelVehiculoDetalle(p) ?? p.vehiculo_modelo}
@@ -1957,12 +1978,12 @@ export function PlanillasPage() {
                     </div>
                     {p.observacion?.trim() ? (
                       <p className="mt-1 line-clamp-2 text-xs text-slate-500">{p.observacion}</p>
-                    ) : (
+                    ) : p.camionero_nombre ? (
                       <p className="mt-1 text-xs text-slate-400">
                         {p.camionero_numero}
                         {!p.vehiculo_modelo && !p.vehiculo_alias && ' · Sin vehículo asignado'}
                       </p>
-                    )}
+                    ) : null}
                     <div className="mt-2 flex flex-wrap items-center gap-3 text-xs text-slate-500">
                       <span>{p.lineas_count} línea{p.lineas_count === 1 ? '' : 's'}</span>
                       <span className="inline-flex items-center gap-1">
@@ -2061,12 +2082,18 @@ function PlanillaDetallePanel({
       total={detalle.total_unidades}
       meta={
         <>
-          <RegistroDetalleMetaChip icon={<Truck className="h-3.5 w-3.5 shrink-0 text-slate-400" />}>
-            {planilla.camionero_numero} · {planilla.camionero_nombre}
-            {planilla.camionero_empresa && (
-              <span className="text-slate-400"> · {planilla.camionero_empresa}</span>
-            )}
-          </RegistroDetalleMetaChip>
+          {planilla.camionero_nombre ? (
+            <RegistroDetalleMetaChip icon={<Truck className="h-3.5 w-3.5 shrink-0 text-slate-400" />}>
+              {planilla.camionero_numero ? `${planilla.camionero_numero} · ` : ''}{planilla.camionero_nombre}
+              {planilla.camionero_empresa && (
+                <span className="text-slate-400"> · {planilla.camionero_empresa}</span>
+              )}
+            </RegistroDetalleMetaChip>
+          ) : (
+            <RegistroDetalleMetaChip icon={<Truck className="h-3.5 w-3.5 shrink-0 text-slate-400" />}>
+              Sin camionero
+            </RegistroDetalleMetaChip>
+          )}
           {vehiculoTexto && (
             <RegistroDetalleMetaChip>
               <span className="font-medium text-slate-500">Vehículo </span>

@@ -220,6 +220,11 @@ export async function retornosRoutes(app: FastifyInstance): Promise<void> {
       SELECT
         r.id, r.fecha, r.numero_planilla, r.observacion, r.estado, r.ingreso_directo,
         r.created_at, r.verificado_at,
+        r.camionero_id, r.vehiculo_id,
+        cv.marca AS vehiculo_marca,
+        cv.modelo AS vehiculo_modelo,
+        cv.alias AS vehiculo_alias,
+        cv.patente AS vehiculo_patente,
         (
           SELECT CASE
             WHEN COUNT(DISTINCT rl.sector_id) > 1 THEN 'Varios sectores'
@@ -242,6 +247,7 @@ export async function retornosRoutes(app: FastifyInstance): Promise<void> {
       FROM retornos r
       LEFT JOIN sectores sd ON sd.id = r.sector_id
       LEFT JOIN camioneros c ON c.id = r.camionero_id
+      LEFT JOIN camionero_vehiculos cv ON cv.id = r.vehiculo_id
       JOIN usuarios uc ON uc.id = r.cargado_por_id
       LEFT JOIN usuarios uv ON uv.id = r.verificado_por_id
       WHERE 1=1
@@ -253,10 +259,10 @@ export async function retornosRoutes(app: FastifyInstance): Promise<void> {
 
     if (q?.trim()) {
       sql += ` AND (
-        c.nombre LIKE ? OR c.numero_interno LIKE ? OR r.numero_planilla LIKE ?
+        c.nombre LIKE ? OR c.numero_interno LIKE ? OR r.numero_planilla LIKE ? OR r.observacion LIKE ? OR cv.alias LIKE ? OR cv.patente LIKE ?
       )`
       const term = `%${q.trim()}%`
-      params.push(term, term, term)
+      params.push(term, term, term, term, term, term)
     }
     if (fecha_desde) {
       sql += ' AND r.fecha >= ?'

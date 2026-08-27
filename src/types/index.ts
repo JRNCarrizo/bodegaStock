@@ -198,8 +198,8 @@ export interface AgendaTurno {
   descripcion: string
   cantidad: number | null
   unidad: AgendaTurnoUnidad
-  transportista_id: number
-  transportista_nombre: string
+  transportista_id: number | null
+  transportista_nombre: string | null
   notas: string | null
   estado: AgendaTurnoEstado
   creado_por_id: number | null
@@ -213,7 +213,7 @@ export interface AgendaTurnoForm {
   descripcion: string
   cantidad: string
   unidad: AgendaTurnoUnidad
-  transportista_id: number | ''
+  transportista_id: number | '' | null
   notas: string
   estado: AgendaTurnoEstado
 }
@@ -366,9 +366,9 @@ export interface PlanillaListItem {
   fecha: string
   numero: string
   observacion: string | null
-  camionero_id: number
-  camionero_nombre: string
-  camionero_numero: string
+  camionero_id: number | null
+  camionero_nombre: string | null
+  camionero_numero: string | null
   vehiculo_id: number | null
   vehiculo_marca: string | null
   vehiculo_modelo: string | null
@@ -422,9 +422,10 @@ export interface PlanillaDetalle {
     fecha: string
     numero: string
     observacion: string | null
-    camionero_nombre: string
-    camionero_numero: string
-    camionero_empresa: string
+    camionero_id?: number | null
+    camionero_nombre: string | null
+    camionero_numero: string | null
+    camionero_empresa: string | null
     vehiculo_marca: string | null
     vehiculo_modelo: string | null
     vehiculo_alias: string | null
@@ -460,6 +461,11 @@ export interface RetornoListItem {
   sector_nombre: string
   camionero_nombre: string | null
   camionero_numero: string | null
+  vehiculo_id?: number | null
+  vehiculo_marca?: string | null
+  vehiculo_modelo?: string | null
+  vehiculo_alias?: string | null
+  vehiculo_patente?: string | null
   usuario_nombre: string
   verificado_por_nombre: string | null
   total_cajas: number

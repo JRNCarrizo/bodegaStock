@@ -1,5 +1,5 @@
 param(
-  [string]$Version = "0.3.56"
+  [string]$Version = "0.3.57"
 )
 
 $ErrorActionPreference = "Stop"
@@ -59,17 +59,22 @@ if (Test-Path $ymlPath) { $assets += (Resolve-Path $ymlPath).Path }
 $notes = @"
 ## ControlStock v$Version
 
-Update mas robusto: cierre forzado, descarga completa del Setup y reintento automatico.
+Mejoras en Carga de Planillas, Retornos y Agenda de Turnos.
 
-### Corregido
-- **Cierre antes de instalar:** varias pasadas de taskkill + espera hasta que el proceso muera (menos zombie en el Administrador de tareas y menos barra trabada a mitad).
-- **Descarga:** siempre Setup completo (sin differential/blockmap) + un reintento si GitHub corta.
-- **SQLite/API:** se cierran antes de lanzar el instalador.
+### Planillas y Retornos
+- **Camionero opcional:** permite despachos por retiro particular o cliente sin asignar chofer.
+- **Buscador:** busqueda ampliada por alias y patente de vehiculo tanto en planillas como en retornos.
+
+### Agenda de Turnos
+- **Transportista opcional:** el campo ahora es opcional.
+- **Notas visibles:** visualizacion de notas en fila con scroll horizontal limpio sin barra.
+- **Tarjetas optimizadas:** diseno compacto y calibrado para visualizar 3 turnos completos por dia sin cortes.
+- **Eliminar turnos cancelados:** opcion con cruz para quitar turnos cancelados de la lista.
 
 ### Actualizacion
-1. Cerra ControlStock (Administrador de tareas si hace falta).
-2. Descarga e instala ``ControlStock-Setup-$Version.exe`` (~104 MB).
-3. O Configuracion -> Buscar actualizaciones.
+1. Cerra ControlStock si esta abierto.
+2. Descarga e instala ``ControlStock-Setup-$Version.exe``.
+3. O desde Configuracion -> Buscar actualizaciones.
 
 Login inicial (base vacia): **admin** / **admin123**
 "@

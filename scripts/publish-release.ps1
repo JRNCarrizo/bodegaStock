@@ -108,14 +108,14 @@ if ($LASTEXITCODE -ne 0) {
 
 # Verificar que GitHub recibio el Setup completo (evitar truncado).
 Start-Sleep -Seconds 2
-$jqFilter = '.assets[] | select(.name | contains("Setup")) | .size'
-$remoteSize = [int64](gh api "repos/JRNCarrizo/bodegaStock/releases/tags/$tag" --jq $jqFilter)
+# jq entre comillas simples: PowerShell no debe interpretar | ni contains/test
+$remoteSize = [int64](gh api "repos/JRNCarrizo/bodegaStock/releases/tags/$tag" --jq '.assets[] | select(.name | test("Setup")) | .size')
 Write-Host "GitHub Setup size: $remoteSize (local $exeSize)" -ForegroundColor Cyan
 if ($remoteSize -ne $exeSize) {
   Write-Host "Tamano distinto - reintentando upload con clobber..." -ForegroundColor Yellow
   gh release upload $tag $exe --clobber
   Start-Sleep -Seconds 3
-  $remoteSize = [int64](gh api "repos/JRNCarrizo/bodegaStock/releases/tags/$tag" --jq $jqFilter)
+  $remoteSize = [int64](gh api "repos/JRNCarrizo/bodegaStock/releases/tags/$tag" --jq '.assets[] | select(.name | test("Setup")) | .size')
   if ($remoteSize -ne $exeSize) {
     Write-Error "Setup en GitHub sigue truncado: $remoteSize vs $exeSize. Subi a mano."
   }

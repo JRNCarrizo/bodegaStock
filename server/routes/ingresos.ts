@@ -2,7 +2,7 @@ import type { FastifyInstance } from 'fastify'
 import { getDb } from '../db'
 import { requirePermiso } from '../plugins/auth'
 import { blockIfInventarioActivo } from '../utils/inventario-block'
-import { assertSectorEnLogistica, requireRequestLogistica } from '../utils/logisticas'
+import { assertProductoActivoEnLogistica, assertSectorEnLogistica, requireRequestLogistica } from '../utils/logisticas'
 import {
   buildMultiSheetExcel,
   PRODUCTO_LISTADO_COLUMNS,
@@ -401,10 +401,9 @@ export async function ingresosRoutes(app: FastifyInstance): Promise<void> {
         return reply.status(400).send({ error: `Línea ${i + 1}: ${err}` })
       }
 
-      const producto = db.prepare(`
-        SELECT id FROM productos WHERE id = ? AND activo = 1
-      `).get(linea.producto_id)
-      if (!producto) {
+      try {
+        assertProductoActivoEnLogistica(db, linea.producto_id, logisticaId)
+      } catch {
         return reply.status(400).send({ error: `Línea ${i + 1}: producto no válido` })
       }
 

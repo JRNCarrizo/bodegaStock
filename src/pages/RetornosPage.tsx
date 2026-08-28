@@ -511,6 +511,8 @@ export function RetornosPage() {
     if (loadingList || diasConRetornos.length === 0) return
     if (!diasConRetornos.includes(selectedDay)) {
       const today = todayIsoDate()
+      // Mantener "hoy" aunque aún no haya registros (inicio del día / recién cargado).
+      if (selectedDay === today) return
       setSelectedDay(diasConRetornos.includes(today) ? today : diasConRetornos[0])
     }
   }, [loadingList, diasConRetornos, selectedDay])
@@ -574,6 +576,7 @@ export function RetornosPage() {
   }
 
   function volverAlListado() {
+    if (detalle) setSelectedDay(detalle.retorno.fecha)
     setDetalle(null)
     setEditLineaId(null)
     setShowScanner(false)
@@ -959,6 +962,7 @@ export function RetornosPage() {
         })
       })
       await loadRetornos()
+      setSelectedDay(fecha)
       notifyRetornosPendientesChanged()
       await abrirRetorno(result.id)
       clearRetornoDraft()
@@ -2368,9 +2372,7 @@ export function RetornosPage() {
               <SectionHelpButton guideId="retornos" />
             </div>
             <p className="mt-2 max-w-xl text-sm leading-relaxed text-slate-500">
-              {dobleVerificacion
-                ? 'Mercadería que vuelve a bodega — sin verificar hasta segunda revisión por otro usuario.'
-                : 'Mercadería que vuelve a bodega — ingreso directo: al confirmar ya suma stock (control en hoja).'}
+              Mercadería que vuelve a bodega.
             </p>
           </div>
           {hasPermiso('retornos.crear') && (

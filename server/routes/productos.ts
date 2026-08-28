@@ -17,6 +17,11 @@ import {
 import { resolveUnidadesPorCajaDefault } from '../utils/empaqueNombre'
 import { sqlProductoSearchClause, sqlProductoSearchOrderClause } from '../utils/productoSearch'
 import { ensureUnidadesPorCajaDefaultFromStock } from '../utils/stock'
+import {
+  assertProductoEnLogistica,
+  getLogisticaById,
+  requireRequestLogistica
+} from '../utils/logisticas'
 
 interface ProductoBody {
   codigo_interno?: string
@@ -32,10 +37,66 @@ interface ProductoBody {
   eliminar_imagen?: boolean
 }
 
-function generateCodigoInterno(db: ReturnType<typeof getDb>): string {
-  const row = db.prepare('SELECT MAX(id) as maxId FROM productos').get() as { maxId: number | null }
-  const next = (row.maxId ?? 0) + 1
-  return `PRD-${String(next).padStart(6, '0')}`
+/** Prefijo corto según logística: NAKBE→NAK, ESMERALDA→ESM, etc. */
+function prefixCodigoLogistica(db: ReturnType<typeof getDb>, logisticaId: number): string {
+  const logistica = getLogisticaById(db, logisticaId)
+  const raw = (logistica?.codigo ?? 'PRD').replace(/[^A-Za-z0-9]/g, '').toUpperCase()
+  if (raw.startsWith('NAK')) return 'NAK'
+  if (raw.startsWith('ESM')) return 'ESM'
+  return (raw.slice(0, 3) || 'PRD')
+}
+
+function formatAutoCodigo(prefix: string, seq: number): string {
+  return `${prefix}-${String(seq).padStart(2, '0')}`
+}
+
+function nextSeqCodigoAuto(
+  db: ReturnType<typeof getDb>,
+  logisticaId: number,
+  prefix: string
+): number {
+  const rows = db
+    .prepare(
+      `
+    SELECT codigo_interno FROM productos
+    WHERE logistica_id = ? AND upper(codigo_interno) LIKE upper(?)
+  `
+    )
+    .all(logisticaId, `${prefix}-%`) as Array<{ codigo_interno: string }>
+
+  let max = 0
+  const re = new RegExp(`^${prefix}-(\\d+)$`, 'i')
+  for (const r of rows) {
+    const m = String(r.codigo_interno ?? '').trim().match(re)
+    if (m) max = Math.max(max, Number(m[1]))
+  }
+  return max + 1
+}
+
+function generateCodigoInterno(db: ReturnType<typeof getDb>, logisticaId: number): string {
+  const prefix = prefixCodigoLogistica(db, logisticaId)
+  return formatAutoCodigo(prefix, nextSeqCodigoAuto(db, logisticaId, prefix))
+}
+
+/** Código interno libre en la logística (y no repetido en el Excel en curso). */
+function allocateCodigoInterno(
+  db: ReturnType<typeof getDb>,
+  logisticaId: number,
+  seen: Set<string>,
+  existsStmt: { get: (...params: unknown[]) => unknown }
+): string {
+  const prefix = prefixCodigoLogistica(db, logisticaId)
+  let seq = nextSeqCodigoAuto(db, logisticaId, prefix)
+  for (let guard = 0; guard < 10000; guard++) {
+    const code = formatAutoCodigo(prefix, seq)
+    const key = code.toLowerCase()
+    seq += 1
+    if (seen.has(key)) continue
+    if (existsStmt.get(code, logisticaId)) continue
+    seen.add(key)
+    return code
+  }
+  throw new Error('No se pudo generar un código interno único')
 }
 
 function generateCodigoBarras(): string {
@@ -77,8 +138,9 @@ export async function productosRoutes(app: FastifyInstance): Promise<void> {
       limit?: string
     }
     const db = getDb()
+    const logisticaId = requireRequestLogistica(request)
 
-    let whereSql = ' WHERE 1=1'
+    let whereSql = ` WHERE logistica_id = ${logisticaId}`
     const params: unknown[] = []
 
     if (activo === '1') {
@@ -104,7 +166,7 @@ export async function productosRoutes(app: FastifyInstance): Promise<void> {
     const selectSql = `
       SELECT id, codigo_interno, codigo_barras, nombre, descripcion, imagen_path,
              unidad, unidades_por_pallet_default, unidades_por_caja_default,
-             activo, created_at, updated_at
+             activo, logistica_id, created_at, updated_at
       FROM productos
       ${whereSql}
       ${orderSql}
@@ -141,10 +203,11 @@ export async function productosRoutes(app: FastifyInstance): Promise<void> {
 
   app.get('/api/productos/generar-codigos', {
     preHandler: requirePermiso('productos.crear')
-  }, async () => {
+  }, async (request) => {
     const db = getDb()
+    const logisticaId = requireRequestLogistica(request)
     return {
-      codigo_interno: generateCodigoInterno(db),
+      codigo_interno: generateCodigoInterno(db, logisticaId),
       codigo_barras: generateCodigoBarras()
     }
   })
@@ -161,8 +224,13 @@ export async function productosRoutes(app: FastifyInstance): Promise<void> {
       ],
       [
         {
+          codigo_interno: '',
+          nombre: 'Producto sin código (se asigna solo)',
+          descripcion: 'Si dejás el código vacío, el sistema genera NAK-01, ESM-01, etc. según la logística'
+        },
+        {
           codigo_interno: 'EJ-001',
-          nombre: 'Producto de ejemplo',
+          nombre: 'Producto con código propio',
           descripcion: 'Opcional — podés dejarla vacía'
         }
       ]
@@ -185,97 +253,146 @@ export async function productosRoutes(app: FastifyInstance): Promise<void> {
       return reply.status(400).send({ error: 'No se pudo leer el archivo Excel (.xlsx)' })
     }
 
-    const { rows, errors: parseErrors } = readSheetAsObjects(workbook, {
-      codigo_interno: [
-        'codigo_interno',
-        'codigo',
-        'cod_interno',
-        'codigointerno',
-        'codigo_de_producto'
-      ],
-      nombre: ['nombre', 'producto', 'name', 'descripcion'],
-      descripcion: ['descripcion', 'description', 'desc', 'detalle']
-    })
+    let parsed = readSheetAsObjects(
+      workbook,
+      {
+        codigo_interno: [
+          'codigo_interno',
+          'codigo',
+          'cod_interno',
+          'codigointerno',
+          'codigo_de_producto'
+        ],
+        nombre: ['nombre', 'producto', 'name'],
+        descripcion: ['descripcion', 'description', 'desc', 'detalle']
+      },
+      { requireKeys: ['nombre'] }
+    )
 
-    if (parseErrors.length) {
-      return reply.status(400).send({ error: parseErrors.join('. ') })
+    // Listados que solo traen “Descripción” (sin columna Nombre).
+    if (parsed.errors.length) {
+      parsed = readSheetAsObjects(
+        workbook,
+        {
+          codigo_interno: [
+            'codigo_interno',
+            'codigo',
+            'cod_interno',
+            'codigointerno',
+            'codigo_de_producto'
+          ],
+          nombre: ['nombre', 'producto', 'name', 'descripcion', 'description', 'desc', 'detalle']
+        },
+        { requireKeys: ['nombre'] }
+      )
     }
+
+    if (parsed.errors.length) {
+      return reply.status(400).send({ error: parsed.errors.join('. ') })
+    }
+    const rows = parsed.rows
     if (rows.length === 0) {
       return reply.status(400).send({ error: 'El Excel no tiene filas de productos para importar' })
     }
 
     const db = getDb()
+    const logisticaId = requireRequestLogistica(request)
     const existsStmt = db.prepare(`
-      SELECT id FROM productos WHERE codigo_interno = ? COLLATE NOCASE
+      SELECT id FROM productos
+      WHERE codigo_interno = ? COLLATE NOCASE AND logistica_id = ?
     `)
     const insertStmt = db.prepare(`
       INSERT INTO productos (
         codigo_interno, codigo_barras, nombre, descripcion, unidad,
-        unidades_por_pallet_default, unidades_por_caja_default, activo
-      ) VALUES (?, NULL, ?, ?, 'botella', 112, ?, 1)
+        unidades_por_pallet_default, unidades_por_caja_default, activo, logistica_id
+      ) VALUES (?, NULL, ?, ?, 'botella', 112, ?, 1, ?)
     `)
 
     const detalle: Array<{ fila: number; codigo_interno: string; estado: string; motivo?: string }> =
       []
     let creados = 0
     let omitidos = 0
-
+    let generados = 0
     const seen = new Set<string>()
 
     const run = db.transaction(() => {
       for (const row of rows) {
         const fila = Number(row.__fila) || 0
-        const codigo = (row.codigo_interno ?? '').trim()
+        let codigo = (row.codigo_interno ?? '').trim()
         const nombre = (row.nombre ?? '').trim()
         const descripcion = (row.descripcion ?? '').trim() || null
-        const codigoKey = codigo.toLowerCase()
+        let codigoAsignadoAuto = false
 
-        if (!codigo || !nombre) {
+        if (!nombre) {
           omitidos += 1
           detalle.push({
             fila,
             codigo_interno: codigo || '—',
             estado: 'omitido',
-            motivo: !codigo ? 'Falta código interno' : 'Falta nombre'
+            motivo: 'Falta nombre'
           })
           continue
         }
 
-        if (seen.has(codigoKey)) {
-          omitidos += 1
-          detalle.push({
-            fila,
-            codigo_interno: codigo,
-            estado: 'omitido',
-            motivo: 'Código duplicado en el mismo Excel'
-          })
-          continue
+        if (!codigo) {
+          try {
+            codigo = allocateCodigoInterno(db, logisticaId, seen, existsStmt)
+            codigoAsignadoAuto = true
+            generados += 1
+          } catch {
+            omitidos += 1
+            detalle.push({
+              fila,
+              codigo_interno: '—',
+              estado: 'omitido',
+              motivo: 'No se pudo generar código interno'
+            })
+            continue
+          }
         }
-        seen.add(codigoKey)
 
-        if (existsStmt.get(codigo)) {
-          omitidos += 1
-          detalle.push({
-            fila,
-            codigo_interno: codigo,
-            estado: 'omitido',
-            motivo: 'Ya existe en el catálogo'
-          })
-          continue
+        const codigoKey = codigo.toLowerCase()
+        if (!codigoAsignadoAuto) {
+          if (seen.has(codigoKey)) {
+            omitidos += 1
+            detalle.push({
+              fila,
+              codigo_interno: codigo,
+              estado: 'omitido',
+              motivo: 'Código duplicado en el mismo Excel'
+            })
+            continue
+          }
+          seen.add(codigoKey)
+
+          if (existsStmt.get(codigo, logisticaId)) {
+            omitidos += 1
+            detalle.push({
+              fila,
+              codigo_interno: codigo,
+              estado: 'omitido',
+              motivo: 'Ya existe en el catálogo'
+            })
+            continue
+          }
         }
 
         try {
           const botellasPorCaja = resolveUnidadesPorCajaDefault(nombre, null)
-          insertStmt.run(codigo, nombre, descripcion, botellasPorCaja)
+          insertStmt.run(codigo, nombre, descripcion, botellasPorCaja, logisticaId)
           creados += 1
-          detalle.push({ fila, codigo_interno: codigo, estado: 'creado' })
+          detalle.push({
+            fila,
+            codigo_interno: codigo,
+            estado: codigoAsignadoAuto ? 'creado (código auto)' : 'creado'
+          })
         } catch (err) {
           omitidos += 1
           const msg =
             err instanceof Error && err.message.includes('UNIQUE')
               ? 'Código interno o de barras ya existe'
               : 'Error al guardar'
-          detalle.push({ fila, codigo_interno: codigo, estado: 'omitido', motivo: msg })
+          detalle.push({ fila, codigo_interno: codigo || '—', estado: 'omitido', motivo: msg })
         }
       }
     })
@@ -291,6 +408,7 @@ export async function productosRoutes(app: FastifyInstance): Promise<void> {
       total_filas: rows.length,
       creados,
       omitidos,
+      codigos_generados: generados,
       detalle
     }
   })
@@ -300,6 +418,12 @@ export async function productosRoutes(app: FastifyInstance): Promise<void> {
   }, async (request, reply) => {
     const id = Number((request.params as { id: string }).id)
     const db = getDb()
+    const logisticaId = requireRequestLogistica(request)
+    try {
+      assertProductoEnLogistica(db, id, logisticaId)
+    } catch {
+      return reply.status(404).send({ error: 'Sin imagen' })
+    }
     const producto = db.prepare('SELECT imagen_path FROM productos WHERE id = ?').get(id) as
       | { imagen_path: string | null }
       | undefined
@@ -321,12 +445,18 @@ export async function productosRoutes(app: FastifyInstance): Promise<void> {
   }, async (request, reply) => {
     const id = Number((request.params as { id: string }).id)
     const db = getDb()
+    const logisticaId = requireRequestLogistica(request)
+    try {
+      assertProductoEnLogistica(db, id, logisticaId)
+    } catch {
+      return reply.status(404).send({ error: 'Producto no encontrado' })
+    }
     // Completa botellas/caja desde el stock si el inventario ya las usó y el maestro quedó vacío.
     ensureUnidadesPorCajaDefaultFromStock(db, id)
     const producto = db.prepare(`
       SELECT id, codigo_interno, codigo_barras, nombre, descripcion, imagen_path,
              unidad, unidades_por_pallet_default, unidades_por_caja_default,
-             activo, created_at, updated_at
+             activo, logistica_id, created_at, updated_at
       FROM productos WHERE id = ?
     `).get(id)
 
@@ -344,6 +474,7 @@ export async function productosRoutes(app: FastifyInstance): Promise<void> {
     }
 
     const db = getDb()
+    const logisticaId = requireRequestLogistica(request)
 
     try {
       const nombre = body.nombre.trim()
@@ -351,8 +482,8 @@ export async function productosRoutes(app: FastifyInstance): Promise<void> {
       const result = db.prepare(`
         INSERT INTO productos (
           codigo_interno, codigo_barras, nombre, descripcion, unidad,
-          unidades_por_pallet_default, unidades_por_caja_default, activo
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+          unidades_por_pallet_default, unidades_por_caja_default, activo, logistica_id
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).run(
         body.codigo_interno.trim(),
         body.codigo_barras?.trim() || null,
@@ -361,7 +492,8 @@ export async function productosRoutes(app: FastifyInstance): Promise<void> {
         body.unidad?.trim() || 'unidad',
         body.unidades_por_pallet_default ?? null,
         unidadesPorCaja,
-        body.activo === false ? 0 : 1
+        body.activo === false ? 0 : 1,
+        logisticaId
       )
 
       const id = Number(result.lastInsertRowid)
@@ -388,6 +520,13 @@ export async function productosRoutes(app: FastifyInstance): Promise<void> {
     const id = Number((request.params as { id: string }).id)
     const body = request.body as ProductoBody
     const db = getDb()
+    const logisticaId = requireRequestLogistica(request)
+
+    try {
+      assertProductoEnLogistica(db, id, logisticaId)
+    } catch {
+      return reply.status(404).send({ error: 'Producto no encontrado' })
+    }
 
     const existing = db.prepare('SELECT id, imagen_path FROM productos WHERE id = ?').get(id) as
       | { id: number; imagen_path: string | null }
@@ -420,7 +559,7 @@ export async function productosRoutes(app: FastifyInstance): Promise<void> {
           unidades_por_caja_default = ?,
           activo = COALESCE(?, activo),
           updated_at = datetime('now')
-        WHERE id = ?
+        WHERE id = ? AND logistica_id = ?
       `).run(
         body.codigo_interno?.trim() ?? null,
         body.codigo_barras?.trim() || null,
@@ -430,7 +569,8 @@ export async function productosRoutes(app: FastifyInstance): Promise<void> {
         body.unidades_por_pallet_default ?? null,
         unidadesPorCaja,
         body.activo === undefined ? null : body.activo ? 1 : 0,
-        id
+        id,
+        logisticaId
       )
 
       if (body.eliminar_imagen) {

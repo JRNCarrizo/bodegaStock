@@ -229,6 +229,7 @@ export interface Producto {
   unidades_por_pallet_default: number | null
   unidades_por_caja_default: number | null
   activo: number
+  logistica_id?: number | null
   created_at: string
   updated_at: string
 }

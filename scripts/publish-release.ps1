@@ -1,5 +1,5 @@
 param(
-  [string]$Version = "0.3.57"
+  [string]$Version = "0.3.58"
 )
 
 $ErrorActionPreference = "Stop"
@@ -59,17 +59,21 @@ if (Test-Path $ymlPath) { $assets += (Resolve-Path $ymlPath).Path }
 $notes = @"
 ## ControlStock v$Version
 
-Mejoras en Carga de Planillas, Retornos y Agenda de Turnos.
+Productos por logística, importación más flexible y mejoras de listados diarios.
 
-### Planillas y Retornos
-- **Camionero opcional:** permite despachos por retiro particular o cliente sin asignar chofer.
-- **Buscador:** busqueda ampliada por alias y patente de vehiculo tanto en planillas como en retornos.
+### Productos
+- **Por logística:** el catálogo queda separado por Esmeralda / NAKBE (stock y operaciones ya filtraban; ahora también los productos).
+- **Importación Excel:** el código interno puede ir vacío y se asigna solo (NAK-01, ESM-01, …).
 
-### Agenda de Turnos
-- **Transportista opcional:** el campo ahora es opcional.
-- **Notas visibles:** visualizacion de notas en fila con scroll horizontal limpio sin barra.
-- **Tarjetas optimizadas:** diseno compacto y calibrado para visualizar 3 turnos completos por dia sin cortes.
-- **Eliminar turnos cancelados:** opcion con cruz para quitar turnos cancelados de la lista.
+### Listados (ingresos, planillas, retornos, roturas, movimientos)
+- Al confirmar un registro, la pestaña del día queda en la fecha cargada (hoy u otro día), sin quedarse en el día anterior.
+
+### UI
+- Subtítulos más cortos en Productos, Sectores, Planillas, Movimientos y Retornos.
+- Detalle de planilla: el desglose expandible ya no muestra el sector.
+
+### Inventario
+- Ajustes de comparación online (perspectiva Vos / Compañero) y sin botón de escáner en conteo online.
 
 ### Actualizacion
 1. Cerra ControlStock si esta abierto.

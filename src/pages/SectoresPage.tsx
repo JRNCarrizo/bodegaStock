@@ -798,8 +798,7 @@ export function SectoresPage() {
             Sectores
           </h1>
           <p className="mt-2 max-w-xl text-sm leading-relaxed text-slate-500">
-            Ubicaciones de la bodega, sectores de descuento y puntos internos. Clic en un sector
-            para ver sus ubicaciones; usá Editar para modificar. El stock se consulta en Consulta → Por sector.
+            Ubicaciones de bodega, descuentos y puntos internos.
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">

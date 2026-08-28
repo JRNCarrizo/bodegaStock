@@ -2,7 +2,7 @@ import type { FastifyInstance } from 'fastify'
 import { getDb } from '../db'
 import { requirePermiso } from '../plugins/auth'
 import { blockIfInventarioActivo } from '../utils/inventario-block'
-import { assertSectorEnLogistica, requireRequestLogistica } from '../utils/logisticas'
+import { assertProductoActivoEnLogistica, assertSectorEnLogistica, requireRequestLogistica } from '../utils/logisticas'
 import {
   buildMultiSheetExcel,
   resumenSheet,
@@ -34,11 +34,12 @@ function assertSectorActivo(db: ReturnType<typeof getDb>, sectorId: number) {
   if (!sector) throw new Error('Sector no válido')
 }
 
-function assertProductoActivo(db: ReturnType<typeof getDb>, productoId: number) {
-  const producto = db.prepare(`
-    SELECT id FROM productos WHERE id = ? AND activo = 1
-  `).get(productoId)
-  if (!producto) throw new Error('Producto no válido')
+function assertProductoActivo(
+  db: ReturnType<typeof getDb>,
+  productoId: number,
+  logisticaId: number
+) {
+  assertProductoActivoEnLogistica(db, productoId, logisticaId)
 }
 
 function getRoturaLineas(db: ReturnType<typeof getDb>, roturaId: number) {
@@ -281,7 +282,7 @@ export async function roturasRoutes(app: FastifyInstance): Promise<void> {
     const sectorId = Number((request.params as { sectorId: string }).sectorId)
     const db = getDb()
     const logisticaId = requireRequestLogistica(request)
-    assertProductoActivo(db, productoId)
+    assertProductoActivo(db, productoId, logisticaId)
     assertSectorActivo(db, sectorId)
     assertSectorEnLogistica(db, sectorId, logisticaId)
 
@@ -296,7 +297,7 @@ export async function roturasRoutes(app: FastifyInstance): Promise<void> {
     const productoId = Number((request.params as { id: string }).id)
     const db = getDb()
     const logisticaId = requireRequestLogistica(request)
-    assertProductoActivo(db, productoId)
+    assertProductoActivo(db, productoId, logisticaId)
 
     const sectores = db
       .prepare(
@@ -358,7 +359,7 @@ export async function roturasRoutes(app: FastifyInstance): Promise<void> {
       if (!linea.producto_id || !linea.sector_id || !qty || qty <= 0) {
         return reply.status(400).send({ error: 'Línea inválida: producto, sector y cantidad requeridos' })
       }
-      assertProductoActivo(db, linea.producto_id)
+      assertProductoActivo(db, linea.producto_id, logisticaId)
       assertSectorActivo(db, linea.sector_id)
       assertSectorEnLogistica(db, linea.sector_id, logisticaId)
     }

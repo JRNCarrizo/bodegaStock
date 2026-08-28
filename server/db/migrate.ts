@@ -829,6 +829,7 @@ export function runMigrations(db: Database.Database): void {
   }
 
   migrateMultiLogistica(db)
+  migrateProductosLogistica(db)
   migrateAgendaTurnos(db)
   migratePlanillasCamioneroNullable(db)
 }
@@ -1051,6 +1052,104 @@ function migrateMultiLogistica(db: Database.Database): void {
 
   db.exec(`
     CREATE TABLE IF NOT EXISTS _migration_multi_logistica (
+      applied_at TEXT NOT NULL DEFAULT (datetime('now'))
+    )
+  `)
+}
+
+/** Productos por logística: catálogo separado; existentes → Esmeralda. */
+function migrateProductosLogistica(db: Database.Database): void {
+  if (!tableExists(db, 'productos')) return
+  if (tableExists(db, '_migration_productos_logistica')) return
+
+  ensureLogisticasSeed(db)
+  const esmeraldaId = getLogisticaEsmeraldaId(db)
+
+  if (!columnExists(db, 'productos', 'logistica_id')) {
+    db.exec(`ALTER TABLE productos ADD COLUMN logistica_id INTEGER REFERENCES logisticas(id)`)
+  }
+  db.exec(`UPDATE productos SET logistica_id = ${esmeraldaId} WHERE logistica_id IS NULL`)
+
+  if (isPostgresDb()) {
+    try {
+      db.exec(`ALTER TABLE productos ALTER COLUMN logistica_id SET NOT NULL`)
+    } catch {
+      // Ignorar si ya era NOT NULL
+    }
+    try {
+      db.exec(`ALTER TABLE productos DROP CONSTRAINT IF EXISTS productos_codigo_interno_key`)
+    } catch {
+      // constraint name may differ
+    }
+    try {
+      db.exec(`ALTER TABLE productos DROP CONSTRAINT IF EXISTS productos_codigo_barras_key`)
+    } catch {
+      // ignore
+    }
+    // Drop any leftover unique indexes on single columns
+    try {
+      db.exec(`DROP INDEX IF EXISTS productos_codigo_interno_key`)
+    } catch {
+      // ignore
+    }
+    try {
+      db.exec(`DROP INDEX IF EXISTS productos_codigo_barras_key`)
+    } catch {
+      // ignore
+    }
+    db.exec(`
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_productos_logistica_codigo_interno
+      ON productos (logistica_id, codigo_interno)
+    `)
+    db.exec(`
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_productos_logistica_codigo_barras
+      ON productos (logistica_id, codigo_barras)
+      WHERE codigo_barras IS NOT NULL
+    `)
+  } else {
+    // SQLite: rebuild to replace global UNIQUE with per-logística
+    db.pragma('foreign_keys = OFF')
+    try {
+      db.exec(`
+        CREATE TABLE productos_por_logistica (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          codigo_interno TEXT NOT NULL,
+          codigo_barras TEXT,
+          nombre TEXT NOT NULL,
+          descripcion TEXT,
+          imagen_path TEXT,
+          unidad TEXT NOT NULL DEFAULT 'unidad',
+          unidades_por_pallet_default INTEGER,
+          unidades_por_caja_default INTEGER,
+          activo INTEGER NOT NULL DEFAULT 1,
+          logistica_id INTEGER NOT NULL REFERENCES logisticas(id),
+          created_at TEXT NOT NULL DEFAULT (datetime('now')),
+          updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+          UNIQUE (logistica_id, codigo_interno),
+          UNIQUE (logistica_id, codigo_barras)
+        )
+      `)
+      db.exec(`
+        INSERT INTO productos_por_logistica (
+          id, codigo_interno, codigo_barras, nombre, descripcion, imagen_path,
+          unidad, unidades_por_pallet_default, unidades_por_caja_default,
+          activo, logistica_id, created_at, updated_at
+        )
+        SELECT
+          id, codigo_interno, codigo_barras, nombre, descripcion, imagen_path,
+          unidad, unidades_por_pallet_default, unidades_por_caja_default,
+          activo, COALESCE(logistica_id, ${esmeraldaId}), created_at, updated_at
+        FROM productos
+      `)
+      db.exec('DROP TABLE productos')
+      db.exec('ALTER TABLE productos_por_logistica RENAME TO productos')
+    } finally {
+      db.pragma('foreign_keys = ON')
+    }
+  }
+
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS _migration_productos_logistica (
       applied_at TEXT NOT NULL DEFAULT (datetime('now'))
     )
   `)

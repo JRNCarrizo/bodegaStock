@@ -6,7 +6,6 @@ import {
   ArchiveRestore,
   BarChart3,
   Calendar,
-  Camera,
   Calculator,
   Check,
   ChevronDown,
@@ -41,7 +40,6 @@ import {
 import { App as CapApp } from '@capacitor/app'
 import { Capacitor } from '@capacitor/core'
 import { BottleIcon } from '@/components/icons/BottleIcon'
-import { BarcodeScannerModal } from '@/components/BarcodeScannerModal'
 import { ProductImage } from '@/components/ProductImage'
 import {
   RegistroDetalleMetaChip,
@@ -4931,6 +4929,13 @@ type InventarioDiferenciaContadores = {
   nombre: string
   resumen_contador_1: string
   resumen_contador_2: string
+  /** Perspectiva del usuario logueado (viene del API). */
+  resumen_mio?: string
+  resumen_companero?: string
+  total_contador_1?: number
+  total_contador_2?: number
+  total_suelto_contador_1?: number
+  total_suelto_contador_2?: number
   lineas_contador_1?: InventarioConteoLinea[]
   lineas_contador_2?: InventarioConteoLinea[]
 }
@@ -4946,6 +4951,45 @@ function resumenContadorDiff(d: InventarioDiferenciaContadores, contador: 1 | 2)
   return contador === 1 ? d.resumen_contador_1 : d.resumen_contador_2
 }
 
+/**
+ * "Vos" / "Compañero" según lo que realmente contó este usuario (sus líneas).
+ * No confiar solo en mi_rol / resumen_mio del API (pueden quedar desfasados).
+ */
+function perspectivaDiffDesdeMisLineas(
+  d: InventarioDiferenciaContadores,
+  misLineasProducto: InventarioConteoLinea[],
+  miRol: 1 | 2 | null
+): { vos: string; companero: string } {
+  const miResumen = formatTotalesInventarioResumen(sumarTotalesMisLineas(misLineasProducto))
+  const r1 = d.resumen_contador_1
+  const r2 = d.resumen_contador_2
+
+  if (miResumen === r1 && miResumen !== r2) {
+    return { vos: r1, companero: r2 }
+  }
+  if (miResumen === r2 && miResumen !== r1) {
+    return { vos: r2, companero: r1 }
+  }
+
+  const t1c = Number(d.total_contador_1)
+  const t2c = Number(d.total_contador_2)
+  const misCajas = sumarTotalesMisLineas(misLineasProducto).cajas
+  if (Number.isFinite(t1c) && Number.isFinite(t2c) && t1c !== t2c) {
+    if (Math.abs(misCajas - t1c) < 1e-6 && Math.abs(misCajas - t2c) >= 1e-6) {
+      return { vos: r1, companero: r2 }
+    }
+    if (Math.abs(misCajas - t2c) < 1e-6 && Math.abs(misCajas - t1c) >= 1e-6) {
+      return { vos: r2, companero: r1 }
+    }
+  }
+
+  if (d.resumen_mio != null && d.resumen_companero != null) {
+    return { vos: d.resumen_mio, companero: d.resumen_companero }
+  }
+  if (miRol === 2) return { vos: r2, companero: r1 }
+  return { vos: r1, companero: r2 }
+}
+
 function ConteoSectorView({
   inventarioSectorId,
   onBack
@@ -4953,9 +4997,11 @@ function ConteoSectorView({
   inventarioSectorId: number
   onBack: () => void
 }) {
+  const { user } = useAuth()
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [sectorInfo, setSectorInfo] = useState<Record<string, unknown> | null>(null)
+  const [miRolApi, setMiRolApi] = useState<1 | 2 | null>(null)
   const [misLineas, setMisLineas] = useState<InventarioConteoLinea[]>([])
   const [comparacion, setComparacion] = useState<InventarioComparacionContadores | null>(null)
   const [referenciaReconteo, setReferenciaReconteo] =
@@ -4977,7 +5023,6 @@ function ConteoSectorView({
   const [cantidadSuelta, setCantidadSuelta] = useState('')
   const [ubicacionId, setUbicacionId] = useState('')
   const [ubicaciones, setUbicaciones] = useState<SectorUbicacion[]>([])
-  const [showScanner, setShowScanner] = useState(false)
   const [saving, setSaving] = useState(false)
   const [expandedProductos, setExpandedProductos] = useState<Set<number>>(new Set())
   const [editingLineaId, setEditingLineaId] = useState<number | null>(null)
@@ -5200,6 +5245,7 @@ function ConteoSectorView({
         referencia_reconteo: InventarioComparacionContadores | null
       }>(`/api/inventario/sectores/${inventarioSectorId}`)
       setSectorInfo({ ...data.sector, mi_rol: data.mi_rol ?? null })
+      setMiRolApi(data.mi_rol === 1 || data.mi_rol === 2 ? data.mi_rol : null)
       setUbicaciones(data.ubicaciones ?? [])
       setMisLineas(data.mis_lineas)
       setComparacion(data.comparacion)
@@ -5260,7 +5306,23 @@ function ConteoSectorView({
   }, [selectedProduct])
 
   const ronda = Number(sectorInfo?.ronda_actual ?? 1)
-  const miRol = sectorInfo?.mi_rol === 1 || sectorInfo?.mi_rol === 2 ? sectorInfo.mi_rol : null
+  const miRol: 1 | 2 | null = (() => {
+    const uid = user?.id != null ? Number(user.id) : NaN
+    if (Number.isFinite(uid) && sectorInfo) {
+      if (Number(sectorInfo.contador_1_id) === uid) return 1
+      if (
+        sectorInfo.contador_2_id != null &&
+        sectorInfo.contador_2_id !== '' &&
+        Number(sectorInfo.contador_2_id) === uid
+      ) {
+        return 2
+      }
+    }
+    if (miRolApi === 1 || miRolApi === 2) return miRolApi
+    const raw = Number(sectorInfo?.mi_rol)
+    if (raw === 1 || raw === 2) return raw
+    return null
+  })()
   const enReconteo =
     estado === 'EN_CONTEO' &&
     ronda > 1 &&
@@ -5821,15 +5883,21 @@ function ConteoSectorView({
               </div>
               {isExpanded && (
                 <div className="space-y-2 border-t border-brand-100/80 bg-gradient-to-b from-surface-muted/40 to-white px-4 py-3 sm:px-5">
-                  {ref && miRol && enReconteo && (
+                  {ref && (ref.resumen_mio != null || miRol) && enReconteo && (
                     <p className="border-b border-slate-200/90 pb-1.5 text-[10px] leading-snug text-slate-500">
                       <span className="text-slate-400">Ronda anterior ·</span>{' '}
                       <span className="font-medium text-slate-600">
-                        Vos {resumenContadorDiff(ref, miRol)}
+                        Vos{' '}
+                        {ref.resumen_mio ??
+                          (miRol ? resumenContadorDiff(ref, miRol) : ref.resumen_contador_1)}
                       </span>
                       <span className="mx-1 text-slate-300">vs</span>
                       <span className="font-medium text-slate-600">
-                        Compañero {resumenContadorDiff(ref, miRol === 1 ? 2 : 1)}
+                        Compañero{' '}
+                        {ref.resumen_companero ??
+                          (miRol
+                            ? resumenContadorDiff(ref, miRol === 1 ? 2 : 1)
+                            : ref.resumen_contador_2)}
                       </span>
                     </p>
                   )}
@@ -6043,25 +6111,23 @@ function ConteoSectorView({
               </p>
             ) : (
               <div className="mt-2 space-y-2">
-                {comparacion.diferencias.map((d, i) => (
-                  <div key={i} className="rounded-lg border border-red-200 bg-white p-2 text-sm">
-                    <p className="font-medium">{String(d.nombre)}</p>
-                    <p className="text-slate-600">
-                      Vos:{' '}
-                      {String(
-                        (d as { resumen_contador_1?: string }).resumen_contador_1 ??
-                          (d as { total_contador_1?: number }).total_contador_1 ??
-                          '—'
-                      )}{' '}
-                      · Compañero:{' '}
-                      {String(
-                        (d as { resumen_contador_2?: string }).resumen_contador_2 ??
-                          (d as { total_contador_2?: number }).total_contador_2 ??
-                          '—'
-                      )}
-                    </p>
-                  </div>
-                ))}
+                {comparacion.diferencias.map((d, i) => {
+                  const pid = Number(d.producto_id)
+                  const misDelProducto = misLineas.filter((l) => Number(l.producto_id) === pid)
+                  const { vos, companero } = perspectivaDiffDesdeMisLineas(
+                    d,
+                    misDelProducto,
+                    miRol
+                  )
+                  return (
+                    <div key={i} className="rounded-lg border border-red-200 bg-white p-2 text-sm">
+                      <p className="font-medium">{String(d.nombre)}</p>
+                      <p className="text-slate-600">
+                        Vos: {vos} · Compañero: {companero}
+                      </p>
+                    </div>
+                  )
+                })}
                 {estado === 'CON_DIFERENCIAS' && (
                   <div className="space-y-2">
                     <p className="text-xs text-slate-600">
@@ -6080,59 +6146,33 @@ function ConteoSectorView({
 
         {puedeEditar && (
           <div className="space-y-3 overflow-visible p-4 sm:p-5">
-            {usaUbicaciones ? (
-              <div className="flex items-end gap-2">
-                <div className="relative min-w-0 flex-1">
-                  <MapPin className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-violet-500" />
-                  <select
-                    ref={ubicacionSelectRef}
-                    value={ubicacionId}
-                    onChange={(e) => {
-                      setUbicacionId(e.target.value)
-                      setError('')
-                      setTimeout(() => productSearchRef.current?.focus(), 50)
-                    }}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') {
-                        e.preventDefault()
-                        productSearchRef.current?.focus()
-                      }
-                    }}
-                    className="w-full rounded-xl border border-surface-border bg-white py-2.5 pl-9 pr-3 text-sm shadow-sm focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20"
-                    aria-label="Ubicación"
-                  >
-                    <option value="">Seleccionar ubicación…</option>
-                    {ubicaciones.map((u) => (
-                      <option key={u.id} value={u.id}>
-                        {u.nombre}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <Button
-                  type="button"
-                  variant="secondary"
-                  size="sm"
-                  className="h-[42px] shrink-0 rounded-xl px-3"
-                  onClick={() => setShowScanner(true)}
-                  aria-label="Escanear código"
-                  title="Escanear código"
+            {usaUbicaciones && (
+              <div className="relative min-w-0">
+                <MapPin className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-violet-500" />
+                <select
+                  ref={ubicacionSelectRef}
+                  value={ubicacionId}
+                  onChange={(e) => {
+                    setUbicacionId(e.target.value)
+                    setError('')
+                    setTimeout(() => productSearchRef.current?.focus(), 50)
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault()
+                      productSearchRef.current?.focus()
+                    }
+                  }}
+                  className="w-full rounded-xl border border-surface-border bg-white py-2.5 pl-9 pr-3 text-sm shadow-sm focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20"
+                  aria-label="Ubicación"
                 >
-                  <Camera className="h-4 w-4" />
-                </Button>
-              </div>
-            ) : (
-              <div className="flex justify-end">
-                <Button
-                  type="button"
-                  variant="secondary"
-                  size="sm"
-                  className="rounded-xl"
-                  onClick={() => setShowScanner(true)}
-                >
-                  <Camera className="h-4 w-4" />
-                  Escanear
-                </Button>
+                  <option value="">Seleccionar ubicación…</option>
+                  {ubicaciones.map((u) => (
+                    <option key={u.id} value={u.id}>
+                      {u.nombre}
+                    </option>
+                  ))}
+                </select>
               </div>
             )}
 
@@ -6664,20 +6704,6 @@ function ConteoSectorView({
             {lineasListContent.preview}
           </div>
         </div>
-      )}
-
-      {showScanner && (
-        <BarcodeScannerModal
-          open={showScanner}
-          onClose={() => setShowScanner(false)}
-          onScan={(code) => {
-            setShowScanner(false)
-            setProductSearch(code)
-            setSelectedProduct(null)
-            setProductResults([])
-            setTimeout(() => productSearchRef.current?.focus(), 50)
-          }}
-        />
       )}
     </div>
   )

@@ -18,6 +18,7 @@ import {
   assertSectorFinalizable,
   cerrarSectorSinComparacionPares,
   compararContadores,
+  compararContadoresParaRol,
   compararVsSistema,
   crearSnapshotInventario,
   ejecutarComparacionSector,
@@ -1198,11 +1199,16 @@ export async function inventarioRoutes(app: FastifyInstance): Promise<void> {
 
       let comparacion = null
       if (mostrarComparacion) {
-        comparacion = compararContadores(db, inventarioSectorId, ronda)
+        comparacion = compararContadoresParaRol(
+          compararContadores(db, inventarioSectorId, ronda),
+          rol
+        )
       }
 
       const referencia_reconteo =
-        !simple && ronda > 1 ? compararContadores(db, inventarioSectorId, ronda - 1) : null
+        !simple && ronda > 1
+          ? compararContadoresParaRol(compararContadores(db, inventarioSectorId, ronda - 1), rol)
+          : null
 
       const sectorId = Number(sector.sector_id)
       const sectorMeta = db.prepare(`
@@ -1479,14 +1485,17 @@ export async function inventarioRoutes(app: FastifyInstance): Promise<void> {
 
         let comparacion = null
         if (Number(updated.contador_1_finalizo) && Number(updated.contador_2_finalizo)) {
-          comparacion = ejecutarComparacionSector(db, inventarioSectorId)
+          comparacion = compararContadoresParaRol(
+            ejecutarComparacionSector(db, inventarioSectorId),
+            rol
+          )
         } else {
           db.prepare(`
             UPDATE inventario_sectores SET estado = 'ESPERANDO_COMPANERO' WHERE id = ?
           `).run(inventarioSectorId)
         }
 
-        return { ok: true, comparacion }
+        return { ok: true, comparacion, mi_rol: rol }
       } catch (e) {
         return reply.status(400).send({ error: (e as Error).message })
       }

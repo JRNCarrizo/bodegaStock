@@ -2,7 +2,7 @@ import type { FastifyInstance } from 'fastify'
 import { getDb } from '../db'
 import { requirePermiso } from '../plugins/auth'
 import { blockIfInventarioActivo } from '../utils/inventario-block'
-import { assertCamioneroEnLogistica, requireRequestLogistica } from '../utils/logisticas'
+import { assertCamioneroEnLogistica, assertProductoActivoEnLogistica, requireRequestLogistica } from '../utils/logisticas'
 import {
   buildMultiSheetExcel,
   PRODUCTO_LISTADO_COLUMNS,
@@ -397,6 +397,13 @@ export async function planillasRoutes(app: FastifyInstance): Promise<void> {
   }, async (request, reply) => {
     const id = Number((request.params as { id: string }).id)
     const db = getDb()
+    const logisticaId = requireRequestLogistica(request)
+
+    try {
+      assertProductoActivoEnLogistica(db, id, logisticaId)
+    } catch {
+      return reply.status(404).send({ error: 'Producto no válido' })
+    }
 
     const producto = db.prepare(`
       SELECT id, unidad, unidades_por_pallet_default, unidades_por_caja_default
@@ -433,6 +440,7 @@ export async function planillasRoutes(app: FastifyInstance): Promise<void> {
       total?: string
     }
     const db = getDb()
+    const logisticaId = requireRequestLogistica(request)
     const pid = Number(producto_id)
     const cantidad = Number(total)
 
@@ -440,10 +448,9 @@ export async function planillasRoutes(app: FastifyInstance): Promise<void> {
       return reply.status(400).send({ error: 'Producto y cantidad total válidos son requeridos' })
     }
 
-    const producto = db.prepare(`
-      SELECT id FROM productos WHERE id = ? AND activo = 1
-    `).get(pid)
-    if (!producto) {
+    try {
+      assertProductoActivoEnLogistica(db, pid, logisticaId)
+    } catch {
       return reply.status(404).send({ error: 'Producto no válido' })
     }
 
@@ -466,6 +473,7 @@ export async function planillasRoutes(app: FastifyInstance): Promise<void> {
   }, async (request, reply) => {
     const body = request.body as { lineas?: PlanillaLineaBody[] }
     const db = getDb()
+    const logisticaId = requireRequestLogistica(request)
 
     if (!body.lineas?.length) {
       return reply.status(400).send({ error: 'Agregá al menos una línea de producto' })
@@ -473,10 +481,9 @@ export async function planillasRoutes(app: FastifyInstance): Promise<void> {
 
     for (let i = 0; i < body.lineas.length; i++) {
       const linea = body.lineas[i]
-      const producto = db.prepare(`
-        SELECT id FROM productos WHERE id = ? AND activo = 1
-      `).get(linea.producto_id)
-      if (!producto) {
+      try {
+        assertProductoActivoEnLogistica(db, linea.producto_id, logisticaId)
+      } catch {
         return reply.status(400).send({ error: `Línea ${i + 1}: producto no válido` })
       }
       try {
@@ -601,10 +608,9 @@ export async function planillasRoutes(app: FastifyInstance): Promise<void> {
 
     for (let i = 0; i < body.lineas.length; i++) {
       const linea = body.lineas[i]
-      const producto = db.prepare(`
-        SELECT id FROM productos WHERE id = ? AND activo = 1
-      `).get(linea.producto_id)
-      if (!producto) {
+      try {
+        assertProductoActivoEnLogistica(db, linea.producto_id, logisticaId)
+      } catch {
         return reply.status(400).send({ error: `Línea ${i + 1}: producto no válido` })
       }
       try {

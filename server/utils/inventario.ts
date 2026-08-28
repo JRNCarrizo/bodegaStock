@@ -196,11 +196,12 @@ export function assertContadorEnSector(
   userId: number
 ): { rol: 1 | 2; sector: ReturnType<typeof getInventarioSector> } {
   const sector = getInventarioSector(db, inventarioSectorId)
+  const uid = Number(userId)
   const c1 = Number(sector.contador_1_id)
   const c2Raw = sector.contador_2_id
   const c2 = c2Raw == null || c2Raw === '' ? null : Number(c2Raw)
-  if (userId === c1) return { rol: 1, sector }
-  if (c2 != null && userId === c2) return { rol: 2, sector }
+  if (Number.isFinite(uid) && uid === c1) return { rol: 1, sector }
+  if (c2 != null && Number.isFinite(uid) && uid === c2) return { rol: 2, sector }
   throw new Error('No estás asignado como contador en este sector')
 }
 
@@ -401,6 +402,34 @@ export function compararContadores(
     ok,
     diferencias,
     coincide: diferencias.length === 0
+  }
+}
+
+/** Adapta la comparación a la perspectiva del contador que está mirando (Vos / Compañero). */
+export function compararContadoresParaRol(
+  resultado: ReturnType<typeof compararContadores>,
+  rol: 1 | 2 | null
+): ReturnType<typeof compararContadores> & {
+  diferencias: Array<
+    ReturnType<typeof compararContadores>['diferencias'][number] & {
+      resumen_mio: string
+      resumen_companero: string
+      total_mio: number
+      total_companero: number
+    }
+  >
+} {
+  const soyContador2 = rol === 2
+  const diferencias = resultado.diferencias.map((d) => ({
+    ...d,
+    resumen_mio: soyContador2 ? d.resumen_contador_2 : d.resumen_contador_1,
+    resumen_companero: soyContador2 ? d.resumen_contador_1 : d.resumen_contador_2,
+    total_mio: soyContador2 ? d.total_contador_2 : d.total_contador_1,
+    total_companero: soyContador2 ? d.total_contador_1 : d.total_contador_2
+  }))
+  return {
+    ...resultado,
+    diferencias
   }
 }
 

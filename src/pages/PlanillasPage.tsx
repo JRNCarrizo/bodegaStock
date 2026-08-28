@@ -410,6 +410,8 @@ export function PlanillasPage() {
     if (loadingList || diasConPlanillas.length === 0) return
     if (!diasConPlanillas.includes(selectedDay)) {
       const today = todayIsoDate()
+      // Mantener "hoy" aunque aún no haya registros (inicio del día / recién cargado).
+      if (selectedDay === today) return
       setSelectedDay(diasConPlanillas.includes(today) ? today : diasConPlanillas[0])
     }
   }, [loadingList, diasConPlanillas, selectedDay])
@@ -850,12 +852,12 @@ export function PlanillasPage() {
       setShowPreview(false)
       const data = await api<PlanillaDetalle>(`/api/planillas/${result.id}`)
       setDetalle(data)
-      setSelectedDay(fecha)
       setView('detail')
       clearPlanillaDraft()
       setTieneBorrador(false)
       resetCreateForm()
       await loadPlanillas()
+      setSelectedDay(fecha)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error al confirmar planilla')
     } finally {
@@ -1671,7 +1673,7 @@ export function PlanillasPage() {
               <SectionHelpButton guideId="planillas" />
             </div>
             <p className="mt-2 max-w-xl text-sm leading-relaxed text-slate-500">
-              Salidas de mercadería con descuento automático de stock por camionero, cliente o retiro particular.
+              Salidas con descuento automático de stock.
             </p>
           </div>
           {hasPermiso('planillas.crear') && (
@@ -2050,14 +2052,11 @@ function PlanillaDetallePanel({
         producto_id: l.producto_id,
         codigo_interno: l.codigo_interno,
         nombre: l.nombre,
-        etiqueta:
-          d.sector_nombre +
-          ' · ' +
-          formatPlanillaEtiqueta(
-            l.modo_salida === 'BOTELLA' ? 'BOTELLA' : 'CAJA',
-            d.unidades,
-            l.unidad
-          ),
+        etiqueta: formatPlanillaEtiqueta(
+          l.modo_salida === 'BOTELLA' ? 'BOTELLA' : 'CAJA',
+          d.unidades,
+          l.unidad
+        ),
         cantidad: d.unidades
       }))
     }

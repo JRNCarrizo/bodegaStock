@@ -182,7 +182,6 @@ export function attachLogisticaToRequest(
     '/api/health',
     '/api/server/info',
     '/api/logisticas',
-    '/api/productos',
     '/api/usuarios',
     '/api/roles',
     '/api/secciones',
@@ -237,6 +236,45 @@ export function assertCamioneroEnLogistica(
   if (!row) throw new Error('Camionero no encontrado')
   if (row.logistica_id !== logisticaId) {
     throw new Error('El camionero no pertenece a la logística activa')
+  }
+}
+
+export function assertProductoEnLogistica(
+  db: Database.Database,
+  productoId: number,
+  logisticaId: number
+): void {
+  if (!columnExists(db, 'productos', 'logistica_id')) return
+  const row = db.prepare(`
+    SELECT logistica_id FROM productos WHERE id = ?
+  `).get(productoId) as { logistica_id: number | null } | undefined
+  if (!row) throw new Error('Producto no encontrado')
+  if (row.logistica_id !== logisticaId) {
+    throw new Error('El producto no pertenece a la logística activa')
+  }
+}
+
+/** Producto activo y de la logística activa. */
+export function assertProductoActivoEnLogistica(
+  db: Database.Database,
+  productoId: number,
+  logisticaId: number
+): void {
+  if (!columnExists(db, 'productos', 'logistica_id')) {
+    const producto = db.prepare(`
+      SELECT id FROM productos WHERE id = ? AND activo = 1
+    `).get(productoId)
+    if (!producto) throw new Error('Producto no válido')
+    return
+  }
+  const row = db.prepare(`
+    SELECT id, activo, logistica_id FROM productos WHERE id = ?
+  `).get(productoId) as
+    | { id: number; activo: number; logistica_id: number | null }
+    | undefined
+  if (!row || !row.activo) throw new Error('Producto no válido')
+  if (row.logistica_id !== logisticaId) {
+    throw new Error('El producto no pertenece a la logística activa')
   }
 }
 

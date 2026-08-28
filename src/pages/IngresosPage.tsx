@@ -519,6 +519,8 @@ export function IngresosPage() {
     if (loadingList || diasConIngresos.length === 0) return
     if (!diasConIngresos.includes(selectedDay)) {
       const today = todayIsoDate()
+      // Mantener "hoy" aunque aún no haya registros (inicio del día / recién cargado).
+      if (selectedDay === today) return
       setSelectedDay(diasConIngresos.includes(today) ? today : diasConIngresos[0])
     }
   }, [loadingList, diasConIngresos, selectedDay])
@@ -1024,12 +1026,12 @@ export function IngresosPage() {
       })
       const data = await api<IngresoDetalle>(`/api/ingresos/${result.id}`)
       setDetalle(data)
-      setSelectedDay(fecha)
       setView('detail')
       clearIngresoDraft()
       setTieneBorrador(false)
       resetCreateForm()
       await loadIngresos()
+      setSelectedDay(fecha)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error al confirmar ingreso')
     } finally {

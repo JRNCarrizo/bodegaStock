@@ -225,6 +225,8 @@ export function RoturasPage() {
     if (loadingList || diasConRoturas.length === 0) return
     if (!diasConRoturas.includes(selectedDay)) {
       const today = todayIsoDate()
+      // Mantener "hoy" aunque aún no haya registros (inicio del día / recién cargado).
+      if (selectedDay === today) return
       setSelectedDay(diasConRoturas.includes(today) ? today : diasConRoturas[0])
     }
   }, [loadingList, diasConRoturas, selectedDay])
@@ -516,6 +518,7 @@ export function RoturasPage() {
         })
       })
       await loadRoturas()
+      setSelectedDay(fecha)
       await abrirDetalle(result.id)
       resetCreateForm()
     } catch (err) {

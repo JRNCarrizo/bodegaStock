@@ -46,8 +46,8 @@ CREATE TABLE IF NOT EXISTS usuario_secciones (
 
 CREATE TABLE IF NOT EXISTS productos (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
-  codigo_interno TEXT NOT NULL UNIQUE,
-  codigo_barras TEXT UNIQUE,
+  codigo_interno TEXT NOT NULL,
+  codigo_barras TEXT,
   nombre TEXT NOT NULL,
   descripcion TEXT,
   imagen_path TEXT,
@@ -55,8 +55,11 @@ CREATE TABLE IF NOT EXISTS productos (
   unidades_por_pallet_default INTEGER,
   unidades_por_caja_default INTEGER,
   activo INTEGER NOT NULL DEFAULT 1,
+  logistica_id INTEGER REFERENCES logisticas(id),
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
-  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+  updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+  UNIQUE (logistica_id, codigo_interno),
+  UNIQUE (logistica_id, codigo_barras)
 );
 
 CREATE TABLE IF NOT EXISTS sectores (

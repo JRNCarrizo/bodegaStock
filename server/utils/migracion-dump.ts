@@ -13,6 +13,7 @@ const TABLES_WITH_LOGISTICA_ID = new Set<string>([
   'roturas',
   'movimientos_internos',
   'inventario_sesiones',
+  'productos',
 ])
 
 function validLogisticaIds(db: Database.Database): Set<number> {

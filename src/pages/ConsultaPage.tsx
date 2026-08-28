@@ -883,10 +883,10 @@ export function ConsultaPage() {
           ? 'Código interno, código de barras o nombre. Incluye productos sin stock.'
           : 'Código interno, código de barras o nombre. Solo productos con stock.'
       : modo === 'sector'
-        ? 'Elegí un sector para ver todos los productos con stock, filtrando por ubicación interna si aplica.'
+        ? 'Elegí un sector para ver todos los productos con stock.'
         : incluirCero
-          ? 'Listado de todos los productos activos, con o sin stock. Desplegá cada uno para ver el desglose.'
-          : 'Listado de productos con stock. El desglose por sector queda cerrado; desplegá cada producto para verlo.'
+          ? 'Listado de todos los productos activos, con o sin stock.'
+          : 'Listado de productos con stock.'
 
   function renderProductoListItem(p: ConsultaResumen, index: number) {
     const isExpanded = expandedId === p.id

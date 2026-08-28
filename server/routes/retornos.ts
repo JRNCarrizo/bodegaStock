@@ -5,6 +5,7 @@ import { blockIfInventarioActivo } from '../utils/inventario-block'
 import { getRetornosDobleVerificacion } from '../utils/app-settings'
 import {
   assertCamioneroEnLogistica,
+  assertProductoActivoEnLogistica,
   assertSectorEnLogistica,
   requireRequestLogistica
 } from '../utils/logisticas'
@@ -433,10 +434,9 @@ export async function retornosRoutes(app: FastifyInstance): Promise<void> {
       if (!estadosValidos.includes(linea.estado_condicion)) {
         return reply.status(400).send({ error: `Línea ${i + 1}: estado inválido` })
       }
-      const producto = db.prepare(`
-        SELECT id FROM productos WHERE id = ? AND activo = 1
-      `).get(linea.producto_id)
-      if (!producto) {
+      try {
+        assertProductoActivoEnLogistica(db, linea.producto_id, logisticaId)
+      } catch {
         return reply.status(400).send({ error: `Línea ${i + 1}: producto no válido` })
       }
       try {

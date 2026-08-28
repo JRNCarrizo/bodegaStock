@@ -72,6 +72,7 @@ export function ProductosPage() {
     total_filas: number
     creados: number
     omitidos: number
+    codigos_generados?: number
     detalle: Array<{ fila: number; codigo_interno: string; estado: string; motivo?: string }>
   } | null>(null)
   const [showScanner, setShowScanner] = useState(false)
@@ -173,6 +174,7 @@ export function ProductosPage() {
         total_filas: number
         creados: number
         omitidos: number
+        codigos_generados?: number
         detalle: Array<{ fila: number; codigo_interno: string; estado: string; motivo?: string }>
       }>('/api/productos/import', {
         method: 'POST',
@@ -767,8 +769,7 @@ export function ProductosPage() {
             Productos
           </h1>
           <p className="mt-2 max-w-xl text-sm leading-relaxed text-slate-500">
-            Códigos internos, barras e imágenes. También podés cargar muchos de una vez con la
-            plantilla Excel.
+            Códigos, barras e importación Excel (código vacío se asigna solo).
           </p>
         </div>
         {hasPermiso('productos.crear') && (
@@ -779,7 +780,7 @@ export function ProductosPage() {
                 className="rounded-xl"
                 disabled={downloadingPlantilla || importing}
                 onClick={() => void descargarPlantilla()}
-                title="Excel con Código interno, Nombre y Descripción (sin cantidad)"
+                title="Excel con Código interno (opcional), Nombre y Descripción"
               >
                 {downloadingPlantilla ? (
                   <Loader2 className="h-4 w-4 animate-spin" />
@@ -793,7 +794,7 @@ export function ProductosPage() {
                 className="rounded-xl"
                 disabled={importing || downloadingPlantilla}
                 onClick={() => importInputRef.current?.click()}
-                title="Importar la plantilla o un listado con Código de producto y Descripción"
+                title="Importar listado: código opcional (si falta → NAK-01, ESM-01… según logística)"
               >
                 {importing ? (
                   <Loader2 className="h-4 w-4 animate-spin" />
@@ -840,9 +841,13 @@ export function ProductosPage() {
                   <p className="mt-0.5 text-sm text-slate-500">
                     {importResult.creados} creados · {importResult.omitidos} omitidos ·{' '}
                     {importResult.total_filas} filas leídas
+                    {importResult.codigos_generados
+                      ? ` · ${importResult.codigos_generados} código(s) asignado(s) automáticamente`
+                      : ''}
                   </p>
                   <p className="mt-1 text-xs text-slate-400">
-                    Descripción opcional. Los códigos que ya existen se omiten (no se duplican).
+                    Si el código viene vacío, se genera según la logística (ej. NAK-01, ESM-01).
+                    Los códigos que ya existen se omiten (no se duplican).
                   </p>
                 </div>
               </div>

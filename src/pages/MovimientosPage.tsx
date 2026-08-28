@@ -534,7 +534,11 @@ export function MovimientosPage() {
       const data = await api<MovimientoInternoListItem[]>(`/api/movimientos-internos?${params}`)
       setMovimientos(data)
       if (data.length > 0 && !data.some((m) => m.fecha === selectedDay)) {
-        setSelectedDay(data[0].fecha)
+        const today = todayIsoDate()
+        // Mantener "hoy" aunque aún no haya movimientos finalizados.
+        if (selectedDay !== today) {
+          setSelectedDay(data.some((m) => m.fecha === today) ? today : data[0].fecha)
+        }
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error al cargar')
@@ -1256,11 +1260,13 @@ export function MovimientosPage() {
     setSaving(true)
     setError('')
     try {
+      const fechaMov = detalle.movimiento.fecha
       await api(`/api/movimientos-internos/${detalle.movimiento.id}/finalizar`, {
         method: 'POST'
       })
       clearEditorRutaDraft(detalle.movimiento.id)
       setTieneListaAbierta(false)
+      setSelectedDay(fechaMov)
       volverAlListado()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error al finalizar')
@@ -2878,8 +2884,8 @@ export function MovimientosPage() {
             </div>
             <p className="mt-2 max-w-xl text-sm leading-relaxed text-slate-500">
               {dobleVerificacion
-                ? 'Lista abierta compartida: cargá líneas, salí y volvé cuando quieras; tildá y finalizá para mover el stock.'
-                : 'Lista abierta compartida: cargá líneas, salí y volvé cuando quieras; al finalizar se mueve el stock sin tildar.'}
+                ? 'Lista compartida: cargá, tildá y finalizá para mover stock.'
+                : 'Lista compartida: cargá y finalizá para mover stock.'}
             </p>
           </div>
           {hasPermiso('movimientos_internos.crear') && (

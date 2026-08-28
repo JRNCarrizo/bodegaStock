@@ -3,7 +3,7 @@ import { getDb } from '../db'
 import { requirePermiso } from '../plugins/auth'
 import { blockIfInventarioActivo } from '../utils/inventario-block'
 import { getMovimientosDobleVerificacion } from '../utils/app-settings'
-import { assertSectorEnLogistica, requireRequestLogistica } from '../utils/logisticas'
+import { assertProductoActivoEnLogistica, assertSectorEnLogistica, requireRequestLogistica } from '../utils/logisticas'
 import {
   applyMovimientoInternoDespachoLine,
   applyMovimientoInternoRecepcionLine,
@@ -69,11 +69,12 @@ function assertSectorActivo(db: ReturnType<typeof getDb>, sectorId: number, labe
   if (!sector) throw new Error(`${label}: sector no válido`)
 }
 
-function assertProductoActivo(db: ReturnType<typeof getDb>, productoId: number) {
-  const producto = db.prepare(`
-    SELECT id FROM productos WHERE id = ? AND activo = 1
-  `).get(productoId)
-  if (!producto) throw new Error('Producto no válido')
+function assertProductoActivo(
+  db: ReturnType<typeof getDb>,
+  productoId: number,
+  logisticaId: number
+) {
+  assertProductoActivoEnLogistica(db, productoId, logisticaId)
 }
 
 function resolveUbicacionDestino(
@@ -489,7 +490,7 @@ export async function movimientosInternosRoutes(app: FastifyInstance): Promise<v
         FROM productos p
         JOIN stock_sector ss ON ss.producto_id = p.id AND ss.sector_id = ?
           AND ${STOCK_SECTOR_VISIBLE_SQL}
-        WHERE p.activo = 1
+        WHERE p.activo = 1 AND p.logistica_id = ${logisticaId}
       `
       params.push(sectorId)
     } else {
@@ -507,7 +508,7 @@ export async function movimientosInternosRoutes(app: FastifyInstance): Promise<v
         FROM productos p
         JOIN stock_sector ss ON ss.producto_id = p.id AND ss.sector_id != ?
           AND ${STOCK_SECTOR_VISIBLE_SQL}
-        WHERE p.activo = 1
+        WHERE p.activo = 1 AND p.logistica_id = ${logisticaId}
       `
       params.push(sectorId, sectorId)
     }
@@ -563,7 +564,7 @@ export async function movimientosInternosRoutes(app: FastifyInstance): Promise<v
     const excluirId = excluir_sector_id ? Number(excluir_sector_id) : null
     const db = getDb()
     const logisticaId = requireRequestLogistica(request)
-    assertProductoActivo(db, productoId)
+    assertProductoActivo(db, productoId, logisticaId)
 
     let sql = `
       SELECT
@@ -601,7 +602,7 @@ export async function movimientosInternosRoutes(app: FastifyInstance): Promise<v
     }
     const db = getDb()
     const logisticaId = requireRequestLogistica(request)
-    assertProductoActivo(db, productoId)
+    assertProductoActivo(db, productoId, logisticaId)
     assertSectorActivo(db, sectorId, 'Sector')
     assertSectorEnLogistica(db, sectorId, logisticaId)
 
@@ -894,7 +895,7 @@ export async function movimientosInternosRoutes(app: FastifyInstance): Promise<v
         return reply.status(400).send({ error: 'Línea inválida' })
       }
       try {
-        assertProductoActivo(db, linea.producto_id)
+        assertProductoActivo(db, linea.producto_id, logisticaId)
         assertSectorActivo(db, origenId, 'Origen')
         assertSectorActivo(db, destinoId, 'Destino')
         assertSectorEnLogistica(db, origenId, logisticaId)
@@ -1309,7 +1310,7 @@ export async function movimientosInternosRoutes(app: FastifyInstance): Promise<v
     }
 
     try {
-      assertProductoActivo(db, body.producto_id)
+      assertProductoActivo(db, body.producto_id, logisticaId)
       assertSectorActivo(db, origenId, 'Origen')
       assertSectorActivo(db, destinoId, 'Destino')
       assertSectorEnLogistica(db, origenId, logisticaId)

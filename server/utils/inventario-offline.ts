@@ -208,6 +208,7 @@ export function buildPaqueteOffline(
     orden: number
   }>
 
+  const logisticaId = Number(sesion.logistica_id)
   const productos = db
     .prepare(
       `
@@ -216,10 +217,19 @@ export function buildPaqueteOffline(
       unidades_por_pallet_default, unidades_por_caja_default
     FROM productos
     WHERE activo = 1
+      AND (
+        logistica_id = ?
+        OR id IN (
+          SELECT producto_id FROM inventario_snapshot
+          WHERE sesion_id = ? AND sector_id = ?
+        )
+      )
     ORDER BY nombre
   `
     )
-    .all() as Array<Record<string, unknown>>
+    .all(logisticaId, Number(sector.sesion_id), Number(sector.sector_id)) as Array<
+    Record<string, unknown>
+  >
 
   const snapshot = db
     .prepare(

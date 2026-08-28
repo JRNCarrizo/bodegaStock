@@ -147,12 +147,14 @@ export async function loadWorkbookFromBase64(fileBase64: string): Promise<ExcelJ
 
 export function readSheetAsObjects(
   workbook: ExcelJS.Workbook,
-  columnAliases: Record<string, string[]>
+  columnAliases: Record<string, string[]>,
+  options?: { requireKeys?: string[] }
 ): { rows: Record<string, string>[]; errors: string[] } {
   const sheet = workbook.worksheets[0]
   if (!sheet) return { rows: [], errors: ['El Excel no tiene hojas'] }
 
   const errors: string[] = []
+  const requireKeys = options?.requireKeys ?? ['nombre']
 
   const mapHeaderRow = (rowNumber: number): Map<string, number> => {
     const mapped = new Map<string, number>()
@@ -181,18 +183,23 @@ export function readSheetAsObjects(
   const scanLimit = Math.min(sheet.rowCount, 30)
   for (let rowNumber = 1; rowNumber <= scanLimit; rowNumber++) {
     const candidate = mapHeaderRow(rowNumber)
-    if (candidate.has('codigo_interno') && candidate.has('nombre')) {
+    if (requireKeys.every((k) => candidate.has(k))) {
       headerRowNumber = rowNumber
       colIndexByKey = candidate
       break
     }
   }
 
-  if (!colIndexByKey.has('codigo_interno')) {
-    errors.push('Falta la columna “Código interno”')
-  }
-  if (!colIndexByKey.has('nombre')) {
-    errors.push('Falta la columna “Nombre”')
+  for (const key of requireKeys) {
+    if (!colIndexByKey.has(key)) {
+      const label =
+        key === 'nombre'
+          ? 'Nombre'
+          : key === 'codigo_interno'
+            ? 'Código interno'
+            : key
+      errors.push(`Falta la columna “${label}”`)
+    }
   }
   if (errors.length) return { rows: [], errors }
 

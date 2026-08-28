@@ -235,6 +235,7 @@ export async function consultaRoutes(app: FastifyInstance): Promise<void> {
         ${SUELTO_TOTAL_PRODUCTO_SQL} AS botellas
       FROM productos p
       WHERE p.activo = 1
+        AND p.logistica_id = ${logisticaId}
         ${exportWhere}
       ORDER BY p.codigo_interno COLLATE NOCASE ASC, p.nombre COLLATE NOCASE ASC
     `).all(...exportParams) as Array<{
@@ -359,12 +360,13 @@ export async function consultaRoutes(app: FastifyInstance): Promise<void> {
         SELECT p.id AS producto_id, p.codigo_interno, p.nombre
         FROM productos p
         WHERE p.activo = 1
+          AND p.logistica_id = ?
           AND NOT EXISTS (
             SELECT 1 FROM stock_sector ss
             JOIN sectores s ON s.id = ss.sector_id
             WHERE ss.producto_id = p.id AND s.logistica_id = ?
           )
-      `).all(logisticaId) as Array<{ producto_id: number; codigo_interno: string; nombre: string }>
+      `).all(logisticaId, logisticaId) as Array<{ producto_id: number; codigo_interno: string; nombre: string }>
 
       for (const p of sinStock) {
         if (productos.has(p.producto_id)) continue
@@ -487,6 +489,7 @@ export async function consultaRoutes(app: FastifyInstance): Promise<void> {
         ), 0) AS sectores_con_stock
       FROM productos p
       WHERE p.activo = 1
+        AND p.logistica_id = ${logisticaId}
         ${stockWhere}
       ORDER BY p.codigo_interno COLLATE NOCASE ASC, p.nombre COLLATE NOCASE ASC
     `
@@ -507,6 +510,7 @@ export async function consultaRoutes(app: FastifyInstance): Promise<void> {
       SELECT COUNT(*) AS total
       FROM productos p
       WHERE p.activo = 1
+        AND p.logistica_id = ${logisticaId}
         ${stockWhere}
     `).get(...countParams) as { total: number }
     const total = Number(totalRow.total)
@@ -560,6 +564,7 @@ export async function consultaRoutes(app: FastifyInstance): Promise<void> {
         ), 0) AS sectores_con_stock
       FROM productos p
       WHERE p.activo = 1
+        AND p.logistica_id = ${logisticaId}
         AND ${search.sql}
         ${stockWhere}
       ORDER BY ${order.sql}

@@ -13,6 +13,7 @@ import {
 import { searchDelayMs } from '@/lib/searchDelay'
 import { api, cn } from '@/lib/utils'
 import { useAuth } from '@/context/AuthContext'
+import { useConfirmDialog } from '@/context/ConfirmDialogContext'
 import { useEscHandler } from '@/hooks/useEscHandler'
 import { useRegistroListKeyboard } from '@/hooks/useRegistroListKeyboard'
 import { focusAndScrollIntoView } from '@/lib/scroll'
@@ -56,6 +57,7 @@ function CamioneroVehiculosPanel({
   onAutoFocusDone?: () => void
   onUpdated?: () => void
 }) {
+  const { confirm } = useConfirmDialog()
   const [vehiculos, setVehiculos] = useState<CamioneroVehiculo[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -166,7 +168,13 @@ function CamioneroVehiculosPanel({
   }
 
   async function eliminarVehiculo(id: number) {
-    if (!confirm('¿Eliminar este vehículo?')) return
+    const ok = await confirm({
+      title: 'Eliminar vehículo',
+      message: '¿Eliminar este vehículo?',
+      confirmLabel: 'Eliminar',
+      tone: 'danger'
+    })
+    if (!ok) return
     setError('')
     try {
       await api(`/api/camioneros/${camioneroId}/vehiculos/${id}`, { method: 'DELETE' })

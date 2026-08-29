@@ -57,9 +57,15 @@ import type {
   Sector
 } from '@/types'
 import { useAuth } from '@/context/AuthContext'
+import { useConfirmDialog } from '@/context/ConfirmDialogContext'
 import { useEscHandler } from '@/hooks/useEscHandler'
 import { useProductoQuickSearch } from '@/hooks/useProductoQuickSearch'
 import { useRegistroListKeyboard } from '@/hooks/useRegistroListKeyboard'
+import {
+  idSectorRetornoPorDefecto,
+  resolveSectorIdParaRetorno,
+  sortSectoresParaRetorno
+} from '@/lib/sectores'
 import {
   scrollFocusedFieldIntoSheet,
   useVisualViewportBottomInset
@@ -214,7 +220,6 @@ type RetornoDraftStored = {
   observacion: string
   camioneroId: string
   vehiculoId: string
-  sectorId: string
   lineSectorId: string
   createPhase: 'datos' | 'carga'
   lineas: RetornoLineaDraft[]
@@ -238,20 +243,19 @@ function retornoDraftTieneContenido(d: {
   numeroPlanilla: string
   observacion: string
   camioneroId: string
-  sectorId: string
   lineas: RetornoLineaDraft[]
 }): boolean {
   return (
     d.lineas.length > 0 ||
     !!d.numeroPlanilla.trim() ||
     !!d.observacion.trim() ||
-    !!d.camioneroId ||
-    !!d.sectorId
+    !!d.camioneroId
   )
 }
 
 export function RetornosPage() {
   const { hasPermiso, user } = useAuth()
+  const { confirm } = useConfirmDialog()
   const [view, setView] = useState<'list' | 'create' | 'detail' | 'verify'>('list')
   const [retornos, setRetornos] = useState<RetornoListItem[]>([])
   const [detalle, setDetalle] = useState<RetornoDetalle | null>(null)
@@ -272,7 +276,6 @@ export function RetornosPage() {
   const [observacion, setObservacion] = useState('')
   const [camioneroId, setCamioneroId] = useState('')
   const [vehiculoId, setVehiculoId] = useState('')
-  const [sectorId, setSectorId] = useState('')
   const [camioneros, setCamioneros] = useState<Camionero[]>([])
   const [vehiculos, setVehiculos] = useState<CamioneroVehiculo[]>([])
   const [sectores, setSectores] = useState<Sector[]>([])
@@ -311,7 +314,6 @@ export function RetornosPage() {
   const planillaRef = useRef<HTMLInputElement>(null)
   const camioneroRef = useRef<HTMLSelectElement>(null)
   const vehiculoRef = useRef<HTMLSelectElement>(null)
-  const sectorRef = useRef<HTMLSelectElement>(null)
   const observacionRef = useRef<HTMLInputElement>(null)
   const productSearchRef = useRef<HTMLInputElement>(null)
   const cantidadRef = useRef<HTMLInputElement>(null)
@@ -334,7 +336,9 @@ export function RetornosPage() {
   }
 
   const camioneroSeleccionado = camioneros.find((c) => c.id === Number(camioneroId))
-  const sectorDefaultSeleccionado = sectores.find((s) => s.id === Number(sectorId))
+  const sectoresOrdenados = useMemo(() => sortSectoresParaRetorno(sectores), [sectores])
+  const sectorDefaultId = idSectorRetornoPorDefecto(sectores)
+  const sectorDefaultSeleccionado = sectores.find((s) => s.id === Number(sectorDefaultId))
 
   const lineasPorProducto = useMemo(() => {
     const map = new Map<number, { producto: RetornoLineaDraft; lineas: RetornoLineaDraft[] }>()
@@ -535,6 +539,10 @@ export function RetornosPage() {
   }, [])
 
   useEffect(() => {
+    setLineSectorId((prev) => resolveSectorIdParaRetorno(sectores, prev))
+  }, [sectores])
+
+  useEffect(() => {
     if (!camioneroId) {
       setVehiculos([])
       setVehiculoId('')
@@ -552,13 +560,12 @@ export function RetornosPage() {
     setObservacion('')
     setCamioneroId('')
     setVehiculoId('')
-    setSectorId('')
     setProductSearch('')
     setProductResults([])
     setSelectedProduct(null)
     setCantidadCajas('')
     setEstadoCondicion('BUEN_ESTADO')
-    setLineSectorId('')
+    setLineSectorId(idSectorRetornoPorDefecto(sectores))
     setLineas([])
     setExpandedProductos(new Set())
     setShowScanner(false)
@@ -602,18 +609,23 @@ export function RetornosPage() {
     setLineas((prev) => prev.filter((l) => l.tempId !== tempId))
   }
 
-  function abrirNuevoRetorno() {
+  async function abrirNuevoRetorno() {
     if (
       tieneBorrador &&
       retornoDraftTieneContenido({
         numeroPlanilla,
         observacion,
         camioneroId,
-        sectorId,
         lineas
       })
     ) {
-      if (!confirm('Hay un retorno en curso. ¿Descartarlo y empezar uno nuevo?')) return
+      const ok = await confirm({
+        title: 'Retorno en curso',
+        message: 'Hay un retorno en curso. ¿Descartarlo y empezar uno nuevo?',
+        confirmLabel: 'Descartar y continuar',
+        tone: 'danger'
+      })
+      if (!ok) return
     }
     void (async () => {
       try {
@@ -646,8 +658,7 @@ export function RetornosPage() {
       setObservacion(draft.observacion || '')
       setCamioneroId(draft.camioneroId || '')
       setVehiculoId(draft.vehiculoId || '')
-      setSectorId(draft.sectorId || '')
-      setLineSectorId(draft.lineSectorId || '')
+      setLineSectorId(resolveSectorIdParaRetorno(sectores, draft.lineSectorId || ''))
       setLineas(draft.lineas || [])
       setCreatePhase(
         draft.lineas?.length > 0 || draft.createPhase === 'carga' ? 'carga' : draft.createPhase || 'datos'
@@ -662,9 +673,15 @@ export function RetornosPage() {
     setView('create')
   }
 
-  function cancelarRetornoEnCurso() {
-    if (lineas.length > 0 || numeroPlanilla.trim() || camioneroId || sectorId) {
-      if (!confirm('¿Cancelar el retorno en curso? Se perderán las líneas cargadas.')) return
+  async function cancelarRetornoEnCurso() {
+    if (lineas.length > 0 || numeroPlanilla.trim() || camioneroId) {
+      const ok = await confirm({
+        title: 'Cancelar retorno',
+        message: '¿Cancelar el retorno en curso? Se perderán las líneas cargadas.',
+        confirmLabel: 'Cancelar retorno',
+        tone: 'danger'
+      })
+      if (!ok) return
     }
     clearRetornoDraft()
     setTieneBorrador(false)
@@ -685,7 +702,6 @@ export function RetornosPage() {
     setObservacion(draft.observacion || '')
     setCamioneroId(draft.camioneroId || '')
     setVehiculoId(draft.vehiculoId || '')
-    setSectorId(draft.sectorId || '')
     setLineSectorId(draft.lineSectorId || '')
     setLineas(draft.lineas || [])
     setCreatePhase(draft.createPhase || (draft.lineas?.length ? 'carga' : 'datos'))
@@ -700,7 +716,6 @@ export function RetornosPage() {
       observacion,
       camioneroId,
       vehiculoId,
-      sectorId,
       lineSectorId,
       createPhase,
       lineas
@@ -718,7 +733,6 @@ export function RetornosPage() {
     observacion,
     camioneroId,
     vehiculoId,
-    sectorId,
     lineSectorId,
     createPhase,
     lineas
@@ -771,14 +785,8 @@ export function RetornosPage() {
     if (camioneroId && vehiculos.length > 0) {
       focusField(vehiculoRef)
     } else {
-      focusField(sectorRef)
+      focusField(observacionRef)
     }
-  }
-
-  function handleSectorKeyDown(e: React.KeyboardEvent<HTMLSelectElement>) {
-    if (e.key !== 'Enter') return
-    e.preventDefault()
-    focusField(observacionRef)
   }
 
   useEffect(() => {
@@ -796,6 +804,17 @@ export function RetornosPage() {
   function validarDatos(): boolean {
     if (!fecha) {
       setError('Completá la fecha')
+      focusField(fechaRef)
+      return false
+    }
+    if (camioneroId && vehiculos.length > 0 && !vehiculoId) {
+      setError('Seleccioná el vehículo del camionero')
+      focusField(vehiculoRef)
+      return false
+    }
+    if (camioneroId && vehiculos.length === 0) {
+      setError('Ese camionero no tiene vehículos activos. Cargá uno o elegí otro camionero.')
+      focusField(camioneroRef)
       return false
     }
     setError('')
@@ -803,12 +822,18 @@ export function RetornosPage() {
   }
 
   function sectorDefaultParaLinea(): string {
-    return lineSectorId || sectorId || (sectores[0] ? String(sectores[0].id) : '')
+    return (
+      lineSectorId ||
+      sectorDefaultId ||
+      (sectoresOrdenados[0] ? String(sectoresOrdenados[0].id) : '')
+    )
   }
 
   function avanzarACarga() {
     if (!validarDatos()) return
-    if (!lineSectorId && sectorId) setLineSectorId(sectorId)
+    if (!lineSectorId) {
+      setLineSectorId(resolveSectorIdParaRetorno(sectores, ''))
+    }
     setCreatePhase('carga')
     setTimeout(() => focusField(productSearchRef), 50)
   }
@@ -952,7 +977,7 @@ export function RetornosPage() {
           observacion: observacion.trim() || null,
           camionero_id: camioneroId ? Number(camioneroId) : null,
           vehiculo_id: camioneroId && vehiculoId ? Number(vehiculoId) : null,
-          sector_id: sectorId ? Number(sectorId) : null,
+          sector_id: sectorDefaultId ? Number(sectorDefaultId) : null,
           lineas: lineas.map((l) => ({
             producto_id: l.producto_id,
             cantidad_cajas: l.cantidad_cajas,
@@ -1667,7 +1692,7 @@ export function RetornosPage() {
                 </div>
                 <div>
                   <p className="text-sm font-semibold text-slate-900">Datos del retorno</p>
-                  <p className="text-xs text-slate-500">Fecha, planilla, camionero y sector default</p>
+                  <p className="text-xs text-slate-500">Fecha, planilla y camionero</p>
                 </div>
               </div>
             </div>
@@ -1709,41 +1734,28 @@ export function RetornosPage() {
                 </select>
               </div>
               <div>
-                <label className="mb-1 block text-sm font-medium text-slate-700">Vehículo</label>
+                <label className="mb-1 block text-sm font-medium text-slate-700">
+                  Vehículo{camioneroId ? ' *' : ''}
+                </label>
                 <select
                   ref={vehiculoRef}
                   value={vehiculoId}
                   onChange={(e) => setVehiculoId(e.target.value)}
-                  onKeyDown={(e) => handleDatosKeyDown(e, sectorRef)}
+                  onKeyDown={(e) => handleDatosKeyDown(e, observacionRef)}
                   disabled={!camioneroId}
+                  required={!!camioneroId && vehiculos.length > 0}
                   className="w-full rounded-xl border border-surface-border px-3 py-2.5 text-sm shadow-sm disabled:bg-slate-50 focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20"
                 >
-                  <option value="">Opcional</option>
+                  <option value="">
+                    {!camioneroId
+                      ? 'Elegí camionero primero'
+                      : vehiculos.length === 0
+                        ? 'Sin vehículos activos'
+                        : 'Seleccionar vehículo…'}
+                  </option>
                   {vehiculos.map((v) => (
                     <option key={v.id} value={v.id}>
                       {labelVehiculoOperativo(v)}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label className="mb-1 block text-sm font-medium text-slate-700">
-                  Sector default (opcional)
-                </label>
-                <select
-                  ref={sectorRef}
-                  value={sectorId}
-                  onChange={(e) => {
-                    setSectorId(e.target.value)
-                    if (e.target.value) setLineSectorId(e.target.value)
-                  }}
-                  onKeyDown={handleSectorKeyDown}
-                  className="w-full rounded-xl border border-surface-border px-3 py-2.5 text-sm shadow-sm focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20"
-                >
-                  <option value="">Sin default — elegís por línea</option>
-                  {sectores.map((s) => (
-                    <option key={s.id} value={s.id}>
-                      {s.nombre}
                     </option>
                   ))}
                 </select>
@@ -2173,9 +2185,10 @@ export function RetornosPage() {
                         }}
                         className="w-full rounded-lg border border-surface-border bg-white py-2 pl-9 pr-3 text-sm focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20"
                       >
-                        {sectores.map((s) => (
+                        {sectoresOrdenados.map((s) => (
                           <option key={s.id} value={s.id}>
                             {s.nombre}
+                            {Boolean(s.retorno_por_defecto) ? ' (por defecto)' : ''}
                           </option>
                         ))}
                       </select>

@@ -86,6 +86,7 @@ export interface Sector {
   prioridad_descuento: number | null
   usa_ubicaciones: number
   ingreso_por_defecto: number
+  retorno_por_defecto: number
   activo: number
   created_at: string
   productos_con_stock: number
@@ -110,6 +111,7 @@ export interface SectorForm {
   prioridad_descuento: string
   usa_ubicaciones: boolean
   ingreso_por_defecto: boolean
+  retorno_por_defecto: boolean
   activo: boolean
 }
 

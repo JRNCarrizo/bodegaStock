@@ -71,6 +71,7 @@ CREATE TABLE IF NOT EXISTS sectores (
   prioridad_descuento INTEGER,
   usa_ubicaciones INTEGER NOT NULL DEFAULT 0,
   ingreso_por_defecto INTEGER NOT NULL DEFAULT 0,
+  retorno_por_defecto INTEGER NOT NULL DEFAULT 0,
   activo INTEGER NOT NULL DEFAULT 1,
   logistica_id INTEGER REFERENCES logisticas(id),
   created_at TEXT NOT NULL DEFAULT (datetime('now'))

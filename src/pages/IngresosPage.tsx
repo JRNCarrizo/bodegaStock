@@ -69,6 +69,7 @@ import type {
   SectorUbicacion
 } from '@/types'
 import { useAuth } from '@/context/AuthContext'
+import { useConfirmDialog } from '@/context/ConfirmDialogContext'
 import { useEscHandler } from '@/hooks/useEscHandler'
 import { useProductoQuickSearch } from '@/hooks/useProductoQuickSearch'
 import { useRegistroListKeyboard } from '@/hooks/useRegistroListKeyboard'
@@ -148,6 +149,7 @@ async function enrichIngresosProductosCount(items: IngresoListItem[]): Promise<I
 
 export function IngresosPage() {
   const { hasPermiso } = useAuth()
+  const { confirm } = useConfirmDialog()
   const [view, setView] = useState<'list' | 'create' | 'detail'>('list')
   const [ingresos, setIngresos] = useState<IngresoListItem[]>([])
   const [detalle, setDetalle] = useState<IngresoDetalle | null>(null)
@@ -249,7 +251,13 @@ export function IngresosPage() {
 
   async function abrirNuevoIngreso() {
     if (tieneBorrador && ingresoDraftTieneContenido({ numeroRemito, observacion, lineas })) {
-      if (!confirm('Hay un ingreso en curso. ¿Descartarlo y empezar uno nuevo?')) return
+      const ok = await confirm({
+        title: 'Ingreso en curso',
+        message: 'Hay un ingreso en curso. ¿Descartarlo y empezar uno nuevo?',
+        confirmLabel: 'Descartar y continuar',
+        tone: 'danger'
+      })
+      if (!ok) return
     }
     clearIngresoDraft()
     setTieneBorrador(false)
@@ -285,9 +293,15 @@ export function IngresosPage() {
     setView('create')
   }
 
-  function cancelarIngresoEnCurso() {
+  async function cancelarIngresoEnCurso() {
     if (lineas.length > 0 || numeroRemito.trim()) {
-      if (!confirm('¿Cancelar el ingreso en curso? Se perderán las líneas cargadas.')) return
+      const ok = await confirm({
+        title: 'Cancelar ingreso',
+        message: '¿Cancelar el ingreso en curso? Se perderán las líneas cargadas.',
+        confirmLabel: 'Cancelar ingreso',
+        tone: 'danger'
+      })
+      if (!ok) return
     }
     clearIngresoDraft()
     setTieneBorrador(false)

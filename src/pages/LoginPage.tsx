@@ -16,6 +16,7 @@ import {
 } from 'lucide-react'
 import { useAuth } from '@/context/AuthContext'
 import { BarcodeScannerModal } from '@/components/BarcodeScannerModal'
+import { AppCopyrightFooter } from '@/components/AppCopyrightFooter'
 import { Button } from '@/components/ui/Button'
 import { Card, CardBody } from '@/components/ui/Card'
 import { Input } from '@/components/ui/Input'
@@ -224,61 +225,65 @@ export function LoginPage() {
 
   return (
     <div className="flex min-h-screen bg-surface-muted">
-      <div className="hidden w-[42%] max-w-xl shrink-0 flex-col justify-center border-r border-surface-border bg-gradient-to-b from-white via-white to-slate-50/70 p-10 xl:p-14 lg:flex">
-        <div className="flex items-center gap-3">
-          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-brand-600 text-white shadow-sm ring-4 ring-brand-600/10">
-            <Boxes className="h-5 w-5" />
-          </div>
-          <div>
-            <h1 className="text-base font-bold tracking-tight text-slate-900">ControlStock</h1>
-            <p className="text-xs text-slate-500">Bodega Esmeralda</p>
-          </div>
-        </div>
-
-        <Card className="mt-10 overflow-hidden shadow-panel">
-          <div className="relative border-b border-brand-100 bg-gradient-to-br from-brand-100/90 via-brand-50/70 to-white px-6 py-6">
-            <div className="pointer-events-none absolute -right-8 -top-8 h-28 w-28 rounded-full bg-brand-300/25 blur-2xl" />
-            <div className="pointer-events-none absolute bottom-0 left-1/4 h-20 w-20 rounded-full bg-brand-200/20 blur-xl" />
-
-            <div className="relative">
-              <p className="text-xs font-semibold uppercase tracking-wider text-brand-700/80">
-                Sistema de gestión
-              </p>
-              <h2 className="mt-2 text-2xl font-bold tracking-tight text-slate-900">
-                Operación diaria de la bodega
-              </h2>
-              <p className="mt-3 max-w-sm text-sm leading-relaxed text-slate-600">
-                Stock, ingresos, planillas, retornos e inventario en un solo lugar para el equipo
-                de la bodega.
-              </p>
+      <div className="hidden w-[42%] max-w-xl shrink-0 flex-col border-r border-surface-border bg-gradient-to-b from-white via-white to-slate-50/70 p-10 xl:p-14 lg:flex">
+        <div className="flex flex-1 flex-col justify-center">
+          <div className="flex items-center gap-3">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-brand-600 text-white shadow-sm ring-4 ring-brand-600/10">
+              <Boxes className="h-5 w-5" />
+            </div>
+            <div>
+              <h1 className="text-base font-bold tracking-tight text-slate-900">ControlStock</h1>
+              <p className="text-xs text-slate-500">Bodega Esmeralda</p>
             </div>
           </div>
 
-          <CardBody className="grid grid-cols-2 gap-2.5 p-5">
-            {FEATURES.map(({ icon: Icon, label, tone }) => {
-              const styles = FEATURE_TONES[tone]
-              return (
-                <div
-                  key={label}
-                  className={cn(
-                    'flex items-center gap-2.5 rounded-xl border px-3 py-2.5 shadow-sm',
-                    styles.chip
-                  )}
-                >
+          <Card className="mt-10 overflow-hidden shadow-panel">
+            <div className="relative border-b border-brand-100 bg-gradient-to-br from-brand-100/90 via-brand-50/70 to-white px-6 py-6">
+              <div className="pointer-events-none absolute -right-8 -top-8 h-28 w-28 rounded-full bg-brand-300/25 blur-2xl" />
+              <div className="pointer-events-none absolute bottom-0 left-1/4 h-20 w-20 rounded-full bg-brand-200/20 blur-xl" />
+
+              <div className="relative">
+                <p className="text-xs font-semibold uppercase tracking-wider text-brand-700/80">
+                  Sistema de gestión
+                </p>
+                <h2 className="mt-2 text-2xl font-bold tracking-tight text-slate-900">
+                  Operación diaria de la bodega
+                </h2>
+                <p className="mt-3 max-w-sm text-sm leading-relaxed text-slate-600">
+                  Stock, ingresos, planillas, retornos e inventario en un solo lugar para el equipo
+                  de la bodega.
+                </p>
+              </div>
+            </div>
+
+            <CardBody className="grid grid-cols-2 gap-2.5 p-5">
+              {FEATURES.map(({ icon: Icon, label, tone }) => {
+                const styles = FEATURE_TONES[tone]
+                return (
                   <div
+                    key={label}
                     className={cn(
-                      'flex h-8 w-8 shrink-0 items-center justify-center rounded-lg shadow-sm',
-                      styles.icon
+                      'flex items-center gap-2.5 rounded-xl border px-3 py-2.5 shadow-sm',
+                      styles.chip
                     )}
                   >
-                    <Icon className="h-4 w-4" />
+                    <div
+                      className={cn(
+                        'flex h-8 w-8 shrink-0 items-center justify-center rounded-lg shadow-sm',
+                        styles.icon
+                      )}
+                    >
+                      <Icon className="h-4 w-4" />
+                    </div>
+                    <span className="text-sm font-medium">{label}</span>
                   </div>
-                  <span className="text-sm font-medium">{label}</span>
-                </div>
-              )
-            })}
-          </CardBody>
-        </Card>
+                )
+              })}
+            </CardBody>
+          </Card>
+        </div>
+
+        <AppCopyrightFooter className="pt-8" />
       </div>
 
       <main className="flex flex-1 flex-col items-center justify-center px-4 py-10 sm:px-8">
@@ -564,6 +569,8 @@ export function LoginPage() {
               </form>
             </CardBody>
           </Card>
+
+          <AppCopyrightFooter className="pt-2 lg:hidden" />
         </div>
       </main>
 

@@ -4,10 +4,13 @@ import {
   Check,
   ChevronLeft,
   ChevronRight,
+  Eye,
   History,
   Loader2,
+  Package,
   Plus,
   Settings,
+  StickyNote,
   Truck,
   X
 } from 'lucide-react'
@@ -212,14 +215,9 @@ function TurnoCard({
       >
         <button
           type="button"
-          onClick={() => {
-            if (editable) onOpen()
-          }}
-          disabled={!editable}
-          className={cn(
-            'flex w-full items-start gap-3 px-3 py-2.5 text-left',
-            editable && 'active:bg-slate-50'
-          )}
+          onClick={() => onOpen()}
+          className="flex w-full items-start gap-3 px-3 py-2.5 text-left active:bg-slate-50"
+          title={editable ? 'Editar turno' : 'Ver turno'}
         >
           <div className="min-w-0 flex-1">
             <ScrollableProductName
@@ -273,7 +271,7 @@ function TurnoCard({
               type="button"
               disabled={busy}
               onClick={() => onEstado('CONFIRMADO')}
-              className="inline-flex h-9 items-center justify-center gap-1.5 rounded-lg bg-emerald-600 text-sm font-medium text-white disabled:opacity-50"
+              className="inline-flex h-9 items-center justify-center gap-1.5 rounded-lg bg-amber-500 text-sm font-medium text-white hover:bg-amber-600 disabled:opacity-50"
             >
               {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
               Confirmar
@@ -310,27 +308,22 @@ function TurnoCard({
     <div
       onClick={(e) => {
         if ((e.target as HTMLElement).closest('button')) return
-        if (editable) onOpen()
+        onOpen()
       }}
       className={cn(
         'group relative flex h-[4.5rem] shrink-0 flex-col justify-between rounded-lg border px-2 py-1.5 shadow-xs transition-all',
         ESTADO_STYLE[turno.estado],
         turno.estado === 'CANCELADO' && 'opacity-80',
-        editable && 'cursor-pointer hover:ring-2 hover:ring-brand-400/50'
+        'cursor-pointer hover:ring-2 hover:ring-brand-400/50'
       )}
+      title={editable ? 'Editar turno' : 'Ver turno'}
     >
       <div className="flex items-start justify-between gap-1">
         <button
           type="button"
-          onClick={() => {
-            if (editable) onOpen()
-          }}
-          disabled={!editable}
-          title={editable ? 'Editar turno' : undefined}
-          className={cn(
-            'min-w-0 flex-1 text-left',
-            editable ? 'cursor-pointer' : 'cursor-default'
-          )}
+          onClick={() => onOpen()}
+          title={editable ? 'Editar turno' : 'Ver turno'}
+          className="min-w-0 flex-1 cursor-pointer text-left"
         >
           <div
             className={cn(
@@ -378,7 +371,7 @@ function TurnoCard({
                 onClick={() => onEstado('CONFIRMADO')}
                 title="Confirmar"
                 aria-label="Confirmar"
-                className="inline-flex h-5 w-5 items-center justify-center rounded bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-50"
+                className="inline-flex h-5 w-5 items-center justify-center rounded bg-amber-500 text-white hover:bg-amber-600 disabled:opacity-50"
               >
                 {busy ? <Loader2 className="h-2.5 w-2.5 animate-spin" /> : <Check className="h-3 w-3" />}
               </button>
@@ -451,6 +444,9 @@ export function AgendaTurnosPage() {
   const [form, setForm] = useState<AgendaTurnoForm>(emptyForm())
   const [saving, setSaving] = useState(false)
   const [formError, setFormError] = useState('')
+  const formReadOnly = !!editing && (editing.estado === 'CONFIRMADO' || !canEdit)
+  const canSaveTurno =
+    (canCreate && !editing) || (canEdit && !!editing && editing.estado !== 'CONFIRMADO')
 
   const [trModal, setTrModal] = useState(false)
   const [trNombre, setTrNombre] = useState('')
@@ -626,8 +622,6 @@ export function AgendaTurnosPage() {
   }
 
   function openEdit(turno: AgendaTurno) {
-    // Se puede editar si no está confirmado.
-    if (!canEdit || turno.estado === 'CONFIRMADO') return
     setEditing(turno)
     setForm({
       fecha: turno.fecha,
@@ -705,6 +699,7 @@ export function AgendaTurnosPage() {
 
   async function saveTurno(e: React.FormEvent) {
     e.preventDefault()
+    if (formReadOnly || (editing && editing.estado === 'CONFIRMADO')) return
     setFormError('')
     if (!form.descripcion.trim()) {
       setFormError('Indicá qué se envía')
@@ -791,8 +786,11 @@ export function AgendaTurnosPage() {
     if (visibles.length === 0) {
       return (
         <div className="space-y-3">
-          <h2 className="text-sm font-semibold text-slate-700">{titulo}</h2>
-          <p className="rounded-xl border border-dashed border-surface-border bg-slate-50 px-4 py-8 text-center text-sm text-slate-400">
+          <div className="flex items-center gap-2">
+            <span className="h-4 w-1 rounded-full bg-brand-500" aria-hidden />
+            <h2 className="text-sm font-semibold tracking-tight text-slate-800">{titulo}</h2>
+          </div>
+          <p className="rounded-2xl border border-dashed border-slate-200 bg-white/80 px-4 py-8 text-center text-sm text-slate-400">
             Todos los días de esta semana están anulados.
           </p>
         </div>
@@ -801,7 +799,10 @@ export function AgendaTurnosPage() {
 
     return (
       <div className="space-y-3">
-        <h2 className="text-sm font-semibold text-slate-700">{titulo}</h2>
+        <div className="flex items-center gap-2">
+          <span className="h-4 w-1 rounded-full bg-brand-500" aria-hidden />
+          <h2 className="text-sm font-semibold tracking-tight text-slate-800">{titulo}</h2>
+        </div>
         <div
           className="grid gap-2.5"
           style={{
@@ -815,21 +816,40 @@ export function AgendaTurnosPage() {
               <div
                 key={iso}
                 className={cn(
-                  'flex flex-col overflow-hidden rounded-xl border-2 bg-white p-2 shadow-md',
+                  'flex flex-col overflow-hidden rounded-2xl border bg-white shadow-sm transition',
                   isToday
-                    ? 'border-brand-500 shadow-brand-100/80 ring-2 ring-brand-200'
-                    : 'border-slate-300 shadow-slate-200/70'
+                    ? 'border-brand-400 shadow-md shadow-brand-100/70 ring-2 ring-brand-200/80'
+                    : 'border-slate-200/90 hover:border-slate-300 hover:shadow-md'
                 )}
               >
-                <div className="mb-1.5 flex shrink-0 items-start justify-between gap-1 border-b border-slate-100 pb-1">
+                <div
+                  className={cn(
+                    'mb-0 flex shrink-0 items-start justify-between gap-1 border-b px-2.5 py-2',
+                    isToday
+                      ? 'border-brand-100 bg-gradient-to-br from-brand-50 via-white to-sky-50/40'
+                      : 'border-slate-100 bg-gradient-to-b from-slate-50/90 to-white'
+                  )}
+                >
                   <div className="min-w-0">
-                    <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">
-                      {DIAS[weekdayIndex]}
-                    </p>
+                    <div className="flex items-center gap-1.5">
+                      <p
+                        className={cn(
+                          'text-[10px] font-semibold uppercase tracking-wide',
+                          isToday ? 'text-brand-600' : 'text-slate-500'
+                        )}
+                      >
+                        {DIAS[weekdayIndex]}
+                      </p>
+                      {isToday && (
+                        <span className="rounded-full bg-brand-600 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-white shadow-sm">
+                          Hoy
+                        </span>
+                      )}
+                    </div>
                     <p
                       className={cn(
-                        'text-base font-bold leading-none',
-                        isToday ? 'text-brand-700' : 'text-slate-900'
+                        'mt-0.5 text-lg font-bold leading-none tracking-tight',
+                        isToday ? 'text-brand-800' : 'text-slate-900'
                       )}
                     >
                       {parseIso(iso).getDate()}
@@ -837,7 +857,14 @@ export function AgendaTurnosPage() {
                   </div>
                   <div className="flex shrink-0 items-center gap-0.5">
                     {items.length > 0 && (
-                      <span className="rounded-full bg-slate-200 px-1.5 py-0.5 text-[10px] font-semibold text-slate-700">
+                      <span
+                        className={cn(
+                          'rounded-full px-1.5 py-0.5 text-[10px] font-semibold tabular-nums',
+                          isToday
+                            ? 'bg-brand-100 text-brand-800'
+                            : 'bg-slate-100 text-slate-600'
+                        )}
+                      >
                         {items.length}
                       </span>
                     )}
@@ -845,7 +872,12 @@ export function AgendaTurnosPage() {
                       <button
                         type="button"
                         onClick={() => openCreate(iso)}
-                        className="rounded-md p-1 text-slate-500 hover:bg-brand-50 hover:text-brand-700"
+                        className={cn(
+                          'rounded-lg p-1 transition',
+                          isToday
+                            ? 'text-brand-600 hover:bg-brand-100 hover:text-brand-800'
+                            : 'text-slate-400 hover:bg-slate-100 hover:text-brand-700'
+                        )}
                         title="Agendar"
                       >
                         <Plus className="h-3.5 w-3.5" />
@@ -854,25 +886,28 @@ export function AgendaTurnosPage() {
                   </div>
                 </div>
 
-                {items.length === 0 ? (
-                  <div className="flex h-[228px] items-center justify-center rounded-lg border border-dashed border-slate-300 bg-slate-50/80">
-                    <p className="text-[11px] font-medium text-slate-400">Sin turnos</p>
-                  </div>
-                ) : (
-                  <div className="scrollbar-thin flex h-[228px] max-h-[228px] min-h-[228px] flex-col gap-1.5 overflow-y-auto pr-0.5">
-                    {items.map((t) => (
-                      <TurnoCard
-                        key={t.id}
-                        turno={t}
-                        canEdit={canEdit}
-                        busyId={estadoBusyId}
-                        onOpen={() => openEdit(t)}
-                        onEstado={(estado) => void cambiarEstado(t, estado)}
-                        onEliminar={() => void eliminarTurno(t)}
-                      />
-                    ))}
-                  </div>
-                )}
+                <div className="p-1.5 pt-2">
+                  {items.length === 0 ? (
+                    <div className="flex h-[228px] flex-col items-center justify-center gap-1 rounded-xl border border-dashed border-slate-200 bg-gradient-to-b from-slate-50/50 to-white">
+                      <CalendarDays className="h-4 w-4 text-slate-300" aria-hidden />
+                      <p className="text-[11px] font-medium text-slate-400">Sin turnos</p>
+                    </div>
+                  ) : (
+                    <div className="scrollbar-thin flex h-[228px] max-h-[228px] min-h-[228px] flex-col gap-1.5 overflow-y-auto pr-0.5">
+                      {items.map((t) => (
+                        <TurnoCard
+                          key={t.id}
+                          turno={t}
+                          canEdit={canEdit}
+                          busyId={estadoBusyId}
+                          onOpen={() => openEdit(t)}
+                          onEstado={(estado) => void cambiarEstado(t, estado)}
+                          onEliminar={() => void eliminarTurno(t)}
+                        />
+                      ))}
+                    </div>
+                  )}
+                </div>
               </div>
             )
           })}
@@ -895,7 +930,7 @@ export function AgendaTurnosPage() {
     }
 
     return (
-      <div className="space-y-2">
+      <div className="space-y-2.5">
         {visibles.map(({ iso, weekdayIndex }) => {
           const items = byFecha.get(iso) ?? []
           const isToday = iso === hoyIso
@@ -903,27 +938,61 @@ export function AgendaTurnosPage() {
             <section
               key={iso}
               className={cn(
-                'overflow-hidden rounded-xl border bg-white shadow-card',
-                isToday ? 'border-brand-400 ring-2 ring-brand-100' : 'border-surface-border'
+                'overflow-hidden rounded-2xl border bg-white shadow-card',
+                isToday
+                  ? 'border-brand-300 ring-2 ring-brand-100'
+                  : 'border-surface-border'
               )}
             >
-              <div className="flex items-center justify-between gap-2 border-b border-surface-border bg-slate-50/80 px-3 py-2.5">
-                <div className="min-w-0">
-                  <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-                    {DIAS_LARGOS[weekdayIndex]}
-                  </p>
-                  <p
+              <div
+                className={cn(
+                  'flex items-center justify-between gap-2 border-b px-3 py-2.5',
+                  isToday
+                    ? 'border-brand-100 bg-gradient-to-r from-brand-50 via-white to-sky-50/50'
+                    : 'border-surface-border bg-gradient-to-b from-slate-50/90 to-white'
+                )}
+              >
+                <div className="flex min-w-0 items-center gap-2.5">
+                  <span
                     className={cn(
-                      'text-sm font-bold text-slate-900',
-                      isToday && 'text-brand-700'
+                      'inline-flex h-9 w-9 shrink-0 flex-col items-center justify-center rounded-xl text-center shadow-sm',
+                      isToday
+                        ? 'bg-brand-600 text-white'
+                        : 'bg-white text-slate-800 ring-1 ring-slate-200'
                     )}
                   >
-                    {formatDayLong(iso)}
-                  </p>
+                    <span className="text-[9px] font-semibold uppercase leading-none opacity-80">
+                      {DIAS[weekdayIndex]}
+                    </span>
+                    <span className="text-sm font-bold leading-none">
+                      {parseIso(iso).getDate()}
+                    </span>
+                  </span>
+                  <div className="min-w-0">
+                    <p
+                      className={cn(
+                        'truncate text-sm font-semibold',
+                        isToday ? 'text-brand-800' : 'text-slate-900'
+                      )}
+                    >
+                      {DIAS_LARGOS[weekdayIndex]}
+                    </p>
+                    <p className="truncate text-[11px] text-slate-500">{formatDayLong(iso)}</p>
+                  </div>
                 </div>
                 <div className="flex shrink-0 items-center gap-1">
+                  {isToday && (
+                    <span className="rounded-full bg-brand-600 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-white">
+                      Hoy
+                    </span>
+                  )}
                   {items.length > 0 && (
-                    <span className="rounded-full bg-slate-200 px-2 py-0.5 text-[10px] font-semibold text-slate-700">
+                    <span
+                      className={cn(
+                        'rounded-full px-2 py-0.5 text-[10px] font-semibold tabular-nums',
+                        isToday ? 'bg-brand-100 text-brand-800' : 'bg-slate-100 text-slate-600'
+                      )}
+                    >
                       {items.length}
                     </span>
                   )}
@@ -943,7 +1012,10 @@ export function AgendaTurnosPage() {
 
               <div className="space-y-2 p-2">
                 {items.length === 0 ? (
-                  <p className="px-1 py-4 text-center text-xs text-slate-400">Sin turnos</p>
+                  <div className="flex flex-col items-center gap-1 px-1 py-5">
+                    <CalendarDays className="h-4 w-4 text-slate-300" aria-hidden />
+                    <p className="text-xs text-slate-400">Sin turnos</p>
+                  </div>
                 ) : (
                   items.map((t) => (
                     <TurnoCard
@@ -969,16 +1041,21 @@ export function AgendaTurnosPage() {
   return (
     <div className={cn('mx-auto max-w-7xl', nativeApp ? '-mt-1 space-y-3' : 'space-y-3')}>
       {nativeApp ? (
-        <div className="flex items-center gap-2">
-          <h1 className="min-w-0 flex-1 truncate text-xl font-bold tracking-tight text-slate-900">
-            Agenda
-          </h1>
+        <div className="flex items-center gap-2.5">
+          <div className="flex min-w-0 flex-1 items-center gap-2.5">
+            <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-brand-600 to-sky-500 text-white shadow-md shadow-brand-600/25">
+              <CalendarDays className="h-4 w-4" strokeWidth={2.5} />
+            </span>
+            <h1 className="min-w-0 truncate text-xl font-bold tracking-tight text-slate-900">
+              Agenda
+            </h1>
+          </div>
           <div className="flex shrink-0 items-center gap-1.5">
             {canEdit && (
               <Button
                 type="button"
                 variant="secondary"
-                className="h-9 rounded-xl px-2.5"
+                className="h-9 rounded-xl border-slate-200 bg-white px-2.5 shadow-sm"
                 onClick={openConfig}
                 aria-label="Días anulados"
               >
@@ -986,7 +1063,10 @@ export function AgendaTurnosPage() {
               </Button>
             )}
             {canCreate && (
-              <Button className="h-9 rounded-xl px-3" onClick={() => openCreate()}>
+              <Button
+                className="h-9 rounded-xl px-3 shadow-sm shadow-brand-600/20"
+                onClick={() => openCreate()}
+              >
                 <Plus className="h-4 w-4" />
                 Nuevo
               </Button>
@@ -994,49 +1074,59 @@ export function AgendaTurnosPage() {
           </div>
         </div>
       ) : (
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <div className="flex items-center gap-4">
-            <h1 className="flex items-center gap-2 text-xl font-bold tracking-tight text-slate-900">
-              <CalendarDays className="h-5 w-5 text-brand-600" />
-              Agenda de turnos
-            </h1>
-            <div className="flex rounded-lg bg-slate-200/80 p-0.5 text-xs font-semibold">
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200/80 bg-gradient-to-r from-white via-white to-brand-50/40 px-3.5 py-3 shadow-sm ring-1 ring-slate-100">
+          <div className="flex min-w-0 flex-wrap items-center gap-3 sm:gap-4">
+            <div className="flex min-w-0 items-center gap-3">
+              <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-brand-600 to-sky-500 text-white shadow-md shadow-brand-600/25">
+                <CalendarDays className="h-5 w-5" strokeWidth={2.5} />
+              </span>
+              <div className="min-w-0">
+                <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
+                  Planificación
+                </p>
+                <h1 className="truncate text-xl font-bold tracking-tight text-slate-900">
+                  Agenda de turnos
+                </h1>
+              </div>
+            </div>
+            <div className="flex rounded-xl bg-slate-100/90 p-1 text-xs font-semibold ring-1 ring-slate-200/80">
               <button
                 type="button"
                 onClick={() => setTab('semana')}
                 className={cn(
-                  'rounded-md px-3 py-1 transition-all',
+                  'inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 transition-all',
                   tab === 'semana'
-                    ? 'bg-white text-brand-800 shadow-xs'
-                    : 'text-slate-600 hover:text-slate-900'
+                    ? 'bg-white text-brand-800 shadow-sm ring-1 ring-slate-200/80'
+                    : 'text-slate-500 hover:text-slate-800'
                 )}
               >
+                <CalendarDays className="h-3.5 w-3.5" />
                 Semana
               </button>
               <button
                 type="button"
                 onClick={() => setTab('historial')}
                 className={cn(
-                  'inline-flex items-center gap-1 rounded-md px-3 py-1 transition-all',
+                  'inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 transition-all',
                   tab === 'historial'
-                    ? 'bg-white text-brand-800 shadow-xs'
-                    : 'text-slate-600 hover:text-slate-900'
+                    ? 'bg-white text-brand-800 shadow-sm ring-1 ring-slate-200/80'
+                    : 'text-slate-500 hover:text-slate-800'
                 )}
               >
-                <History className="h-3 w-3" />
+                <History className="h-3.5 w-3.5" />
                 Historial
               </button>
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             {tab === 'semana' && (
-              <div className="flex items-center gap-1">
+              <div className="flex items-center gap-0.5 rounded-xl border border-slate-200 bg-white p-0.5 shadow-sm">
                 <Button
                   type="button"
                   variant="secondary"
                   size="sm"
-                  className="h-8 rounded-lg px-2"
+                  className="h-8 rounded-lg border-0 bg-transparent px-2 shadow-none hover:bg-slate-100"
                   onClick={() => setAnchorMonday((d) => addDays(d, -7))}
                   title="Semana anterior"
                 >
@@ -1046,7 +1136,12 @@ export function AgendaTurnosPage() {
                   type="button"
                   variant="secondary"
                   size="sm"
-                  className="h-8 rounded-lg px-2.5 text-xs font-medium"
+                  className={cn(
+                    'h-8 rounded-lg border-0 px-2.5 text-xs font-semibold shadow-none',
+                    isCurrentWeek
+                      ? 'bg-brand-50 text-brand-800 hover:bg-brand-100'
+                      : 'bg-transparent text-slate-700 hover:bg-slate-100'
+                  )}
                   onClick={() => setAnchorMonday(startOfWeekMonday(new Date()))}
                 >
                   Hoy
@@ -1055,7 +1150,7 @@ export function AgendaTurnosPage() {
                   type="button"
                   variant="secondary"
                   size="sm"
-                  className="h-8 rounded-lg px-2"
+                  className="h-8 rounded-lg border-0 bg-transparent px-2 shadow-none hover:bg-slate-100"
                   onClick={() => setAnchorMonday((d) => addDays(d, 7))}
                   title="Semana siguiente"
                 >
@@ -1064,13 +1159,23 @@ export function AgendaTurnosPage() {
               </div>
             )}
             {canEdit && (
-              <Button type="button" variant="secondary" size="sm" className="h-8 rounded-lg text-xs" onClick={openConfig}>
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                className="h-8 rounded-xl border-slate-200 bg-white text-xs shadow-sm"
+                onClick={openConfig}
+              >
                 <Settings className="h-3.5 w-3.5" />
                 Días
               </Button>
             )}
             {canCreate && (
-              <Button size="sm" className="h-8 rounded-lg text-xs" onClick={() => openCreate()}>
+              <Button
+                size="sm"
+                className="h-8 rounded-xl text-xs shadow-sm shadow-brand-600/20"
+                onClick={() => openCreate()}
+              >
                 <Plus className="h-3.5 w-3.5" />
                 Nuevo turno
               </Button>
@@ -1080,17 +1185,18 @@ export function AgendaTurnosPage() {
       )}
 
       {nativeApp && (
-        <div className="grid grid-cols-2 gap-1 rounded-xl bg-slate-100 p-1">
+        <div className="grid grid-cols-2 gap-1 rounded-xl bg-slate-100/90 p-1 ring-1 ring-slate-200/70">
           <button
             type="button"
             onClick={() => setTab('semana')}
             className={cn(
-              'rounded-lg py-2 text-sm font-semibold transition',
+              'inline-flex items-center justify-center gap-1.5 rounded-lg py-2 text-sm font-semibold transition',
               tab === 'semana'
-                ? 'bg-white text-brand-800 shadow-sm'
+                ? 'bg-white text-brand-800 shadow-sm ring-1 ring-slate-200/80'
                 : 'text-slate-500'
             )}
           >
+            <CalendarDays className="h-3.5 w-3.5" />
             Semana
           </button>
           <button
@@ -1099,10 +1205,11 @@ export function AgendaTurnosPage() {
             className={cn(
               'inline-flex items-center justify-center gap-1.5 rounded-lg py-2 text-sm font-semibold transition',
               tab === 'historial'
-                ? 'bg-white text-brand-800 shadow-sm'
+                ? 'bg-white text-brand-800 shadow-sm ring-1 ring-slate-200/80'
                 : 'text-slate-500'
             )}
           >
+            <History className="h-3.5 w-3.5" />
             Historial
           </button>
         </div>
@@ -1162,8 +1269,8 @@ export function AgendaTurnosPage() {
             )}
           </div>
         ) : (
-          <Card className="border-slate-300 bg-slate-100/90 shadow-sm ring-1 ring-slate-200/80">
-            <CardBody className="space-y-5 p-4">
+          <Card className="overflow-hidden border-slate-200/90 bg-gradient-to-b from-slate-50 via-white to-slate-50/80 shadow-sm ring-1 ring-slate-200/60">
+            <CardBody className="space-y-5 p-4 sm:p-5">
               {loading ? (
                 <div className="flex items-center gap-2 py-8 text-sm text-slate-500">
                   <Loader2 className="h-4 w-4 animate-spin" />
@@ -1495,188 +1602,295 @@ export function AgendaTurnosPage() {
           <div
             className={cn(
               nativeApp
-                ? 'fixed inset-x-0 bottom-0 z-50 mx-auto w-full max-w-3xl max-h-[92dvh] overflow-y-auto overscroll-contain rounded-t-2xl border-2 border-b-0 border-brand-400 bg-white p-4 pb-[max(1rem,env(safe-area-inset-bottom))] shadow-[0_-12px_40px_rgba(15,23,42,0.25)] ring-4 ring-brand-500/15'
-                : 'fixed inset-0 z-50 flex items-end justify-center bg-slate-900/40 p-4 sm:items-center'
+                ? 'fixed inset-x-0 bottom-0 z-50 mx-auto w-full max-w-3xl max-h-[92dvh] overflow-hidden overscroll-contain rounded-t-2xl border-2 border-b-0 border-brand-400 bg-white shadow-[0_-12px_40px_rgba(15,23,42,0.25)] ring-4 ring-brand-500/15'
+                : 'fixed inset-0 z-50 flex items-end justify-center p-4 sm:items-center'
             )}
           >
+            {!nativeApp && (
+              <div
+                className="absolute inset-0 bg-slate-900/50 backdrop-blur-[2px]"
+                aria-hidden
+                onClick={() => setModalOpen(false)}
+              />
+            )}
             <div
               role="dialog"
               aria-modal="true"
               className={cn(
+                'relative z-10 flex w-full flex-col overflow-hidden bg-white',
                 nativeApp
-                  ? 'w-full'
-                  : 'max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-2xl bg-white p-5 shadow-xl ring-1 ring-surface-border'
+                  ? 'max-h-[92dvh]'
+                  : 'max-h-[min(90vh,720px)] max-w-lg rounded-2xl border border-surface-border shadow-xl'
               )}
             >
-              <div className="mb-4 flex items-start justify-between gap-3">
-                <div>
-                  <h2 className="text-lg font-semibold text-slate-900">
-                    {editing ? 'Editar turno' : 'Nuevo turno'}
-                  </h2>
-                  {!editing && !nativeApp && (
-                    <p className="mt-0.5 text-xs text-slate-500">
-                      Se crea como <strong>Solicitado</strong>. Después confirmás o cancelás en la tarjeta.
-                    </p>
-                  )}
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setModalOpen(false)}
-                  className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
-                >
-                  <X className="h-5 w-5" />
-                </button>
-              </div>
-
-              <form className="space-y-4" onSubmit={(e) => void saveTurno(e)}>
-                {formError && (
-                  <div className="rounded-xl bg-red-50 px-3 py-2 text-sm text-red-700 ring-1 ring-red-100">
-                    {formError}
-                  </div>
-                )}
-
-                <Input
-                  label="Fecha"
-                  type="date"
-                  required
-                  value={form.fecha}
-                  onChange={(e) => setForm((f) => ({ ...f, fecha: e.target.value }))}
-                  disabled={!canEdit && !!editing}
-                />
-                <Input
-                  label="Qué se envía"
-                  required
-                  placeholder="Ej. Etiquetas"
-                  value={form.descripcion}
-                  onChange={(e) => setForm((f) => ({ ...f, descripcion: e.target.value }))}
-                  disabled={!canEdit && !!editing}
-                />
-                <div className="grid grid-cols-2 gap-3">
-                  <Input
-                    label="Cantidad (opcional)"
-                    type="number"
-                    min="0.01"
-                    step="any"
-                    value={form.cantidad}
-                    onChange={(e) => setForm((f) => ({ ...f, cantidad: e.target.value }))}
-                    disabled={!canEdit && !!editing}
-                  />
-                  <label className="block text-sm">
-                    <span className="mb-1.5 block font-medium text-slate-700">Unidad</span>
-                    <select
-                      value={form.unidad}
-                      onChange={(e) =>
-                        setForm((f) => ({ ...f, unidad: e.target.value as AgendaTurnoUnidad }))
+              {(() => {
+                const modalTone =
+                  editing?.estado === 'CONFIRMADO'
+                    ? {
+                        bar: 'from-emerald-600 via-emerald-500 to-teal-500',
+                        head: 'from-emerald-50 via-white to-white',
+                        iconWrap: 'bg-emerald-600 text-white shadow-emerald-600/30',
+                        Icon: Check
                       }
-                      disabled={!canEdit && !!editing}
-                      className="w-full rounded-xl border border-surface-border bg-white px-3 py-2.5 text-sm shadow-sm focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20"
+                    : editing
+                      ? {
+                          bar: 'from-brand-600 via-brand-500 to-sky-500',
+                          head: 'from-brand-50/80 via-white to-white',
+                          iconWrap: 'bg-brand-600 text-white shadow-brand-600/30',
+                          Icon: Package
+                        }
+                      : {
+                          bar: 'from-amber-500 via-amber-400 to-orange-400',
+                          head: 'from-amber-50 via-white to-white',
+                          iconWrap: 'bg-amber-500 text-white shadow-amber-500/30',
+                          Icon: Plus
+                        }
+                const ModalIcon = modalTone.Icon
+                return (
+                  <>
+                    <div className={cn('h-1.5 shrink-0 bg-gradient-to-r', modalTone.bar)} />
+                    <div
+                      className={cn(
+                        'flex shrink-0 items-start justify-between gap-3 border-b border-surface-border bg-gradient-to-r px-4 py-4 sm:px-5',
+                        modalTone.head
+                      )}
                     >
-                      {UNIDADES.map((u) => (
-                        <option key={u.value} value={u.value}>
-                          {u.label}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                </div>
-
-                <div>
-                  <div className="mb-1.5 flex items-center justify-between">
-                    <span className="text-sm font-medium text-slate-700">Transportista (opcional)</span>
-                    {canCreate && (
+                      <div className="flex min-w-0 items-start gap-3">
+                        <span
+                          className={cn(
+                            'inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl shadow-md',
+                            modalTone.iconWrap
+                          )}
+                        >
+                          <ModalIcon className="h-5 w-5" strokeWidth={2.5} />
+                        </span>
+                        <div className="min-w-0">
+                          <h2 className="text-lg font-semibold tracking-tight text-slate-900">
+                            {editing?.estado === 'CONFIRMADO'
+                              ? 'Turno confirmado'
+                              : editing
+                                ? 'Editar turno'
+                                : 'Nuevo turno'}
+                          </h2>
+                          {editing?.estado === 'CONFIRMADO' ? (
+                            <p className="mt-0.5 flex items-center gap-1.5 text-xs text-emerald-700">
+                              <Eye className="h-3.5 w-3.5 shrink-0" />
+                              Solo lectura — no se puede modificar
+                            </p>
+                          ) : !editing ? (
+                            <p className="mt-0.5 text-xs text-slate-500">
+                              Se crea como <strong>Solicitado</strong>. Después confirmás o cancelás en la
+                              tarjeta.
+                            </p>
+                          ) : editing.estado === 'SOLICITADO' ? (
+                            <p className="mt-0.5 text-xs text-amber-700">Estado: Solicitado</p>
+                          ) : (
+                            <p className="mt-0.5 text-xs text-slate-500">
+                              Estado: {ESTADO_LABEL[editing.estado]}
+                            </p>
+                          )}
+                        </div>
+                      </div>
                       <button
                         type="button"
-                        onClick={() => setTrModal(true)}
-                        className="inline-flex items-center gap-1 text-xs font-medium text-brand-700 hover:underline"
-                      >
-                        <Truck className="h-3.5 w-3.5" />
-                        Nuevo
-                      </button>
-                    )}
-                  </div>
-                  <select
-                    value={form.transportista_id ?? ''}
-                    onChange={(e) =>
-                      setForm((f) => ({
-                        ...f,
-                        transportista_id: e.target.value ? Number(e.target.value) : ''
-                      }))
-                    }
-                    disabled={!canEdit && !!editing}
-                    className="w-full rounded-xl border border-surface-border bg-white px-3 py-2.5 text-sm shadow-sm focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20"
-                  >
-                    <option value="">Sin transportista</option>
-                    {activos.map((t) => (
-                      <option key={t.id} value={t.id}>
-                        {t.nombre}
-                      </option>
-                    ))}
-                    {editing &&
-                      editing.transportista_id != null &&
-                      !activos.some((t) => t.id === editing.transportista_id) && (
-                        <option value={editing.transportista_id}>
-                          {editing.transportista_nombre ?? `ID ${editing.transportista_id}`} (inactivo)
-                        </option>
-                      )}
-                  </select>
-                </div>
-
-                <label className="block text-sm">
-                  <span className="mb-1.5 block font-medium text-slate-700">Notas</span>
-                  <textarea
-                    rows={2}
-                    value={form.notas}
-                    onChange={(e) => setForm((f) => ({ ...f, notas: e.target.value }))}
-                    disabled={!canEdit && !!editing}
-                    className="w-full rounded-xl border border-surface-border bg-white px-3 py-2.5 text-sm shadow-sm focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20"
-                    placeholder="Opcional"
-                  />
-                </label>
-
-                {nativeApp ? (
-                  <div className="grid grid-cols-2 gap-2 pt-2">
-                    <Button
-                      type="button"
-                      variant="secondary"
-                      className="h-11 rounded-xl"
-                      onClick={() => setModalOpen(false)}
-                    >
-                      Cancelar
-                    </Button>
-                    {(canCreate && !editing) || (canEdit && editing) ? (
-                      <Button type="submit" className="h-11 rounded-xl" disabled={saving}>
-                        {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-                        Guardar
-                      </Button>
-                    ) : (
-                      <Button
-                        type="button"
-                        className="h-11 rounded-xl"
                         onClick={() => setModalOpen(false)}
+                        className="rounded-xl p-1.5 text-slate-400 transition hover:bg-white/80 hover:text-slate-700"
+                        aria-label="Cerrar"
                       >
-                        Cerrar
-                      </Button>
-                    )}
-                  </div>
-                ) : (
-                  <div className="flex justify-end gap-2 pt-2">
-                    <Button
-                      type="button"
-                      variant="secondary"
-                      className="rounded-xl"
-                      onClick={() => setModalOpen(false)}
+                        <X className="h-5 w-5" />
+                      </button>
+                    </div>
+
+                    <form
+                      className="flex min-h-0 flex-1 flex-col"
+                      onSubmit={(e) => void saveTurno(e)}
                     >
-                      Cerrar
-                    </Button>
-                    {(canCreate && !editing) || (canEdit && editing) ? (
-                      <Button type="submit" className="rounded-xl" disabled={saving}>
-                        {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-                        Guardar
-                      </Button>
-                    ) : null}
-                  </div>
-                )}
-              </form>
+                      <div
+                        className={cn(
+                          'min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain px-4 py-4 sm:px-5',
+                          nativeApp && 'pb-2'
+                        )}
+                      >
+                        {formError && (
+                          <div className="rounded-xl bg-red-50 px-3 py-2 text-sm text-red-700 ring-1 ring-red-100">
+                            {formError}
+                          </div>
+                        )}
+
+                        <div className="space-y-3 rounded-2xl border border-surface-border bg-slate-50/70 p-3.5 sm:p-4">
+                          <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">
+                            Envío
+                          </p>
+                          <Input
+                            label="Fecha"
+                            type="date"
+                            required
+                            value={form.fecha}
+                            onChange={(e) => setForm((f) => ({ ...f, fecha: e.target.value }))}
+                            disabled={formReadOnly}
+                            leading={<CalendarDays className="h-4 w-4" aria-hidden />}
+                          />
+                          <Input
+                            label="Qué se envía"
+                            required
+                            placeholder="Ej. Etiquetas"
+                            value={form.descripcion}
+                            onChange={(e) => setForm((f) => ({ ...f, descripcion: e.target.value }))}
+                            disabled={formReadOnly}
+                            leading={<Package className="h-4 w-4" aria-hidden />}
+                          />
+                          <div className="grid grid-cols-2 gap-3">
+                            <Input
+                              label="Cantidad (opcional)"
+                              type="number"
+                              min="0.01"
+                              step="any"
+                              value={form.cantidad}
+                              onChange={(e) => setForm((f) => ({ ...f, cantidad: e.target.value }))}
+                              disabled={formReadOnly}
+                            />
+                            <label className="block text-sm">
+                              <span className="mb-1.5 block font-medium text-slate-700">Unidad</span>
+                              <select
+                                value={form.unidad}
+                                onChange={(e) =>
+                                  setForm((f) => ({
+                                    ...f,
+                                    unidad: e.target.value as AgendaTurnoUnidad
+                                  }))
+                                }
+                                disabled={formReadOnly}
+                                className="w-full rounded-xl border border-surface-border bg-white px-3 py-2.5 text-sm shadow-sm focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20 disabled:bg-slate-50 disabled:text-slate-600"
+                              >
+                                {UNIDADES.map((u) => (
+                                  <option key={u.value} value={u.value}>
+                                    {u.label}
+                                  </option>
+                                ))}
+                              </select>
+                            </label>
+                          </div>
+                        </div>
+
+                        <div className="space-y-3 rounded-2xl border border-surface-border bg-white p-3.5 shadow-sm sm:p-4">
+                          <div className="flex items-center justify-between gap-2">
+                            <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">
+                              Logística
+                            </p>
+                            {canCreate && !formReadOnly && (
+                              <button
+                                type="button"
+                                onClick={() => setTrModal(true)}
+                                className="inline-flex items-center gap-1 rounded-lg bg-brand-50 px-2 py-1 text-xs font-semibold text-brand-700 ring-1 ring-brand-100 hover:bg-brand-100"
+                              >
+                                <Truck className="h-3.5 w-3.5" />
+                                Nuevo
+                              </button>
+                            )}
+                          </div>
+                          <label className="block text-sm">
+                            <span className="mb-1.5 block font-medium text-slate-700">
+                              Transportista (opcional)
+                            </span>
+                            <select
+                              value={form.transportista_id ?? ''}
+                              onChange={(e) =>
+                                setForm((f) => ({
+                                  ...f,
+                                  transportista_id: e.target.value ? Number(e.target.value) : ''
+                                }))
+                              }
+                              disabled={formReadOnly}
+                              className="w-full rounded-xl border border-surface-border bg-white px-3 py-2.5 text-sm shadow-sm focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20 disabled:bg-slate-50 disabled:text-slate-600"
+                            >
+                              <option value="">Sin transportista</option>
+                              {activos.map((t) => (
+                                <option key={t.id} value={t.id}>
+                                  {t.nombre}
+                                </option>
+                              ))}
+                              {editing &&
+                                editing.transportista_id != null &&
+                                !activos.some((t) => t.id === editing.transportista_id) && (
+                                  <option value={editing.transportista_id}>
+                                    {editing.transportista_nombre ??
+                                      `ID ${editing.transportista_id}`}{' '}
+                                    (inactivo)
+                                  </option>
+                                )}
+                            </select>
+                          </label>
+                          <label className="block text-sm">
+                            <span className="mb-1.5 inline-flex items-center gap-1.5 font-medium text-slate-700">
+                              <StickyNote className="h-3.5 w-3.5 text-slate-400" />
+                              Notas
+                            </span>
+                            <textarea
+                              rows={3}
+                              value={form.notas}
+                              onChange={(e) => setForm((f) => ({ ...f, notas: e.target.value }))}
+                              disabled={formReadOnly}
+                              className="w-full rounded-xl border border-surface-border bg-white px-3 py-2.5 text-sm shadow-sm focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20 disabled:bg-slate-50 disabled:text-slate-600"
+                              placeholder="Opcional"
+                            />
+                          </label>
+                        </div>
+                      </div>
+
+                      <div
+                        className={cn(
+                          'shrink-0 border-t border-surface-border bg-slate-50/90 px-4 py-3 sm:px-5',
+                          nativeApp && 'pb-[max(0.75rem,env(safe-area-inset-bottom))]'
+                        )}
+                      >
+                        {nativeApp ? (
+                          <div className="grid grid-cols-2 gap-2">
+                            <Button
+                              type="button"
+                              variant="secondary"
+                              className="h-11 rounded-xl"
+                              onClick={() => setModalOpen(false)}
+                            >
+                              {formReadOnly ? 'Cerrar' : 'Cancelar'}
+                            </Button>
+                            {canSaveTurno ? (
+                              <Button type="submit" className="h-11 rounded-xl" disabled={saving}>
+                                {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                                Guardar
+                              </Button>
+                            ) : (
+                              <Button
+                                type="button"
+                                className="h-11 rounded-xl"
+                                onClick={() => setModalOpen(false)}
+                              >
+                                Listo
+                              </Button>
+                            )}
+                          </div>
+                        ) : (
+                          <div className="flex justify-end gap-2">
+                            <Button
+                              type="button"
+                              variant="secondary"
+                              className="rounded-xl"
+                              onClick={() => setModalOpen(false)}
+                            >
+                              Cerrar
+                            </Button>
+                            {canSaveTurno ? (
+                              <Button type="submit" className="rounded-xl" disabled={saving}>
+                                {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                                Guardar
+                              </Button>
+                            ) : null}
+                          </div>
+                        )}
+                      </div>
+                    </form>
+                  </>
+                )
+              })()}
             </div>
           </div>
         </>

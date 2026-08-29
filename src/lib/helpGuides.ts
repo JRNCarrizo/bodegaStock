@@ -99,7 +99,7 @@ export const HELP_GUIDES: Record<string, SectionHelpGuide> = {
     steps: [
       {
         title: 'Abrí un retorno nuevo',
-        body: 'Tocá “Nuevo retorno” (o Enter en el buscador). Completá la fecha y, si corresponde, el número de planilla, el camionero y un sector por defecto. Planilla y camionero no son obligatorios: usalos solo cuando aplique.'
+        body: 'Tocá “Nuevo retorno” (o Enter en el buscador). Completá la fecha y, si corresponde, el número de planilla y el camionero. Planilla y camionero no son obligatorios: usalos solo cuando aplique. El sector destino se preselecciona según lo configurado en Sectores.'
       },
       {
         title: 'Pasá a cargar productos',
@@ -111,7 +111,7 @@ export const HELP_GUIDES: Record<string, SectionHelpGuide> = {
       },
       {
         title: 'Cantidad, estado y sector',
-        body: 'Indicá la cantidad, el estado (buen estado, incompleta o mal estado) y el sector. Tocá Agregar (o Enter) para sumarlo a la lista.'
+        body: 'Indicá la cantidad, el estado (buen estado, incompleta o mal estado) y el sector. El sector viene preseleccionado; podés cambiarlo. Tocá Agregar (o Enter) para sumarlo a la lista.'
       },
       {
         title: 'Revisá la lista de abajo',

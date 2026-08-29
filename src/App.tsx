@@ -1,5 +1,6 @@
 import { Navigate, Route, Routes } from 'react-router-dom'
 import { AuthProvider, useAuth } from '@/context/AuthContext'
+import { ConfirmDialogProvider } from '@/context/ConfirmDialogContext'
 import { InventarioActivoProvider } from '@/context/InventarioActivoContext'
 import { PermisoRoute } from '@/components/PermisoRoute'
 import { AgendaTurnosPage } from '@/pages/AgendaTurnosPage'
@@ -82,9 +83,11 @@ function AppRoutes() {
 export default function App() {
   return (
     <AuthProvider>
-      <InventarioActivoProvider>
-        <AppRoutes />
-      </InventarioActivoProvider>
+      <ConfirmDialogProvider>
+        <InventarioActivoProvider>
+          <AppRoutes />
+        </InventarioActivoProvider>
+      </ConfirmDialogProvider>
     </AuthProvider>
   )
 }

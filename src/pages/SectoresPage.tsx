@@ -32,6 +32,7 @@ const emptyForm = (): SectorForm => ({
   prioridad_descuento: '',
   usa_ubicaciones: false,
   ingreso_por_defecto: false,
+  retorno_por_defecto: false,
   activo: true
 })
 
@@ -454,6 +455,7 @@ export function SectoresPage() {
       prioridad_descuento: s.prioridad_descuento?.toString() ?? '',
       usa_ubicaciones: !!s.usa_ubicaciones,
       ingreso_por_defecto: !!s.ingreso_por_defecto,
+      retorno_por_defecto: !!s.retorno_por_defecto,
       activo: !!s.activo
     })
     setError('')
@@ -496,6 +498,7 @@ export function SectoresPage() {
           : null,
       usa_ubicaciones: form.usa_ubicaciones,
       ingreso_por_defecto: form.ingreso_por_defecto,
+      retorno_por_defecto: form.retorno_por_defecto,
       activo: form.activo
     }
 
@@ -566,7 +569,8 @@ export function SectoresPage() {
               setForm({
                 ...form,
                 activo: e.target.checked,
-                ingreso_por_defecto: e.target.checked ? form.ingreso_por_defecto : false
+                ingreso_por_defecto: e.target.checked ? form.ingreso_por_defecto : false,
+                retorno_por_defecto: e.target.checked ? form.retorno_por_defecto : false
               })
             }
             onKeyDown={(e) => handleFormKeyDown(e, descuentoRef)}
@@ -610,6 +614,44 @@ export function SectoresPage() {
             <span className="min-w-0">
               <span className="text-sm font-medium text-slate-700">
                 Destino por defecto en ingresos
+              </span>
+              {!form.activo && (
+                <span className="mt-1 block text-xs text-slate-500">
+                  Activá el sector para poder marcarlo como destino por defecto.
+                </span>
+              )}
+            </span>
+          </label>
+        </div>
+
+        <div className="rounded-xl border border-surface-border bg-surface-muted/20 p-4 space-y-3">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">
+              Retornos
+            </p>
+            <p className="mt-1 text-xs text-slate-500">
+              El sector marcado se preselecciona al cargar un retorno. Siempre se puede cambiar por
+              línea.
+            </p>
+          </div>
+          <label
+            className={cn(
+              'flex items-start gap-3 rounded-xl border border-surface-border bg-white px-4 py-3',
+              !form.activo && 'opacity-60'
+            )}
+          >
+            <input
+              type="checkbox"
+              checked={form.retorno_por_defecto}
+              disabled={!form.activo}
+              onChange={(e) =>
+                setForm({ ...form, retorno_por_defecto: e.target.checked })
+              }
+              className="mt-0.5 h-4 w-4 shrink-0 rounded border-surface-border text-brand-600 disabled:cursor-not-allowed"
+            />
+            <span className="min-w-0">
+              <span className="text-sm font-medium text-slate-700">
+                Destino por defecto en retornos
               </span>
               {!form.activo && (
                 <span className="mt-1 block text-xs text-slate-500">
@@ -933,6 +975,9 @@ export function SectoresPage() {
                           )}
                           {!!s.ingreso_por_defecto && (
                             <Badge variant="default">Ingresos (default)</Badge>
+                          )}
+                          {!!s.retorno_por_defecto && (
+                            <Badge variant="default">Retornos (default)</Badge>
                           )}
                         </div>
                         {s.descripcion && (

@@ -1769,8 +1769,21 @@ export function validarYCalcularLinea(
   productoId: number,
   linea: ConteoLineaInput
 ): { total: number; linea: LineaDesgloseInput } {
-  const err = validateLineaDesglose(linea)
-  if (err) throw new Error(err)
+  // Inventario: pallet con 0 pallets + cajas sueltas es válido (solo sueltas).
+  const soloCajasSueltasPallet =
+    linea.tipo_bulto === 'PALLET' &&
+    !(Number(linea.cantidad_bultos) > 0) &&
+    Number(linea.cantidad_suelta) > 0
+
+  if (soloCajasSueltasPallet) {
+    if (!(Number(linea.unidades_por_bulto) > 0)) {
+      throw new Error('Indicá las unidades por bulto')
+    }
+  } else {
+    const err = validateLineaDesglose(linea)
+    if (err) throw new Error(err)
+  }
+
   const prod = db.prepare('SELECT id, activo FROM productos WHERE id = ?').get(productoId) as
     | { id: number; activo: number }
     | undefined

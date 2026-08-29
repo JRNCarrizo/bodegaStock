@@ -39,6 +39,7 @@ interface SectorBody {
   prioridad_descuento?: number | null
   usa_ubicaciones?: boolean
   ingreso_por_defecto?: boolean | number
+  retorno_por_defecto?: boolean | number
   activo?: boolean
 }
 
@@ -140,6 +141,31 @@ function setIngresoPorDefecto(db: ReturnType<typeof getDb>, sectorId: number): v
 
 function clearIngresoPorDefecto(db: ReturnType<typeof getDb>, sectorId: number): void {
   db.prepare('UPDATE sectores SET ingreso_por_defecto = 0 WHERE id = ?').run(sectorId)
+}
+
+/** Solo un sector activo puede ser destino por defecto en retornos (por logística). */
+function setRetornoPorDefecto(db: ReturnType<typeof getDb>, sectorId: number): void {
+  const sector = db.prepare(`
+    SELECT logistica_id FROM sectores WHERE id = ?
+  `).get(sectorId) as { logistica_id: number | null } | undefined
+
+  db.transaction(() => {
+    if (sector?.logistica_id != null && sectoresTieneLogisticaId(db)) {
+      db.prepare(`
+        UPDATE sectores SET retorno_por_defecto = 0 WHERE logistica_id = ?
+      `).run(sector.logistica_id)
+    } else {
+      db.prepare('UPDATE sectores SET retorno_por_defecto = 0').run()
+    }
+    db.prepare(`
+      UPDATE sectores SET retorno_por_defecto = 1
+      WHERE id = ? AND activo = 1
+    `).run(sectorId)
+  })()
+}
+
+function clearRetornoPorDefecto(db: ReturnType<typeof getDb>, sectorId: number): void {
+  db.prepare('UPDATE sectores SET retorno_por_defecto = 0 WHERE id = ?').run(sectorId)
 }
 
 interface StockLineaRow {
@@ -336,7 +362,7 @@ export async function sectoresRoutes(app: FastifyInstance): Promise<void> {
       SELECT
         s.id, s.codigo, s.nombre, s.descripcion,
         s.es_sector_descuento, s.prioridad_descuento, s.usa_ubicaciones,
-        s.ingreso_por_defecto, s.activo, s.created_at,
+        s.ingreso_por_defecto, s.retorno_por_defecto, s.activo, s.created_at,
         COALESCE((
           SELECT COUNT(DISTINCT ss.producto_id)
           FROM stock_sector ss
@@ -371,6 +397,7 @@ export async function sectoresRoutes(app: FastifyInstance): Promise<void> {
 
     sql += ` ORDER BY
       s.ingreso_por_defecto DESC,
+      s.retorno_por_defecto DESC,
       s.es_sector_descuento DESC,
       CASE WHEN s.prioridad_descuento IS NULL THEN 9999 ELSE s.prioridad_descuento END ASC,
       s.nombre COLLATE NOCASE ASC`
@@ -386,7 +413,8 @@ export async function sectoresRoutes(app: FastifyInstance): Promise<void> {
     const logisticaId = requireRequestLogistica(request)
     const sector = db.prepare(`
       SELECT id, codigo, nombre, descripcion, es_sector_descuento,
-             prioridad_descuento, usa_ubicaciones, ingreso_por_defecto, activo, created_at
+             prioridad_descuento, usa_ubicaciones, ingreso_por_defecto, retorno_por_defecto,
+             activo, created_at
       FROM sectores WHERE id = ? AND logistica_id = ?
     `).get(id, logisticaId)
 
@@ -599,6 +627,11 @@ export async function sectoresRoutes(app: FastifyInstance): Promise<void> {
         error: 'Un sector inactivo no puede ser el destino por defecto de ingresos'
       })
     }
+    if (body.retorno_por_defecto === true && !activo) {
+      return reply.status(400).send({
+        error: 'Un sector inactivo no puede ser el destino por defecto de retornos'
+      })
+    }
 
     let codigo = slugCodigoSector(nombre)
     for (let i = 2; i < 100; i++) {
@@ -627,6 +660,9 @@ export async function sectoresRoutes(app: FastifyInstance): Promise<void> {
       const sectorId = Number(result.lastInsertRowid)
       if (body.ingreso_por_defecto === true || body.ingreso_por_defecto === 1) {
         setIngresoPorDefecto(db, sectorId)
+      }
+      if (body.retorno_por_defecto === true || body.retorno_por_defecto === 1) {
+        setRetornoPorDefecto(db, sectorId)
       }
 
       return { id: sectorId }
@@ -666,6 +702,11 @@ export async function sectoresRoutes(app: FastifyInstance): Promise<void> {
         error: 'Un sector inactivo no puede ser el destino por defecto de ingresos'
       })
     }
+    if (body.retorno_por_defecto === true && !activoFinal) {
+      return reply.status(400).send({
+        error: 'Un sector inactivo no puede ser el destino por defecto de retornos'
+      })
+    }
 
     let codigo: string | null = null
     if (nombre) {
@@ -703,10 +744,18 @@ export async function sectoresRoutes(app: FastifyInstance): Promise<void> {
 
       if (body.activo === false) {
         clearIngresoPorDefecto(db, id)
-      } else if (body.ingreso_por_defecto === true || body.ingreso_por_defecto === 1) {
-        setIngresoPorDefecto(db, id)
-      } else if (body.ingreso_por_defecto === false || body.ingreso_por_defecto === 0) {
-        clearIngresoPorDefecto(db, id)
+        clearRetornoPorDefecto(db, id)
+      } else {
+        if (body.ingreso_por_defecto === true || body.ingreso_por_defecto === 1) {
+          setIngresoPorDefecto(db, id)
+        } else if (body.ingreso_por_defecto === false || body.ingreso_por_defecto === 0) {
+          clearIngresoPorDefecto(db, id)
+        }
+        if (body.retorno_por_defecto === true || body.retorno_por_defecto === 1) {
+          setRetornoPorDefecto(db, id)
+        } else if (body.retorno_por_defecto === false || body.retorno_por_defecto === 0) {
+          clearRetornoPorDefecto(db, id)
+        }
       }
 
       return { ok: true }

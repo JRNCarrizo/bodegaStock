@@ -399,6 +399,9 @@ export async function retornosRoutes(app: FastifyInstance): Promise<void> {
       if (!camionero) {
         return reply.status(400).send({ error: 'Camionero no válido' })
       }
+      if (!body.vehiculo_id) {
+        return reply.status(400).send({ error: 'Seleccioná el vehículo del camionero' })
+      }
     } else if (body.vehiculo_id) {
       return reply.status(400).send({ error: 'Seleccioná un camionero para asignar vehículo' })
     }

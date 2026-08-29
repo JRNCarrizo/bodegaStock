@@ -65,6 +65,7 @@ import type {
   SectorUbicacion
 } from '@/types'
 import { useAuth } from '@/context/AuthContext'
+import { useConfirmDialog } from '@/context/ConfirmDialogContext'
 import { useEscHandler } from '@/hooks/useEscHandler'
 import { useRegistroListKeyboard } from '@/hooks/useRegistroListKeyboard'
 
@@ -282,6 +283,7 @@ function resolveEditorRuta(
 
 export function MovimientosPage() {
   const { hasPermiso, user } = useAuth()
+  const { confirm } = useConfirmDialog()
   const [view, setView] = useState<'list' | 'editor' | 'detail'>('list')
   const [movimientos, setMovimientos] = useState<MovimientoInternoListItem[]>([])
   const [detalle, setDetalle] = useState<MovimientoInternoDetalle | null>(null)
@@ -1278,11 +1280,16 @@ export function MovimientosPage() {
   async function cancelarListaAbierta() {
     if (!detalle) return
     const activas = lineasActivasEditor.length
-    if (activas > 0) {
-      if (!confirm(`La lista tiene ${activas} línea(s). ¿Descartar la lista sin guardar?`)) return
-    } else if (!confirm('¿Descartar la lista sin guardar?')) {
-      return
-    }
+    const ok = await confirm({
+      title: 'Descartar lista',
+      message:
+        activas > 0
+          ? `La lista tiene ${activas} línea(s). ¿Descartar la lista sin guardar?`
+          : '¿Descartar la lista sin guardar?',
+      confirmLabel: 'Descartar',
+      tone: 'danger'
+    })
+    if (!ok) return
     setSaving(true)
     setError('')
     try {
@@ -1427,7 +1434,14 @@ export function MovimientosPage() {
   }
 
   async function cancelarDocPendiente() {
-    if (!detalle || !confirm('¿Descartar este movimiento sin guardar?')) return
+    if (!detalle) return
+    const ok = await confirm({
+      title: 'Descartar movimiento',
+      message: '¿Descartar este movimiento sin guardar?',
+      confirmLabel: 'Descartar',
+      tone: 'danger'
+    })
+    if (!ok) return
     setSaving(true)
     setError('')
     try {

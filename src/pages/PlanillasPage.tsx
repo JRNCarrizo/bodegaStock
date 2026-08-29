@@ -60,6 +60,7 @@ import type {
   Producto
 } from '@/types'
 import { useAuth } from '@/context/AuthContext'
+import { useConfirmDialog } from '@/context/ConfirmDialogContext'
 import { useEscHandler } from '@/hooks/useEscHandler'
 import { useProductoQuickSearch } from '@/hooks/useProductoQuickSearch'
 import { useRegistroListKeyboard } from '@/hooks/useRegistroListKeyboard'
@@ -110,6 +111,7 @@ function planillaDraftTieneContenido(d: {
 
 export function PlanillasPage() {
   const { hasPermiso } = useAuth()
+  const { confirm } = useConfirmDialog()
   const [view, setView] = useState<'list' | 'create' | 'detail'>('list')
   const [planillas, setPlanillas] = useState<PlanillaListItem[]>([])
   const [detalle, setDetalle] = useState<PlanillaDetalle | null>(null)
@@ -121,6 +123,7 @@ export function PlanillasPage() {
   const [error, setError] = useState('')
   const [exportingId, setExportingId] = useState<number | null>(null)
   const [saving, setSaving] = useState(false)
+  const [salidasOpen, setSalidasOpen] = useState(false)
 
   const [fecha, setFecha] = useState(todayIsoDate())
   const [numero, setNumero] = useState('')
@@ -208,9 +211,15 @@ export function PlanillasPage() {
     })
   }
 
-  function abrirNuevaPlanilla() {
+  async function abrirNuevaPlanilla() {
     if (tieneBorrador && planillaDraftTieneContenido({ numero, observacion, camioneroId, lineas })) {
-      if (!confirm('Hay una planilla en curso. ¿Descartarla y empezar una nueva?')) return
+      const ok = await confirm({
+        title: 'Planilla en curso',
+        message: 'Hay una planilla en curso. ¿Descartarla y empezar una nueva?',
+        confirmLabel: 'Descartar y continuar',
+        tone: 'danger'
+      })
+      if (!ok) return
     }
     clearPlanillaDraft()
     setTieneBorrador(false)
@@ -241,9 +250,15 @@ export function PlanillasPage() {
     setView('create')
   }
 
-  function cancelarPlanillaEnCurso() {
+  async function cancelarPlanillaEnCurso() {
     if (lineas.length > 0 || numero.trim() || camioneroId) {
-      if (!confirm('¿Cancelar la planilla en curso? Se perderán las líneas cargadas.')) return
+      const ok = await confirm({
+        title: 'Cancelar planilla',
+        message: '¿Cancelar la planilla en curso? Se perderán las líneas cargadas.',
+        confirmLabel: 'Cancelar planilla',
+        tone: 'danger'
+      })
+      if (!ok) return
     }
     clearPlanillaDraft()
     setTieneBorrador(false)
@@ -395,6 +410,44 @@ export function PlanillasPage() {
     [planillas, selectedDay]
   )
 
+  const salidasPorCamionero = useMemo(() => {
+    type Grupo = {
+      key: string
+      alias: string
+      nombre: string | null
+      aliases: string[]
+      planillas: { id: number; numero: string }[]
+    }
+    const map = new Map<string, Grupo>()
+    for (const p of planillasDelDia) {
+      const key = p.camionero_id != null ? `c-${p.camionero_id}` : 'sin'
+      const label =
+        p.vehiculo_alias?.trim() ||
+        p.camionero_nombre?.trim() ||
+        (key === 'sin' ? 'Retira' : 'Sin alias')
+      let g = map.get(key)
+      if (!g) {
+        g = {
+          key,
+          alias: label,
+          nombre: p.camionero_nombre,
+          aliases: [label],
+          planillas: []
+        }
+        map.set(key, g)
+      } else if (!g.aliases.includes(label)) {
+        g.aliases.push(label)
+        g.alias = g.aliases.join(' · ')
+      }
+      g.planillas.push({ id: p.id, numero: p.numero })
+    }
+    return [...map.values()].sort((a, b) => {
+      if (a.key === 'sin') return 1
+      if (b.key === 'sin') return -1
+      return a.alias.localeCompare(b.alias, 'es', { sensitivity: 'base', numeric: true })
+    })
+  }, [planillasDelDia])
+
   const conteoPorDia = useMemo(() => {
     const map = new Map<string, number>()
     for (const p of planillas) map.set(p.fecha, (map.get(p.fecha) ?? 0) + 1)
@@ -470,6 +523,11 @@ export function PlanillasPage() {
     setView('list')
     setTimeout(() => listSearchRef.current?.focus({ preventScroll: true }), 80)
   }
+
+  useEscHandler(salidasOpen, () => {
+    setSalidasOpen(false)
+    return true
+  })
 
   useEscHandler(view === 'detail' && !!detalle, () => {
     volverAlListadoDesdeDetalle()
@@ -1799,7 +1857,7 @@ export function PlanillasPage() {
             nativeApp ? 'px-3 py-2.5' : 'px-5 py-3.5'
           )}
         >
-          <div>
+          <div className="min-w-0">
             <h2 className="font-semibold text-slate-900 text-sm">
               {diasConPlanillas.length > 0 ? formatDayTabLabel(selectedDay) : 'Registros'}
             </h2>
@@ -1809,7 +1867,24 @@ export function PlanillasPage() {
                 : `${planillas.length} planilla(s)`}
             </p>
           </div>
-          {loadingList && <Loader2 className="h-5 w-5 shrink-0 animate-spin text-brand-600" />}
+          <div className="flex shrink-0 items-center gap-2">
+            {planillasDelDia.length > 0 && (
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                className={cn(
+                  'rounded-xl text-xs font-semibold',
+                  nativeApp ? 'h-8 px-2.5' : 'h-8 px-3'
+                )}
+                onClick={() => setSalidasOpen(true)}
+              >
+                <Truck className="h-3.5 w-3.5" />
+                Salidas
+              </Button>
+            )}
+            {loadingList && <Loader2 className="h-5 w-5 shrink-0 animate-spin text-brand-600" />}
+          </div>
         </div>
 
         <CardBody className={cn(nativeApp ? 'bg-surface-muted/35 p-2' : 'p-0')}>
@@ -2031,6 +2106,127 @@ export function PlanillasPage() {
           )}
         </CardBody>
       </Card>
+
+      {salidasOpen && (
+        <>
+          {nativeApp && (
+            <div
+              className="fixed inset-0 z-40 bg-slate-900/45"
+              aria-hidden
+              onClick={() => setSalidasOpen(false)}
+            />
+          )}
+          <div
+            className={cn(
+              nativeApp
+                ? 'fixed inset-x-0 bottom-0 z-50 mx-auto w-full max-w-3xl max-h-[92dvh] overflow-hidden overscroll-contain rounded-t-2xl border-2 border-b-0 border-brand-400 bg-white shadow-[0_-12px_40px_rgba(15,23,42,0.25)] ring-4 ring-brand-500/15'
+                : 'fixed inset-0 z-50 flex items-end justify-center p-4 sm:items-center'
+            )}
+          >
+            {!nativeApp && (
+              <div
+                className="absolute inset-0 bg-slate-900/50 backdrop-blur-[2px]"
+                aria-hidden
+                onClick={() => setSalidasOpen(false)}
+              />
+            )}
+            <div
+              role="dialog"
+              aria-modal="true"
+              className={cn(
+                'relative z-10 flex w-full flex-col overflow-hidden bg-white',
+                nativeApp
+                  ? 'max-h-[92dvh]'
+                  : 'max-h-[min(92vh,820px)] max-w-3xl rounded-2xl border border-surface-border shadow-xl'
+              )}
+            >
+              <div className="h-1 shrink-0 bg-gradient-to-r from-brand-600 via-brand-500 to-sky-500" />
+              <div className="flex shrink-0 items-center justify-between gap-3 border-b border-surface-border bg-gradient-to-r from-brand-50/70 via-white to-white px-4 py-3 sm:px-5">
+                <div className="flex min-w-0 items-center gap-2.5">
+                  <span className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-brand-600 text-white shadow-sm">
+                    <Truck className="h-4 w-4" strokeWidth={2.5} />
+                  </span>
+                  <div className="min-w-0">
+                    <h2 className="text-base font-semibold tracking-tight text-slate-900">
+                      Salidas del día
+                    </h2>
+                    <p className="text-[11px] text-slate-500">
+                      {formatDayTabLabel(selectedDay)} · {planillasDelDia.length} planilla
+                      {planillasDelDia.length === 1 ? '' : 's'} · {salidasPorCamionero.length}{' '}
+                      salida{salidasPorCamionero.length === 1 ? '' : 's'}
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setSalidasOpen(false)}
+                  className="rounded-lg p-1.5 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700"
+                  aria-label="Cerrar"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
+
+              <div
+                className={cn(
+                  'min-h-0 flex-1 overflow-y-auto overscroll-contain px-3 py-3 sm:px-4',
+                  nativeApp && 'pb-[max(0.75rem,env(safe-area-inset-bottom))]'
+                )}
+              >
+                {salidasPorCamionero.length === 0 ? (
+                  <p className="rounded-xl border border-dashed border-slate-200 bg-slate-50 px-4 py-8 text-center text-sm text-slate-400">
+                    No hay salidas en este día.
+                  </p>
+                ) : (
+                  <div className="overflow-hidden rounded-xl border border-surface-border bg-white">
+                    <ul className="divide-y divide-surface-border">
+                      {salidasPorCamionero.map((g) => (
+                        <li
+                          key={g.key}
+                          className="flex flex-wrap items-center gap-x-3 gap-y-1.5 px-3 py-2 sm:flex-nowrap"
+                        >
+                          <div className="flex min-w-[7.5rem] max-w-full shrink-0 items-center gap-2 sm:w-40">
+                            <Truck className="h-3.5 w-3.5 shrink-0 text-slate-400" />
+                            <div className="min-w-0">
+                              <p className="truncate text-sm font-semibold text-slate-900">
+                                {g.alias}
+                              </p>
+                              {g.nombre && g.nombre !== g.alias && (
+                                <p className="truncate text-[10px] leading-tight text-slate-400">
+                                  {g.nombre}
+                                </p>
+                              )}
+                            </div>
+                          </div>
+                          <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1">
+                            {g.planillas.map((pl) => (
+                              <button
+                                key={pl.id}
+                                type="button"
+                                onClick={() => {
+                                  setSalidasOpen(false)
+                                  void verDetalle(pl.id)
+                                }}
+                                className="inline-flex h-7 items-center rounded-md bg-brand-600 px-2 text-[11px] font-semibold tabular-nums text-white transition hover:bg-brand-700"
+                                title={`Ver planilla ${pl.numero}`}
+                              >
+                                {pl.numero}
+                              </button>
+                            ))}
+                          </div>
+                          <span className="ml-auto hidden shrink-0 text-[10px] font-medium tabular-nums text-slate-400 sm:inline">
+                            {g.planillas.length}
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        </>
+      )}
     </div>
   )
 }

@@ -39,6 +39,7 @@ import { SwipeableConteoLinea } from '@/components/SwipeableConteoLinea'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { api, cn } from '@/lib/utils'
+import { useConfirmDialog } from '@/context/ConfirmDialogContext'
 import { scrollProductoIntoListVisible } from '@/lib/scroll'
 import { filterProductosBySearchQuery, textoProductoMatches } from '@/lib/productoSearch'
 import {
@@ -201,6 +202,7 @@ export function InventarioOfflinePage() {
   const { sectorInvId: rawId } = useParams()
   const sectorInvId = Number(rawId)
   const navigate = useNavigate()
+  const { confirm } = useConfirmDialog()
   const productSearchRef = useRef<HTMLInputElement>(null)
   const ubicacionSelectRef = useRef<HTMLSelectElement>(null)
   const listScrollRef = useRef<HTMLDivElement>(null)
@@ -487,11 +489,15 @@ export function InventarioOfflinePage() {
 
   async function handleBorrarEnEsteCelular() {
     if (
-      !confirm(
-        '¿Borrar el conteo solo en ESTE celular?\n\n' +
+      !(await confirm({
+        title: 'Borrar conteo local',
+        message:
+          '¿Borrar el conteo solo en ESTE celular?\n\n' +
           'Se elimina el paquete y todo lo contado aquí. Tu compañero y el PC no se modifican.\n\n' +
-          'Después cerrá sesión, entrá con la cuenta correcta y descargá el paquete de nuevo.'
-      )
+          'Después cerrá sesión, entrá con la cuenta correcta y descargá el paquete de nuevo.',
+        confirmLabel: 'Borrar en este celular',
+        tone: 'danger'
+      }))
     ) {
       return
     }
@@ -837,6 +843,15 @@ export function InventarioOfflinePage() {
         tipoBulto === 'SUELTO' ? null : Number(cantidadBultos) || 0
 
       if (tipoBulto === 'PALLET') {
+        const pallets = resolveCantidadExprField(cantidadBultos || '0', { min: 0 })
+        if (pallets.value == null) {
+          setError(pallets.error ?? 'Cantidad de pallets inválida')
+          setBusy(false)
+          return
+        }
+        bultosValor = pallets.value
+        setCantidadBultos(pallets.text)
+
         const porPallet = resolveCantidadExprField(unidadesPorBulto, { min: 1 })
         if (porPallet.value == null) {
           setError(porPallet.error ?? 'Cajas por pallet inválidas')
@@ -857,6 +872,12 @@ export function InventarioOfflinePage() {
           setCantidadSuelta(sueltas.text)
         } else {
           sueltaValor = null
+        }
+
+        if (!(bultosValor > 0) && !(Number(sueltaValor) > 0)) {
+          setError('Indicá pallets o cajas sueltas')
+          setBusy(false)
+          return
         }
       } else if (tipoBulto === 'CAJA') {
         const cajas = resolveCantidadExprField(cantidadBultos, { min: 1 })
@@ -970,13 +991,23 @@ export function InventarioOfflinePage() {
   async function handleFinalizar() {
     if (enReconteo && misLineasRonda.length === 0) {
       if (
-        !confirm(
-          'No cargaste líneas en esta ronda: los productos del reconteo quedan en 0. ¿Finalizar así?'
-        )
+        !(await confirm({
+          title: 'Finalizar sin líneas',
+          message:
+            'No cargaste líneas en esta ronda: los productos del reconteo quedan en 0. ¿Finalizar así?',
+          confirmLabel: 'Finalizar así',
+          tone: 'danger'
+        }))
       ) {
         return
       }
-    } else if (!confirm('¿Finalizaste el conteo de este sector?')) {
+    } else if (
+      !(await confirm({
+        title: 'Finalizar sector',
+        message: '¿Finalizaste el conteo de este sector?',
+        confirmLabel: 'Finalizar'
+      }))
+    ) {
       return
     }
     setBusy(true)
@@ -999,11 +1030,13 @@ export function InventarioOfflinePage() {
 
   async function handleReabrirConteo() {
     if (
-      !confirm(
-        verificacionSimple
+      !(await confirm({
+        title: 'Reabrir conteo',
+        message: verificacionSimple
           ? '¿Volver a editar el conteo? Se desmarca tu finalización.'
-          : '¿Volver a editar el conteo? Se desmarca tu finalización. Solo antes de sincronizar con el compañero.'
-      )
+          : '¿Volver a editar el conteo? Se desmarca tu finalización. Solo antes de sincronizar con el compañero.',
+        confirmLabel: 'Reabrir'
+      }))
     ) {
       return
     }

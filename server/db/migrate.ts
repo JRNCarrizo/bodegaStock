@@ -15,6 +15,10 @@ export function runMigrations(db: Database.Database): void {
     db.exec('ALTER TABLE sectores ADD COLUMN ingreso_por_defecto INTEGER NOT NULL DEFAULT 0')
   }
 
+  if (!columnExists(db, 'sectores', 'retorno_por_defecto')) {
+    db.exec('ALTER TABLE sectores ADD COLUMN retorno_por_defecto INTEGER NOT NULL DEFAULT 0')
+  }
+
   if (!tableExists(db, 'sector_ubicaciones')) {
     db.exec(`
       CREATE TABLE sector_ubicaciones (

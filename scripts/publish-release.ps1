@@ -1,5 +1,5 @@
 param(
-  [string]$Version = "0.3.58"
+  [string]$Version = "0.3.59"
 )
 
 $ErrorActionPreference = "Stop"
@@ -59,26 +59,31 @@ if (Test-Path $ymlPath) { $assets += (Resolve-Path $ymlPath).Path }
 $notes = @"
 ## ControlStock v$Version
 
-Productos por logística, importación más flexible y mejoras de listados diarios.
+Actualizador más fiable, retornos más claros y confirmaciones sin romper el foco en Windows.
 
-### Productos
-- **Por logística:** el catálogo queda separado por Esmeralda / NAKBE (stock y operaciones ya filtraban; ahora también los productos).
-- **Importación Excel:** el código interno puede ir vacío y se asigna solo (NAK-01, ESM-01, …).
+### Actualizaciones (PC)
+- Buscar actualizaciones en Configuración ya no depende del check frágil de Electron con redirects de GitHub.
+- Lee ``latest.yml`` de forma directa y descarga desde el tag del release (menos errores 403/“GitHub ocupado”).
+- **Importante:** esta es la primera versión con el arreglo. Si venías de una anterior, instalá este Setup **una vez a mano**; después Config debería actualizar solo.
 
-### Listados (ingresos, planillas, retornos, roturas, movimientos)
-- Al confirmar un registro, la pestaña del día queda en la fecha cargada (hoy u otro día), sin quedarse en el día anterior.
+### Retornos
+- Si elegís camionero, el vehículo pasa a ser obligatorio.
+- El sector por defecto se configura en **Sectores** (como ingresos), no en el formulario de alta.
 
-### UI
-- Subtítulos más cortos en Productos, Sectores, Planillas, Movimientos y Retornos.
-- Detalle de planilla: el desglose expandible ya no muestra el sector.
+### Confirmaciones
+- Los diálogos nativos se reemplazan por modales de la app (evita el bug de Electron en Windows donde no se podía escribir en los campos hasta minimizar/maximizar).
+
+### Login / Sectores
+- En el login se muestran versión y créditos.
+- En Sectores: checkbox “Destino por defecto en retornos”.
 
 ### Inventario
-- Ajustes de comparación online (perspectiva Vos / Compañero) y sin botón de escáner en conteo online.
+- Importación más permisiva: PALLET con 0 pallets y cantidad suelta > 0 (caso NAKBE).
 
 ### Actualizacion
 1. Cerra ControlStock si esta abierto.
 2. Descarga e instala ``ControlStock-Setup-$Version.exe``.
-3. O desde Configuracion -> Buscar actualizaciones.
+3. Desde esta versión en adelante: Configuracion -> Buscar actualizaciones.
 
 Login inicial (base vacia): **admin** / **admin123**
 "@

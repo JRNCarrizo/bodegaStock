@@ -86,6 +86,7 @@ import type {
   SectorUbicacion
 } from '@/types'
 import { useAuth } from '@/context/AuthContext'
+import { useConfirmDialog } from '@/context/ConfirmDialogContext'
 import { useSidebarNav } from '@/context/SidebarNavContext'
 import { listLocalMisSectores, reconcileOfflineConServidor } from '@/lib/inventarioOffline'
 import {
@@ -2722,6 +2723,7 @@ function InventarioVistaPreviaCierre({
 
 export function InventarioPage() {
   const { hasPermiso, user, offlineSession } = useAuth()
+  const { confirm, alert } = useConfirmDialog()
   const { registerMainContentFocus } = useSidebarNav()
   const navigate = useNavigate()
   const { sectorInvId } = useParams<{ sectorInvId?: string }>()
@@ -3019,9 +3021,12 @@ export function InventarioPage() {
     }> = []
   ) {
     if (
-      !confirm(
-        '¿Confirmar cierre del inventario? Se aplicarán los ajustes al stock según lo revisado.'
-      )
+      !(await confirm({
+        title: 'Cerrar inventario',
+        message:
+          '¿Confirmar cierre del inventario? Se aplicarán los ajustes al stock según lo revisado.',
+        confirmLabel: 'Cerrar inventario'
+      }))
     ) {
       return
     }
@@ -3044,11 +3049,14 @@ export function InventarioPage() {
 
   async function repararCierreSesion(id: number) {
     if (
-      !confirm(
-        '¿Reparar el stock desde el conteo guardado?\n\n' +
+      !(await confirm({
+        title: 'Reparar stock',
+        message:
+          '¿Reparar el stock desde el conteo guardado?\n\n' +
           'Corrige productos que quedaron mal al cerrar (p. ej. tras reconteo). ' +
-          'Respeta las decisiones del cierre original (contado / sistema / manual).'
-      )
+          'Respeta las decisiones del cierre original (contado / sistema / manual).',
+        confirmLabel: 'Reparar'
+      }))
     ) {
       return
     }
@@ -3062,12 +3070,14 @@ export function InventarioPage() {
       await loadSesion(id)
       const n = res.resumen?.reparados ?? res.reparaciones?.length ?? 0
       const omit = res.resumen?.omitidos ?? 0
-      alert(
-        n > 0
-          ? `Stock reparado: ${n} producto${n === 1 ? '' : 's'} actualizado${n === 1 ? '' : 's'}.` +
+      await alert({
+        title: 'Reparación de cierre',
+        message:
+          n > 0
+            ? `Stock reparado: ${n} producto${n === 1 ? '' : 's'} actualizado${n === 1 ? '' : 's'}.` +
               (omit > 0 ? `\n${omit} requieren revisión manual.` : '')
-          : 'No hizo falta reparar nada; el stock ya coincide con el conteo guardado.'
-      )
+            : 'No hizo falta reparar nada; el stock ya coincide con el conteo guardado.'
+      })
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Error al reparar el cierre')
     } finally {
@@ -3076,7 +3086,13 @@ export function InventarioPage() {
   }
 
   async function cancelarSesion(id: number) {
-    if (!confirm('¿Cancelar esta sesión de inventario?')) return
+    const ok = await confirm({
+      title: 'Cancelar sesión',
+      message: '¿Cancelar esta sesión de inventario?',
+      confirmLabel: 'Cancelar sesión',
+      tone: 'danger'
+    })
+    if (!ok) return
     try {
       await api(`/api/inventario/sesiones/${id}/cancelar`, { method: 'POST' })
       await refreshInventarioActivo()
@@ -3104,9 +3120,13 @@ export function InventarioPage() {
 
   async function eliminarSesionCancelada(id: number) {
     if (
-      !confirm(
-        '¿Eliminar esta sesión cancelada?\n\nSe borra del historial junto con sus sectores y conteos. No se puede deshacer.'
-      )
+      !(await confirm({
+        title: 'Eliminar sesión',
+        message:
+          '¿Eliminar esta sesión cancelada?\n\nSe borra del historial junto con sus sectores y conteos. No se puede deshacer.',
+        confirmLabel: 'Eliminar',
+        tone: 'danger'
+      }))
     ) {
       return
     }
@@ -4998,6 +5018,7 @@ function ConteoSectorView({
   onBack: () => void
 }) {
   const { user } = useAuth()
+  const { confirm } = useConfirmDialog()
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [sectorInfo, setSectorInfo] = useState<Record<string, unknown> | null>(null)
@@ -5506,8 +5527,8 @@ function ConteoSectorView({
         setCantidadBultos(cajas.text)
       } else {
         const bultos = Number(cantidadBultos)
-        if (!Number.isFinite(bultos) || bultos <= 0) {
-          setError(`Indicá la cantidad de ${tipoBulto === 'PALLET' ? 'pallets' : 'cajas'}`)
+        if (!Number.isFinite(bultos) || bultos < 0) {
+          setError('Indicá la cantidad de pallets')
           return false
         }
         body.cantidad_bultos = bultos
@@ -5532,6 +5553,11 @@ function ConteoSectorView({
             body.cantidad_suelta = sueltas.value
             setCantidadSuelta(sueltas.text)
           }
+        }
+
+        if (!(Number(body.cantidad_bultos) > 0) && !(Number(body.cantidad_suelta) > 0)) {
+          setError('Indicá pallets o cajas sueltas')
+          return false
         }
       } else {
         const porBulto =
@@ -5746,21 +5772,34 @@ function ConteoSectorView({
       : []
     if (enReconteo && misLineas.length === 0) {
       if (
-        !confirm(
-          'No cargaste líneas en esta ronda: los productos del reconteo quedan en 0. ¿Finalizar así?'
-        )
+        !(await confirm({
+          title: 'Finalizar sin líneas',
+          message:
+            'No cargaste líneas en esta ronda: los productos del reconteo quedan en 0. ¿Finalizar así?',
+          confirmLabel: 'Finalizar así',
+          tone: 'danger'
+        }))
       ) {
         return
       }
     } else if (productosEnCero.length > 0) {
       if (
-        !confirm(
-          `Hay ${productosEnCero.length} producto(s) sin líneas en este reconteo: quedan en 0. ¿Finalizar así?`
-        )
+        !(await confirm({
+          title: 'Productos sin líneas',
+          message: `Hay ${productosEnCero.length} producto(s) sin líneas en este reconteo: quedan en 0. ¿Finalizar así?`,
+          confirmLabel: 'Finalizar así',
+          tone: 'danger'
+        }))
       ) {
         return
       }
-    } else if (!confirm('¿Finalizaste el conteo de este sector?')) {
+    } else if (
+      !(await confirm({
+        title: 'Finalizar sector',
+        message: '¿Finalizaste el conteo de este sector?',
+        confirmLabel: 'Finalizar'
+      }))
+    ) {
       return
     }
     try {
@@ -5777,9 +5816,12 @@ function ConteoSectorView({
 
   async function reabrirConteo() {
     if (
-      !confirm(
-        '¿Volver a editar el conteo? Se desmarca tu finalización. Solo mientras el compañero aún no terminó.'
-      )
+      !(await confirm({
+        title: 'Reabrir conteo',
+        message:
+          '¿Volver a editar el conteo? Se desmarca tu finalización. Solo mientras el compañero aún no terminó.',
+        confirmLabel: 'Reabrir'
+      }))
     ) {
       return
     }

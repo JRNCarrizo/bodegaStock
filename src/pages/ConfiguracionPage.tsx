@@ -581,11 +581,6 @@ export function ConfiguracionPage() {
     setIsNative(isNativeApp())
   }, [])
 
-  useEffect(() => {
-    // Limpiar bloqueos viejos guardados por versiones anteriores.
-    void api?.clearUpdateCooldown?.()
-  }, [api])
-
   const updateCheckDisabled =
     phase === 'checking' || phase === 'downloading' || phase === 'installing'
 
@@ -656,9 +651,8 @@ export function ConfiguracionPage() {
     }
 
     setPhase('checking')
-    void api.clearUpdateCooldown?.()
 
-    const result = await api.checkForUpdates({ force: true })
+    const result = await api.checkForUpdates()
     if (result.reason === 'dev') {
       setPhase('dev-mode')
       return
@@ -697,7 +691,6 @@ export function ConfiguracionPage() {
     if (!api?.downloadUpdate) return
     setPhase('downloading')
     setDownloadPercent(0)
-    void api.clearUpdateCooldown?.()
     const result = await api.downloadUpdate()
     if (!result.ok) {
       setPhase('error')

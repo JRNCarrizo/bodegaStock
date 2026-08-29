@@ -59,27 +59,20 @@ if (Test-Path $ymlPath) { $assets += (Resolve-Path $ymlPath).Path }
 $notes = @"
 ## ControlStock v$Version
 
-Flujo de carga más ágil, agenda más cómoda y PC + APK alineados.
+Corrige la instalación automática: al tocar Instalar y reiniciar ya no se suicida el script (consolas de timeout) y abre el Setup.
 
-### Carga (ingresos, planillas, retornos, roturas)
-- Al confirmar, volvés al listado del día (no al detalle) con el foco en el buscador → Enter abre otro nuevo.
-- El registro recién cargado se destaca unos segundos con un borde luminoso.
+### Importante (esta vez)
+- Instalá **a mano** ``ControlStock-Setup-$Version.exe`` desde este release.
+- El botón de actualizar de la 0.3.60 todavía tiene el bug; recién con $Version instalada las próximas actualizaciones deberían abrirse solas.
 
-### Planillas
-- Sin camionero se muestra como **Retira** (listado / detalle / resumen).
-
-### Agenda de turnos
-- Día vacío: tocá el centro para agendar.
-- **Nuevo turno** (arriba) abre sin fecha preasignada; elegís la fecha en el formulario.
-- Desde el día / ``+`` sigue precargando esa fecha.
-
-### Actualizaciones
-- Setup PC + APK en el mismo release (``ControlStock-Setup-$Version.exe`` y ``ControlStock-$Version.apk``).
+### Otros
+- Menos golpes a GitHub al buscar actualizaciones (sin forzar cooldown en cada clic).
+- Setup PC + APK alineados (``ControlStock-Setup-$Version.exe`` y ``ControlStock-$Version.apk``).
 
 ### Actualizacion
-1. Cerra ControlStock si esta abierto.
-2. PC: instalá ``ControlStock-Setup-$Version.exe`` (o Config → Buscar actualizaciones si ya tenés 0.3.59+).
-3. Celular: instalá ``ControlStock-$Version.apk`` (o descargala desde Config en el PC).
+1. Cerra ControlStock.
+2. PC: instalá ``ControlStock-Setup-$Version.exe``.
+3. Celular: instalá ``ControlStock-$Version.apk`` si corresponde.
 
 Login inicial (base vacia): **admin** / **admin123**
 "@

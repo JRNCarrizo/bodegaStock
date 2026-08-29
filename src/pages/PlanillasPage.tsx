@@ -63,6 +63,7 @@ import { useAuth } from '@/context/AuthContext'
 import { useConfirmDialog } from '@/context/ConfirmDialogContext'
 import { useEscHandler } from '@/hooks/useEscHandler'
 import { useProductoQuickSearch } from '@/hooks/useProductoQuickSearch'
+import { useRegistroFlashHighlight } from '@/hooks/useRegistroFlashHighlight'
 import { useRegistroListKeyboard } from '@/hooks/useRegistroListKeyboard'
 
 function newTempId(): string {
@@ -112,6 +113,7 @@ function planillaDraftTieneContenido(d: {
 export function PlanillasPage() {
   const { hasPermiso } = useAuth()
   const { confirm } = useConfirmDialog()
+  const { setFlashId, flashClass } = useRegistroFlashHighlight()
   const [view, setView] = useState<'list' | 'create' | 'detail'>('list')
   const [planillas, setPlanillas] = useState<PlanillaListItem[]>([])
   const [detalle, setDetalle] = useState<PlanillaDetalle | null>(null)
@@ -908,14 +910,14 @@ export function PlanillasPage() {
         })
       })
       setShowPreview(false)
-      const data = await api<PlanillaDetalle>(`/api/planillas/${result.id}`)
-      setDetalle(data)
-      setView('detail')
       clearPlanillaDraft()
       setTieneBorrador(false)
       resetCreateForm()
+      setDetalle(null)
       await loadPlanillas()
       setSelectedDay(fecha)
+      setFlashId(result.id)
+      setView('list')
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error al confirmar planilla')
     } finally {
@@ -1206,7 +1208,7 @@ export function PlanillasPage() {
                 ) : (
                   <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2.5 py-1 font-medium text-slate-700 ring-1 ring-surface-border">
                     <Truck className="h-3 w-3 text-slate-400" />
-                    Sin camionero
+                    Retira
                   </span>
                 )}
                 {vehiculoSeleccionado && (
@@ -1606,7 +1608,7 @@ export function PlanillasPage() {
                     <strong>
                       {camioneroSeleccionado
                         ? `${camioneroSeleccionado.numero_interno} — ${camioneroSeleccionado.nombre}`
-                        : 'Sin camionero (Retiro particular / Cliente)'}
+                        : 'Retira'}
                     </strong>
                   </div>
                   {camioneroSeleccionado && (
@@ -1974,7 +1976,10 @@ export function PlanillasPage() {
                   key={p.id}
                   {...registroListKb.listItemProps(
                     index,
-                    'overflow-hidden rounded-xl border border-surface-border bg-white shadow-card'
+                    cn(
+                      'overflow-hidden rounded-xl border border-surface-border bg-white shadow-card',
+                      flashClass(p.id)
+                    )
                   )}
                 >
                   <button
@@ -1993,7 +1998,7 @@ export function PlanillasPage() {
                         ) : (
                           <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-600">
                             <Truck className="h-3 w-3 text-slate-400" />
-                            Sin camionero
+                            Retira
                           </span>
                         )}
                       </div>
@@ -2030,7 +2035,10 @@ export function PlanillasPage() {
                   key={p.id}
                   {...registroListKb.listItemProps(
                     index,
-                    'flex flex-col gap-3 px-4 py-4 transition-colors hover:bg-slate-50/80 sm:flex-row sm:items-center sm:gap-4 sm:px-6'
+                    cn(
+                      'flex flex-col gap-3 px-4 py-4 transition-colors hover:bg-slate-50/80 sm:flex-row sm:items-center sm:gap-4 sm:px-6',
+                      flashClass(p.id)
+                    )
                   )}
                 >
                   <div className="min-w-0 flex-1">
@@ -2044,7 +2052,7 @@ export function PlanillasPage() {
                       ) : (
                         <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-medium text-slate-600">
                           <Truck className="h-3 w-3 text-slate-400" />
-                          Sin camionero
+                          Retira
                         </span>
                       )}
                       {p.vehiculo_modelo || p.vehiculo_alias ? (
@@ -2286,7 +2294,7 @@ function PlanillaDetallePanel({
             </RegistroDetalleMetaChip>
           ) : (
             <RegistroDetalleMetaChip icon={<Truck className="h-3.5 w-3.5 shrink-0 text-slate-400" />}>
-              Sin camionero
+              Retira
             </RegistroDetalleMetaChip>
           )}
           {vehiculoTexto && (

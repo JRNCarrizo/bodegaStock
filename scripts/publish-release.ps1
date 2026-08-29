@@ -1,5 +1,5 @@
 param(
-  [string]$Version = "0.3.59"
+  [string]$Version = "0.3.60"
 )
 
 $ErrorActionPreference = "Stop"
@@ -59,31 +59,27 @@ if (Test-Path $ymlPath) { $assets += (Resolve-Path $ymlPath).Path }
 $notes = @"
 ## ControlStock v$Version
 
-Actualizador más fiable, retornos más claros y confirmaciones sin romper el foco en Windows.
+Flujo de carga más ágil, agenda más cómoda y PC + APK alineados.
 
-### Actualizaciones (PC)
-- Buscar actualizaciones en Configuración ya no depende del check frágil de Electron con redirects de GitHub.
-- Lee ``latest.yml`` de forma directa y descarga desde el tag del release (menos errores 403/“GitHub ocupado”).
-- **Importante:** esta es la primera versión con el arreglo. Si venías de una anterior, instalá este Setup **una vez a mano**; después Config debería actualizar solo.
+### Carga (ingresos, planillas, retornos, roturas)
+- Al confirmar, volvés al listado del día (no al detalle) con el foco en el buscador → Enter abre otro nuevo.
+- El registro recién cargado se destaca unos segundos con un borde luminoso.
 
-### Retornos
-- Si elegís camionero, el vehículo pasa a ser obligatorio.
-- El sector por defecto se configura en **Sectores** (como ingresos), no en el formulario de alta.
+### Planillas
+- Sin camionero se muestra como **Retira** (listado / detalle / resumen).
 
-### Confirmaciones
-- Los diálogos nativos se reemplazan por modales de la app (evita el bug de Electron en Windows donde no se podía escribir en los campos hasta minimizar/maximizar).
+### Agenda de turnos
+- Día vacío: tocá el centro para agendar.
+- **Nuevo turno** (arriba) abre sin fecha preasignada; elegís la fecha en el formulario.
+- Desde el día / ``+`` sigue precargando esa fecha.
 
-### Login / Sectores
-- En el login se muestran versión y créditos.
-- En Sectores: checkbox “Destino por defecto en retornos”.
-
-### Inventario
-- Importación más permisiva: PALLET con 0 pallets y cantidad suelta > 0 (caso NAKBE).
+### Actualizaciones
+- Setup PC + APK en el mismo release (``ControlStock-Setup-$Version.exe`` y ``ControlStock-$Version.apk``).
 
 ### Actualizacion
 1. Cerra ControlStock si esta abierto.
-2. Descarga e instala ``ControlStock-Setup-$Version.exe``.
-3. Desde esta versión en adelante: Configuracion -> Buscar actualizaciones.
+2. PC: instalá ``ControlStock-Setup-$Version.exe`` (o Config → Buscar actualizaciones si ya tenés 0.3.59+).
+3. Celular: instalá ``ControlStock-$Version.apk`` (o descargala desde Config en el PC).
 
 Login inicial (base vacia): **admin** / **admin123**
 "@
@@ -111,8 +107,6 @@ if ($LASTEXITCODE -ne 0) {
   exit $LASTEXITCODE
 }
 
-# Verificar que GitHub recibio el Setup completo (evitar truncado).
-# Parseo en PowerShell: el --jq de gh se rompe con pipes/comillas en este shell.
 Start-Sleep -Seconds 2
 $releaseJson = gh api "repos/JRNCarrizo/bodegaStock/releases/tags/$tag" | ConvertFrom-Json
 $remoteSize = [int64](($releaseJson.assets | Where-Object { $_.name -like '*Setup*' } | Select-Object -First 1).size)
@@ -126,6 +120,12 @@ if ($remoteSize -ne $exeSize) {
   if ($remoteSize -ne $exeSize) {
     Write-Error "Setup en GitHub sigue truncado: $remoteSize vs $exeSize. Subi a mano."
   }
+}
+
+if (Test-Path $apkPath) {
+  $apkSize = (Get-Item $apkPath).Length
+  $remoteApk = [int64](($releaseJson.assets | Where-Object { $_.name -like '*.apk' } | Select-Object -First 1).size)
+  Write-Host "GitHub APK size: $remoteApk (local $apkSize)" -ForegroundColor Cyan
 }
 
 Write-Host "Listo: https://github.com/JRNCarrizo/bodegaStock/releases/tag/$tag" -ForegroundColor Green

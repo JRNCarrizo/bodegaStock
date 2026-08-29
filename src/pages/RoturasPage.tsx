@@ -49,6 +49,7 @@ import type {
 import { useAuth } from '@/context/AuthContext'
 import { useEscHandler } from '@/hooks/useEscHandler'
 import { useProductoQuickSearch } from '@/hooks/useProductoQuickSearch'
+import { useRegistroFlashHighlight } from '@/hooks/useRegistroFlashHighlight'
 import { useRegistroListKeyboard } from '@/hooks/useRegistroListKeyboard'
 import {
   scrollFocusedFieldIntoSheet,
@@ -61,6 +62,7 @@ function newTempId(): string {
 
 export function RoturasPage() {
   const { hasPermiso } = useAuth()
+  const { setFlashId, flashClass } = useRegistroFlashHighlight()
   const location = useLocation()
   const [view, setView] = useState<'list' | 'create' | 'detail'>('list')
   const [roturas, setRoturas] = useState<RoturaListItem[]>([])
@@ -517,10 +519,12 @@ export function RoturasPage() {
           }))
         })
       })
+      resetCreateForm()
+      setDetalle(null)
       await loadRoturas()
       setSelectedDay(fecha)
-      await abrirDetalle(result.id)
-      resetCreateForm()
+      setFlashId(result.id)
+      setView('list')
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error al registrar')
     } finally {
@@ -1475,7 +1479,10 @@ export function RoturasPage() {
                   key={r.id}
                   {...registroListKb.listItemProps(
                     index,
-                    'overflow-hidden rounded-xl border border-surface-border bg-white shadow-card border-l-4 border-l-red-400'
+                    cn(
+                      'overflow-hidden rounded-xl border border-surface-border bg-white shadow-card border-l-4 border-l-red-400',
+                      flashClass(r.id)
+                    )
                   )}
                 >
                   <button
@@ -1515,7 +1522,10 @@ export function RoturasPage() {
                   key={r.id}
                   {...registroListKb.listItemProps(
                     index,
-                    'flex flex-col gap-3 px-4 py-4 transition-colors hover:bg-slate-50/80 sm:flex-row sm:items-center sm:gap-4 sm:px-6'
+                    cn(
+                      'flex flex-col gap-3 px-4 py-4 transition-colors hover:bg-slate-50/80 sm:flex-row sm:items-center sm:gap-4 sm:px-6',
+                      flashClass(r.id)
+                    )
                   )}
                 >
                   <div className="min-w-0 flex-1">

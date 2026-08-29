@@ -60,6 +60,7 @@ import { useAuth } from '@/context/AuthContext'
 import { useConfirmDialog } from '@/context/ConfirmDialogContext'
 import { useEscHandler } from '@/hooks/useEscHandler'
 import { useProductoQuickSearch } from '@/hooks/useProductoQuickSearch'
+import { useRegistroFlashHighlight } from '@/hooks/useRegistroFlashHighlight'
 import { useRegistroListKeyboard } from '@/hooks/useRegistroListKeyboard'
 import {
   idSectorRetornoPorDefecto,
@@ -256,6 +257,7 @@ function retornoDraftTieneContenido(d: {
 export function RetornosPage() {
   const { hasPermiso, user } = useAuth()
   const { confirm } = useConfirmDialog()
+  const { setFlashId, flashClass } = useRegistroFlashHighlight()
   const [view, setView] = useState<'list' | 'create' | 'detail' | 'verify'>('list')
   const [retornos, setRetornos] = useState<RetornoListItem[]>([])
   const [detalle, setDetalle] = useState<RetornoDetalle | null>(null)
@@ -986,13 +988,16 @@ export function RetornosPage() {
           }))
         })
       })
-      await loadRetornos()
-      setSelectedDay(fecha)
-      notifyRetornosPendientesChanged()
-      await abrirRetorno(result.id)
       clearRetornoDraft()
       setTieneBorrador(false)
       resetCreateForm()
+      setDetalle(null)
+      setEditLineaId(null)
+      await loadRetornos()
+      setSelectedDay(fecha)
+      notifyRetornosPendientesChanged()
+      setFlashId(result.id)
+      setView('list')
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error al registrar retorno')
     } finally {
@@ -2661,7 +2666,8 @@ export function RetornosPage() {
                       index,
                       cn(
                         'overflow-hidden rounded-xl border border-surface-border bg-white shadow-card border-l-4',
-                        esPendiente ? 'border-l-amber-400' : 'border-l-emerald-400'
+                        esPendiente ? 'border-l-amber-400' : 'border-l-emerald-400',
+                        flashClass(r.id)
                       )
                     )}
                   >
@@ -2730,7 +2736,8 @@ export function RetornosPage() {
                     index,
                     cn(
                       'flex flex-col gap-3 border-l-4 px-4 py-4 transition-colors sm:flex-row sm:items-center sm:gap-4 sm:px-6',
-                      filaRetornoClass(r.estado)
+                      filaRetornoClass(r.estado),
+                      flashClass(r.id)
                     )
                   )}
                 >

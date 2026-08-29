@@ -72,6 +72,7 @@ import { useAuth } from '@/context/AuthContext'
 import { useConfirmDialog } from '@/context/ConfirmDialogContext'
 import { useEscHandler } from '@/hooks/useEscHandler'
 import { useProductoQuickSearch } from '@/hooks/useProductoQuickSearch'
+import { useRegistroFlashHighlight } from '@/hooks/useRegistroFlashHighlight'
 import { useRegistroListKeyboard } from '@/hooks/useRegistroListKeyboard'
 
 function newTempId(): string {
@@ -150,6 +151,7 @@ async function enrichIngresosProductosCount(items: IngresoListItem[]): Promise<I
 export function IngresosPage() {
   const { hasPermiso } = useAuth()
   const { confirm } = useConfirmDialog()
+  const { setFlashId, flashClass } = useRegistroFlashHighlight()
   const [view, setView] = useState<'list' | 'create' | 'detail'>('list')
   const [ingresos, setIngresos] = useState<IngresoListItem[]>([])
   const [detalle, setDetalle] = useState<IngresoDetalle | null>(null)
@@ -1038,14 +1040,14 @@ export function IngresosPage() {
           }))
         })
       })
-      const data = await api<IngresoDetalle>(`/api/ingresos/${result.id}`)
-      setDetalle(data)
-      setView('detail')
       clearIngresoDraft()
       setTieneBorrador(false)
       resetCreateForm()
+      setDetalle(null)
       await loadIngresos()
       setSelectedDay(fecha)
+      setFlashId(result.id)
+      setView('list')
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error al confirmar ingreso')
     } finally {
@@ -2173,7 +2175,10 @@ export function IngresosPage() {
                   key={i.id}
                   {...registroListKb.listItemProps(
                     index,
-                    'overflow-hidden rounded-xl border border-surface-border bg-white shadow-card'
+                    cn(
+                      'overflow-hidden rounded-xl border border-surface-border bg-white shadow-card',
+                      flashClass(i.id)
+                    )
                   )}
                 >
                   <div className="flex w-full items-stretch gap-0">
@@ -2235,7 +2240,10 @@ export function IngresosPage() {
                   key={i.id}
                   {...registroListKb.listItemProps(
                     index,
-                    'flex flex-col gap-3 px-4 py-4 transition-colors hover:bg-slate-50/80 sm:flex-row sm:items-center sm:gap-4 sm:px-6'
+                    cn(
+                      'flex flex-col gap-3 px-4 py-4 transition-colors hover:bg-slate-50/80 sm:flex-row sm:items-center sm:gap-4 sm:px-6',
+                      flashClass(i.id)
+                    )
                   )}
                 >
                   <div className="min-w-0 flex-1">

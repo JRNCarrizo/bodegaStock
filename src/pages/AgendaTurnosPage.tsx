@@ -159,7 +159,7 @@ function lineaEnvioTexto(turno: Pick<AgendaTurno, 'descripcion' | 'cantidad' | '
   return `${turno.descripcion} · ${turno.cantidad} ${unidadLabel(turno.unidad)}`
 }
 
-function emptyForm(fecha = toIsoDate(new Date())): AgendaTurnoForm {
+function emptyForm(fecha = ''): AgendaTurnoForm {
   return {
     fecha,
     descripcion: '',
@@ -610,13 +610,17 @@ export function AgendaTurnosPage() {
   }, [turnos])
 
   function openCreate(fecha?: string) {
-    const f = fecha ?? toIsoDate(new Date())
-    if (inhabilSet.has(mondayIndexFromIso(f))) {
-      setError('Ese día está anulado (no laborable).')
-      return
+    if (fecha) {
+      if (inhabilSet.has(mondayIndexFromIso(fecha))) {
+        setError('Ese día está anulado (no laborable).')
+        return
+      }
+      setForm(emptyForm(fecha))
+    } else {
+      // Botón "Nuevo turno": sin día preasignado; el usuario elige la fecha.
+      setForm(emptyForm(''))
     }
     setEditing(null)
-    setForm(emptyForm(f))
     setFormError('')
     setModalOpen(true)
   }
@@ -713,6 +717,10 @@ export function AgendaTurnosPage() {
         setFormError('Cantidad inválida')
         return
       }
+    }
+    if (!form.fecha.trim()) {
+      setFormError('Elegí la fecha del turno')
+      return
     }
     if (inhabilSet.has(mondayIndexFromIso(form.fecha))) {
       setFormError('Ese día está anulado (no laborable).')
@@ -888,10 +896,28 @@ export function AgendaTurnosPage() {
 
                 <div className="p-1.5 pt-2">
                   {items.length === 0 ? (
-                    <div className="flex h-[228px] flex-col items-center justify-center gap-1 rounded-xl border border-dashed border-slate-200 bg-gradient-to-b from-slate-50/50 to-white">
-                      <CalendarDays className="h-4 w-4 text-slate-300" aria-hidden />
-                      <p className="text-[11px] font-medium text-slate-400">Sin turnos</p>
-                    </div>
+                    canCreate ? (
+                      <button
+                        type="button"
+                        onClick={() => openCreate(iso)}
+                        className={cn(
+                          'flex h-[228px] w-full flex-col items-center justify-center gap-1 rounded-xl border border-dashed transition',
+                          isToday
+                            ? 'border-brand-200 bg-gradient-to-b from-brand-50/40 to-white text-slate-400 hover:border-brand-400 hover:bg-brand-50/70 hover:text-brand-700'
+                            : 'border-slate-200 bg-gradient-to-b from-slate-50/50 to-white text-slate-400 hover:border-brand-300 hover:bg-brand-50/50 hover:text-brand-700'
+                        )}
+                        title="Agendar turno"
+                      >
+                        <CalendarDays className="h-4 w-4" aria-hidden />
+                        <p className="text-[11px] font-medium">Sin turnos</p>
+                        <p className="text-[10px] font-medium opacity-80">Tocá para agendar</p>
+                      </button>
+                    ) : (
+                      <div className="flex h-[228px] flex-col items-center justify-center gap-1 rounded-xl border border-dashed border-slate-200 bg-gradient-to-b from-slate-50/50 to-white">
+                        <CalendarDays className="h-4 w-4 text-slate-300" aria-hidden />
+                        <p className="text-[11px] font-medium text-slate-400">Sin turnos</p>
+                      </div>
+                    )
                   ) : (
                     <div className="scrollbar-thin flex h-[228px] max-h-[228px] min-h-[228px] flex-col gap-1.5 overflow-y-auto pr-0.5">
                       {items.map((t) => (
@@ -1012,10 +1038,28 @@ export function AgendaTurnosPage() {
 
               <div className="space-y-2 p-2">
                 {items.length === 0 ? (
-                  <div className="flex flex-col items-center gap-1 px-1 py-5">
-                    <CalendarDays className="h-4 w-4 text-slate-300" aria-hidden />
-                    <p className="text-xs text-slate-400">Sin turnos</p>
-                  </div>
+                  canCreate ? (
+                    <button
+                      type="button"
+                      onClick={() => openCreate(iso)}
+                      className={cn(
+                        'flex w-full flex-col items-center gap-1 rounded-xl border border-dashed px-1 py-5 transition',
+                        isToday
+                          ? 'border-brand-200 bg-brand-50/30 text-slate-400 active:bg-brand-50'
+                          : 'border-slate-200 text-slate-400 active:bg-slate-50'
+                      )}
+                      title="Agendar turno"
+                    >
+                      <CalendarDays className="h-4 w-4" aria-hidden />
+                      <p className="text-xs font-medium">Sin turnos</p>
+                      <p className="text-[10px] font-medium opacity-80">Tocá para agendar</p>
+                    </button>
+                  ) : (
+                    <div className="flex flex-col items-center gap-1 px-1 py-5">
+                      <CalendarDays className="h-4 w-4 text-slate-300" aria-hidden />
+                      <p className="text-xs text-slate-400">Sin turnos</p>
+                    </div>
+                  )
                 ) : (
                   items.map((t) => (
                     <TurnoCard
@@ -1679,8 +1723,9 @@ export function AgendaTurnosPage() {
                             </p>
                           ) : !editing ? (
                             <p className="mt-0.5 text-xs text-slate-500">
-                              Se crea como <strong>Solicitado</strong>. Después confirmás o cancelás en la
-                              tarjeta.
+                              {form.fecha
+                                ? <>Se crea como <strong>Solicitado</strong>. Después confirmás o cancelás en la tarjeta.</>
+                                : <>Elegí la fecha y los datos del envío. Se crea como <strong>Solicitado</strong>.</>}
                             </p>
                           ) : editing.estado === 'SOLICITADO' ? (
                             <p className="mt-0.5 text-xs text-amber-700">Estado: Solicitado</p>
@@ -1722,13 +1767,14 @@ export function AgendaTurnosPage() {
                             Envío
                           </p>
                           <Input
-                            label="Fecha"
+                            label={form.fecha ? 'Fecha' : 'Fecha *'}
                             type="date"
                             required
                             value={form.fecha}
                             onChange={(e) => setForm((f) => ({ ...f, fecha: e.target.value }))}
                             disabled={formReadOnly}
                             leading={<CalendarDays className="h-4 w-4" aria-hidden />}
+                            className={!form.fecha && !editing ? 'ring-2 ring-amber-200/80' : undefined}
                           />
                           <Input
                             label="Qué se envía"

@@ -22,3 +22,6 @@ export const KB_HIGHLIGHT_COMPACT =
 /** Módulo grande con anillo externo (dashboard, reportes). */
 export const KB_HIGHLIGHT_MODULE =
   'ring-2 ring-brand-600 ring-offset-2 ring-offset-white z-[1]'
+
+/** Registro recién confirmado: destello corto en el listado. */
+export const REGISTRO_NUEVO_FLASH = 'registro-nuevo-flash'

@@ -59,20 +59,23 @@ if (Test-Path $ymlPath) { $assets += (Resolve-Path $ymlPath).Path }
 $notes = @"
 ## ControlStock v$Version
 
-Corrige la instalación automática: al tocar Instalar y reiniciar ya no se suicida el script (consolas de timeout) y abre el Setup.
+Mejoras de consulta, movimientos del día y layout.
 
-### Importante (esta vez)
-- Instalá **a mano** ``ControlStock-Setup-$Version.exe`` desde este release.
-- El botón de actualizar de la 0.3.60 todavía tiene el bug; recién con $Version instalada las próximas actualizaciones deberían abrirse solas.
+### Consulta
+- Tras ajustar stock, el total ya no queda en 0 en pantalla (el dato sí se guardaba bien).
+- Por sector: **Armar / reorganizar** a la izquierda de la cantidad.
 
-### Otros
-- Menos golpes a GitHub al buscar actualizaciones (sin forzar cooldown en cada clic).
-- Setup PC + APK alineados (``ControlStock-Setup-$Version.exe`` y ``ControlStock-$Version.apk``).
+### Movimientos del día
+- Fechas, período y fórmula de balance en una sola franja más compacta.
+- Si hay ajustes, aparecen en la card de **Balance final** (arriba a la derecha).
+
+### App
+- En PC: solo la raya de color de la logística arriba (sin la franja blanca fija).
 
 ### Actualizacion
 1. Cerra ControlStock.
-2. PC: instalá ``ControlStock-Setup-$Version.exe``.
-3. Celular: instalá ``ControlStock-$Version.apk`` si corresponde.
+2. PC: Config → Buscar actualizaciones, o instalá ``ControlStock-Setup-$Version.exe``.
+3. Celular: ``ControlStock-$Version.apk``.
 
 Login inicial (base vacia): **admin** / **admin123**
 "@

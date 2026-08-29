@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import {
   ArrowDownCircle,
   ArrowUpCircle,
@@ -62,7 +62,8 @@ function StatCard({
   onClick,
   highlighted,
   cardIndex,
-  onMouseEnterCard
+  onMouseEnterCard,
+  headerRight
 }: {
   title: string
   value: string
@@ -74,6 +75,7 @@ function StatCard({
   highlighted?: boolean
   cardIndex?: number
   onMouseEnterCard?: () => void
+  headerRight?: ReactNode
 }) {
   return (
     <Card
@@ -103,13 +105,16 @@ function StatCard({
       }
     >
       <CardBody className="flex h-full flex-col p-5">
-        <div
-          className={cn(
-            'flex h-11 w-11 shrink-0 items-center justify-center rounded-xl shadow-sm',
-            iconClass
-          )}
-        >
-          <Icon className="h-5 w-5" />
+        <div className="flex items-start justify-between gap-2">
+          <div
+            className={cn(
+              'flex h-11 w-11 shrink-0 items-center justify-center rounded-xl shadow-sm',
+              iconClass
+            )}
+          >
+            <Icon className="h-5 w-5" />
+          </div>
+          {headerRight}
         </div>
         <p className="mt-4 text-xs font-semibold uppercase tracking-wide text-slate-500">{title}</p>
         <p className={cn('mt-1 text-3xl font-bold tabular-nums tracking-tight', valueClass ?? 'text-slate-900')}>
@@ -474,39 +479,42 @@ export function ReportesPage() {
     : formatPeriodoFechas(fechaDesde || todayIsoDate(), fechaHasta || todayIsoDate())
 
   return (
-    <div className="mx-auto max-w-6xl space-y-6">
+    <div className="mx-auto max-w-6xl space-y-4">
       <section>
         <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">Reportes</p>
         <h1 className="mt-1 text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">
           Movimientos del día
         </h1>
-        <p className="mt-2 max-w-xl text-sm leading-relaxed text-slate-500">
+        <p className="mt-1 max-w-xl text-sm leading-relaxed text-slate-500">
           Estadísticas de stock por período: ingresos, salidas, retornos y balance.
         </p>
       </section>
 
       <Card className="overflow-hidden shadow-panel">
-        <div className="border-b border-brand-100 bg-gradient-to-r from-brand-50/80 via-white to-white px-5 py-4 sm:px-6">
-          <div className="flex flex-wrap items-center gap-2">
-            <div className="flex shrink-0 items-center gap-1.5 rounded-xl border border-surface-border bg-white px-2 py-1.5 shadow-sm">
-              <span className="pl-1 text-xs font-medium text-slate-500">Desde</span>
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-2 bg-gradient-to-r from-brand-50/80 via-white to-slate-50/80 px-4 py-2.5 sm:px-5">
+          <div className="flex min-w-0 flex-wrap items-center gap-2">
+            <div
+              className="flex shrink-0 items-center gap-1.5 rounded-lg border border-surface-border bg-white px-2 py-1 shadow-sm"
+              title="Una sola fecha = ese día · las dos juntas = rango"
+            >
+              <span className="pl-0.5 text-[11px] font-medium text-slate-500">Desde</span>
               <input
                 type="date"
                 tabIndex={-1}
                 value={fechaDesde}
                 onChange={(e) => setFechaDesde(e.target.value)}
                 title="Fecha desde — solo este campo = ese día"
-                className="rounded border-0 bg-transparent px-1 py-1 text-sm focus:outline-none focus:ring-0"
+                className="rounded border-0 bg-transparent px-1 py-0.5 text-sm focus:outline-none focus:ring-0"
               />
               <span className="text-slate-300">|</span>
-              <span className="text-xs font-medium text-slate-500">Hasta</span>
+              <span className="text-[11px] font-medium text-slate-500">Hasta</span>
               <input
                 type="date"
                 tabIndex={-1}
                 value={fechaHasta}
                 onChange={(e) => setFechaHasta(e.target.value)}
                 title="Fecha hasta — solo este campo = ese día"
-                className="rounded border-0 bg-transparent px-1 py-1 text-sm focus:outline-none focus:ring-0"
+                className="rounded border-0 bg-transparent px-1 py-0.5 text-sm focus:outline-none focus:ring-0"
               />
             </div>
             {(fechaDesde || fechaHasta) && (
@@ -514,7 +522,7 @@ export function ReportesPage() {
                 type="button"
                 variant="ghost"
                 size="sm"
-                className="shrink-0 rounded-lg"
+                className="h-8 shrink-0 rounded-lg px-2"
                 onClick={() => {
                   setFechaDesde('')
                   setFechaHasta('')
@@ -524,42 +532,27 @@ export function ReportesPage() {
               </Button>
             )}
           </div>
-          <p className="mt-2 text-xs text-slate-500">
-            Una sola fecha filtra ese día · las dos juntas = rango
-          </p>
-        </div>
 
-        <CardBody className="flex flex-wrap items-center justify-between gap-3 bg-slate-50/80 py-3.5 sm:px-6">
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">Período</p>
-            <p className="text-sm font-semibold text-slate-900">{periodoLabel}</p>
+          <div className="hidden h-6 w-px shrink-0 bg-surface-border sm:block" aria-hidden />
+
+          <div className="flex min-w-0 items-baseline gap-2">
+            <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">
+              Período
+            </span>
+            <span className="truncate text-sm font-semibold text-slate-900">{periodoLabel}</span>
+            {loading && <Loader2 className="h-4 w-4 shrink-0 animate-spin text-brand-600" />}
           </div>
-          {loading && <Loader2 className="h-5 w-5 shrink-0 animate-spin text-brand-600" />}
+
           {report && !loading && (
-            <div className="flex max-w-lg flex-col items-end gap-1 text-right">
-              <p className="text-xs leading-relaxed text-slate-500">
-                Balance = stock inicial + ingresos + retornos − planillas − roturas
+            <>
+              <div className="hidden h-6 w-px shrink-0 bg-surface-border lg:block" aria-hidden />
+              <p className="ml-auto max-w-md text-[11px] leading-snug text-slate-500 sm:text-right">
+                Balance = inicial + ingresos + retornos − planillas − roturas
                 {report.ajustes_count > 0 ? ' ± ajustes' : ''}
               </p>
-              {report.ajustes_count > 0 && (
-                <button
-                  type="button"
-                  onClick={() => void abrirDetalle('ajustes')}
-                  className="text-xs font-medium text-slate-500 underline decoration-slate-300 underline-offset-2 transition hover:text-brand-700 hover:decoration-brand-400"
-                >
-                  Ver ajustes
-                  <span className="ml-1 tabular-nums text-slate-400">
-                    ({report.ajustes_count}
-                    {Math.abs(report.ajustes) > 0.0001
-                      ? ` · ${report.ajustes > 0 ? '+' : ''}${formatCantidad(report.ajustes)}`
-                      : ''}
-                    )
-                  </span>
-                </button>
-              )}
-            </div>
+            </>
           )}
-        </CardBody>
+        </div>
       </Card>
 
       {error && (
@@ -569,7 +562,7 @@ export function ReportesPage() {
       )}
 
       {loading ? (
-        <div className="flex items-center justify-center gap-2 py-16 text-sm text-slate-500">
+        <div className="flex items-center justify-center gap-2 py-12 text-sm text-slate-500">
           <Loader2 className="h-6 w-6 animate-spin text-brand-600" />
           Calculando movimientos...
         </div>
@@ -645,6 +638,26 @@ export function ReportesPage() {
             iconClass="bg-indigo-600 text-white"
             valueClass="text-indigo-700"
             onClick={() => void abrirDetalle('balance_final')}
+            headerRight={
+              report.ajustes_count > 0 ? (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    void abrirDetalle('ajustes')
+                  }}
+                  className="shrink-0 rounded-lg bg-amber-50 px-2.5 py-1 text-right text-xs font-medium text-amber-800 ring-1 ring-amber-200 transition hover:bg-amber-100"
+                >
+                  Ajustes:{' '}
+                  <span className="tabular-nums">
+                    {report.ajustes_count}
+                    {Math.abs(report.ajustes) > 0.0001
+                      ? ` · ${report.ajustes > 0 ? '+' : ''}${formatCantidad(report.ajustes)}`
+                      : ''}
+                  </span>
+                </button>
+              ) : undefined
+            }
           />
         </div>
       ) : null}

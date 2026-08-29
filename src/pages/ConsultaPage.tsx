@@ -530,26 +530,51 @@ export function ConsultaPage() {
     stockSectorId: number,
     payload: { motivo: string; lineas: AjusteStockLineaPayload[] }
   ) {
-    if (!expandedId) return
+    const productoId = expandedId
+    if (!productoId) return
     setAdjustingSectorId(stockSectorId)
     setError('')
     try {
       const res = await api<{
         ok: boolean
+        cajas_despues?: number
         detalle?: ConsultaDetalle
       }>(`/api/consulta/stock-sector/${stockSectorId}/ajustar`, {
         method: 'POST',
         body: JSON.stringify(payload)
       })
 
-      if (res.detalle) {
-        setDetalleCache((prev) => ({ ...prev, [expandedId]: res.detalle! }))
-        sincronizarResumen(expandedId, res.detalle)
-      } else {
-        const data = await cargarDetalle(expandedId, true)
-        if (data) sincronizarResumen(expandedId, data)
-      }
       setAdjustSectorId(null)
+
+      // Siempre re-leer el detalle: confiar solo en el body del POST dejaba el total en 0
+      // en pantalla aunque el ajuste hubiera quedado bien en la base.
+      const data = await cargarDetalle(productoId, true)
+      const cajasDespues =
+        typeof res.cajas_despues === 'number' && Number.isFinite(res.cajas_despues)
+          ? res.cajas_despues
+          : null
+
+      if (data) {
+        const fixed =
+          data.stock_total === 0 && cajasDespues != null && cajasDespues > 0
+            ? { ...data, stock_total: cajasDespues }
+            : data
+        setDetalleCache((prev) => ({ ...prev, [productoId]: fixed }))
+        sincronizarResumen(productoId, fixed)
+      } else if (res.detalle) {
+        const fixed =
+          res.detalle.stock_total === 0 && cajasDespues != null && cajasDespues > 0
+            ? { ...res.detalle, stock_total: cajasDespues }
+            : res.detalle
+        setDetalleCache((prev) => ({ ...prev, [productoId]: fixed }))
+        sincronizarResumen(productoId, fixed)
+      } else if (cajasDespues != null) {
+        setResultados((prev) =>
+          prev.map((p) =>
+            p.id === productoId ? { ...p, stock_total: cajasDespues } : p
+          )
+        )
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error al ajustar stock')
     } finally {

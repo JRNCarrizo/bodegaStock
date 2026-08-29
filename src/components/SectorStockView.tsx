@@ -421,7 +421,7 @@ export function SectorStockView({
                               </ScrollableProductName>
                             </div>
                           </button>
-                          <div className="flex shrink-0 flex-col items-end justify-center gap-2">
+                          <div className="flex shrink-0 flex-row items-center justify-end gap-2">
                             {puedeReorganizar && (
                               <Button
                                 type="button"

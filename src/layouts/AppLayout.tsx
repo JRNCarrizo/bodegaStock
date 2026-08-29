@@ -420,14 +420,15 @@ function AppLayoutShell({
       )}
 
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-        <header className="relative flex h-14 shrink-0 items-center gap-3 border-b border-surface-border bg-white px-4 lg:px-6">
-          <div
-            className={cn('pointer-events-none absolute inset-x-0 top-0 h-1', logisticaTheme.topStripe)}
-            aria-hidden
-          />
+        <div
+          className={cn('h-1.5 w-full shrink-0', logisticaTheme.topStripe)}
+          aria-hidden
+        />
+
+        <header className="flex h-11 shrink-0 items-center gap-2 border-b border-surface-border bg-white px-3 lg:hidden">
           <button
             type="button"
-            className="rounded-lg p-2 hover:bg-slate-100 lg:hidden"
+            className="rounded-lg p-2 hover:bg-slate-100"
             onClick={() => setMobileOpen(true)}
             aria-label="Abrir menú"
           >
@@ -435,20 +436,10 @@ function AppLayoutShell({
           </button>
 
           {!nativeApp && (
-            <div className="lg:hidden">
+            <div className="min-w-0 flex-1">
               <SidebarHeader compact {...sidebarHeaderProps} />
             </div>
           )}
-
-          <button
-            type="button"
-            className="ml-auto hidden rounded-lg p-2 text-slate-500 hover:bg-slate-100 hover:text-slate-700 lg:inline-flex"
-            onClick={toggleCollapsed}
-            aria-label={collapsed ? 'Expandir menú lateral' : 'Contraer menú lateral'}
-            title={collapsed ? 'Expandir menú' : 'Contraer menú'}
-          >
-            {collapsed ? <PanelLeft className="h-5 w-5" /> : <PanelLeftClose className="h-5 w-5" />}
-          </button>
         </header>
 
         {/* Remount al cambiar logística: refresca datos sin cerrar sesión */}

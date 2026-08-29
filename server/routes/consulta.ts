@@ -130,7 +130,11 @@ function getStockDetalle(db: ReturnType<typeof getDb>, productoId: number, logis
       )
     )
 
-    const cantidad_total = lineas.reduce((sum, l) => sum + l.total_cajas, 0)
+    const fromLineas = lineas.reduce((sum, l) => sum + l.total_cajas, 0)
+    const persisted = Number(sector.cantidad_total ?? 0)
+    // Alinear con la búsqueda (SUM de stock_sector.cantidad_total). Si las líneas
+    // aún no suman cajas (p.ej. desfase momentáneo), no mostrar 0 en falso.
+    const cantidad_total = fromLineas > 0 ? fromLineas : persisted
     const suelto_total = lineas.reduce((sum, l) => sum + l.total_suelto, 0)
     const ubicacionIds = [...new Set(lineas.map((l) => l.ubicacion_id))]
     const baseReorg = getReorganizarSectorInfo(

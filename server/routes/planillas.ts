@@ -1,6 +1,7 @@
 import type { FastifyInstance } from 'fastify'
 import { getDb } from '../db'
 import { requirePermiso } from '../plugins/auth'
+import { assertPlanillaNumeroDisponible, isPlanillaNumeroDisponible } from '../utils/documento-numero'
 import { blockIfInventarioActivo } from '../utils/inventario-block'
 import { assertCamioneroEnLogistica, assertProductoActivoEnLogistica, requireRequestLogistica } from '../utils/logisticas'
 import {
@@ -468,6 +469,25 @@ export async function planillasRoutes(app: FastifyInstance): Promise<void> {
     }
   })
 
+  app.get('/api/planillas/disponibilidad-numero', {
+    preHandler: requirePermiso('planillas.crear')
+  }, async (request) => {
+    const { numero } = request.query as { numero?: string }
+    const db = getDb()
+    const logisticaId = requireRequestLogistica(request)
+    const n = (numero ?? '').trim()
+
+    if (!n) {
+      return { disponible: false, error: 'Completá el número de planilla' }
+    }
+
+    if (!isPlanillaNumeroDisponible(db, logisticaId, n)) {
+      return { disponible: false, error: 'Ya existe una planilla con ese número' }
+    }
+
+    return { disponible: true }
+  })
+
   app.post('/api/planillas/preview', {
     preHandler: requirePermiso('planillas.crear')
   }, async (request, reply) => {
@@ -623,6 +643,14 @@ export async function planillasRoutes(app: FastifyInstance): Promise<void> {
     }
 
     const observacion = body.observacion?.trim() || null
+
+    try {
+      assertPlanillaNumeroDisponible(db, logisticaId, body.numero)
+    } catch (e) {
+      return reply.status(409).send({
+        error: e instanceof Error ? e.message : 'Número de planilla duplicado'
+      })
+    }
 
     try {
       const planillaId = db.transaction(() => {

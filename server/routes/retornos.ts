@@ -1,6 +1,7 @@
 import type { FastifyInstance } from 'fastify'
 import { getDb } from '../db'
 import { requirePermiso } from '../plugins/auth'
+import { assertRetornoPlanillaDisponible, isRetornoPlanillaDisponible } from '../utils/documento-numero'
 import { blockIfInventarioActivo } from '../utils/inventario-block'
 import { getRetornosDobleVerificacion } from '../utils/app-settings'
 import {
@@ -368,6 +369,25 @@ export async function retornosRoutes(app: FastifyInstance): Promise<void> {
     )
   })
 
+  app.get('/api/retornos/disponibilidad-numero', {
+    preHandler: requirePermiso('retornos.crear')
+  }, async (request) => {
+    const { numero } = request.query as { numero?: string }
+    const db = getDb()
+    const logisticaId = requireRequestLogistica(request)
+    const n = (numero ?? '').trim()
+
+    if (!n) {
+      return { disponible: true }
+    }
+
+    if (!isRetornoPlanillaDisponible(db, logisticaId, n)) {
+      return { disponible: false, error: 'Ya existe un retorno con ese número de planilla' }
+    }
+
+    return { disponible: true }
+  })
+
   app.post('/api/retornos', {
     preHandler: [blockIfInventarioActivo(), requirePermiso('retornos.crear')]
   }, async (request, reply) => {
@@ -453,6 +473,14 @@ export async function retornosRoutes(app: FastifyInstance): Promise<void> {
     const sectorDefault = body.sector_id ?? null
     const obsDirecto =
       'Ingreso directo (control en hoja / sin doble verificación digital)'
+
+    try {
+      assertRetornoPlanillaDisponible(db, logisticaId, body.numero_planilla)
+    } catch (e) {
+      return reply.status(409).send({
+        error: e instanceof Error ? e.message : 'Número de planilla duplicado'
+      })
+    }
 
     try {
       const retornoId = db.transaction(() => {

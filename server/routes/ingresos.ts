@@ -1,6 +1,7 @@
 import type { FastifyInstance } from 'fastify'
 import { getDb } from '../db'
 import { requirePermiso } from '../plugins/auth'
+import { assertIngresoRemitoDisponible, isIngresoRemitoDisponible } from '../utils/documento-numero'
 import { blockIfInventarioActivo } from '../utils/inventario-block'
 import { assertProductoActivoEnLogistica, assertSectorEnLogistica, requireRequestLogistica } from '../utils/logisticas'
 import {
@@ -370,6 +371,25 @@ export async function ingresosRoutes(app: FastifyInstance): Promise<void> {
     )
   })
 
+  app.get('/api/ingresos/disponibilidad-numero', {
+    preHandler: requirePermiso('ingresos.crear')
+  }, async (request) => {
+    const { numero } = request.query as { numero?: string }
+    const db = getDb()
+    const logisticaId = requireRequestLogistica(request)
+    const n = (numero ?? '').trim()
+
+    if (!n) {
+      return { disponible: false, error: 'Completá el número de remito' }
+    }
+
+    if (!isIngresoRemitoDisponible(db, logisticaId, n)) {
+      return { disponible: false, error: 'Ya existe un ingreso con ese número de remito' }
+    }
+
+    return { disponible: true }
+  })
+
   app.post('/api/ingresos', {
     preHandler: [blockIfInventarioActivo(), requirePermiso('ingresos.crear')]
   }, async (request, reply) => {
@@ -449,6 +469,14 @@ export async function ingresosRoutes(app: FastifyInstance): Promise<void> {
 
     const headerSectorId = Number(body.lineas[0].sector_id)
     const observacion = body.observacion?.trim() || null
+
+    try {
+      assertIngresoRemitoDisponible(db, logisticaId, body.numero_remito!)
+    } catch (e) {
+      return reply.status(409).send({
+        error: e instanceof Error ? e.message : 'Número de remito duplicado'
+      })
+    }
 
     try {
       const ingresoId = db.transaction(() => {

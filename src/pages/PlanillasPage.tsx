@@ -43,6 +43,7 @@ import { labelVehiculoDetalle, labelVehiculoOperativo } from '@/lib/camioneros'
 import { isNativeApp } from '@/lib/nativeServer'
 import { searchDelayMs } from '@/lib/searchDelay'
 import { clearDraft, readDraft, writeDraft } from '@/lib/draftStorage'
+import { checkPlanillaNumero } from '@/lib/checkDocumentoNumero'
 import { api, cn } from '@/lib/utils'
 import { codigoProductoExacto } from '@/lib/productoSearch'
 import { KB_HIGHLIGHT_ROW } from '@/lib/listKeyboardHighlight'
@@ -125,6 +126,7 @@ export function PlanillasPage() {
   const [error, setError] = useState('')
   const [exportingId, setExportingId] = useState<number | null>(null)
   const [saving, setSaving] = useState(false)
+  const [checkingNumero, setCheckingNumero] = useState(false)
   const [salidasOpen, setSalidasOpen] = useState(false)
 
   const [fecha, setFecha] = useState(todayIsoDate())
@@ -707,9 +709,23 @@ export function PlanillasPage() {
     return true
   }
 
-  function irACarga() {
+  async function irACarga() {
     if (!validarDatos()) return
-    setCreatePhase('carga')
+    setCheckingNumero(true)
+    setError('')
+    try {
+      const dup = await checkPlanillaNumero(numero)
+      if (dup) {
+        setError(dup)
+        focusField(numeroRef)
+        return
+      }
+      setCreatePhase('carga')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'No se pudo verificar el número de planilla')
+    } finally {
+      setCheckingNumero(false)
+    }
   }
 
   function handleDatosKeyDown(
@@ -1076,8 +1092,20 @@ export function PlanillasPage() {
                 onKeyDown={(e) => handleDatosKeyDown(e)}
               />
               <p className="text-xs text-slate-400">Enter en observaciones → carga de productos</p>
-              <Button type="button" className="w-full rounded-xl" onClick={irACarga}>
-                Continuar a productos
+              <Button
+                type="button"
+                className="w-full rounded-xl"
+                disabled={checkingNumero}
+                onClick={() => void irACarga()}
+              >
+                {checkingNumero ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Verificando número...
+                  </>
+                ) : (
+                  'Continuar a productos'
+                )}
               </Button>
             </CardBody>
           </Card>

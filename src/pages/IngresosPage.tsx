@@ -59,6 +59,13 @@ import { api, cn } from '@/lib/utils'
 import { codigoProductoExacto } from '@/lib/productoSearch'
 import { KB_HIGHLIGHT_ROW } from '@/lib/listKeyboardHighlight'
 import { clearDraft, readDraft, writeDraft } from '@/lib/draftStorage'
+import { checkIngresoRemito } from '@/lib/checkDocumentoNumero'
+import {
+  initialRemitoConPrefijo,
+  isRemitoPrefijoOnly,
+  readRemitoPrefijo,
+  saveRemitoPrefijoFromNumero
+} from '@/lib/remitoPrefijo'
 import { resolveSectorIdParaIngreso, sortSectoresParaIngreso } from '@/lib/sectores'
 import type {
   IngresoDetalle,
@@ -110,7 +117,12 @@ function ingresoDraftTieneContenido(d: {
   observacion: string
   lineas: IngresoLineaDraft[]
 }): boolean {
-  return d.lineas.length > 0 || !!d.numeroRemito.trim() || !!d.observacion.trim()
+  const remito = d.numeroRemito.trim()
+  return (
+    d.lineas.length > 0 ||
+    (!!remito && !isRemitoPrefijoOnly(remito)) ||
+    !!d.observacion.trim()
+  )
 }
 
 function normalizeIngresoListItem(row: IngresoListItem): IngresoListItem {
@@ -162,6 +174,7 @@ export function IngresosPage() {
   const [loadingList, setLoadingList] = useState(true)
   const [error, setError] = useState('')
   const [saving, setSaving] = useState(false)
+  const [checkingNumero, setCheckingNumero] = useState(false)
   const [exportingId, setExportingId] = useState<number | null>(null)
 
   const [fecha, setFecha] = useState(todayIsoDate())
@@ -245,6 +258,17 @@ export function IngresosPage() {
     })
   }
 
+  function focusRemitoInput() {
+    requestAnimationFrame(() => {
+      const el = remitoRef.current
+      if (!el) return
+      el.focus()
+      el.scrollIntoView({ block: 'center', behavior: 'smooth' })
+      const pos = el.value.length
+      requestAnimationFrame(() => el.setSelectionRange(pos, pos))
+    })
+  }
+
   function scrollFieldIntoView(ref: React.RefObject<HTMLElement | null>) {
     requestAnimationFrame(() => {
       ref.current?.scrollIntoView({ block: 'center', behavior: 'smooth' })
@@ -296,7 +320,8 @@ export function IngresosPage() {
   }
 
   async function cancelarIngresoEnCurso() {
-    if (lineas.length > 0 || numeroRemito.trim()) {
+    const remito = numeroRemito.trim()
+    if (lineas.length > 0 || (remito && !isRemitoPrefijoOnly(remito)) || observacion.trim()) {
       const ok = await confirm({
         title: 'Cancelar ingreso',
         message: '¿Cancelar el ingreso en curso? Se perderán las líneas cargadas.',
@@ -560,7 +585,7 @@ export function IngresosPage() {
 
   function resetCreateForm(sectoresList: Sector[] = sectoresRef.current) {
     setFecha(todayIsoDate())
-    setNumeroRemito('')
+    setNumeroRemito(initialRemitoConPrefijo())
     setObservacion('')
     setSectorId(resolveSectorIdParaIngreso(sectoresList, ''))
     setUbicacionId('')
@@ -780,15 +805,34 @@ export function IngresosPage() {
       setError('Completá fecha y número de remito')
       return false
     }
+    if (isRemitoPrefijoOnly(numeroRemito)) {
+      setError('Completá el número después del guión')
+      focusRemitoInput()
+      return false
+    }
     setError('')
     return true
   }
 
-  function irACargaProductos() {
+  async function irACargaProductos() {
     if (!validarRemito()) return
-    const resolved = resolveSectorIdParaIngreso(sectoresRef.current, sectorId)
-    setSectorId(resolved)
-    setCreatePhase('carga')
+    setCheckingNumero(true)
+    setError('')
+    try {
+      const dup = await checkIngresoRemito(numeroRemito)
+      if (dup) {
+        setError(dup)
+        focusRemitoInput()
+        return
+      }
+      const resolved = resolveSectorIdParaIngreso(sectoresRef.current, sectorId)
+      setSectorId(resolved)
+      setCreatePhase('carga')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'No se pudo verificar el número de remito')
+    } finally {
+      setCheckingNumero(false)
+    }
   }
 
   function handleRemitoKeyDown(
@@ -798,9 +842,10 @@ export function IngresosPage() {
     if (e.key !== 'Enter') return
     e.preventDefault()
     if (next?.current) {
-      focusField(next)
+      if (next === remitoRef) focusRemitoInput()
+      else focusField(next)
     } else {
-      irACargaProductos()
+      void irACargaProductos()
     }
   }
 
@@ -1040,6 +1085,7 @@ export function IngresosPage() {
           }))
         })
       })
+      saveRemitoPrefijoFromNumero(numeroRemito)
       clearIngresoDraft()
       setTieneBorrador(false)
       resetCreateForm()
@@ -1095,6 +1141,10 @@ export function IngresosPage() {
   function validarIngresoParaRegistrar(): boolean {
     if (!fecha || !numeroRemito.trim()) {
       setError('Completá fecha y número de remito')
+      return false
+    }
+    if (isRemitoPrefijoOnly(numeroRemito)) {
+      setError('Completá el número después del guión')
       return false
     }
     if (lineas.length === 0) {
@@ -1183,6 +1233,7 @@ export function IngresosPage() {
   }
 
   if (view === 'create' && createPhase === 'remito') {
+    const remitoPrefijoGuardado = readRemitoPrefijo()
     return (
       <div ref={createScrollRef} className="-m-4 h-[calc(100vh-5rem)] overflow-y-auto lg:-m-6">
         <div className="mx-auto flex max-w-lg flex-col gap-5 px-4 py-6 pb-16 lg:px-6">
@@ -1237,10 +1288,24 @@ export function IngresosPage() {
                 label="Número de remito *"
                 value={numeroRemito}
                 onChange={(e) => setNumeroRemito(e.target.value)}
+                onFocus={() => {
+                  if (!isRemitoPrefijoOnly(numeroRemito)) return
+                  requestAnimationFrame(() => {
+                    const el = remitoRef.current
+                    if (!el) return
+                    const pos = el.value.length
+                    el.setSelectionRange(pos, pos)
+                  })
+                }}
                 onKeyDown={(e) => handleRemitoKeyDown(e, observacionRef)}
-                placeholder="ej. REM-2024-001"
+                placeholder="ej. 0001-00012345"
                 required
               />
+              {remitoPrefijoGuardado ? (
+                <p className="text-xs text-slate-400">
+                  Prefijo recordado: {remitoPrefijoGuardado} — cargá solo el número después del guión.
+                </p>
+              ) : null}
               <Input
                 ref={observacionRef}
                 label="Observaciones"
@@ -1253,8 +1318,20 @@ export function IngresosPage() {
               <p className="text-xs text-slate-400">
                 Enter en observaciones → carga de productos (el destino se elige ahí)
               </p>
-              <Button type="button" className="w-full rounded-xl" onClick={irACargaProductos}>
-                Continuar a productos
+              <Button
+                type="button"
+                className="w-full rounded-xl"
+                disabled={checkingNumero}
+                onClick={() => void irACargaProductos()}
+              >
+                {checkingNumero ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Verificando número...
+                  </>
+                ) : (
+                  'Continuar a productos'
+                )}
               </Button>
             </CardBody>
           </Card>

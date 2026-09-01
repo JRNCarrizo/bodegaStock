@@ -74,7 +74,7 @@ export function setupApkDownloadIpc(getWindow: () => BrowserWindow | null): void
   ipcMain.handle('apk:download-latest', async (_event, payload?: { force?: boolean }) => {
     const win = getWindow()
     try {
-      const latest = await fetchLatestApk(true)
+      const latest = await fetchLatestApk(Boolean(payload?.force))
 
       const result = await dialog.showSaveDialog(win ?? undefined, {
         title: 'Guardar APK para celulares',

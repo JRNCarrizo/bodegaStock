@@ -1,5 +1,5 @@
 param(
-  [string]$Version = "0.3.60"
+  [string]$Version = "0.3.63"
 )
 
 $ErrorActionPreference = "Stop"
@@ -59,20 +59,20 @@ if (Test-Path $ymlPath) { $assets += (Resolve-Path $ymlPath).Path }
 $notes = @"
 ## ControlStock v$Version
 
-Mejoras de consulta, movimientos del día y layout.
+Validación de documentos, memoria de remito y actualizaciones más estables.
 
-### Consulta
-- Tras ajustar stock, el total ya no queda en 0 en pantalla (el dato sí se guardaba bien).
-- Por sector: **Armar / reorganizar** a la izquierda de la cantidad.
+### Ingresos
+- No se puede repetir el **número de remito** (avisa al continuar a productos y al confirmar).
+- Recuerda el **prefijo** del último remito confirmado (ej. ``0001-``) para cargar solo la parte nueva.
 
-### Movimientos del día
-- Fechas, período y fórmula de balance en una sola franja más compacta.
-- Si hay ajustes, aparecen en la card de **Balance final** (arriba a la derecha).
+### Planillas y retornos
+- No se puede repetir el **número de planilla** (avisa antes de cargar productos y al confirmar).
 
-### App
-- En PC: solo la raya de color de la logística arriba (sin la franja blanca fija).
+### Actualización (PC)
+- Descarga del Setup sin depender tanto de GitHub API (menos errores 429 / rate limit).
+- Cooldown más razonable tras rate limit; APK sin forzar refresh en cada búsqueda.
 
-### Actualizacion
+### Instalación
 1. Cerra ControlStock.
 2. PC: Config → Buscar actualizaciones, o instalá ``ControlStock-Setup-$Version.exe``.
 3. Celular: ``ControlStock-$Version.apk``.

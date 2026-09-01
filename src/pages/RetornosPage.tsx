@@ -42,6 +42,7 @@ import { labelVehiculoDetalle, labelVehiculoOperativo } from '@/lib/camioneros'
 import { isNativeApp } from '@/lib/nativeServer'
 import { searchDelayMs } from '@/lib/searchDelay'
 import { clearDraft, readDraft, writeDraft } from '@/lib/draftStorage'
+import { checkRetornoPlanilla } from '@/lib/checkDocumentoNumero'
 import { api, cn } from '@/lib/utils'
 import { codigoProductoExacto } from '@/lib/productoSearch'
 import { KB_HIGHLIGHT_ROW } from '@/lib/listKeyboardHighlight'
@@ -264,6 +265,7 @@ export function RetornosPage() {
   const [loadingList, setLoadingList] = useState(true)
   const [error, setError] = useState('')
   const [saving, setSaving] = useState(false)
+  const [checkingNumero, setCheckingNumero] = useState(false)
   const [exportingId, setExportingId] = useState<number | null>(null)
 
   const [listSearch, setListSearch] = useState('')
@@ -831,13 +833,27 @@ export function RetornosPage() {
     )
   }
 
-  function avanzarACarga() {
+  async function avanzarACarga() {
     if (!validarDatos()) return
-    if (!lineSectorId) {
-      setLineSectorId(resolveSectorIdParaRetorno(sectores, ''))
+    setCheckingNumero(true)
+    setError('')
+    try {
+      const dup = await checkRetornoPlanilla(numeroPlanilla)
+      if (dup) {
+        setError(dup)
+        focusField(planillaRef)
+        return
+      }
+      if (!lineSectorId) {
+        setLineSectorId(resolveSectorIdParaRetorno(sectores, ''))
+      }
+      setCreatePhase('carga')
+      setTimeout(() => focusField(productSearchRef), 50)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'No se pudo verificar el número de planilla')
+    } finally {
+      setCheckingNumero(false)
     }
-    setCreatePhase('carga')
-    setTimeout(() => focusField(productSearchRef), 50)
   }
 
   function cancelarLineaForm() {
@@ -1773,8 +1789,20 @@ export function RetornosPage() {
                 onKeyDown={(e) => handleDatosKeyDown(e)}
               />
               <p className="text-xs text-slate-400">Enter en observaciones → carga de productos</p>
-              <Button type="button" className="w-full rounded-xl" onClick={avanzarACarga}>
-                Continuar a productos
+              <Button
+                type="button"
+                className="w-full rounded-xl"
+                disabled={checkingNumero}
+                onClick={() => void avanzarACarga()}
+              >
+                {checkingNumero ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Verificando número...
+                  </>
+                ) : (
+                  'Continuar a productos'
+                )}
               </Button>
             </CardBody>
           </Card>

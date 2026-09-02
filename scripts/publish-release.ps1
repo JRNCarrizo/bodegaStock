@@ -1,5 +1,5 @@
 param(
-  [string]$Version = "0.3.63"
+  [string]$Version = "0.3.64"
 )
 
 $ErrorActionPreference = "Stop"
@@ -56,26 +56,48 @@ if (Test-Path $apkPath) { $assets += (Resolve-Path $apkPath).Path }
 $ymlPath = Join-Path $root "release\latest.yml"
 if (Test-Path $ymlPath) { $assets += (Resolve-Path $ymlPath).Path }
 
+if (Test-Path $ymlPath) {
+  $ymlText = Get-Content $ymlPath -Raw
+  if ($ymlText -notmatch "version:\s*$([regex]::Escape($Version))(\s|$)") {
+    Write-Error "latest.yml no coincide con v$Version. Regenerá con npm run dist antes de publicar."
+  }
+  if ($ymlText -match "path:\s*ControlStock-Setup-([0-9.]+)\.exe") {
+    $setupInYml = $Matches[1]
+    if ($setupInYml -ne $Version) {
+      Write-Error "latest.yml apunta al Setup $setupInYml pero la versión es $Version. Regenerá con npm run dist."
+    }
+  }
+} else {
+  Write-Host "Advertencia: no hay release\latest.yml — electron-builder debería generarlo con npm run dist." -ForegroundColor Yellow
+}
+
 $notes = @"
 ## ControlStock v$Version
 
-Validación de documentos, memoria de remito y actualizaciones más estables.
+Layout de carga, ingresos con cajas sueltas, planillas y actualizaciones desde Configuración.
+
+### UI — pantallas de carga
+- Barra de **total + Confirmar** pegada abajo en ingresos, planillas, retornos, roturas y movimientos.
 
 ### Ingresos
-- No se puede repetir el **número de remito** (avisa al continuar a productos y al confirmar).
-- Recuerda el **prefijo** del último remito confirmado (ej. ``0001-``) para cargar solo la parte nueva.
+- Permite cargar **solo cajas sueltas** (0 pallets + sueltas > 0), como en inventario.
+- Etiquetas más claras cuando no hay pallets.
 
-### Planillas y retornos
-- No se puede repetir el **número de planilla** (avisa antes de cargar productos y al confirmar).
+### Planillas
+- **Salidas del día** agrupadas por vehículo (camionero como subtítulo).
+- **Vehículo obligatorio** si hay camionero asignado (validación en app y servidor).
 
 ### Actualización (PC)
-- Descarga del Setup sin depender tanto de GitHub API (menos errores 429 / rate limit).
-- Cooldown más razonable tras rate limit; APK sin forzar refresh en cada búsqueda.
+- Detecta bien la versión Latest aunque ``latest.yml`` en GitHub esté desactualizado.
+- Buscar actualizaciones fuerza la consulta (sin cooldown molesto).
+- Instalación más rápida: cierra la app antes, menos pausas y sin cartel de “app abierta”.
 
 ### Instalación
 1. Cerra ControlStock.
 2. PC: Config → Buscar actualizaciones, o instalá ``ControlStock-Setup-$Version.exe``.
 3. Celular: ``ControlStock-$Version.apk``.
+
+**Importante:** actualizá primero el **servidor/PC servidor**, después los clientes.
 
 Login inicial (base vacia): **admin** / **admin123**
 "@

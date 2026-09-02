@@ -381,8 +381,11 @@ export function formatEtiquetaLinea(
   const porBulto = Number(linea.unidades_por_bulto ?? 0)
 
   if (linea.tipo_bulto === 'PALLET') {
-    const base = `${bultos} pallet${bultos === 1 ? '' : 's'} × ${porBulto}`
     const extra = Number(linea.cantidad_suelta ?? 0)
+    if (bultos <= 0 && extra > 0) {
+      return `${extra} caja${extra === 1 ? '' : 's'}`
+    }
+    const base = `${bultos} pallet${bultos === 1 ? '' : 's'} × ${porBulto}`
     return extra > 0
       ? `${base} + ${extra} caja${extra === 1 ? '' : 's'}`
       : base
@@ -412,12 +415,33 @@ export function formatPlanillaEtiqueta(
   return `${cantidad} ${unidad}${cantidad === 1 ? '' : 's'}`
 }
 
+export function isPalletSoloCajasSueltas(linea: LineaDesgloseInput): boolean {
+  return (
+    linea.tipo_bulto === 'PALLET' &&
+    !(Number(linea.cantidad_bultos) > 0) &&
+    Number(linea.cantidad_suelta) > 0
+  )
+}
+
 export function validateLineaDesglose(linea: LineaDesgloseInput): string | null {
   if (linea.tipo_bulto === 'SUELTO') {
     if (!linea.cantidad_suelta || linea.cantidad_suelta <= 0) {
       return 'Indicá la cantidad de unidades'
     }
     return null
+  }
+  if (isPalletSoloCajasSueltas(linea)) {
+    if (!linea.unidades_por_bulto || linea.unidades_por_bulto <= 0) {
+      return 'Indicá las unidades por bulto'
+    }
+    return null
+  }
+  if (
+    linea.tipo_bulto === 'PALLET' &&
+    !(Number(linea.cantidad_bultos) > 0) &&
+    !(Number(linea.cantidad_suelta) > 0)
+  ) {
+    return 'Indicá pallets o cajas sueltas'
   }
   if (!linea.cantidad_bultos || linea.cantidad_bultos <= 0) {
     return 'Indicá la cantidad de bultos'

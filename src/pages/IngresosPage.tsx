@@ -77,6 +77,7 @@ import type {
 } from '@/types'
 import { useAuth } from '@/context/AuthContext'
 import { useConfirmDialog } from '@/context/ConfirmDialogContext'
+import { useMainLayoutFullHeight } from '@/context/MainLayoutContext'
 import { useEscHandler } from '@/hooks/useEscHandler'
 import { useProductoQuickSearch } from '@/hooks/useProductoQuickSearch'
 import { useRegistroFlashHighlight } from '@/hooks/useRegistroFlashHighlight'
@@ -234,6 +235,7 @@ export function IngresosPage() {
   const pendingFocusCantidadRef = useRef(false)
   const nativeApp = isNativeApp()
   const keyboardInset = useVisualViewportBottomInset()
+  useMainLayoutFullHeight(view === 'create' && createPhase === 'carga')
 
   const sectorSeleccionado = sectores.find((s) => s.id === Number(sectorId))
   const sectoresOrdenados = useMemo(() => sortSectoresParaIngreso(sectores), [sectores])
@@ -654,6 +656,13 @@ export function IngresosPage() {
     return String(botellasPorCajaDefault(p?.unidades_por_caja_default))
   }
 
+  function palletCantidadActiva(value: string): boolean {
+    const n = value.trim() === '' ? 0 : Number(value)
+    return Number.isFinite(n) && n > 0
+  }
+
+  const palletConBultos = tipoBulto === 'PALLET' && palletCantidadActiva(cantidadBultos)
+
   function resetLineaForm(forProduct?: Producto | null) {
     const p = forProduct ?? selectedProduct
     setTipoBulto('PALLET')
@@ -777,7 +786,9 @@ export function IngresosPage() {
       setUnidadesPorBulto('')
       setCantidadSuelta(String(l.cantidad_suelta ?? ''))
     } else {
-      setCantidadBultos(l.cantidad_bultos != null ? String(l.cantidad_bultos) : '')
+      setCantidadBultos(
+        l.cantidad_bultos != null && l.cantidad_bultos > 0 ? String(l.cantidad_bultos) : ''
+      )
       setUnidadesPorBulto(l.unidades_por_bulto != null ? String(l.unidades_por_bulto) : '')
       setCantidadSuelta(
         l.cantidad_suelta != null && l.cantidad_suelta > 0 ? String(l.cantidad_suelta) : ''
@@ -947,6 +958,9 @@ export function IngresosPage() {
     }
 
     const sueltaNum = cantidadSuelta.trim() === '' ? 0 : Number(cantidadSuelta)
+    const bultosNum = cantidadBultos.trim() === '' ? 0 : Number(cantidadBultos)
+    const soloSueltasPallet =
+      tipoBulto === 'PALLET' && (!Number.isFinite(bultosNum) || bultosNum <= 0) && sueltaNum > 0
 
     const porBultoResolved =
       tipoBulto === 'SUELTO'
@@ -955,7 +969,9 @@ export function IngresosPage() {
           ? Number(unidadesPorBulto) > 0
             ? Number(unidadesPorBulto)
             : Number(defaultUnidadesPorBulto('CAJA', selectedProduct))
-          : Number(unidadesPorBulto)
+          : Number(unidadesPorBulto) > 0
+            ? Number(unidadesPorBulto)
+            : Number(defaultUnidadesPorBulto('PALLET', selectedProduct))
 
     const lineaInput =
       tipoBulto === 'SUELTO'
@@ -965,7 +981,7 @@ export function IngresosPage() {
           }
         : {
             tipo_bulto: tipoBulto,
-            cantidad_bultos: Number(cantidadBultos),
+            cantidad_bultos: bultosNum,
             unidades_por_bulto: porBultoResolved,
             cantidad_suelta: sueltaNum
           }
@@ -980,8 +996,21 @@ export function IngresosPage() {
         setError('Indicá la cantidad suelta')
         return false
       }
+    } else if (soloSueltasPallet) {
+      if (!Number.isFinite(bultosNum) || bultosNum < 0) {
+        setError('Cantidad de pallets inválida')
+        return false
+      }
+      if (!Number.isFinite(porBultoResolved) || porBultoResolved <= 0) {
+        setError('No hay cajas por pallet definidas para este producto')
+        return false
+      }
+    } else if (tipoBulto === 'PALLET' && bultosNum <= 0 && sueltaNum <= 0) {
+      setError('Indicá pallets o cajas sueltas')
+      focusField(cantidadBultosRef)
+      return false
     } else {
-      if (!Number.isFinite(lineaInput.cantidad_bultos) || Number(lineaInput.cantidad_bultos) <= 0) {
+      if (!Number.isFinite(bultosNum) || bultosNum <= 0) {
         setError(`Indicá la cantidad de ${tipoBulto === 'PALLET' ? 'pallets' : 'cajas'}`)
         return false
       }
@@ -1015,8 +1044,7 @@ export function IngresosPage() {
       nombre: selectedProduct.nombre,
       unidad: selectedProduct.unidad,
       tipo_bulto: tipoBulto,
-      cantidad_bultos:
-        tipoBulto === 'SUELTO' ? undefined : Number(lineaInput.cantidad_bultos),
+      cantidad_bultos: tipoBulto === 'SUELTO' ? undefined : bultosNum,
       unidades_por_bulto:
         tipoBulto === 'SUELTO' ? undefined : Number(lineaInput.unidades_por_bulto),
       cantidad_suelta: sueltaNum > 0 ? sueltaNum : undefined,
@@ -1445,10 +1473,10 @@ export function IngresosPage() {
     return (
       <div
         className={cn(
-          'flex flex-col bg-surface-muted/30',
+          'flex min-h-0 flex-col overflow-hidden bg-surface-muted/30',
           nativeApp
             ? 'fixed inset-x-0 bottom-0 top-14 z-10'
-            : '-m-4 h-[calc(100vh-5rem)] lg:-m-6'
+            : 'h-full min-h-0 flex-1'
         )}
       >
         {/* Panel superior fijo: remito + buscador + formulario */}
@@ -1758,18 +1786,22 @@ export function IngresosPage() {
                           ref={cantidadBultosRef}
                           label={tipoBulto === 'PALLET' ? 'Cant. pallets' : 'Cant. cajas'}
                           type="number"
-                          min="1"
+                          min={tipoBulto === 'PALLET' ? '0' : '1'}
                           value={cantidadBultos}
                           onChange={(e) => setCantidadBultos(e.target.value)}
                           onKeyDown={(e) => {
                             if (e.key === 'Enter') {
                               e.preventDefault()
-                              focusField(
-                                tipoBulto === 'CAJA' ? cantidadSueltaRef : unidadesRef
-                              )
+                              if (tipoBulto === 'CAJA') {
+                                focusField(cantidadSueltaRef)
+                              } else if (palletCantidadActiva(cantidadBultos)) {
+                                focusField(unidadesRef)
+                              } else {
+                                focusField(cantidadSueltaRef)
+                              }
                             }
                           }}
-                          placeholder={tipoBulto === 'PALLET' ? '2' : '1'}
+                          placeholder={tipoBulto === 'PALLET' ? '0 o vacío → sueltas' : '1'}
                           leading={
                             tipoBulto === 'PALLET' ? (
                               <Layers className="h-4 w-4" aria-hidden />
@@ -1783,7 +1815,10 @@ export function IngresosPage() {
 
                       <div
                         className={cn(
-                          tipoBulto !== 'PALLET' && 'invisible pointer-events-none'
+                          tipoBulto !== 'PALLET' && 'invisible pointer-events-none',
+                          tipoBulto === 'PALLET' &&
+                            !palletConBultos &&
+                            'pointer-events-none opacity-40'
                         )}
                         aria-hidden={tipoBulto !== 'PALLET'}
                       >
@@ -1802,7 +1837,10 @@ export function IngresosPage() {
                           }}
                           placeholder="112"
                           leading={<Box className="h-4 w-4" aria-hidden />}
-                          tabIndex={tipoBulto !== 'PALLET' ? -1 : undefined}
+                          disabled={tipoBulto === 'PALLET' && !palletConBultos}
+                          tabIndex={
+                            tipoBulto !== 'PALLET' || !palletConBultos ? -1 : undefined
+                          }
                           className="[&_label]:text-xs"
                         />
                       </div>
@@ -1817,7 +1855,9 @@ export function IngresosPage() {
                           ref={tipoBulto === 'SUELTO' ? undefined : cantidadSueltaRef}
                           label={
                             tipoBulto === 'PALLET'
-                              ? 'Cajas sueltas (opc.)'
+                              ? palletConBultos
+                                ? 'Cajas sueltas (opc.)'
+                                : 'Cajas sueltas'
                               : `${normalizarUnidadProducto(selectedProduct.unidad)}s sueltas (opc.)`
                           }
                           type="number"
@@ -1830,7 +1870,7 @@ export function IngresosPage() {
                               agregarLineaYContinuar()
                             }
                           }}
-                          placeholder="0"
+                          placeholder={tipoBulto === 'PALLET' && !palletConBultos ? '38' : '0'}
                           leading={
                             tipoBulto === 'PALLET' ? (
                               <Box className="h-4 w-4" aria-hidden />
@@ -1880,11 +1920,12 @@ export function IngresosPage() {
 
         <div
           className={cn(
-            'shrink-0 border-t border-surface-border bg-white shadow-[0_-4px_12px_rgba(0,0,0,0.04)]',
+            'mt-auto shrink-0 border-t border-surface-border bg-white shadow-[0_-4px_12px_rgba(0,0,0,0.04)]',
             nativeApp
-              ? 'px-3 pt-3 pb-3'
-              : 'px-4 py-4 sm:px-5'
+              ? 'px-3 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]'
+              : 'px-4 py-3 sm:px-5'
           )}
+          style={nativeApp && keyboardInset > 0 ? { paddingBottom: keyboardInset } : undefined}
         >
           {nativeApp ? (
             <div className="space-y-3">

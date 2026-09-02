@@ -62,7 +62,11 @@ export function UpdateProgressBanner() {
     if (!api?.installUpdate) return
     setInstalling(true)
     try {
-      await api.installUpdate()
+      const result = await api.installUpdate()
+      if (result && 'ok' in result && !result.ok) {
+        setInstalling(false)
+        setPhase('downloaded')
+      }
     } catch {
       setInstalling(false)
     }

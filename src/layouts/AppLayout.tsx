@@ -1,6 +1,7 @@
 import { NavLink, useLocation } from 'react-router-dom'
 import { Boxes, LogOut, Menu, PanelLeft, PanelLeftClose, X } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { MainLayoutProvider, useMainLayoutFullHeightActive } from '@/context/MainLayoutContext'
 import { SidebarNavProvider, useSidebarNav } from '@/context/SidebarNavContext'
 import { InventarioActivoBanner } from '@/components/InventarioActivoBanner'
 import { UpdateProgressBanner } from '@/components/UpdateProgressBanner'
@@ -92,15 +93,17 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
       sidebarCollapsed={collapsed}
       setSidebarCollapsed={setCollapsed}
     >
-      <AppLayoutShell
-        visibleItems={visibleItems}
-        showConfig={showConfig}
-        configIndex={visibleItems.length}
-        collapsed={collapsed}
-        toggleCollapsed={toggleCollapsed}
-      >
-        {children}
-      </AppLayoutShell>
+      <MainLayoutProvider>
+        <AppLayoutShell
+          visibleItems={visibleItems}
+          showConfig={showConfig}
+          configIndex={visibleItems.length}
+          collapsed={collapsed}
+          toggleCollapsed={toggleCollapsed}
+        >
+          {children}
+        </AppLayoutShell>
+      </MainLayoutProvider>
     </SidebarNavProvider>
   )
 }
@@ -152,9 +155,11 @@ function AppLayoutShell({
       : undefined
   }
 
-  // Conteo de inventario: sin scroll del main (header + totales fijos; solo la lista scrollea).
+  // Conteo de inventario / carga de ingresos: sin scroll del main (header + totales fijos; solo la lista scrollea).
   const isInventarioConteo =
     pathname.startsWith('/inventario/contar/') || pathname.startsWith('/inventario/offline/')
+  const mainFullHeight = useMainLayoutFullHeightActive()
+  const isMainFullHeightLayout = isInventarioConteo || mainFullHeight
 
   useEffect(() => {
     if (!offlineSession) {
@@ -458,7 +463,7 @@ function AppLayoutShell({
           <main
             className={cn(
               'min-h-0 flex-1 outline-none',
-              isInventarioConteo
+              isMainFullHeightLayout
                 ? 'flex flex-col overflow-hidden p-0'
                 : 'overflow-y-auto p-4 lg:p-6'
             )}

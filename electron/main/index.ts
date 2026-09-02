@@ -29,8 +29,13 @@ async function gracefulShutdown(timeoutMs = 1200): Promise<void> {
 }
 
 function forceQuitSoon(): void {
-  setTimeout(() => app.exit(0), 50)
-  setTimeout(() => process.exit(0), 2000)
+  app.exit(0)
+  setTimeout(() => process.exit(0), 800)
+}
+
+function quitForUpdate(): void {
+  app.exit(0)
+  setTimeout(() => process.exit(0), 600)
 }
 
 function createWindow(): void {
@@ -91,7 +96,7 @@ app.whenReady().then(async () => {
 app.on('window-all-closed', () => {
   if (process.platform === 'darwin') return
   if (isInstallingUpdate()) {
-    forceQuitSoon()
+    quitForUpdate()
     return
   }
   if (isShuttingDown) return
@@ -102,7 +107,7 @@ app.on('window-all-closed', () => {
 })
 
 app.on('before-quit', (event) => {
-  // Durante update el Setup ya se lanza desde un script externo.
+  // Durante update el Setup se lanza desde un script externo tras cerrar el proceso.
   if (isInstallingUpdate()) return
   if (isShuttingDown) return
   event.preventDefault()

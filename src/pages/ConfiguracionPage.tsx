@@ -622,7 +622,7 @@ export function ConfiguracionPage() {
     if (isNativeApp()) {
       setPhase('checking')
       try {
-        const result = await checkLatestApkRelease()
+        const result = await checkLatestApkRelease({ force: true })
         setAvailableVersion(result.latest?.version ?? result.currentVersion)
         if (!result.updateAvailable || !result.latest) {
           setPhase('not-available')
@@ -651,8 +651,9 @@ export function ConfiguracionPage() {
     }
 
     setPhase('checking')
+    await api.clearUpdateCooldown?.()
 
-    const result = await api.checkForUpdates()
+    const result = await api.checkForUpdates({ force: true })
     if (result.reason === 'dev') {
       setPhase('dev-mode')
       return
@@ -716,7 +717,12 @@ export function ConfiguracionPage() {
     }
 
     if (!api?.installUpdate) return
-    await api.installUpdate()
+    setPhase('installing')
+    const result = await api.installUpdate()
+    if (result && 'ok' in result && !result.ok) {
+      setPhase('error')
+      setErrorMessage(result.message ?? 'No se pudo abrir el instalador')
+    }
   }
 
   async function descargarApkParaCelulares() {
@@ -725,7 +731,7 @@ export function ConfiguracionPage() {
     setApkDistMessage('')
     setApkDistError('')
     try {
-      const result: ApkDownloadResult = await api.downloadLatestApk()
+      const result: ApkDownloadResult = await api.downloadLatestApk({ force: true })
       if (result.ok) {
         setApkDistMessage(
           `APK v${result.version} guardada: ${result.filename}. Ya podés copiarla a los celulares.`

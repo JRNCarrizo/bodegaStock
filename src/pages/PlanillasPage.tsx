@@ -62,6 +62,7 @@ import type {
 } from '@/types'
 import { useAuth } from '@/context/AuthContext'
 import { useConfirmDialog } from '@/context/ConfirmDialogContext'
+import { useMainLayoutFullHeight } from '@/context/MainLayoutContext'
 import { useEscHandler } from '@/hooks/useEscHandler'
 import { useProductoQuickSearch } from '@/hooks/useProductoQuickSearch'
 import { useRegistroFlashHighlight } from '@/hooks/useRegistroFlashHighlight'
@@ -187,6 +188,7 @@ export function PlanillasPage() {
   const pendingFocusCantidadRef = useRef(false)
   const nativeApp = isNativeApp()
   const keyboardInset = useVisualViewportBottomInset()
+  useMainLayoutFullHeight(view === 'create' && createPhase === 'carga')
 
   const camioneroSeleccionado = camioneros.find((c) => c.id === Number(camioneroId))
   const vehiculoSeleccionado = vehiculos.find((v) => v.id === Number(vehiculoId))
@@ -414,40 +416,51 @@ export function PlanillasPage() {
     [planillas, selectedDay]
   )
 
-  const salidasPorCamionero = useMemo(() => {
+  const salidasPorVehiculo = useMemo(() => {
     type Grupo = {
       key: string
       alias: string
-      nombre: string | null
-      aliases: string[]
+      camionero: string | null
       planillas: { id: number; numero: string }[]
     }
     const map = new Map<string, Grupo>()
     for (const p of planillasDelDia) {
-      const key = p.camionero_id != null ? `c-${p.camionero_id}` : 'sin'
-      const label =
-        p.vehiculo_alias?.trim() ||
-        p.camionero_nombre?.trim() ||
-        (key === 'sin' ? 'Retira' : 'Sin alias')
+      let key: string
+      let alias: string
+      if (p.vehiculo_id != null) {
+        key = `v-${p.vehiculo_id}`
+        alias =
+          labelVehiculoDetalle(p)?.trim() ||
+          p.vehiculo_alias?.trim() ||
+          [p.vehiculo_marca, p.vehiculo_modelo].filter(Boolean).join(' ').trim() ||
+          'Vehículo'
+      } else if (p.camionero_id != null) {
+        key = `c-${p.camionero_id}`
+        alias = p.camionero_nombre?.trim() || p.camionero_numero?.trim() || 'Camionero'
+      } else {
+        key = 'retira'
+        alias = 'Retiro particular / Cliente'
+      }
+
       let g = map.get(key)
       if (!g) {
         g = {
           key,
-          alias: label,
-          nombre: p.camionero_nombre,
-          aliases: [label],
+          alias,
+          camionero: p.camionero_nombre,
           planillas: []
         }
         map.set(key, g)
-      } else if (!g.aliases.includes(label)) {
-        g.aliases.push(label)
-        g.alias = g.aliases.join(' · ')
+      } else if (p.camionero_nombre && g.camionero && g.camionero !== p.camionero_nombre) {
+        g.camionero = `${g.camionero} · ${p.camionero_nombre}`
+      } else if (p.camionero_nombre && !g.camionero) {
+        g.camionero = p.camionero_nombre
       }
       g.planillas.push({ id: p.id, numero: p.numero })
     }
     return [...map.values()].sort((a, b) => {
-      if (a.key === 'sin') return 1
-      if (b.key === 'sin') return -1
+      if (a.key === 'retira') return 1
+      if (b.key === 'retira') return -1
       return a.alias.localeCompare(b.alias, 'es', { sensitivity: 'base', numeric: true })
     })
   }, [planillasDelDia])
@@ -703,6 +716,16 @@ export function PlanillasPage() {
   function validarDatos(): boolean {
     if (!fecha || !numero.trim()) {
       setError('Completá fecha y número de planilla')
+      return false
+    }
+    if (camioneroId && vehiculos.length > 0 && !vehiculoId) {
+      setError('Seleccioná el vehículo del camionero')
+      focusField(vehiculoRef)
+      return false
+    }
+    if (camioneroId && vehiculos.length === 0) {
+      setError('Ese camionero no tiene vehículos activos. Cargá uno o elegí otro camionero.')
+      focusField(camioneroRef)
       return false
     }
     setError('')
@@ -1018,7 +1041,7 @@ export function PlanillasPage() {
                 </div>
                 <div>
                   <p className="text-sm font-semibold text-slate-900">Datos de la planilla</p>
-                  <p className="text-xs text-slate-500">Fecha, número, camionero (opcional) y vehículo</p>
+                  <p className="text-xs text-slate-500">Fecha, número, camionero (opcional) y vehículo obligatorio si hay camionero</p>
                 </div>
               </div>
             </div>
@@ -1060,7 +1083,9 @@ export function PlanillasPage() {
                 </select>
               </div>
               <div>
-                <label className="mb-1 block text-sm font-medium text-slate-700">Vehículo</label>
+                <label className="mb-1 block text-sm font-medium text-slate-700">
+                  Vehículo{camioneroId ? ' *' : ''}
+                </label>
                 <select
                   ref={vehiculoRef}
                   value={vehiculoId}
@@ -1074,7 +1099,7 @@ export function PlanillasPage() {
                       ? 'Sin camionero asignado'
                       : vehiculos.length === 0
                         ? 'Sin vehículos activos'
-                        : 'Sin vehículo específico'}
+                        : 'Seleccioná vehículo'}
                   </option>
                   {vehiculos.map((v) => (
                     <option key={v.id} value={v.id}>
@@ -1200,10 +1225,10 @@ export function PlanillasPage() {
     return (
       <div
         className={cn(
-          'flex flex-col bg-surface-muted/30',
+          'flex min-h-0 flex-col overflow-hidden bg-surface-muted/30',
           nativeApp
             ? 'fixed inset-x-0 bottom-0 top-14 z-10'
-            : '-m-4 h-[calc(100vh-5rem)] lg:-m-6'
+            : 'h-full min-h-0 flex-1'
         )}
       >
         <div
@@ -1517,11 +1542,12 @@ export function PlanillasPage() {
 
         <div
           className={cn(
-            'shrink-0 border-t border-surface-border bg-white shadow-[0_-4px_12px_rgba(0,0,0,0.04)]',
+            'mt-auto shrink-0 border-t border-surface-border bg-white shadow-[0_-4px_12px_rgba(0,0,0,0.04)]',
             nativeApp
-              ? 'px-3 pt-3 pb-3'
-              : 'px-4 py-4 sm:px-5'
+              ? 'px-3 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]'
+              : 'px-4 py-3 sm:px-5'
           )}
+          style={nativeApp && keyboardInset > 0 ? { paddingBottom: keyboardInset } : undefined}
         >
           {nativeApp ? (
             <div className="space-y-3">
@@ -2188,8 +2214,8 @@ export function PlanillasPage() {
                     </h2>
                     <p className="text-[11px] text-slate-500">
                       {formatDayTabLabel(selectedDay)} · {planillasDelDia.length} planilla
-                      {planillasDelDia.length === 1 ? '' : 's'} · {salidasPorCamionero.length}{' '}
-                      salida{salidasPorCamionero.length === 1 ? '' : 's'}
+                      {planillasDelDia.length === 1 ? '' : 's'} · {salidasPorVehiculo.length}{' '}
+                      salida{salidasPorVehiculo.length === 1 ? '' : 's'}
                     </p>
                   </div>
                 </div>
@@ -2209,14 +2235,14 @@ export function PlanillasPage() {
                   nativeApp && 'pb-[max(0.75rem,env(safe-area-inset-bottom))]'
                 )}
               >
-                {salidasPorCamionero.length === 0 ? (
+                {salidasPorVehiculo.length === 0 ? (
                   <p className="rounded-xl border border-dashed border-slate-200 bg-slate-50 px-4 py-8 text-center text-sm text-slate-400">
                     No hay salidas en este día.
                   </p>
                 ) : (
                   <div className="overflow-hidden rounded-xl border border-surface-border bg-white">
                     <ul className="divide-y divide-surface-border">
-                      {salidasPorCamionero.map((g) => (
+                      {salidasPorVehiculo.map((g) => (
                         <li
                           key={g.key}
                           className="flex flex-wrap items-center gap-x-3 gap-y-1.5 px-3 py-2 sm:flex-nowrap"
@@ -2227,11 +2253,15 @@ export function PlanillasPage() {
                               <p className="truncate text-sm font-semibold text-slate-900">
                                 {g.alias}
                               </p>
-                              {g.nombre && g.nombre !== g.alias && (
-                                <p className="truncate text-[10px] leading-tight text-slate-400">
-                                  {g.nombre}
+                              {g.key.startsWith('c-') ? (
+                                <p className="truncate text-[10px] leading-tight text-amber-600">
+                                  Sin vehículo registrado
                                 </p>
-                              )}
+                              ) : g.camionero ? (
+                                <p className="truncate text-[10px] leading-tight text-slate-400">
+                                  {g.camionero}
+                                </p>
+                              ) : null}
                             </div>
                           </div>
                           <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1">

@@ -1,7 +1,8 @@
 const GITHUB_OWNER = 'JRNCarrizo'
 const GITHUB_REPO = 'bodegaStock'
 
-export const GITHUB_RELEASES_LATEST_DOWNLOAD = `https://github.com/${GITHUB_OWNER}/${GITHUB_REPO}/releases/latest/download`
+export const GITHUB_RELEASES_PAGE = `https://github.com/${GITHUB_OWNER}/${GITHUB_REPO}/releases`
+export const GITHUB_RELEASES_LATEST_DOWNLOAD = `${GITHUB_RELEASES_PAGE}/latest/download`
 export const GITHUB_LATEST_YML_URL = `${GITHUB_RELEASES_LATEST_DOWNLOAD}/latest.yml`
 
 /** Cache en memoria: evita reconsultar latest.yml en check + download seguidos. */
@@ -18,6 +19,38 @@ export function parseLatestYmlVersion(yml: string): string {
   const version = normalizeReleaseVersion(match[1])
   if (!version) throw new Error('El release no tiene versión válida')
   return version
+}
+
+/** Extrae la versión del tag o carpeta de assets en URLs de GitHub. */
+export function extractVersionFromGithubUrl(url: string): string | null {
+  const tag = url.match(/\/releases\/tag\/v([^/?#]+)/i)?.[1]
+  if (tag) return normalizeReleaseVersion(tag)
+  const asset = url.match(/\/releases\/download\/v([^/]+)\//i)?.[1]
+  if (asset) return normalizeReleaseVersion(asset)
+  return null
+}
+
+function pickNewestVersion(candidates: Array<string | null | undefined>): string {
+  const versions = candidates.filter((v): v is string => Boolean(v?.trim()))
+  if (versions.length === 0) {
+    throw new Error('No se pudo determinar la versión del último release.')
+  }
+  return versions.reduce((best, v) => (compareSemver(v, best) > 0 ? v : best))
+}
+
+/** Tag del release marcado como Latest (no depende de latest.yml). */
+export async function fetchLatestReleaseTagVersion(): Promise<string | null> {
+  try {
+    const res = await fetch(`${GITHUB_RELEASES_PAGE}/latest`, {
+      method: 'HEAD',
+      redirect: 'follow',
+      headers: { 'User-Agent': 'ControlStock-Update' }
+    })
+    if (!res.ok) return null
+    return extractVersionFromGithubUrl(res.url)
+  } catch {
+    return null
+  }
 }
 
 /** URL directa por tag (menos redirects que /latest/download). */
@@ -62,6 +95,16 @@ export function peekCachedLatestReleaseVersion(): string | null {
   return cachedLatest.version
 }
 
+/**
+ * Resuelve la versión más reciente combinando latest.yml + tag del release.
+ * latest.yml a veces queda desactualizado en el upload; el tag Latest es la fuente fiable.
+ */
+export function resolveLatestReleaseVersion(yml: string, ymlFinalUrl?: string): string {
+  const fromYml = parseLatestYmlVersion(yml)
+  const fromYmlUrl = ymlFinalUrl ? extractVersionFromGithubUrl(ymlFinalUrl) : null
+  return pickNewestVersion([fromYml, fromYmlUrl])
+}
+
 /** Consulta el último release sin usar api.github.com (evita rate limit 60/h). */
 export async function fetchLatestReleaseVersion(
   getYmlText?: (url: string) => Promise<string>,
@@ -72,7 +115,11 @@ export async function fetchLatestReleaseVersion(
     if (cached) return cached
   }
 
+  const tagVersionPromise = fetchLatestReleaseTagVersion()
+
   let yml: string
+  let ymlFinalUrl: string | undefined
+
   if (getYmlText) {
     yml = await getYmlText(GITHUB_LATEST_YML_URL)
   } else {
@@ -89,13 +136,19 @@ export async function fetchLatestReleaseVersion(
     }
 
     yml = await res.text()
+    ymlFinalUrl = res.url
   }
 
   if (!yml.trim() || yml.includes('<!DOCTYPE html>')) {
     throw new Error('GitHub devolvió una página HTML en lugar de latest.yml.')
   }
 
-  const version = parseLatestYmlVersion(yml)
+  const tagVersion = await tagVersionPromise
+  const version = pickNewestVersion([
+    resolveLatestReleaseVersion(yml, ymlFinalUrl),
+    tagVersion
+  ])
+
   cachedLatest = { version, at: Date.now() }
   return version
 }

@@ -60,8 +60,11 @@ export function etiquetaLinea(
   const bultos = Number(linea.cantidad_bultos ?? 0)
   const porBulto = Number(linea.unidades_por_bulto ?? 0)
   if (linea.tipo_bulto === 'PALLET') {
-    const base = `${bultos} pallet${bultos === 1 ? '' : 's'} × ${porBulto}`
     const extra = Number(linea.cantidad_suelta ?? 0)
+    if (bultos <= 0 && extra > 0) {
+      return `${extra} caja${extra === 1 ? '' : 's'}`
+    }
+    const base = `${bultos} pallet${bultos === 1 ? '' : 's'} × ${porBulto}`
     return extra > 0
       ? `${base} + ${extra} caja${extra === 1 ? '' : 's'}`
       : base

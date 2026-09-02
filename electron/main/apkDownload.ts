@@ -4,6 +4,7 @@ import { pipeline } from 'stream/promises'
 import { Readable } from 'stream'
 import { basename, join } from 'path'
 import {
+  clearLatestReleaseCache,
   fetchLatestReleaseVersion,
   latestApkDownloadUrl,
   normalizeReleaseVersion
@@ -63,7 +64,10 @@ async function fetchLatestApk(force = false): Promise<{
   const now = Date.now()
   writeCooldown({ lastCheckAt: now })
 
-  const version = normalizeReleaseVersion(await fetchLatestReleaseVersion())
+  if (force) clearLatestReleaseCache()
+  const version = normalizeReleaseVersion(
+    await fetchLatestReleaseVersion(undefined, { bypassCache: force })
+  )
   const url = latestApkDownloadUrl(version)
   const filename = `ControlStock-${version}.apk`
 

@@ -4,6 +4,7 @@ import { Directory, Filesystem } from '@capacitor/filesystem'
 import { Preferences } from '@capacitor/preferences'
 import { ApkInstaller } from '@/plugins/apkInstaller'
 import {
+  clearLatestReleaseCache,
   fetchLatestReleaseVersion,
   latestApkDownloadUrl,
   normalizeReleaseVersion
@@ -91,13 +92,16 @@ export async function getNativeAppVersion(): Promise<string> {
   return normalizeVersion(info.version)
 }
 
-export async function checkLatestApkRelease(): Promise<{
+export async function checkLatestApkRelease(opts?: {
+  force?: boolean
+}): Promise<{
   currentVersion: string
   latest: ApkUpdateInfo | null
   updateAvailable: boolean
 }> {
+  const force = Boolean(opts?.force)
   const state = await readCooldown()
-  const wait = remainingMs(state)
+  const wait = force ? 0 : remainingMs(state)
   if (wait > 0) {
     throw new Error(`Esperá ~${minutesLeft(wait)} min antes de volver a buscar.`)
   }
@@ -105,6 +109,8 @@ export async function checkLatestApkRelease(): Promise<{
   const currentVersion = await getNativeAppVersion()
   const now = Date.now()
   await writeCooldown({ lastCheckAt: now })
+
+  if (force) clearLatestReleaseCache()
 
   let version: string
   try {
@@ -121,7 +127,7 @@ export async function checkLatestApkRelease(): Promise<{
           throw new Error(`No se pudo leer latest.yml (HTTP ${res.status}).`)
         }
         return typeof res.data === 'string' ? res.data : String(res.data ?? '')
-      })
+      }, { bypassCache: force })
     )
   } catch (err) {
     throw err instanceof Error ? err : new Error('No se pudo consultar el release')

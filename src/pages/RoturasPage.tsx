@@ -47,6 +47,7 @@ import type {
   Sector
 } from '@/types'
 import { useAuth } from '@/context/AuthContext'
+import { useMainLayoutFullHeight } from '@/context/MainLayoutContext'
 import { useEscHandler } from '@/hooks/useEscHandler'
 import { useProductoQuickSearch } from '@/hooks/useProductoQuickSearch'
 import { useRegistroFlashHighlight } from '@/hooks/useRegistroFlashHighlight'
@@ -117,6 +118,7 @@ export function RoturasPage() {
   const pendingFocusCantidadRef = useRef(false)
   const nativeApp = isNativeApp()
   const keyboardInset = useVisualViewportBottomInset()
+  useMainLayoutFullHeight(view === 'create' && createPhase === 'carga')
 
   function armKeyboardForCantidadModal() {
     if (!nativeApp) return
@@ -850,10 +852,10 @@ export function RoturasPage() {
     return (
       <div
         className={cn(
-          'flex flex-col bg-surface-muted/30',
+          'flex min-h-0 flex-col overflow-hidden bg-surface-muted/30',
           nativeApp
             ? 'fixed inset-x-0 bottom-0 top-14 z-10'
-            : '-m-4 h-[calc(100vh-5rem)] lg:-m-6'
+            : 'h-full min-h-0 flex-1'
         )}
       >
         <div className="relative z-20 shrink-0 overflow-visible border-b border-surface-border bg-white shadow-sm">
@@ -1131,9 +1133,12 @@ export function RoturasPage() {
         </div>
         <div
           className={cn(
-            'shrink-0 border-t border-surface-border bg-white shadow-[0_-4px_12px_rgba(0,0,0,0.04)]',
-            nativeApp ? 'px-3 pt-3 pb-3' : 'px-4 py-4 sm:px-5'
+            'mt-auto shrink-0 border-t border-surface-border bg-white shadow-[0_-4px_12px_rgba(0,0,0,0.04)]',
+            nativeApp
+              ? 'px-3 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]'
+              : 'px-4 py-3 sm:px-5'
           )}
+          style={nativeApp && keyboardInset > 0 ? { paddingBottom: keyboardInset } : undefined}
         >
           {nativeApp ? (
             <div className="space-y-3">

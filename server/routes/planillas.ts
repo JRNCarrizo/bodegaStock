@@ -613,6 +613,21 @@ export async function planillasRoutes(app: FastifyInstance): Promise<void> {
       if (!camionero) {
         return reply.status(400).send({ error: 'Camionero no válido' })
       }
+
+      const vehiculosActivos = db.prepare(`
+        SELECT COUNT(*) AS c FROM camionero_vehiculos
+        WHERE camionero_id = ? AND activo = 1
+      `).get(camioneroId) as { c: number }
+
+      if (vehiculosActivos.c === 0) {
+        return reply.status(400).send({
+          error: 'Ese camionero no tiene vehículos activos. Cargá uno o elegí otro camionero.'
+        })
+      }
+
+      if (!body.vehiculo_id) {
+        return reply.status(400).send({ error: 'Seleccioná el vehículo del camionero' })
+      }
     }
 
     const vehiculoId = camioneroId && body.vehiculo_id ? Number(body.vehiculo_id) : null

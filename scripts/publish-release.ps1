@@ -58,60 +58,60 @@ if (Test-Path $ymlPath) { $assets += (Resolve-Path $ymlPath).Path }
 
 if (Test-Path $ymlPath) {
   $ymlText = Get-Content $ymlPath -Raw
-  if ($ymlText -notmatch "version:\s*$([regex]::Escape($Version))(\s|$)") {
-    Write-Error "latest.yml no coincide con v$Version. Regenerá con npm run dist antes de publicar."
+  $versionPattern = 'version:\s*' + [regex]::Escape($Version) + '(\s|$)'
+  if ($ymlText -notmatch $versionPattern) {
+    Write-Error "latest.yml no coincide con v$Version. Regenera con npm run dist antes de publicar."
   }
-  if ($ymlText -match "path:\s*ControlStock-Setup-([0-9.]+)\.exe") {
+  if ($ymlText -match 'path:\s*ControlStock-Setup-([0-9.]+)\.exe') {
     $setupInYml = $Matches[1]
     if ($setupInYml -ne $Version) {
-      Write-Error "latest.yml apunta al Setup $setupInYml pero la versión es $Version. Regenerá con npm run dist."
+      Write-Error "latest.yml apunta al Setup $setupInYml pero la version es $Version. Regenera con npm run dist."
     }
   }
 } else {
-  Write-Host "Advertencia: no hay release\latest.yml — electron-builder debería generarlo con npm run dist." -ForegroundColor Yellow
+  Write-Host "Advertencia: no hay release\latest.yml. Regenera con npm run dist." -ForegroundColor Yellow
 }
 
-$notes = @"
-## ControlStock v$Version
+$notesPath = Join-Path $root "release\release-notes-$Version.md"
+@'
+## ControlStock v{0}
 
-Layout de carga, ingresos con cajas sueltas, planillas y actualizaciones desde Configuración.
+Layout de carga, ingresos con cajas sueltas, planillas y actualizaciones desde Configuracion.
 
-### UI — pantallas de carga
-- Barra de **total + Confirmar** pegada abajo en ingresos, planillas, retornos, roturas y movimientos.
+### UI - pantallas de carga
+- Barra de total + Confirmar pegada abajo en ingresos, planillas, retornos, roturas y movimientos.
 
 ### Ingresos
-- Permite cargar **solo cajas sueltas** (0 pallets + sueltas > 0), como en inventario.
-- Etiquetas más claras cuando no hay pallets.
+- Permite cargar solo cajas sueltas (0 pallets + sueltas), como en inventario.
+- Etiquetas mas claras cuando no hay pallets.
 
 ### Planillas
-- **Salidas del día** agrupadas por vehículo (camionero como subtítulo).
-- **Vehículo obligatorio** si hay camionero asignado (validación en app y servidor).
+- Salidas del dia agrupadas por vehiculo (camionero como subtitulo).
+- Vehiculo obligatorio si hay camionero asignado (validacion en app y servidor).
 
-### Actualización (PC)
-- Detecta bien la versión Latest aunque ``latest.yml`` en GitHub esté desactualizado.
+### Actualizacion (PC)
+- Detecta bien la version Latest aunque latest.yml en GitHub este desactualizado.
 - Buscar actualizaciones fuerza la consulta (sin cooldown molesto).
-- Instalación más rápida: cierra la app antes, menos pausas y sin cartel de “app abierta”.
+- Instalacion mas rapida: cierra la app antes, menos pausas y sin cartel de app abierta.
 
-### Instalación
+### Instalacion
 1. Cerra ControlStock.
-2. PC: Config → Buscar actualizaciones, o instalá ``ControlStock-Setup-$Version.exe``.
-3. Celular: ``ControlStock-$Version.apk``.
+2. PC: Config > Buscar actualizaciones, o instala ControlStock-Setup-{0}.exe.
+3. Celular: ControlStock-{0}.apk.
 
-**Importante:** actualizá primero el **servidor/PC servidor**, después los clientes.
+Importante: actualiza primero el servidor/PC servidor, despues los clientes.
 
-Login inicial (base vacia): **admin** / **admin123**
-"@
-
+Login inicial (base vacia): admin / admin123
+'@ -f $Version | Set-Content -Path $notesPath -Encoding utf8
+$notes = Get-Content -Path $notesPath -Raw
 Write-Host "Publicando release $tag (Setup $([math]::Round($exeSize/1MB,2)) MB)..." -ForegroundColor Green
 
-$existing = $null
+  $existing = $null
 try {
   $existing = gh release view $tag 2>$null
 } catch {
   $existing = $null
 }
-$notesPath = Join-Path $root "release\release-notes-$Version.md"
-$notes | Set-Content -Path $notesPath -Encoding utf8
 
 if ($LASTEXITCODE -eq 0 -and $existing) {
   Write-Host "El release $tag ya existe. Subiendo assets..." -ForegroundColor Yellow

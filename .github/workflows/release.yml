@@ -1,15 +1,14 @@
 name: Release
 
+# Solo manual: el publish local (scripts/publish-release.ps1) es la fuente de verdad.
+# El trigger por tag pisaba el Setup bueno con un build de Actions a veces truncado.
 on:
-  push:
-    tags:
-      - 'v*'
   workflow_dispatch:
     inputs:
       version:
-        description: 'Versión sin v (ej. 0.1.0)'
+        description: 'Versión sin v (ej. 0.3.65)'
         required: true
-        default: '0.3.38'
+        default: '0.3.65'
 
 permissions:
   contents: write
@@ -47,36 +46,33 @@ jobs:
             Get-ChildItem release
             exit 1
           }
-          Write-Host "OK: latest.yml -> $expected"
-
-      - name: Resolve tag
-        id: tag
-        shell: bash
-        run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            echo "name=v${{ inputs.version }}" >> "$GITHUB_OUTPUT"
-          else
-            echo "name=${GITHUB_REF#refs/tags/}" >> "$GITHUB_OUTPUT"
-          fi
+          $yml = Get-Content release/latest.yml -Raw
+          if ($yml -notmatch ('version:\s*' + [regex]::Escape('${{ inputs.version }}'))) {
+            throw "latest.yml no coincide con version ${{ inputs.version }}"
+          }
+          $exe = Get-Item "release/$expected"
+          if ($exe.Length -lt 100MB) {
+            throw "Setup demasiado chico: $($exe.Length) bytes"
+          }
+          Write-Host "OK: latest.yml -> $expected ($([math]::Round($exe.Length/1MB,2)) MB)"
 
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ steps.tag.outputs.name }}
-          name: ControlStock ${{ steps.tag.outputs.name }}
+          tag_name: v${{ inputs.version }}
+          name: ControlStock v${{ inputs.version }}
           generate_release_notes: false
           body: |
-            ## ControlStock ${{ steps.tag.outputs.name }}
+            ## ControlStock v${{ inputs.version }}
 
-            Guías de ayuda por sección con descarga PDF.
+            Release generado desde GitHub Actions (manual).
 
-            ### Nuevo / mejorado
-            - Ayuda (?) en Ingresos, Planillas, Retornos, Roturas, Movimientos e Inventario
-            - Inventario: pasos Offline (paquete, sync entre celulares, importar al PC)
+            ### Instalación
+            1. Cerrá ControlStock.
+            2. PC: Configuración → Buscar actualizaciones, o instalá el Setup.
+            3. Celular: APK de este release.
 
-            ### Actualización
-            - Desde **v0.2.7 o superior:** Configuración → Buscar actualizaciones
-            - O instalá el Setup / APK de este release manualmente
+            Importante: actualizá primero el servidor, después los clientes.
           files: |
             release/ControlStock-Setup-*.exe
             release/latest.yml

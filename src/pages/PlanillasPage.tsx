@@ -32,6 +32,7 @@ import { Input } from '@/components/ui/Input'
 import { Card, CardBody } from '@/components/ui/Card'
 import {
   formatCantidad,
+  formatCantidadUnidad,
   formatDayTabLabel,
   formatPlanillaEtiqueta,
   normalizarUnidadProducto,
@@ -146,7 +147,8 @@ export function PlanillasPage() {
     setResults: setProductResults
   } = useProductoQuickSearch(productSearch, {
     enabled: !selectedProduct,
-    limit: 12
+    limit: 12,
+    conStock: true
   })
   const [lineas, setLineas] = useState<PlanillaLineaDraft[]>([])
 
@@ -1329,6 +1331,19 @@ export function PlanillasPage() {
                             {p.codigo_interno}
                           </span>
                           <span className="truncate text-slate-600">{p.nombre}</span>
+                          <span className="ml-auto shrink-0 text-right text-xs text-slate-400">
+                            {Number(p.stock_cajas ?? 0) > 0 && (
+                              <span className="block">{formatCantidad(p.stock_cajas)} cj</span>
+                            )}
+                            {Number(p.stock_botellas_sueltas ?? 0) > 0 && (
+                              <span className="block">
+                                {formatCantidadUnidad(p.stock_botellas_sueltas ?? 0, p.unidad)}
+                              </span>
+                            )}
+                            {Number(p.stock_cajas ?? 0) <= 0 &&
+                              Number(p.stock_botellas_sueltas ?? 0) <= 0 &&
+                              formatCantidad(p.stock_cajas ?? 0)}
+                          </span>
                         </button>
                       </li>
                     ))}

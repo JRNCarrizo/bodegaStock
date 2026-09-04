@@ -16,7 +16,10 @@ import {
 } from '../utils/excel-export'
 import { resolveUnidadesPorCajaDefault } from '../utils/empaqueNombre'
 import { sqlProductoSearchClause, sqlProductoSearchOrderClause } from '../utils/productoSearch'
-import { ensureUnidadesPorCajaDefaultFromStock } from '../utils/stock'
+import {
+  ensureUnidadesPorCajaDefaultFromStock,
+  STOCK_LINEA_SUELTO_SQL
+} from '../utils/stock'
 import {
   assertProductoEnLogistica,
   getLogisticaById,
@@ -131,9 +134,11 @@ export async function productosRoutes(app: FastifyInstance): Promise<void> {
   app.get('/api/productos', {
     preHandler: puedeConsultarProductos
   }, async (request) => {
-    const { q, activo, page, limit } = request.query as {
+    const { q, activo, con_stock, page, limit } = request.query as {
       q?: string
       activo?: string
+      /** Si es 1/true, solo productos con stock (cajas) > 0 en la logística. */
+      con_stock?: string
       page?: string
       limit?: string
     }
@@ -147,6 +152,19 @@ export async function productosRoutes(app: FastifyInstance): Promise<void> {
       whereSql += ' AND activo = 1'
     } else if (activo === '0') {
       whereSql += ' AND activo = 0'
+    }
+
+    const soloConStock = con_stock === '1' || con_stock === 'true'
+    if (soloConStock) {
+      // Misma idea que planillas: sin cantidad_total > 0 no hay salida posible.
+      whereSql += ` AND EXISTS (
+        SELECT 1
+        FROM stock_sector ss
+        JOIN sectores s ON s.id = ss.sector_id
+        WHERE ss.producto_id = productos.id
+          AND s.logistica_id = ${logisticaId}
+          AND ss.cantidad_total > 0
+      )`
     }
 
     let orderSql = ' ORDER BY nombre COLLATE NOCASE ASC'
@@ -163,10 +181,29 @@ export async function productosRoutes(app: FastifyInstance): Promise<void> {
       orderParams.push(...order.params)
     }
 
+    // Stock total solo cuando se pide con_stock (búsqueda de planillas):
+    // correlacionado, pero sobre pocos resultados locales — sin demora perceptible.
+    const stockSelectSql = soloConStock
+      ? `,
+             COALESCE((
+               SELECT SUM(ss.cantidad_total)
+               FROM stock_sector ss
+               JOIN sectores s_tot ON s_tot.id = ss.sector_id
+               WHERE ss.producto_id = productos.id AND s_tot.logistica_id = ${logisticaId}
+             ), 0) AS stock_cajas,
+             COALESCE((
+               SELECT SUM(${STOCK_LINEA_SUELTO_SQL})
+               FROM stock_lineas sl
+               JOIN stock_sector ss2 ON ss2.id = sl.stock_sector_id
+               JOIN sectores s_suelto ON s_suelto.id = ss2.sector_id
+               WHERE ss2.producto_id = productos.id AND s_suelto.logistica_id = ${logisticaId}
+             ), 0) AS stock_botellas_sueltas`
+      : ''
+
     const selectSql = `
       SELECT id, codigo_interno, codigo_barras, nombre, descripcion, imagen_path,
              unidad, unidades_por_pallet_default, unidades_por_caja_default,
-             activo, logistica_id, created_at, updated_at
+             activo, logistica_id, created_at, updated_at${stockSelectSql}
       FROM productos
       ${whereSql}
       ${orderSql}

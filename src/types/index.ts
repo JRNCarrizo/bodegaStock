@@ -234,6 +234,9 @@ export interface Producto {
   logistica_id?: number | null
   created_at: string
   updated_at: string
+  /** Presente en búsquedas con con_stock=1 (p. ej. planillas). */
+  stock_cajas?: number
+  stock_botellas_sueltas?: number
 }
 
 export interface ProductoForm {

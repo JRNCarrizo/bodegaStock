@@ -10,7 +10,7 @@ import type { Producto } from '@/types'
  */
 export function useProductoQuickSearch(
   query: string,
-  options?: { enabled?: boolean; limit?: number }
+  options?: { enabled?: boolean; limit?: number; /** Solo productos con stock > 0 */ conStock?: boolean }
 ): {
   results: Producto[]
   searching: boolean
@@ -18,6 +18,7 @@ export function useProductoQuickSearch(
 } {
   const enabled = options?.enabled !== false
   const limit = options?.limit ?? 12
+  const conStock = options?.conStock === true
   const [results, setResults] = useState<Producto[]>([])
   const [searching, setSearching] = useState(false)
 
@@ -33,9 +34,9 @@ export function useProductoQuickSearch(
     setSearching(true)
     const timer = window.setTimeout(async () => {
       try {
-        const data = await api<Producto[]>(
-          `/api/productos?q=${encodeURIComponent(q)}&activo=1`
-        )
+        const params = new URLSearchParams({ q, activo: '1' })
+        if (conStock) params.set('con_stock', '1')
+        const data = await api<Producto[]>(`/api/productos?${params}`)
         if (!cancelled) {
           setResults(sortProductosBySearchRelevance(data, q).slice(0, limit))
         }
@@ -50,7 +51,7 @@ export function useProductoQuickSearch(
       cancelled = true
       window.clearTimeout(timer)
     }
-  }, [query, enabled, limit])
+  }, [query, enabled, limit, conStock])
 
   return { results, searching, setResults }
 }

@@ -1,5 +1,5 @@
 param(
-  [string]$Version = "0.3.64"
+  [string]$Version = "0.3.65"
 )
 
 $ErrorActionPreference = "Stop"
@@ -76,23 +76,11 @@ $notesPath = Join-Path $root "release\release-notes-$Version.md"
 @'
 ## ControlStock v{0}
 
-Layout de carga, ingresos con cajas sueltas, planillas y actualizaciones desde Configuracion.
-
-### UI - pantallas de carga
-- Barra de total + Confirmar pegada abajo en ingresos, planillas, retornos, roturas y movimientos.
-
-### Ingresos
-- Permite cargar solo cajas sueltas (0 pallets + sueltas), como en inventario.
-- Etiquetas mas claras cuando no hay pallets.
+Planillas: buscador mas util al armar la lista de productos.
 
 ### Planillas
-- Salidas del dia agrupadas por vehiculo (camionero como subtitulo).
-- Vehiculo obligatorio si hay camionero asignado (validacion en app y servidor).
-
-### Actualizacion (PC)
-- Detecta bien la version Latest aunque latest.yml en GitHub este desactualizado.
-- Buscar actualizaciones fuerza la consulta (sin cooldown molesto).
-- Instalacion mas rapida: cierra la app antes, menos pausas y sin cartel de app abierta.
+- El buscador no muestra productos con stock en 0.
+- En el desplegable se ve la cantidad total (cajas y sueltas si hay).
 
 ### Instalacion
 1. Cerra ControlStock.

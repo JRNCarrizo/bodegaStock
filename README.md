@@ -4,7 +4,7 @@ Sistema de gestión de stock para bodega con aplicación de escritorio (Electron
 
 ## Estado del proyecto
 
-**v0.3.57** — [Release en GitHub](https://github.com/JRNCarrizo/bodegaStock/releases/tag/v0.3.57)
+**v0.3.65** — [Release en GitHub](https://github.com/JRNCarrizo/bodegaStock/releases/tag/v0.3.65)
 
 | En planta hoy | Preparado para más adelante |
 |---------------|----------------------------|
@@ -16,6 +16,8 @@ Sistema de gestión de stock para bodega con aplicación de escritorio (Electron
 
 ### Reciente (resumen)
 
+- **v0.3.65:** planillas — buscador sin productos en 0 y cantidad de stock en el desplegable.
+- **v0.3.64:** layout de carga, ingresos con sueltas, planillas por vehículo y fix de actualizaciones.
 - **v0.3.57:** planillas y retornos con camionero opcional y búsqueda por vehículo; agenda de turnos con transportista opcional, visualización de notas, tarjetas compactas y eliminación de turnos cancelados.
 - **v0.3.56:** update más robusto — cierre forzado, Setup completo (sin diff), reintento de descarga.
 - **v0.3.55:** stock inicial continuo día a día (inicial D+1 = balance D) en Movimientos del día.

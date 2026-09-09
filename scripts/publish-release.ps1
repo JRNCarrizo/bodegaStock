@@ -1,5 +1,5 @@
 param(
-  [string]$Version = "0.3.65"
+  [string]$Version = "0.3.66"
 )
 
 $ErrorActionPreference = "Stop"
@@ -76,25 +76,28 @@ $notesPath = Join-Path $root "release\release-notes-$Version.md"
 @'
 ## ControlStock v{0}
 
-Planillas: buscador mas util al armar la lista de productos.
+PC servidor: arranque automatico y segundo plano en bandeja.
 
-### Planillas
-- El buscador no muestra productos con stock en 0.
-- En el desplegable se ve la cantidad total (cajas y sueltas si hay).
+### PC servidor
+- Opcion "Iniciar con Windows" (Configuracion > Red local).
+- Al cerrar con la X, sigue en la bandeja y el servidor sigue activo.
+- Clic derecho en el icono de bandeja > Salir para apagar del todo.
+- Una sola instancia: si ya esta abierto, se muestra la ventana.
 
 ### Instalacion
-1. Cerra ControlStock.
-2. PC: Config > Buscar actualizaciones, o instala ControlStock-Setup-{0}.exe.
-3. Celular: ControlStock-{0}.apk.
+1. Cerra ControlStock (si esta en bandeja: Salir).
+2. Actualiza primero la PC servidor con ControlStock-Setup-{0}.exe (o Buscar actualizaciones).
+3. En Configuracion > Red (modo servidor), activa "Iniciar con Windows" si queres.
+4. Clientes y APK: no es obligatorio actualizar solo por esta version.
 
-Importante: actualiza primero el servidor/PC servidor, despues los clientes.
+Importante: actualiza primero el servidor/PC servidor.
 
 Login inicial (base vacia): admin / admin123
 '@ -f $Version | Set-Content -Path $notesPath -Encoding utf8
-$notes = Get-Content -Path $notesPath -Raw
+
 Write-Host "Publicando release $tag (Setup $([math]::Round($exeSize/1MB,2)) MB)..." -ForegroundColor Green
 
-  $existing = $null
+$existing = $null
 try {
   $existing = gh release view $tag 2>$null
 } catch {
@@ -126,6 +129,11 @@ if ($remoteSize -ne $exeSize) {
   if ($remoteSize -ne $exeSize) {
     Write-Error "Setup en GitHub sigue truncado: $remoteSize vs $exeSize. Subi a mano."
   }
+}
+
+# Re-subir latest.yml al final por si el CDN quedo viejo
+if (Test-Path $ymlPath) {
+  gh release upload $tag $ymlPath --clobber
 }
 
 if (Test-Path $apkPath) {

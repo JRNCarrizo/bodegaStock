@@ -92,6 +92,11 @@ export type ApkDownloadResult =
   | { ok: true; version: string; path: string; filename: string }
   | { ok: false; cancelled?: true; message?: string }
 
+export type DesktopPrefs = {
+  openAtLogin: boolean
+  closeToTray: boolean
+}
+
 interface Window {
   bodegaStock?: {
     getNetworkInfo?: () => Promise<NetworkRuntimeInfo>
@@ -112,5 +117,7 @@ interface Window {
     installUpdate?: () => Promise<UpdateActionResult>
     downloadLatestApk?: (opts?: { force?: boolean }) => Promise<ApkDownloadResult>
     onUpdateStatus?: (callback: (status: UpdateStatusPayload) => void) => () => void
+    getDesktopPrefs?: () => Promise<DesktopPrefs>
+    setDesktopPrefs?: (prefs: Partial<DesktopPrefs>) => Promise<DesktopPrefs>
   }
 }

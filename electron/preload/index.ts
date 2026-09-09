@@ -22,5 +22,8 @@ contextBridge.exposeInMainWorld('bodegaStock', {
     return () => {
       ipcRenderer.removeListener('update-status', listener)
     }
-  }
+  },
+  getDesktopPrefs: () => ipcRenderer.invoke('desktop:get-prefs'),
+  setDesktopPrefs: (prefs: { openAtLogin?: boolean; closeToTray?: boolean }) =>
+    ipcRenderer.invoke('desktop:set-prefs', prefs)
 })

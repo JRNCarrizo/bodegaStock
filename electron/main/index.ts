@@ -6,6 +6,13 @@ import { setupMigracionIpc } from './migracion'
 import { setupHelpPdfIpc } from './helpPdf'
 import { setupAutoUpdater, isInstallingUpdate } from './updater'
 import { setupApkDownloadIpc } from './apkDownload'
+import {
+  launchedAtLogin,
+  loadDesktopPrefs,
+  setupDesktopPrefsIpc,
+  syncOpenAtLoginFromPrefs
+} from './desktopPrefs'
+import { destroyTray, ensureTray } from './tray'
 
 const isDev = !app.isPackaged
 
@@ -16,6 +23,8 @@ if (!isDev) {
 
 let mainWindow: BrowserWindow | null = null
 let isShuttingDown = false
+/** true = el usuario eligió Salir (bandeja) o update; no ocultar a bandeja. */
+let allowQuit = false
 
 async function gracefulShutdown(timeoutMs = 1200): Promise<void> {
   try {
@@ -29,17 +38,51 @@ async function gracefulShutdown(timeoutMs = 1200): Promise<void> {
 }
 
 function forceQuitSoon(): void {
+  destroyTray()
   app.exit(0)
   setTimeout(() => process.exit(0), 800)
 }
 
 function quitForUpdate(): void {
+  allowQuit = true
+  destroyTray()
   app.exit(0)
   setTimeout(() => process.exit(0), 600)
 }
 
-function createWindow(): void {
+function showMainWindow(): void {
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    createWindow({ show: true })
+    return
+  }
+  if (mainWindow.isMinimized()) mainWindow.restore()
+  mainWindow.show()
+  mainWindow.focus()
+}
+
+function hideToTray(): void {
+  ensureTray({
+    getWindow: () => mainWindow,
+    showWindow: showMainWindow,
+    quitApp: requestQuit
+  })
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.hide()
+  }
+}
+
+function requestQuit(): void {
+  if (isShuttingDown) return
+  allowQuit = true
+  isShuttingDown = true
+  void gracefulShutdown().finally(() => {
+    forceQuitSoon()
+  })
+}
+
+function createWindow(opts?: { show?: boolean }): void {
   const icon = getAppIcon()
+  const startHidden = opts?.show === false
 
   mainWindow = new BrowserWindow({
     width: 1280,
@@ -63,7 +106,24 @@ function createWindow(): void {
   }
 
   mainWindow.on('ready-to-show', () => {
+    if (startHidden) {
+      hideToTray()
+      return
+    }
     mainWindow?.show()
+  })
+
+  mainWindow.on('close', (event) => {
+    if (allowQuit || isInstallingUpdate() || isShuttingDown) return
+    const prefs = loadDesktopPrefs()
+    if (prefs.closeToTray) {
+      event.preventDefault()
+      hideToTray()
+    }
+  })
+
+  mainWindow.on('closed', () => {
+    mainWindow = null
   })
 
   mainWindow.webContents.setWindowOpenHandler((details) => {
@@ -73,46 +133,67 @@ function createWindow(): void {
 
   if (isDev && process.env['ELECTRON_RENDERER_URL']) {
     mainWindow.loadURL(process.env['ELECTRON_RENDERER_URL'])
-    mainWindow.webContents.openDevTools({ mode: 'detach' })
+    if (!startHidden) {
+      mainWindow.webContents.openDevTools({ mode: 'detach' })
+    }
   } else {
     mainWindow.loadFile(join(__dirname, '../renderer/index.html'))
   }
 }
 
-app.whenReady().then(async () => {
-  setupNetworkIpc()
-  setupMigracionIpc()
-  setupHelpPdfIpc()
-  setupAutoUpdater(() => mainWindow)
-  setupApkDownloadIpc(() => mainWindow)
-  await bootstrapNetworkServer()
-  createWindow()
-
-  app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) createWindow()
+const gotLock = app.requestSingleInstanceLock()
+if (!gotLock) {
+  app.quit()
+} else {
+  app.on('second-instance', () => {
+    showMainWindow()
   })
-})
 
-app.on('window-all-closed', () => {
-  if (process.platform === 'darwin') return
-  if (isInstallingUpdate()) {
-    quitForUpdate()
-    return
-  }
-  if (isShuttingDown) return
-  isShuttingDown = true
-  void gracefulShutdown().finally(() => {
-    forceQuitSoon()
-  })
-})
+  app.whenReady().then(async () => {
+    setupNetworkIpc()
+    setupMigracionIpc()
+    setupHelpPdfIpc()
+    setupDesktopPrefsIpc()
+    syncOpenAtLoginFromPrefs()
+    setupAutoUpdater(() => mainWindow)
+    setupApkDownloadIpc(() => mainWindow)
+    await bootstrapNetworkServer()
 
-app.on('before-quit', (event) => {
-  // Durante update el Setup se lanza desde un script externo tras cerrar el proceso.
-  if (isInstallingUpdate()) return
-  if (isShuttingDown) return
-  event.preventDefault()
-  isShuttingDown = true
-  void gracefulShutdown().finally(() => {
-    forceQuitSoon()
+    const startHidden = launchedAtLogin() && loadDesktopPrefs().openAtLogin
+    createWindow({ show: !startHidden })
+
+    // Bandeja siempre disponible en escritorio para reabrir / salir limpio.
+    ensureTray({
+      getWindow: () => mainWindow,
+      showWindow: showMainWindow,
+      quitApp: requestQuit
+    })
+
+    app.on('activate', () => {
+      showMainWindow()
+    })
   })
-})
+
+  app.on('window-all-closed', () => {
+    if (process.platform === 'darwin') return
+    if (isInstallingUpdate()) {
+      quitForUpdate()
+      return
+    }
+    // Si closeToTray, la ventana se oculta con preventDefault y no debería llegar acá.
+    // Si llega (p. ej. closeToTray off), salir de verdad.
+    requestQuit()
+  })
+
+  app.on('before-quit', (event) => {
+    // Update / Salir desde bandeja / apagado de Windows: apagar API limpio.
+    if (isInstallingUpdate()) return
+    if (isShuttingDown) return
+    event.preventDefault()
+    allowQuit = true
+    isShuttingDown = true
+    void gracefulShutdown().finally(() => {
+      forceQuitSoon()
+    })
+  })
+}

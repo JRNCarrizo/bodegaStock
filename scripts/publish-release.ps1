@@ -1,5 +1,5 @@
 param(
-  [string]$Version = "0.3.66"
+  [string]$Version = "0.3.67"
 )
 
 $ErrorActionPreference = "Stop"
@@ -76,19 +76,16 @@ $notesPath = Join-Path $root "release\release-notes-$Version.md"
 @'
 ## ControlStock v{0}
 
-PC servidor: arranque automatico y segundo plano en bandeja.
+Fix: al tocar Reiniciar e instalar, el Setup vuelve a abrirse correctamente.
 
-### PC servidor
-- Opcion "Iniciar con Windows" (Configuracion > Red local).
-- Al cerrar con la X, sigue en la bandeja y el servidor sigue activo.
-- Clic derecho en el icono de bandeja > Salir para apagar del todo.
-- Una sola instancia: si ya esta abierto, se muestra la ventana.
+### Actualizacion (PC)
+- El instalador se lanza en un proceso independiente (ya no se corta al cerrar la app).
+- Incluye lo de v0.3.66: iniciar con Windows y bandeja en segundo plano.
 
 ### Instalacion
 1. Cerra ControlStock (si esta en bandeja: Salir).
-2. Actualiza primero la PC servidor con ControlStock-Setup-{0}.exe (o Buscar actualizaciones).
-3. En Configuracion > Red (modo servidor), activa "Iniciar con Windows" si queres.
-4. Clientes y APK: no es obligatorio actualizar solo por esta version.
+2. Instala ControlStock-Setup-{0}.exe (esta vez puede ser a mano desde Releases).
+3. En la PC servidor: Configuracion > Red > Iniciar con Windows (opcional).
 
 Importante: actualiza primero el servidor/PC servidor.
 

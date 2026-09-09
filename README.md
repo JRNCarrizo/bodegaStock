@@ -4,7 +4,7 @@ Sistema de gestión de stock para bodega con aplicación de escritorio (Electron
 
 ## Estado del proyecto
 
-**v0.3.66** — [Release en GitHub](https://github.com/JRNCarrizo/bodegaStock/releases/tag/v0.3.66)
+**v0.3.67** — [Release en GitHub](https://github.com/JRNCarrizo/bodegaStock/releases/tag/v0.3.67)
 
 | En planta hoy | Preparado para más adelante |
 |---------------|----------------------------|
@@ -16,6 +16,7 @@ Sistema de gestión de stock para bodega con aplicación de escritorio (Electron
 
 ### Reciente (resumen)
 
+- **v0.3.67:** fix “Reiniciar e instalar” (el Setup no se abría al cerrar la app).
 - **v0.3.66:** PC servidor — iniciar con Windows y seguir en bandeja (segundo plano).
 - **v0.3.65:** planillas — buscador sin productos en 0 y cantidad de stock en el desplegable.
 - **v0.3.64:** layout de carga, ingresos con sueltas, planillas por vehículo y fix de actualizaciones.

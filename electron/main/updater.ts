@@ -298,13 +298,26 @@ async function downloadSetupDirect(version: string): Promise<string> {
 }
 
 /**
+ * Carpeta Temp sin espacios en Users\... (evita roturas de `cmd /c start` con rutas citadas).
+ */
+function installerHelperDir(): string {
+  const systemTemp = process.env.SystemRoot ? join(process.env.SystemRoot, 'Temp') : ''
+  if (systemTemp && existsSync(systemTemp)) return systemTemp
+  return app.getPath('temp')
+}
+
+/**
  * Espera a que ControlStock termine y recién ahí abre el Setup (visible).
  * Usa un .bat lanzado con `start` (proceso huérfano) para que no muera al cerrar Electron.
+ *
+ * Importante: rutas con espacios (ej. "Jorge Carrizo") deben ir entre comillas y el cwd
+ * no puede ser Program Files — si no, cmd muestra "Acceso denegado" / "archivo por lotes".
  */
 function launchInstallerAfterAppExit(installerPath: string): void {
   const stablePath = prepareStableInstallerCopy(installerPath)
-  const bat = join(app.getPath('temp'), `controlstock-install-${Date.now()}.bat`)
-  // Paths con espacios (ej. Jorge Carrizo) → comillas en el bat.
+  const batDir = installerHelperDir()
+  if (!existsSync(batDir)) mkdirSync(batDir, { recursive: true })
+  const bat = join(batDir, `cs-install-${Date.now()}.bat`)
   const exe = stablePath.replace(/"/g, '')
   const lines = [
     '@echo off',
@@ -330,12 +343,18 @@ function launchInstallerAfterAppExit(installerPath: string): void {
   ]
   writeFileSync(bat, lines.join('\r\n'), 'utf8')
 
-  // `start` crea un proceso independiente del árbol de Electron.
-  const child = spawn('cmd.exe', ['/c', 'start', '', '/min', bat], {
-    detached: true,
-    stdio: 'ignore',
-    windowsHide: true
-  })
+  // Un solo string tras /c + /s: cmd no rompe la ruta del .bat por espacios.
+  const batQuoted = `"${bat.replace(/"/g, '')}"`
+  const child = spawn(
+    process.env.ComSpec || 'cmd.exe',
+    ['/d', '/s', '/c', `start "ControlStockSetup" /min ${batQuoted}`],
+    {
+      detached: true,
+      stdio: 'ignore',
+      windowsHide: true,
+      cwd: batDir
+    }
+  )
   child.unref()
 }
 

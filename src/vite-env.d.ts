@@ -95,6 +95,8 @@ export type ApkDownloadResult =
 export type DesktopPrefs = {
   openAtLogin: boolean
   closeToTray: boolean
+  registeredAtLogin?: boolean
+  isPackaged?: boolean
 }
 
 interface Window {
@@ -119,5 +121,6 @@ interface Window {
     onUpdateStatus?: (callback: (status: UpdateStatusPayload) => void) => () => void
     getDesktopPrefs?: () => Promise<DesktopPrefs>
     setDesktopPrefs?: (prefs: Partial<DesktopPrefs>) => Promise<DesktopPrefs>
+    openStartupFolder?: () => Promise<{ ok: true }>
   }
 }

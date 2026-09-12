@@ -1,5 +1,5 @@
 param(
-  [string]$Version = "0.3.67"
+  [string]$Version = "0.3.68"
 )
 
 $ErrorActionPreference = "Stop"
@@ -76,16 +76,18 @@ $notesPath = Join-Path $root "release\release-notes-$Version.md"
 @'
 ## ControlStock v{0}
 
-Fix: al tocar Reiniciar e instalar, el Setup vuelve a abrirse correctamente.
+Carga mas comoda: swipe en retornos/roturas, destino en la linea de ingresos y stock en el buscador de roturas.
 
-### Actualizacion (PC)
-- El instalador se lanza en un proceso independiente (ya no se corta al cerrar la app).
-- Incluye lo de v0.3.66: iniciar con Windows y bandeja en segundo plano.
+### Cambios
+- Retornos y roturas: deslizar linea para editar (derecha) o borrar (izquierda).
+- Roturas: el buscador muestra stock a la derecha (solo productos con stock).
+- Ingresos: el sector destino va en el formulario del producto (como en retornos).
+- PC servidor: registro de "Iniciar con Windows" mas robusto (login item + Startup).
 
 ### Instalacion
 1. Cerra ControlStock (si esta en bandeja: Salir).
-2. Instala ControlStock-Setup-{0}.exe (esta vez puede ser a mano desde Releases).
-3. En la PC servidor: Configuracion > Red > Iniciar con Windows (opcional).
+2. Actualiza primero la PC servidor con ControlStock-Setup-{0}.exe (o Buscar actualizaciones).
+3. Clientes y APK: conviene actualizar para swipe, buscador e ingresos.
 
 Importante: actualiza primero el servidor/PC servidor.
 

@@ -1224,12 +1224,33 @@ export function ConfiguracionPage() {
                             Iniciar con Windows
                           </span>
                           <span className="mt-1 block text-sm leading-relaxed text-slate-500">
-                            Al encender la PC, ControlStock arranca solo en bandeja (sin abrir la
-                            ventana). Así las otras PCs ya pueden conectarse.
+                            Hay que activar este tilde. Al prender la PC, ControlStock arranca solo
+                            en la bandeja (sin abrir la ventana) para que las otras PCs se conecten.
                             {!appInfo?.isPackaged && (
                               <> Disponible en la app instalada (no en modo desarrollo).</>
                             )}
                           </span>
+                          {desktopPrefs.openAtLogin && (
+                            <span
+                              className={cn(
+                                'mt-2 block text-xs font-medium',
+                                desktopPrefs.registeredAtLogin ? 'text-emerald-700' : 'text-amber-700'
+                              )}
+                            >
+                              {desktopPrefs.registeredAtLogin
+                                ? 'Registrado en el inicio de Windows. Probá reiniciando la PC.'
+                                : 'Activado en la app, pero Windows aún no lo registró. Desmarcá y volvé a marcar, o pedí ayuda.'}
+                            </span>
+                          )}
+                          {desktopPrefs.openAtLogin && api?.openStartupFolder && (
+                            <button
+                              type="button"
+                              className="mt-2 text-xs font-medium text-brand-700 underline-offset-2 hover:underline"
+                              onClick={() => void api.openStartupFolder?.()}
+                            >
+                              Abrir carpeta de inicio de Windows
+                            </button>
+                          )}
                         </span>
                       </label>
                       <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-surface-border bg-white p-3.5 shadow-sm">

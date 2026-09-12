@@ -66,7 +66,7 @@ import {
   readRemitoPrefijo,
   saveRemitoPrefijoFromNumero
 } from '@/lib/remitoPrefijo'
-import { resolveSectorIdParaIngreso, sortSectoresParaIngreso } from '@/lib/sectores'
+import { idSectorIngresoPorDefecto, resolveSectorIdParaIngreso, sortSectoresParaIngreso } from '@/lib/sectores'
 import type {
   IngresoDetalle,
   IngresoLineaDraft,
@@ -193,7 +193,7 @@ export function IngresosPage() {
     searching: searchingProducts,
     setResults: setProductResults
   } = useProductoQuickSearch(productSearch, {
-    enabled: !!sectorId && !selectedProduct,
+    enabled: !selectedProduct,
     limit: 12
   })
   const [lineas, setLineas] = useState<IngresoLineaDraft[]>([])
@@ -237,8 +237,20 @@ export function IngresosPage() {
   const keyboardInset = useVisualViewportBottomInset()
   useMainLayoutFullHeight(view === 'create' && createPhase === 'carga')
 
-  const sectorSeleccionado = sectores.find((s) => s.id === Number(sectorId))
   const sectoresOrdenados = useMemo(() => sortSectoresParaIngreso(sectores), [sectores])
+  const sectorDefaultId = idSectorIngresoPorDefecto(sectores)
+  const sectorDefaultSeleccionado = sectores.find((s) => s.id === Number(sectorDefaultId))
+
+  function sectorDefaultParaLinea(): string {
+    return (
+      sectorId ||
+      sectorDefaultId ||
+      (sectoresOrdenados[0] ? String(sectoresOrdenados[0].id) : '')
+    )
+  }
+
+  const sectorIdEfectivo = sectorDefaultParaLinea()
+  const sectorSeleccionado = sectores.find((s) => s.id === Number(sectorIdEfectivo))
   const usaUbicaciones =
     Boolean(sectorSeleccionado?.usa_ubicaciones) && ubicaciones.length > 0
 
@@ -417,7 +429,7 @@ export function IngresosPage() {
 
   useEffect(() => {
     if (view === 'create' && createPhase === 'carga') {
-      setTimeout(() => focusField(sectorId ? productSearchRef : sectorRef), 50)
+      setTimeout(() => focusField(productSearchRef), 50)
     }
   }, [view, createPhase])
 
@@ -490,15 +502,15 @@ export function IngresosPage() {
   }, [view, createPhase, sectores])
 
   useEffect(() => {
-    if (!sectorId || !sectorSeleccionado?.usa_ubicaciones) {
+    if (!sectorIdEfectivo || !sectorSeleccionado?.usa_ubicaciones) {
       setUbicaciones([])
-      setUbicacionId('')
+      if (!sectorSeleccionado?.usa_ubicaciones) setUbicacionId('')
       return
     }
-    api<SectorUbicacion[]>(`/api/sectores/${sectorId}/ubicaciones`)
+    api<SectorUbicacion[]>(`/api/sectores/${sectorIdEfectivo}/ubicaciones`)
       .then((data) => setUbicaciones(data.filter((u) => u.activo)))
       .catch(() => setUbicaciones([]))
-  }, [sectorId, sectorSeleccionado?.usa_ubicaciones])
+  }, [sectorIdEfectivo, sectorSeleccionado?.usa_ubicaciones])
 
   const totalGeneral = useMemo(() => sumarTotalesInventarioLineas(lineas), [lineas])
   const resumenGeneral = useMemo(
@@ -669,7 +681,6 @@ export function IngresosPage() {
     setCantidadBultos('')
     setUnidadesPorBulto(defaultUnidadesPorBulto('PALLET', p))
     setCantidadSuelta('')
-    setUbicacionId('')
   }
 
   function handleTipoBultoChange(tipo: 'PALLET' | 'CAJA' | 'SUELTO') {
@@ -703,15 +714,6 @@ export function IngresosPage() {
   }
 
   function selectProduct(p: Producto) {
-    if (!sectorId) {
-      setError('Seleccioná el sector destino primero')
-      return
-    }
-    if (usaUbicaciones && !ubicacionId) {
-      setError('Seleccioná la ubicación dentro del sector')
-      focusField(ubicacionRef)
-      return
-    }
     armKeyboardForCantidadModal()
     setEditingLineaTempId(null)
     setSelectedProduct(p)
@@ -719,6 +721,7 @@ export function IngresosPage() {
     setProductResults([])
     setProductHighlightIndex(-1)
     resetLineaForm(p)
+    if (!sectorId) setSectorId(sectorDefaultParaLinea())
     setError('')
     if (!nativeApp) {
       setTimeout(() => focusField(cantidadBultosRef), 50)
@@ -752,7 +755,7 @@ export function IngresosPage() {
     setProductResults([])
     resetLineaForm(null)
     setError('')
-    setTimeout(() => productSearchRef.current?.focus(), 50)
+    setTimeout(() => focusField(productSearchRef), 50)
   }
 
   function empezarEditarLinea(l: IngresoLineaDraft) {
@@ -860,10 +863,10 @@ export function IngresosPage() {
     }
   }
 
-  function handleCargaSectorKeyDown(e: React.KeyboardEvent<HTMLSelectElement>) {
+  function handleLineaSectorKeyDown(e: React.KeyboardEvent<HTMLSelectElement>) {
     if (e.key !== 'Enter') return
     e.preventDefault()
-    if (!sectorId) {
+    if (!(sectorId || sectorDefaultParaLinea())) {
       setError('Seleccioná el sector destino')
       return
     }
@@ -872,10 +875,10 @@ export function IngresosPage() {
       focusField(ubicacionRef)
       return
     }
-    focusField(productSearchRef)
+    agregarLineaYContinuar()
   }
 
-  function handleCargaUbicacionKeyDown(e: React.KeyboardEvent<HTMLSelectElement>) {
+  function handleLineaUbicacionKeyDown(e: React.KeyboardEvent<HTMLSelectElement>) {
     if (e.key !== 'Enter') return
     e.preventDefault()
     if (usaUbicaciones && !ubicacionId) {
@@ -883,7 +886,11 @@ export function IngresosPage() {
       return
     }
     setError('')
-    focusField(productSearchRef)
+    agregarLineaYContinuar()
+  }
+
+  function avanzarDesdeCantidades() {
+    focusField(sectorRef)
   }
 
   function pickProductFromSearch() {
@@ -943,15 +950,20 @@ export function IngresosPage() {
       setError('Seleccioná un producto primero')
       return false
     }
-    if (!sectorId) {
+    const sectorLinea = sectorId || sectorDefaultParaLinea()
+    if (!sectorLinea) {
       setError('Seleccioná el sector destino')
+      focusField(sectorRef)
       return false
     }
-    if (!sectorSeleccionado) {
+    const sectorLineaSel = sectores.find((s) => s.id === Number(sectorLinea))
+    if (!sectorLineaSel) {
       setError('Sector destino no válido')
       return false
     }
-    if (usaUbicaciones && !ubicacionId) {
+    const lineaUsaUbicaciones =
+      Boolean(sectorLineaSel.usa_ubicaciones) && ubicaciones.length > 0
+    if (lineaUsaUbicaciones && !ubicacionId) {
       setError('Seleccioná la ubicación dentro del sector')
       focusField(ubicacionRef)
       return false
@@ -1050,8 +1062,8 @@ export function IngresosPage() {
       cantidad_suelta: sueltaNum > 0 ? sueltaNum : undefined,
       total_unidades: totalCajas,
       etiqueta: formatEtiqueta(lineaInput, selectedProduct.unidad),
-      sector_id: Number(sectorId),
-      sector_nombre: sectorSeleccionado.nombre,
+      sector_id: Number(sectorLinea),
+      sector_nombre: sectorLineaSel.nombre,
       ubicacion_id: ub?.id ?? null,
       ubicacion_nombre: ub?.nombre ?? null
     }
@@ -1072,7 +1084,7 @@ export function IngresosPage() {
     setSelectedProduct(null)
     setProductSearch('')
     setProductResults([])
-    setTimeout(() => productSearchRef.current?.focus(), 50)
+    setTimeout(() => focusField(productSearchRef), 50)
   }
 
   function handleLineaEnter(e: React.KeyboardEvent) {
@@ -1344,7 +1356,7 @@ export function IngresosPage() {
                 placeholder="Notas sobre el ingreso..."
               />
               <p className="text-xs text-slate-400">
-                Enter en observaciones → carga de productos (el destino se elige ahí)
+                Enter en observaciones → carga de productos (el destino se elige en cada línea)
               </p>
               <Button
                 type="button"
@@ -1502,6 +1514,12 @@ export function IngresosPage() {
                 <span className="rounded-full bg-white px-2.5 py-1 font-medium text-slate-700 ring-1 ring-surface-border">
                   Remito {numeroRemito}
                 </span>
+                {sectorDefaultSeleccionado && (
+                  <span className="inline-flex items-center gap-1 rounded-full bg-white px-2.5 py-1 font-medium text-slate-700 ring-1 ring-surface-border">
+                    <Warehouse className="h-3 w-3" />
+                    {sectorDefaultSeleccionado.nombre}
+                  </span>
+                )}
               </div>
               <button
                 type="button"
@@ -1520,53 +1538,6 @@ export function IngresosPage() {
           )}
 
           <div className="space-y-3 overflow-visible p-4 sm:p-5">
-            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-              <div className="flex items-center rounded-xl border border-surface-border bg-white focus-within:border-brand-500 focus-within:ring-2 focus-within:ring-brand-500/20">
-                <span className="shrink-0 pl-3 text-xs font-medium text-slate-400">Destino</span>
-                <select
-                  ref={sectorRef}
-                  value={sectorId}
-                  onChange={(e) => {
-                    setSectorId(e.target.value)
-                    setUbicacionId('')
-                  }}
-                  onKeyDown={handleCargaSectorKeyDown}
-                  className="min-w-0 flex-1 border-0 bg-transparent py-2 pl-2 pr-3 text-sm focus:outline-none"
-                >
-                  <option value="">Elegir sector…</option>
-                  {sectoresOrdenados.map((s) => (
-                    <option key={s.id} value={String(s.id)}>
-                      {s.nombre}
-                      {Boolean(s.ingreso_por_defecto) ? ' (por defecto)' : ''}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              {usaUbicaciones && (
-                <div className="flex items-center rounded-xl border border-surface-border bg-white focus-within:border-brand-500 focus-within:ring-2 focus-within:ring-brand-500/20">
-                  <span className="shrink-0 pl-3 text-xs font-medium text-slate-400">Ubicación</span>
-                  <select
-                    ref={ubicacionRef}
-                    value={ubicacionId}
-                    onChange={(e) => {
-                      setUbicacionId(e.target.value)
-                      setError('')
-                    }}
-                    onKeyDown={handleCargaUbicacionKeyDown}
-                    className="min-w-0 flex-1 border-0 bg-transparent py-2 pl-2 pr-3 text-sm focus:outline-none"
-                    aria-label="Ubicación"
-                  >
-                    <option value="">Seleccionar ubicación…</option>
-                    {ubicaciones.map((u) => (
-                      <option key={u.id} value={u.id}>
-                        {u.nombre}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              )}
-            </div>
-
             <div className="relative flex flex-col gap-2 overflow-visible sm:flex-row">
               <div className="relative z-30 min-w-0 flex-1">
                 <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-brand-400" />
@@ -1577,14 +1548,11 @@ export function IngresosPage() {
                   aria-expanded={productResults.length > 0 && !selectedProduct}
                   aria-autocomplete="list"
                   placeholder={
-                    !sectorId
-                      ? 'Primero elegí sector destino'
-                      : usaUbicaciones && !ubicacionId
-                        ? 'Primero elegí ubicación'
-                        : 'Buscar producto — ↑↓ navegar · Enter seleccionar'
+                    nativeApp
+                      ? 'Buscar producto...'
+                      : 'Buscar producto — ↑↓ navegar · Enter seleccionar'
                   }
                   value={productSearch}
-                  disabled={!sectorId || (usaUbicaciones && !ubicacionId)}
                   onChange={(e) => {
                     setProductSearch(e.target.value)
                     setProductHighlightIndex(-1)
@@ -1593,7 +1561,7 @@ export function IngresosPage() {
                     }
                   }}
                   onKeyDown={handleProductSearchKeyDown}
-                  className="w-full rounded-xl border border-surface-border bg-white py-2.5 pl-10 pr-3 text-sm shadow-sm focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-400"
+                  className="w-full rounded-xl border border-surface-border bg-white py-2.5 pl-10 pr-3 text-sm shadow-sm focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20"
                 />
                 {searchingProducts && (
                   <Loader2 className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 animate-spin text-brand-600" />
@@ -1774,7 +1742,7 @@ export function IngresosPage() {
                           onKeyDown={(e) => {
                             if (e.key === 'Enter') {
                               e.preventDefault()
-                              agregarLineaYContinuar()
+                              avanzarDesdeCantidades()
                             }
                           }}
                           placeholder="3"
@@ -1867,7 +1835,7 @@ export function IngresosPage() {
                           onKeyDown={(e) => {
                             if (e.key === 'Enter') {
                               e.preventDefault()
-                              agregarLineaYContinuar()
+                              avanzarDesdeCantidades()
                             }
                           }}
                           placeholder={tipoBulto === 'PALLET' && !palletConBultos ? '38' : '0'}
@@ -1884,11 +1852,69 @@ export function IngresosPage() {
                       </div>
                     </div>
                   </div>
+                </div>
 
-                  <div className="flex shrink-0 items-end">
+                <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] lg:items-end">
+                  <div className="space-y-1.5">
+                    <label className="flex items-center gap-1.5 text-xs font-medium text-slate-600">
+                      <Warehouse className="h-3.5 w-3.5 text-slate-400" aria-hidden />
+                      Sector destino
+                    </label>
+                    <div className="relative">
+                      <div className="pointer-events-none absolute inset-y-0 left-0 z-[1] flex items-center pl-2.5 text-slate-400">
+                        <Warehouse className="h-4 w-4" aria-hidden />
+                      </div>
+                      <select
+                        ref={sectorRef}
+                        value={sectorId || sectorDefaultParaLinea()}
+                        onChange={(e) => {
+                          setSectorId(e.target.value)
+                          setUbicacionId('')
+                          setError('')
+                        }}
+                        onKeyDown={handleLineaSectorKeyDown}
+                        className="w-full rounded-lg border border-surface-border bg-white py-2 pl-9 pr-3 text-sm focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20"
+                      >
+                        {sectoresOrdenados.map((s) => (
+                          <option key={s.id} value={String(s.id)}>
+                            {s.nombre}
+                            {Boolean(s.ingreso_por_defecto) ? ' (por defecto)' : ''}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+                  {usaUbicaciones ? (
+                    <div className="space-y-1.5">
+                      <label className="flex items-center gap-1.5 text-xs font-medium text-slate-600">
+                        Ubicación
+                      </label>
+                      <select
+                        ref={ubicacionRef}
+                        value={ubicacionId}
+                        onChange={(e) => {
+                          setUbicacionId(e.target.value)
+                          setError('')
+                        }}
+                        onKeyDown={handleLineaUbicacionKeyDown}
+                        className="w-full rounded-lg border border-surface-border bg-white py-2 px-3 text-sm focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20"
+                        aria-label="Ubicación"
+                      >
+                        <option value="">Seleccionar ubicación…</option>
+                        {ubicaciones.map((u) => (
+                          <option key={u.id} value={u.id}>
+                            {u.nombre}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  ) : (
+                    <div className="hidden lg:block" />
+                  )}
+                  <div className="flex shrink-0 items-end sm:col-span-2 lg:col-span-1">
                     <Button
                       type="button"
-                      className="h-[2.625rem] w-full rounded-xl px-4 lg:w-auto lg:min-w-[7.5rem]"
+                      className="h-[2.625rem] w-full rounded-xl px-4 lg:min-w-[7.5rem]"
                       onClick={agregarLineaYContinuar}
                     >
                       {editingLineaTempId ? (

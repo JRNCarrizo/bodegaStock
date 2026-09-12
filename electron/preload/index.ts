@@ -25,5 +25,6 @@ contextBridge.exposeInMainWorld('bodegaStock', {
   },
   getDesktopPrefs: () => ipcRenderer.invoke('desktop:get-prefs'),
   setDesktopPrefs: (prefs: { openAtLogin?: boolean; closeToTray?: boolean }) =>
-    ipcRenderer.invoke('desktop:set-prefs', prefs)
+    ipcRenderer.invoke('desktop:set-prefs', prefs),
+  openStartupFolder: () => ipcRenderer.invoke('desktop:open-startup-folder')
 })

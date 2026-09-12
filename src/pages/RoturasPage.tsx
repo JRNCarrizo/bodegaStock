@@ -14,7 +14,6 @@ import {
   Loader2,
   Plus,
   Search,
-  Trash2,
   User,
   Warehouse,
   X
@@ -32,7 +31,14 @@ import { Card, CardBody } from '@/components/ui/Card'
 import { ProductImage } from '@/components/ProductImage'
 import { ScrollableProductName } from '@/components/ScrollableProductName'
 import { SectionHelpButton } from '@/components/SectionHelpButton'
-import { formatCantidad, formatDayTabLabel, formatTotalCajas, todayIsoDate } from '@/lib/desglose'
+import { SwipeableConteoLinea } from '@/components/SwipeableConteoLinea'
+import {
+  formatCantidad,
+  formatCantidadUnidad,
+  formatDayTabLabel,
+  formatTotalCajas,
+  todayIsoDate
+} from '@/lib/desglose'
 import { downloadApiFile } from '@/lib/downloadFile'
 import { isNativeApp } from '@/lib/nativeServer'
 import { searchDelayMs } from '@/lib/searchDelay'
@@ -90,7 +96,8 @@ export function RoturasPage() {
     setResults: setProductResults
   } = useProductoQuickSearch(productSearch, {
     enabled: !selectedProduct,
-    limit: 12
+    limit: 12,
+    conStock: true
   })
   const [cantidadCajas, setCantidadCajas] = useState('')
   const [lineSectorId, setLineSectorId] = useState('')
@@ -99,6 +106,8 @@ export function RoturasPage() {
   const [lineas, setLineas] = useState<RoturaLineaDraft[]>([])
   const [expandedProductos, setExpandedProductos] = useState<Set<number>>(new Set())
   const [showScanner, setShowScanner] = useState(false)
+  const [swipeOpenLineId, setSwipeOpenLineId] = useState<string | null>(null)
+  const [editingLineaTempId, setEditingLineaTempId] = useState<string | null>(null)
 
   const [showResumenDia, setShowResumenDia] = useState(false)
   const [resumenDia, setResumenDia] = useState<RoturaResumenDia | null>(null)
@@ -281,6 +290,8 @@ export function RoturasPage() {
     setExpandedProductos(new Set())
     setShowScanner(false)
     setProductHighlightIndex(-1)
+    setEditingLineaTempId(null)
+    setSwipeOpenLineId(null)
     setError('')
   }
 
@@ -288,6 +299,7 @@ export function RoturasPage() {
     resetCreateForm()
     setDetalle(null)
     setShowScanner(false)
+    setSwipeOpenLineId(null)
     setView('list')
   }
 
@@ -360,6 +372,7 @@ export function RoturasPage() {
   }
 
   function cancelarLineaForm() {
+    setEditingLineaTempId(null)
     setSelectedProduct(null)
     setProductSearch('')
     setCantidadCajas('')
@@ -369,8 +382,54 @@ export function RoturasPage() {
     setTimeout(() => productSearchRef.current?.focus(), 50)
   }
 
+  async function loadStockSectores(
+    productoId: number,
+    opts?: { preferSectorId?: number; autoPickLeastStock?: boolean }
+  ) {
+    try {
+      const data = await api<{
+        sectores: {
+          sector_id: number
+          sector_nombre: string
+          stock_disponible_cajas: number
+        }[]
+      }>(`/api/roturas/producto/${productoId}/stock-sectores`)
+
+      const map: Record<number, number> = {}
+      for (const s of data.sectores) {
+        map[s.sector_id] = s.stock_disponible_cajas
+      }
+      setStockPorSector(map)
+
+      if (opts?.preferSectorId != null) {
+        const match = data.sectores.find((s) => s.sector_id === opts.preferSectorId)
+        setStockDisponible(match?.stock_disponible_cajas ?? map[opts.preferSectorId] ?? null)
+        return
+      }
+
+      if (!opts?.autoPickLeastStock) return
+
+      const withStock = data.sectores.filter((s) => s.stock_disponible_cajas > 0)
+      const pool = withStock.length > 0 ? withStock : data.sectores
+      if (pool.length === 0) {
+        if (sectores[0]) setLineSectorId(String(sectores[0].id))
+        return
+      }
+      const best = pool.reduce((a, b) =>
+        a.stock_disponible_cajas <= b.stock_disponible_cajas ? a : b
+      )
+      setLineSectorId(String(best.sector_id))
+      setStockDisponible(best.stock_disponible_cajas)
+    } catch {
+      if (opts?.autoPickLeastStock && !lineSectorId && sectores[0]) {
+        setLineSectorId(String(sectores[0].id))
+      }
+    }
+  }
+
   function selectProduct(p: Producto) {
     armKeyboardForCantidadModal()
+    setEditingLineaTempId(null)
     setSelectedProduct(p)
     setProductSearch(p.codigo_interno)
     setProductResults([])
@@ -382,38 +441,46 @@ export function RoturasPage() {
     if (!nativeApp) {
       setTimeout(() => focusField(cantidadRef), 50)
     }
+    void loadStockSectores(p.id, { autoPickLeastStock: true })
+  }
 
-    void (async () => {
-      try {
-        const data = await api<{
-          sectores: {
-            sector_id: number
-            sector_nombre: string
-            stock_disponible_cajas: number
-          }[]
-        }>(`/api/roturas/producto/${p.id}/stock-sectores`)
-
-        const map: Record<number, number> = {}
-        for (const s of data.sectores) {
-          map[s.sector_id] = s.stock_disponible_cajas
-        }
-        setStockPorSector(map)
-
-        const withStock = data.sectores.filter((s) => s.stock_disponible_cajas > 0)
-        const pool = withStock.length > 0 ? withStock : data.sectores
-        if (pool.length === 0) {
-          if (sectores[0]) setLineSectorId(String(sectores[0].id))
-          return
-        }
-        const best = pool.reduce((a, b) =>
-          a.stock_disponible_cajas <= b.stock_disponible_cajas ? a : b
-        )
-        setLineSectorId(String(best.sector_id))
-        setStockDisponible(best.stock_disponible_cajas)
-      } catch {
-        if (!lineSectorId && sectores[0]) setLineSectorId(String(sectores[0].id))
-      }
-    })()
+  function empezarEditarLinea(l: RoturaLineaDraft) {
+    setSwipeOpenLineId(null)
+    armKeyboardForCantidadModal()
+    setEditingLineaTempId(l.tempId)
+    setExpandedProductos((prev) => new Set(prev).add(l.producto_id))
+    setLineSectorId(String(l.sector_id))
+    setSelectedProduct({
+      id: l.producto_id,
+      codigo_interno: l.codigo_interno,
+      codigo_barras: null,
+      nombre: l.nombre,
+      descripcion: null,
+      imagen_path: null,
+      unidad: 'caja',
+      unidades_por_pallet_default: null,
+      unidades_por_caja_default: null,
+      activo: 1,
+      created_at: '',
+      updated_at: ''
+    })
+    setProductSearch(l.codigo_interno)
+    setProductResults([])
+    setCantidadCajas(String(l.cantidad_cajas))
+    setError('')
+    setStockDisponible(null)
+    setStockPorSector({})
+    if (!nativeApp) {
+      setTimeout(() => focusField(cantidadRef), 50)
+    }
+    void loadStockSectores(l.producto_id, { preferSectorId: l.sector_id })
+    void api<Producto>(`/api/productos/${l.producto_id}`)
+      .then((fresh) => {
+        setSelectedProduct((cur) => (cur?.id === fresh.id ? fresh : cur))
+      })
+      .catch(() => {
+        /* keep draft product */
+      })
   }
 
   useEffect(() => {
@@ -479,18 +546,22 @@ export function RoturasPage() {
       setError(`Stock insuficiente en el sector (disponible: ${formatTotalCajas(stockDisponible)})`)
       return
     }
-    setLineas((prev) => [
-      ...prev,
-      {
-        tempId: newTempId(),
-        producto_id: selectedProduct.id,
-        codigo_interno: selectedProduct.codigo_interno,
-        nombre: selectedProduct.nombre,
-        sector_id: sector.id,
-        sector_nombre: sector.nombre,
-        cantidad_cajas: qty
+    const draft: RoturaLineaDraft = {
+      tempId: editingLineaTempId ?? newTempId(),
+      producto_id: selectedProduct.id,
+      codigo_interno: selectedProduct.codigo_interno,
+      nombre: selectedProduct.nombre,
+      sector_id: sector.id,
+      sector_nombre: sector.nombre,
+      cantidad_cajas: qty
+    }
+    setLineas((prev) => {
+      if (editingLineaTempId) {
+        return prev.map((l) => (l.tempId === editingLineaTempId ? draft : l))
       }
-    ])
+      return [...prev, draft]
+    })
+    setEditingLineaTempId(null)
     setSelectedProduct(null)
     setProductSearch('')
     setCantidadCajas('')
@@ -598,6 +669,15 @@ export function RoturasPage() {
 
   function quitarLinea(tempId: string) {
     setLineas((prev) => prev.filter((l) => l.tempId !== tempId))
+    if (editingLineaTempId === tempId) {
+      setEditingLineaTempId(null)
+      setSelectedProduct(null)
+      setProductSearch('')
+      setCantidadCajas('')
+      setStockDisponible(null)
+      setStockPorSector({})
+    }
+    if (swipeOpenLineId === tempId) setSwipeOpenLineId(null)
   }
 
   if (view === 'detail' && detalle) {
@@ -810,37 +890,18 @@ export function RoturasPage() {
               {isExpanded && (
                 <ul className="space-y-2 border-t border-red-100/80 bg-gradient-to-b from-surface-muted/40 to-white px-4 py-3 sm:px-5">
                   {grupo.lineas.map((l) => (
-                    <li
+                    <SwipeableConteoLinea
                       key={l.tempId}
-                      className="flex items-center justify-between gap-3 rounded-lg border border-surface-border bg-white px-3 py-2.5 text-sm"
+                      open={swipeOpenLineId === l.tempId}
+                      onOpenChange={(open) => setSwipeOpenLineId(open ? l.tempId : null)}
+                      onEdit={() => empezarEditarLinea(l)}
+                      onDelete={() => quitarLinea(l.tempId)}
                     >
-                      <div className="min-w-0 text-slate-800">
+                      <div className="min-w-0 flex-1 text-slate-800">
                         {formatCantidad(l.cantidad_cajas)}
-                        {!nativeApp && (
-                          <>
-                            {' · '}
-                            {l.sector_nombre}
-                          </>
-                        )}
+                        <span className="ml-1.5 text-xs text-slate-500">{l.sector_nombre}</span>
                       </div>
-                      <div className="flex shrink-0 items-center gap-2">
-                        {nativeApp && (
-                          <span className="inline-flex max-w-[8rem] items-center gap-1 truncate text-xs font-medium text-slate-600">
-                            <Warehouse className="h-3 w-3 shrink-0 text-slate-400" />
-                            {l.sector_nombre}
-                          </span>
-                        )}
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="sm"
-                          className="rounded-lg"
-                          onClick={() => quitarLinea(l.tempId)}
-                        >
-                          <Trash2 className="h-4 w-4 text-red-500" />
-                        </Button>
-                      </div>
-                    </li>
+                    </SwipeableConteoLinea>
                   ))}
                 </ul>
               )}
@@ -937,6 +998,19 @@ export function RoturasPage() {
                             {p.codigo_interno}
                           </span>
                           <span className="truncate text-slate-600">{p.nombre}</span>
+                          <span className="ml-auto shrink-0 text-right text-xs text-slate-400">
+                            {Number(p.stock_cajas ?? 0) > 0 && (
+                              <span className="block">{formatCantidad(p.stock_cajas)} cj</span>
+                            )}
+                            {Number(p.stock_botellas_sueltas ?? 0) > 0 && (
+                              <span className="block">
+                                {formatCantidadUnidad(p.stock_botellas_sueltas ?? 0, p.unidad)}
+                              </span>
+                            )}
+                            {Number(p.stock_cajas ?? 0) <= 0 &&
+                              Number(p.stock_botellas_sueltas ?? 0) <= 0 &&
+                              formatCantidad(p.stock_cajas ?? 0)}
+                          </span>
                         </button>
                       </li>
                     ))}
@@ -1016,7 +1090,7 @@ export function RoturasPage() {
                           {selectedProduct.codigo_interno}
                         </span>
                         <p className="ml-auto shrink-0 text-[10px] font-semibold uppercase tracking-wide text-red-600">
-                          Nueva línea
+                          {editingLineaTempId ? 'Editar línea' : 'Nueva línea'}
                         </p>
                       </div>
                       <ScrollableProductName className="mt-1 text-sm font-semibold text-slate-900">
@@ -1099,7 +1173,7 @@ export function RoturasPage() {
                         onClick={agregarLineaYContinuar}
                       >
                         <Plus className="h-4 w-4" />
-                        Agregar ↵
+                        {editingLineaTempId ? 'Guardar ↵' : 'Agregar ↵'}
                       </Button>
                     </div>
                   </div>

@@ -15,7 +15,6 @@ import {
   Plus,
   RotateCcw,
   Search,
-  Trash2,
   Truck,
   Eye,
   User,
@@ -306,7 +305,9 @@ export function RetornosPage() {
   const [editCantidad, setEditCantidad] = useState('')
   const [editEstado, setEditEstado] = useState<RetornoEstadoCondicion>('BUEN_ESTADO')
   const [editSector, setEditSector] = useState('')
-  const [swipeOpenLineId, setSwipeOpenLineId] = useState<number | null>(null)
+  /** Draft (tempId string) o verificación (linea.id number). */
+  const [swipeOpenLineId, setSwipeOpenLineId] = useState<string | number | null>(null)
+  const [editingLineaTempId, setEditingLineaTempId] = useState<string | null>(null)
   const [expandedVerificacionIds, setExpandedVerificacionIds] = useState<Set<number>>(
     () => new Set()
   )
@@ -576,6 +577,8 @@ export function RetornosPage() {
     setExpandedProductos(new Set())
     setShowScanner(false)
     setProductHighlightIndex(-1)
+    setEditingLineaTempId(null)
+    setSwipeOpenLineId(null)
     setError('')
   }
 
@@ -583,6 +586,8 @@ export function RetornosPage() {
     setSelectedProduct(null)
     setProductSearch('')
     setProductResults([])
+    setEditingLineaTempId(null)
+    setSwipeOpenLineId(null)
     setShowScanner(false)
     setError('')
     setView('list')
@@ -613,6 +618,50 @@ export function RetornosPage() {
 
   function quitarLinea(tempId: string) {
     setLineas((prev) => prev.filter((l) => l.tempId !== tempId))
+    if (editingLineaTempId === tempId) {
+      setEditingLineaTempId(null)
+      setSelectedProduct(null)
+      setProductSearch('')
+      resetLineaForm()
+    }
+    if (swipeOpenLineId === tempId) setSwipeOpenLineId(null)
+  }
+
+  function empezarEditarLinea(l: RetornoLineaDraft) {
+    setSwipeOpenLineId(null)
+    armKeyboardForCantidadModal()
+    setEditingLineaTempId(l.tempId)
+    setExpandedProductos((prev) => new Set(prev).add(l.producto_id))
+    setLineSectorId(String(l.sector_id))
+    setSelectedProduct({
+      id: l.producto_id,
+      codigo_interno: l.codigo_interno,
+      codigo_barras: null,
+      nombre: l.nombre,
+      descripcion: null,
+      imagen_path: null,
+      unidad: 'caja',
+      unidades_por_pallet_default: null,
+      unidades_por_caja_default: null,
+      activo: 1,
+      created_at: '',
+      updated_at: ''
+    })
+    setProductSearch(l.codigo_interno)
+    setProductResults([])
+    setCantidadCajas(String(l.cantidad_cajas))
+    setEstadoCondicion(l.estado_condicion)
+    setError('')
+    if (!nativeApp) {
+      setTimeout(() => focusField(cantidadRef), 50)
+    }
+    void api<Producto>(`/api/productos/${l.producto_id}`)
+      .then((fresh) => {
+        setSelectedProduct((cur) => (cur?.id === fresh.id ? fresh : cur))
+      })
+      .catch(() => {
+        /* keep draft product */
+      })
   }
 
   async function abrirNuevoRetorno() {
@@ -859,6 +908,7 @@ export function RetornosPage() {
   }
 
   function cancelarLineaForm() {
+    setEditingLineaTempId(null)
     setSelectedProduct(null)
     setProductSearch('')
     resetLineaForm()
@@ -868,6 +918,7 @@ export function RetornosPage() {
 
   function selectProduct(p: Producto) {
     armKeyboardForCantidadModal()
+    setEditingLineaTempId(null)
     setSelectedProduct(p)
     setProductSearch(p.codigo_interno)
     setProductResults([])
@@ -960,19 +1011,23 @@ export function RetornosPage() {
       setError('Sector destino no válido')
       return
     }
-    setLineas((prev) => [
-      ...prev,
-      {
-        tempId: newTempId(),
-        producto_id: selectedProduct.id,
-        codigo_interno: selectedProduct.codigo_interno,
-        nombre: selectedProduct.nombre,
-        sector_id: sector.id,
-        sector_nombre: sector.nombre,
-        cantidad_cajas: qty,
-        estado_condicion: estadoCondicion
+    const draft: RetornoLineaDraft = {
+      tempId: editingLineaTempId ?? newTempId(),
+      producto_id: selectedProduct.id,
+      codigo_interno: selectedProduct.codigo_interno,
+      nombre: selectedProduct.nombre,
+      sector_id: sector.id,
+      sector_nombre: sector.nombre,
+      cantidad_cajas: qty,
+      estado_condicion: estadoCondicion
+    }
+    setLineas((prev) => {
+      if (editingLineaTempId) {
+        return prev.map((l) => (l.tempId === editingLineaTempId ? draft : l))
       }
-    ])
+      return [...prev, draft]
+    })
+    setEditingLineaTempId(null)
     setSelectedProduct(null)
     setProductSearch('')
     resetLineaForm()
@@ -1904,39 +1959,19 @@ export function RetornosPage() {
               {isExpanded && (
                 <ul className="space-y-2 border-t border-brand-100/80 bg-gradient-to-b from-surface-muted/40 to-white px-4 py-3 sm:px-5">
                   {grupo.lineas.map((l) => (
-                    <li
+                    <SwipeableConteoLinea
                       key={l.tempId}
-                      className="flex items-center justify-between gap-3 rounded-lg border border-surface-border bg-white px-3 py-2.5 text-sm"
+                      open={swipeOpenLineId === l.tempId}
+                      onOpenChange={(open) => setSwipeOpenLineId(open ? l.tempId : null)}
+                      onEdit={() => empezarEditarLinea(l)}
+                      onDelete={() => quitarLinea(l.tempId)}
                     >
-                      <div className="min-w-0 text-slate-800">
+                      <div className="min-w-0 flex-1 text-slate-800">
                         {formatTotalCajas(l.cantidad_cajas)}
-                        {!nativeApp && (
-                          <>
-                            {' · '}
-                            {l.sector_nombre}
-                          </>
-                        )}
+                        <span className="ml-1.5 text-xs text-slate-500">{l.sector_nombre}</span>
                       </div>
-                      <div className="flex shrink-0 items-center gap-2">
-                        {nativeApp ? (
-                          <span className="inline-flex max-w-[8rem] items-center gap-1 truncate text-xs font-medium text-slate-600">
-                            <Warehouse className="h-3 w-3 shrink-0 text-slate-400" />
-                            {l.sector_nombre}
-                          </span>
-                        ) : (
-                          badgeCondicion(l.estado_condicion)
-                        )}
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="sm"
-                          className="rounded-lg"
-                          onClick={() => quitarLinea(l.tempId)}
-                        >
-                          <Trash2 className="h-4 w-4 text-red-500" />
-                        </Button>
-                      </div>
-                    </li>
+                      {badgeCondicion(l.estado_condicion)}
+                    </SwipeableConteoLinea>
                   ))}
                 </ul>
               )}
@@ -2130,7 +2165,7 @@ export function RetornosPage() {
                         {selectedProduct.codigo_interno}
                       </span>
                       <p className="ml-auto shrink-0 text-[10px] font-semibold uppercase tracking-wide text-brand-600">
-                        Nueva línea
+                        {editingLineaTempId ? 'Editar línea' : 'Nueva línea'}
                       </p>
                     </div>
                     <ScrollableProductName className="mt-1 text-sm font-semibold text-slate-900">
@@ -2237,7 +2272,7 @@ export function RetornosPage() {
                       onClick={agregarLineaYContinuar}
                     >
                       <Plus className="h-4 w-4" />
-                      Agregar ↵
+                      {editingLineaTempId ? 'Guardar ↵' : 'Agregar ↵'}
                     </Button>
                   </div>
                 </div>

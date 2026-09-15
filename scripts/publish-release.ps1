@@ -1,5 +1,5 @@
 param(
-  [string]$Version = "0.3.69"
+  [string]$Version = "0.3.70"
 )
 
 $ErrorActionPreference = "Stop"
@@ -76,19 +76,18 @@ $notesPath = Join-Path $root "release\release-notes-$Version.md"
 @'
 ## ControlStock v{0}
 
-Fix: al actualizar, el Setup vuelve a abrirse bien aunque el usuario de Windows tenga espacios en la ruta (ej. "Jorge Carrizo").
+Inventario (reconteo): cambiar producto sin rearmar cantidades, y limpiar la pantalla ocultando productos en cero.
 
 ### Cambios
-- Corrige "Acceso denegado" / "No se ha encontrado el archivo por lotes" al tocar Instalar.
-- Incluye lo de v0.3.68 (swipe retornos/roturas, destino en ingresos, stock en roturas).
+- Cambiar producto por linea (swipe > editar) o de todo el grupo (lapiz en el encabezado); se mantienen las cantidades.
+- Productos en cero: deslizar a la izquierda para ocultarlos; siguen contando 0 al finalizar / importar.
+- Fix servidor: el PUT de linea ahora persiste `producto_id`.
+- Online y offline (APK).
 
-### Instalacion (esta vez a mano)
-1. Cerra ControlStock (bandeja > Salir).
-2. Baja ControlStock-Setup-{0}.exe desde Releases.
-3. Si Windows muestra cartel rojo (SmartScreen): Mas informacion > Ejecutar de todas formas.
-4. Instala y listo. Las proximas actualizaciones desde la app deberian funcionar.
-
-Importante: actualiza primero el servidor/PC servidor.
+### Instalacion
+1. Actualiza primero el PC servidor (Setup).
+2. En el celular: actualiza o instala el APK desde Releases.
+3. Si Windows muestra SmartScreen: Mas informacion > Ejecutar de todas formas.
 
 Login inicial (base vacia): admin / admin123
 '@ -f $Version | Set-Content -Path $notesPath -Encoding utf8

@@ -1392,6 +1392,7 @@ export async function inventarioRoutes(app: FastifyInstance): Promise<void> {
 
         db.prepare(`
           UPDATE inventario_conteo_lineas SET
+            producto_id = ?,
             tipo_bulto = ?,
             cantidad_bultos = ?,
             unidades_por_bulto = ?,
@@ -1401,6 +1402,7 @@ export async function inventarioRoutes(app: FastifyInstance): Promise<void> {
             total_unidades = ?
           WHERE id = ?
         `).run(
+          productoId,
           body.tipo_bulto,
           body.tipo_bulto === 'SUELTO' ? null : body.cantidad_bultos ?? null,
           body.tipo_bulto === 'SUELTO' ? null : body.unidades_por_bulto ?? null,

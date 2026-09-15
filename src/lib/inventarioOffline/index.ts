@@ -198,6 +198,54 @@ export async function updateLineaOffline(
   return linea
 }
 
+/** Reasigna todas las líneas de un producto (ronda actual) a otro, sin cambiar cantidades. */
+export async function remapProductoOffline(
+  sectorInvId: number,
+  fromProductoId: number,
+  toProductoId: number
+): Promise<number> {
+  const paquete = await loadPaquete(sectorInvId)
+  if (!paquete) throw new Error('No hay paquete offline. Descargalo con red al PC.')
+  const estado = await loadEstado(sectorInvId)
+  if (!estado) throw new Error('No hay datos locales')
+  if (estado.mi_finalizo) throw new Error('Ya finalizaste esta ronda')
+  if (fromProductoId === toProductoId) return 0
+
+  const producto = paquete.productos.find((p) => p.id === toProductoId)
+  if (!producto) throw new Error('Producto no está en el catálogo del paquete')
+
+  const contadorId =
+    paquete.inventario_sector.mi_rol === 1
+      ? paquete.inventario_sector.contador_1_id
+      : paquete.inventario_sector.contador_2_id
+
+  let changed = 0
+  estado.mis_lineas = estado.mis_lineas.map((l) => {
+    if (l.ronda !== estado.ronda_actual || l.producto_id !== fromProductoId) return l
+    const next = buildOfflineLinea(
+      {
+        producto_id: toProductoId,
+        tipo_bulto: l.tipo_bulto,
+        cantidad_bultos: l.cantidad_bultos,
+        unidades_por_bulto: l.unidades_por_bulto,
+        cantidad_suelta: l.cantidad_suelta,
+        ubicacion: l.ubicacion,
+        ubicacion_id: l.ubicacion_id,
+        contador_id: contadorId,
+        ronda: l.ronda,
+        orden: l.orden
+      },
+      producto
+    )
+    next.local_id = l.local_id
+    changed += 1
+    return next
+  })
+
+  if (changed > 0) await saveEstado(estado)
+  return changed
+}
+
 export async function deleteLineaOffline(sectorInvId: number, localId: string): Promise<void> {
   const estado = await loadEstado(sectorInvId)
   if (!estado) return

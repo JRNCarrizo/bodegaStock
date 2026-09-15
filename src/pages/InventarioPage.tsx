@@ -5047,6 +5047,11 @@ function ConteoSectorView({
   const [saving, setSaving] = useState(false)
   const [expandedProductos, setExpandedProductos] = useState<Set<number>>(new Set())
   const [editingLineaId, setEditingLineaId] = useState<number | null>(null)
+  /** Reasignar todas las líneas de un producto a otro (lápiz del encabezado). */
+  const [remapeandoProductoId, setRemapeandoProductoId] = useState<number | null>(null)
+  /** Productos en cero (sin líneas) ocultos de la lista para limpiar la pantalla. */
+  const [productosCeroOcultos, setProductosCeroOcultos] = useState<Set<number>>(() => new Set())
+  const [swipeOpenGrupoCeroId, setSwipeOpenGrupoCeroId] = useState<number | null>(null)
   const [showHeaderMenu, setShowHeaderMenu] = useState(false)
   const [tecladoNumerico, setTecladoNumerico] = useState(() => loadTecladoNumericoBusqueda())
   const [swipeOpenLineId, setSwipeOpenLineId] = useState<number | null>(null)
@@ -5171,6 +5176,10 @@ function ConteoSectorView({
   }
 
   function selectProduct(p: Producto) {
+    if (remapeandoProductoId != null) {
+      void aplicarRemapeoProductoGrupo(p)
+      return
+    }
     armKeyboardForCantidadModal()
     setSelectedProduct(p)
     setProductSearch(p.codigo_interno)
@@ -5178,6 +5187,79 @@ function ConteoSectorView({
     setProductHighlightIndex(-1)
     if (!editingLineaId) resetLineaForm(p)
     setError('')
+  }
+
+  async function aplicarRemapeoProductoGrupo(p: Producto) {
+    const fromId = remapeandoProductoId
+    if (fromId == null) return
+    if (p.id === fromId) {
+      setRemapeandoProductoId(null)
+      setProductSearch('')
+      setProductResults([])
+      setError('')
+      return
+    }
+    const lineas = misLineas.filter((l) => l.producto_id === fromId)
+    if (lineas.length === 0) {
+      setRemapeandoProductoId(null)
+      setError('No hay líneas para cambiar')
+      return
+    }
+    const fromGrupo = lineasPorProducto.find((g) => g.producto_id === fromId)
+    const ok = await confirm({
+      title: 'Cambiar producto',
+      message:
+        lineas.length === 1
+          ? `¿Pasar la línea de ${fromGrupo?.nombre ?? 'este producto'} a ${p.nombre}? Se mantienen las cantidades.`
+          : `¿Pasar las ${lineas.length} líneas de ${fromGrupo?.nombre ?? 'este producto'} a ${p.nombre}? Se mantienen las cantidades.`,
+      confirmLabel: lineas.length === 1 ? 'Cambiar línea' : `Cambiar ${lineas.length} líneas`
+    })
+    if (!ok) return
+
+    setSaving(true)
+    setError('')
+    try {
+      for (const l of lineas) {
+        const body: Record<string, unknown> = {
+          producto_id: p.id,
+          tipo_bulto: l.tipo_bulto
+        }
+        if (l.tipo_bulto === 'SUELTO') {
+          body.cantidad_suelta = l.cantidad_suelta ?? l.total_unidades
+        } else {
+          body.cantidad_bultos = l.cantidad_bultos ?? 0
+          body.unidades_por_bulto = l.unidades_por_bulto
+          if (l.cantidad_suelta != null && l.cantidad_suelta > 0) {
+            body.cantidad_suelta = l.cantidad_suelta
+          }
+        }
+        if (l.ubicacion) body.ubicacion = l.ubicacion
+        await api(`/api/inventario/sectores/${inventarioSectorId}/lineas/${l.id}`, {
+          method: 'PUT',
+          body: JSON.stringify(body)
+        })
+      }
+      setRemapeandoProductoId(null)
+      setSelectedProduct(null)
+      setProductSearch('')
+      setProductResults([])
+      pendingScrollProductoIdRef.current = p.id
+      setExpandedProductos(new Set([p.id]))
+      await loadSector({ silent: true })
+      const id = pendingScrollProductoIdRef.current
+      pendingScrollProductoIdRef.current = null
+      if (id) {
+        scrollProductoIntoListVisible(listScrollRef.current, id, {
+          marginBottom: 24,
+          delayMs: 320
+        })
+      }
+      setTimeout(() => productSearchRef.current?.focus(), 50)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Error al cambiar el producto')
+    } finally {
+      setSaving(false)
+    }
   }
 
   useEffect(() => {
@@ -5398,13 +5480,50 @@ function ConteoSectorView({
     })
   }, [misLineas, enReconteo, referenciaReconteo, referenciaPorProducto])
 
+  useEffect(() => {
+    setProductosCeroOcultos(new Set())
+    setSwipeOpenGrupoCeroId(null)
+  }, [ronda, enReconteo])
+
+  const lineasPorProductoVisibles = useMemo(
+    () =>
+      lineasPorProducto.filter(
+        (g) => g.lineas.length > 0 || !productosCeroOcultos.has(g.producto_id)
+      ),
+    [lineasPorProducto, productosCeroOcultos]
+  )
+
+  const cerosOcultosCount = useMemo(
+    () =>
+      lineasPorProducto.filter(
+        (g) => g.lineas.length === 0 && productosCeroOcultos.has(g.producto_id)
+      ).length,
+    [lineasPorProducto, productosCeroOcultos]
+  )
+
+  function ocultarProductoCero(productoId: number) {
+    setSwipeOpenGrupoCeroId(null)
+    setProductosCeroOcultos((prev) => {
+      const next = new Set(prev)
+      next.add(productoId)
+      return next
+    })
+    setExpandedProductos((prev) => {
+      if (!prev.has(productoId)) return prev
+      const next = new Set(prev)
+      next.delete(productoId)
+      return next
+    })
+  }
+
   const lineasPorProductoVistaPrevia = useMemo(() => {
     const q = vistaPreviaSearch.trim()
-    if (!q) return lineasPorProducto
-    return lineasPorProducto.filter((g) =>
+    const base = lineasPorProductoVisibles
+    if (!q) return base
+    return base.filter((g) =>
       textoProductoMatches({ codigo_interno: g.codigo, nombre: g.nombre }, q)
     )
-  }, [lineasPorProducto, vistaPreviaSearch])
+  }, [lineasPorProductoVisibles, vistaPreviaSearch])
 
   const totalGeneral = useMemo(() => sumarTotalesMisLineas(misLineas), [misLineas])
   const resumenGeneral = useMemo(
@@ -5715,10 +5834,42 @@ function ConteoSectorView({
 
   function cancelarLineaForm() {
     setEditingLineaId(null)
+    setRemapeandoProductoId(null)
     setSelectedProduct(null)
     setProductSearch('')
     setProductResults([])
     resetLineaForm()
+  }
+
+  /** Cambia el producto de la línea en edición sin tocar las cantidades. */
+  function empezarCambiarProductoLinea() {
+    if (!editingLineaId) return
+    setRemapeandoProductoId(null)
+    setSelectedProduct(null)
+    setProductSearch('')
+    setProductResults([])
+    setProductHighlightIndex(-1)
+    setError('')
+    setTimeout(() => productSearchRef.current?.focus(), 50)
+  }
+
+  function empezarRemapearProductoGrupo(grupo: {
+    producto_id: number
+    codigo: string
+    nombre: string
+    lineas: InventarioConteoLinea[]
+  }) {
+    if (grupo.lineas.length === 0) return
+    setEditingLineaId(null)
+    setSelectedProduct(null)
+    setProductResults([])
+    setProductHighlightIndex(-1)
+    setSwipeOpenLineId(null)
+    resetLineaForm()
+    setRemapeandoProductoId(grupo.producto_id)
+    setProductSearch('')
+    setError('')
+    setTimeout(() => productSearchRef.current?.focus(), 50)
   }
 
   async function empezarAgregarLineaProducto(grupo: {
@@ -5873,6 +6024,68 @@ function ConteoSectorView({
         grupos.map((grupo) => {
           const isExpanded = expandedProductos.has(grupo.producto_id)
           const ref = grupo.referencia
+          const esCeroSinLineas = grupo.lineas.length === 0
+          const puedeOcultarCero = puedeEditar && enReconteo && esCeroSinLineas
+
+          const headerInner = (
+            <>
+              <button
+                type="button"
+                onClick={() => toggleProductoExpand(grupo.producto_id)}
+                className={cn(
+                  'shrink-0 rounded-lg p-1.5 transition-colors',
+                  isExpanded
+                    ? 'bg-brand-100 text-brand-700'
+                    : 'text-slate-400 hover:bg-slate-200 hover:text-slate-700'
+                )}
+                aria-expanded={isExpanded}
+                aria-label={isExpanded ? 'Ocultar líneas' : 'Ver líneas'}
+              >
+                {isExpanded ? (
+                  <ChevronDown className="h-4 w-4" />
+                ) : (
+                  <ChevronRight className="h-4 w-4" />
+                )}
+              </button>
+              <button
+                type="button"
+                onClick={() => toggleProductoExpand(grupo.producto_id)}
+                className="min-w-0 flex-1 text-left"
+              >
+                <span className="inline-flex rounded-md bg-slate-100 px-2 py-0.5 font-mono text-xs font-semibold text-slate-700">
+                  {grupo.codigo}
+                </span>
+                <ScrollableProductName className="mt-1 text-sm font-semibold text-slate-900">
+                  {grupo.nombre}
+                </ScrollableProductName>
+                {!isExpanded && grupo.lineas.length > 1 && (
+                  <p className="mt-0.5 text-xs text-slate-500">{grupo.lineas.length} líneas</p>
+                )}
+              </button>
+              {puedeEditar && grupo.lineas.length > 0 && (
+                <button
+                  type="button"
+                  className={cn(
+                    'shrink-0 rounded-lg p-1.5 transition-colors',
+                    remapeandoProductoId === grupo.producto_id
+                      ? 'bg-amber-100 text-amber-800'
+                      : 'text-slate-400 hover:bg-brand-50 hover:text-brand-700'
+                  )}
+                  aria-label="Cambiar producto de todas las líneas"
+                  title="Cambiar producto (todas las líneas)"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    empezarRemapearProductoGrupo(grupo)
+                  }}
+                >
+                  <Pencil className="h-4 w-4" />
+                </button>
+              )}
+              <span className="inline-flex shrink-0 items-center rounded-lg bg-brand-50 px-2.5 py-1.5 text-sm font-bold tabular-nums text-brand-700 ring-1 ring-brand-100">
+                {grupo.resumen}
+              </span>
+            </>
+          )
 
           return (
             <div
@@ -5880,49 +6093,39 @@ function ConteoSectorView({
               data-producto-id={grupo.producto_id}
               className="border-b border-surface-border last:border-0"
             >
-              <div
-                className={cn(
-                  'flex items-center gap-3 px-4 py-3 transition-colors sm:px-5',
-                  isExpanded ? 'bg-brand-50/50' : 'hover:bg-slate-50/80'
-                )}
-              >
-                <button
-                  type="button"
-                  onClick={() => toggleProductoExpand(grupo.producto_id)}
+              {puedeOcultarCero ? (
+                <ul className="m-0 list-none p-0">
+                  <SwipeableConteoLinea
+                    disableEdit
+                    open={swipeOpenGrupoCeroId === grupo.producto_id}
+                    onOpenChange={(open) =>
+                      setSwipeOpenGrupoCeroId(open ? grupo.producto_id : null)
+                    }
+                    onDelete={() => ocultarProductoCero(grupo.producto_id)}
+                    leftAction={{
+                      onClick: () => ocultarProductoCero(grupo.producto_id),
+                      ariaLabel: 'Ocultar producto en cero',
+                      icon: <Trash2 className="h-5 w-5" />
+                    }}
+                    className="rounded-none border-0"
+                    contentClassName={cn(
+                      'gap-3 px-4 py-3 sm:px-5',
+                      isExpanded ? 'bg-brand-50/50' : 'bg-white hover:bg-slate-50/80'
+                    )}
+                  >
+                    {headerInner}
+                  </SwipeableConteoLinea>
+                </ul>
+              ) : (
+                <div
                   className={cn(
-                    'shrink-0 rounded-lg p-1.5 transition-colors',
-                    isExpanded
-                      ? 'bg-brand-100 text-brand-700'
-                      : 'text-slate-400 hover:bg-slate-200 hover:text-slate-700'
+                    'flex items-center gap-3 px-4 py-3 transition-colors sm:px-5',
+                    isExpanded ? 'bg-brand-50/50' : 'hover:bg-slate-50/80'
                   )}
-                  aria-expanded={isExpanded}
-                  aria-label={isExpanded ? 'Ocultar líneas' : 'Ver líneas'}
                 >
-                  {isExpanded ? (
-                    <ChevronDown className="h-4 w-4" />
-                  ) : (
-                    <ChevronRight className="h-4 w-4" />
-                  )}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => toggleProductoExpand(grupo.producto_id)}
-                  className="min-w-0 flex-1 text-left"
-                >
-                  <span className="inline-flex rounded-md bg-slate-100 px-2 py-0.5 font-mono text-xs font-semibold text-slate-700">
-                    {grupo.codigo}
-                  </span>
-                  <ScrollableProductName className="mt-1 text-sm font-semibold text-slate-900">
-                    {grupo.nombre}
-                  </ScrollableProductName>
-                  {!isExpanded && grupo.lineas.length > 1 && (
-                    <p className="mt-0.5 text-xs text-slate-500">{grupo.lineas.length} líneas</p>
-                  )}
-                </button>
-                <span className="inline-flex shrink-0 items-center rounded-lg bg-brand-50 px-2.5 py-1.5 text-sm font-bold tabular-nums text-brand-700 ring-1 ring-brand-100">
-                  {grupo.resumen}
-                </span>
-              </div>
+                  {headerInner}
+                </div>
+              )}
               {isExpanded && (
                 <div className="space-y-2 border-t border-brand-100/80 bg-gradient-to-b from-surface-muted/40 to-white px-4 py-3 sm:px-5">
                   {ref && (ref.resumen_mio != null || miRol) && enReconteo && (
@@ -6010,7 +6213,7 @@ function ConteoSectorView({
       )
 
     return {
-      main: renderGruposList(lineasPorProducto),
+      main: renderGruposList(lineasPorProductoVisibles),
       preview: renderGruposList(lineasPorProductoVistaPrevia)
     }
   })()
@@ -6219,6 +6422,42 @@ function ConteoSectorView({
             )}
 
             <div className="relative z-30 min-w-0">
+                {remapeandoProductoId != null && !selectedProduct && (
+                  <div className="mb-2 flex flex-wrap items-center gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+                    <Pencil className="h-4 w-4 shrink-0 text-amber-700" aria-hidden />
+                    <span className="min-w-0 flex-1">
+                      {(() => {
+                        const g = lineasPorProducto.find((x) => x.producto_id === remapeandoProductoId)
+                        const n = g?.lineas.length ?? 0
+                        return n <= 1
+                          ? `Elegí el producto correcto para reemplazar ${g?.nombre ?? 'esta línea'}.`
+                          : `Elegí el producto correcto: se cambian las ${n} líneas de ${g?.nombre ?? 'este producto'}.`
+                      })()}
+                    </span>
+                    <button
+                      type="button"
+                      className="shrink-0 text-xs font-semibold text-amber-800 underline"
+                      onClick={cancelarLineaForm}
+                    >
+                      Cancelar
+                    </button>
+                  </div>
+                )}
+                {editingLineaId && !selectedProduct && remapeandoProductoId == null && (
+                  <div className="mb-2 flex flex-wrap items-center gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+                    <Pencil className="h-4 w-4 shrink-0 text-amber-700" aria-hidden />
+                    <span className="min-w-0 flex-1">
+                      Cambiá el producto: se mantienen las cantidades de la línea.
+                    </span>
+                    <button
+                      type="button"
+                      className="shrink-0 text-xs font-semibold text-amber-800 underline"
+                      onClick={cancelarLineaForm}
+                    >
+                      Cancelar edición
+                    </button>
+                  </div>
+                )}
                 <div className="relative rounded-xl border border-surface-border bg-white shadow-sm focus-within:border-brand-500 focus-within:ring-2 focus-within:ring-brand-500/20">
                 <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-brand-400" />
                 <input
@@ -6233,9 +6472,13 @@ function ConteoSectorView({
                   aria-expanded={productResults.length > 0 && !selectedProduct}
                   aria-autocomplete="list"
                   placeholder={
-                    tecladoNumerico
-                      ? 'Buscar por código (números y guion)'
-                      : 'Buscar producto — ↑↓ navegar · Enter seleccionar'
+                    remapeandoProductoId != null && !selectedProduct
+                      ? 'Buscar el producto correcto (todas las líneas)…'
+                      : editingLineaId && !selectedProduct
+                        ? 'Buscar el producto correcto…'
+                        : tecladoNumerico
+                          ? 'Buscar por código (números y guion)'
+                          : 'Buscar producto — ↑↓ navegar · Enter seleccionar'
                   }
                   value={productSearch}
                   onChange={(e) => {
@@ -6336,6 +6579,16 @@ function ConteoSectorView({
                     <ScrollableProductName className="mt-1 text-base font-semibold text-slate-900">
                       {selectedProduct.nombre}
                     </ScrollableProductName>
+                    {editingLineaId ? (
+                      <button
+                        type="button"
+                        className="mt-1.5 inline-flex items-center gap-1 text-xs font-semibold text-brand-700 hover:text-brand-800 hover:underline"
+                        onClick={empezarCambiarProductoLinea}
+                      >
+                        <Pencil className="h-3.5 w-3.5" aria-hidden />
+                        Cambiar producto
+                      </button>
+                    ) : null}
                   </div>
                 </div>
 
@@ -6628,6 +6881,23 @@ function ConteoSectorView({
         ref={listScrollRef}
         className="relative z-0 min-h-0 flex-1 overflow-y-auto bg-white"
       >
+        {cerosOcultosCount > 0 && (
+          <div className="sticky top-0 z-10 flex items-center justify-between gap-2 border-b border-amber-100 bg-amber-50/95 px-4 py-2 text-xs text-amber-900 backdrop-blur-sm sm:px-5">
+            <span>
+              {cerosOcultosCount === 1
+                ? '1 producto en cero oculto'
+                : `${cerosOcultosCount} productos en cero ocultos`}
+              <span className="text-amber-700/80"> · siguen contando 0</span>
+            </span>
+            <button
+              type="button"
+              className="shrink-0 font-semibold text-amber-800 underline"
+              onClick={() => setProductosCeroOcultos(new Set())}
+            >
+              Mostrar
+            </button>
+          </div>
+        )}
         {lineasListContent.main}
       </div>
 

@@ -19,7 +19,10 @@ type SwipeableConteoLineaProps = {
   disabled?: boolean
   open?: boolean
   onOpenChange?: (open: boolean) => void
-  onEdit: () => void
+  /** Si se omite (o disableEdit), solo se puede deslizar a la izquierda. */
+  onEdit?: () => void
+  /** Solo borrar / acción izquierda (sin editar a la derecha). */
+  disableEdit?: boolean
   onDelete?: () => void
   /** Reemplaza borrar (ej. poner cantidad en 0 en verificación de retornos). */
   leftAction?: SwipeableLineaLeftAction
@@ -30,7 +33,7 @@ type SwipeableConteoLineaProps = {
 
 /**
  * Fila de conteo:
- * - Deslizar a la derecha → editar
+ * - Deslizar a la derecha → editar (si está habilitado)
  * - Deslizar a la izquierda → borrar
  */
 export function SwipeableConteoLinea({
@@ -39,11 +42,13 @@ export function SwipeableConteoLinea({
   open = false,
   onOpenChange,
   onEdit,
+  disableEdit = false,
   onDelete,
   leftAction,
   className,
   contentClassName
 }: SwipeableConteoLineaProps) {
+  const canEdit = Boolean(onEdit) && !disableEdit
   const leftHandler = leftAction?.onClick ?? onDelete
   const leftAriaLabel = leftAction?.ariaLabel ?? 'Borrar línea'
   const leftIcon = leftAction?.icon ?? <Trash2 className="h-5 w-5" />
@@ -72,7 +77,8 @@ export function SwipeableConteoLinea({
   }, [open, disabled, dragging])
 
   function commitOffset(next: number) {
-    const clamped = Math.max(-(ACTION_PX + 40), Math.min(ACTION_PX + 40, next))
+    const maxRight = canEdit ? ACTION_PX + 40 : 0
+    const clamped = Math.max(-(ACTION_PX + 40), Math.min(maxRight, next))
     setOffset(clamped)
     offsetRef.current = clamped
   }
@@ -82,7 +88,7 @@ export function SwipeableConteoLinea({
     const x = offsetRef.current
 
     // Derecha → editar
-    if (x >= ACTION_PX) {
+    if (canEdit && onEdit && x >= ACTION_PX) {
       onOpenChange?.(false)
       setOffset(Math.max(ACTION_PX + 80, 220))
       window.setTimeout(() => {
@@ -91,20 +97,20 @@ export function SwipeableConteoLinea({
       }, 140)
       return
     }
-    if (x >= REVEAL_PX / 2) {
+    if (canEdit && x >= REVEAL_PX / 2) {
       setOffset(REVEAL_PX)
       onOpenChange?.(true)
       return
     }
 
     // Izquierda → acción secundaria (borrar o poner en 0)
-    if (x <= -ACTION_PX) {
+    if (leftHandler && x <= -ACTION_PX) {
       onOpenChange?.(false)
       setOffset(-Math.max(ACTION_PX + 80, 220))
-      window.setTimeout(() => leftHandler?.(), 140)
+      window.setTimeout(() => leftHandler(), 140)
       return
     }
-    if (x <= -REVEAL_PX / 2) {
+    if (leftHandler && x <= -REVEAL_PX / 2) {
       setOffset(-REVEAL_PX)
       onOpenChange?.(true)
       return
@@ -197,24 +203,26 @@ export function SwipeableConteoLinea({
       )}
     >
       {/* Editar (derecha) */}
-      <div
-        className="absolute inset-y-0 left-0 flex w-[72px] items-center justify-center bg-brand-600 text-white"
-        aria-hidden
-      >
-        <button
-          type="button"
-          className="flex h-full w-full items-center justify-center"
-          aria-label="Editar línea"
-          onClick={(e) => {
-            e.stopPropagation()
-            onOpenChange?.(false)
-            setOffset(0)
-            onEdit()
-          }}
+      {canEdit && (
+        <div
+          className="absolute inset-y-0 left-0 flex w-[72px] items-center justify-center bg-brand-600 text-white"
+          aria-hidden
         >
-          <Pencil className="h-5 w-5" />
-        </button>
-      </div>
+          <button
+            type="button"
+            className="flex h-full w-full items-center justify-center"
+            aria-label="Editar línea"
+            onClick={(e) => {
+              e.stopPropagation()
+              onOpenChange?.(false)
+              setOffset(0)
+              onEdit?.()
+            }}
+          >
+            <Pencil className="h-5 w-5" />
+          </button>
+        </div>
+      )}
 
       {/* Acción izquierda (borrar / poner en 0) */}
       {leftHandler && (

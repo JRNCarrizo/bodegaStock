@@ -73,6 +73,7 @@ import {
   recibirSyncCompanero,
   recuperarComparacionLocal,
   resetOfflineLocal,
+  remapProductoOffline,
   updateLineaOffline
 } from '@/lib/inventarioOffline'
 import {
@@ -258,6 +259,9 @@ export function InventarioOfflinePage() {
   const [productSearch, setProductSearch] = useState('')
   const [selected, setSelected] = useState<OfflineProducto | null>(null)
   const [editingLocalId, setEditingLocalId] = useState<string | null>(null)
+  const [remapeandoProductoId, setRemapeandoProductoId] = useState<number | null>(null)
+  const [productosCeroOcultos, setProductosCeroOcultos] = useState<Set<number>>(() => new Set())
+  const [swipeOpenGrupoCeroId, setSwipeOpenGrupoCeroId] = useState<number | null>(null)
   const [tipoBulto, setTipoBulto] = useState<TipoBultoOffline>('PALLET')
   const [cantidadBultos, setCantidadBultos] = useState('')
   const [unidadesPorBulto, setUnidadesPorBulto] = useState('')
@@ -571,15 +575,55 @@ export function InventarioOfflinePage() {
     })
   }, [estado, paquete, misLineasRonda])
 
+  const enReconteo = (estado?.ronda_actual ?? 1) > 1
+  const rondaActual = estado?.ronda_actual ?? 1
+
+  useEffect(() => {
+    setProductosCeroOcultos(new Set())
+    setSwipeOpenGrupoCeroId(null)
+  }, [rondaActual, enReconteo])
+
+  const lineasPorProductoVisibles = useMemo(
+    () =>
+      lineasPorProducto.filter(
+        (g) => g.lineas.length > 0 || !productosCeroOcultos.has(g.producto_id)
+      ),
+    [lineasPorProducto, productosCeroOcultos]
+  )
+
+  const cerosOcultosCount = useMemo(
+    () =>
+      lineasPorProducto.filter(
+        (g) => g.lineas.length === 0 && productosCeroOcultos.has(g.producto_id)
+      ).length,
+    [lineasPorProducto, productosCeroOcultos]
+  )
+
+  function ocultarProductoCero(productoId: number) {
+    setSwipeOpenGrupoCeroId(null)
+    setProductosCeroOcultos((prev) => {
+      const next = new Set(prev)
+      next.add(productoId)
+      return next
+    })
+    setExpandedProductos((prev) => {
+      if (!prev.has(productoId)) return prev
+      const next = new Set(prev)
+      next.delete(productoId)
+      return next
+    })
+  }
+
   const lineasPorProductoVistaPrevia = useMemo(() => {
     const q = vistaPreviaSearch.trim()
-    if (!q) return lineasPorProducto
-    return lineasPorProducto.filter(
+    const base = lineasPorProductoVisibles
+    if (!q) return base
+    return base.filter(
       (g) =>
         textoProductoMatches({ codigo_interno: g.codigo, nombre: g.nombre }, q) ||
         g.lineas.some((l) => (l.ubicacion ?? '').toLowerCase().includes(q.toLowerCase()))
     )
-  }, [lineasPorProducto, vistaPreviaSearch])
+  }, [lineasPorProductoVisibles, vistaPreviaSearch])
 
   const comparacion = useMemo(() => {
     if (!paquete || !estado) return null
@@ -618,7 +662,6 @@ export function InventarioOfflinePage() {
     String(paquete?.inventario_sector.modo_verificacion ?? 'DOBLE') === 'SIMPLE'
   const puedeEditar = Boolean(paquete && estado && !estado.mi_finalizo)
   const postConteo = Boolean(estado?.mi_finalizo)
-  const enReconteo = (estado?.ronda_actual ?? 1) > 1
   const miRol = paquete?.inventario_sector.mi_rol
   const miContadorLabel = useMemo(() => {
     if (!paquete || !miRol) return null
@@ -689,6 +732,10 @@ export function InventarioOfflinePage() {
   }
 
   function selectProduct(p: OfflineProducto) {
+    if (remapeandoProductoId != null) {
+      void aplicarRemapeoProductoGrupo(p)
+      return
+    }
     armKeyboardForCantidadModal()
     setSelected(p)
     setProductSearch(p.codigo_interno)
@@ -698,6 +745,59 @@ export function InventarioOfflinePage() {
       setUnidadesPorBulto(
         tipoBulto === 'SUELTO' ? '' : defaultUnidadesPorBulto(tipoBulto, p)
       )
+    }
+  }
+
+  async function aplicarRemapeoProductoGrupo(p: OfflineProducto) {
+    const fromId = remapeandoProductoId
+    if (fromId == null) return
+    if (p.id === fromId) {
+      setRemapeandoProductoId(null)
+      setProductSearch('')
+      setError('')
+      return
+    }
+    const grupo = lineasPorProducto.find((g) => g.producto_id === fromId)
+    const n = grupo?.lineas.length ?? 0
+    if (n === 0) {
+      setRemapeandoProductoId(null)
+      setError('No hay líneas para cambiar')
+      return
+    }
+    const ok = await confirm({
+      title: 'Cambiar producto',
+      message:
+        n === 1
+          ? `¿Pasar la línea de ${grupo?.nombre ?? 'este producto'} a ${p.nombre}? Se mantienen las cantidades.`
+          : `¿Pasar las ${n} líneas de ${grupo?.nombre ?? 'este producto'} a ${p.nombre}? Se mantienen las cantidades.`,
+      confirmLabel: n === 1 ? 'Cambiar línea' : `Cambiar ${n} líneas`
+    })
+    if (!ok) return
+
+    setBusy(true)
+    setError('')
+    try {
+      await remapProductoOffline(sectorInvId, fromId, p.id)
+      setRemapeandoProductoId(null)
+      setSelected(null)
+      setProductSearch('')
+      pendingScrollProductoIdRef.current = p.id
+      setExpandedProductos(new Set([p.id]))
+      markProductoRevisado(p.id)
+      await reload()
+      const id = pendingScrollProductoIdRef.current
+      pendingScrollProductoIdRef.current = null
+      if (id) {
+        scrollProductoIntoListVisible(listScrollRef.current, id, {
+          marginBottom: 24,
+          delayMs: 320
+        })
+      }
+      setTimeout(() => productSearchRef.current?.focus(), 50)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Error al cambiar el producto')
+    } finally {
+      setBusy(false)
     }
   }
 
@@ -783,6 +883,7 @@ export function InventarioOfflinePage() {
 
   function cancelarLineaForm() {
     setEditingLocalId(null)
+    setRemapeandoProductoId(null)
     setSelected(null)
     setProductSearch('')
     setCantidadBultos('')
@@ -790,6 +891,30 @@ export function InventarioOfflinePage() {
     setUnidadesPorBulto(
       tipoBulto === 'SUELTO' ? '' : defaultUnidadesPorBulto(tipoBulto, null)
     )
+    setTimeout(() => productSearchRef.current?.focus(), 50)
+  }
+
+  /** Cambia el producto de la línea en edición sin tocar las cantidades. */
+  function empezarCambiarProductoLinea() {
+    if (!editingLocalId) return
+    setRemapeandoProductoId(null)
+    setSelected(null)
+    setProductSearch('')
+    setError('')
+    setTimeout(() => productSearchRef.current?.focus(), 50)
+  }
+
+  function empezarRemapearProductoGrupo(grupo: {
+    producto_id: number
+    lineas: OfflineLinea[]
+  }) {
+    if (grupo.lineas.length === 0) return
+    setEditingLocalId(null)
+    setSelected(null)
+    setSwipeOpenLineId(null)
+    setRemapeandoProductoId(grupo.producto_id)
+    setProductSearch('')
+    setError('')
     setTimeout(() => productSearchRef.current?.focus(), 50)
   }
 
@@ -1493,6 +1618,63 @@ export function InventarioOfflinePage() {
         const isExpanded = expandedProductos.has(grupo.producto_id)
         const isRevisado = enReconteo && revisadosProductos.has(grupo.producto_id)
         const ref = grupo.referencia
+        const esCeroSinLineas = grupo.lineas.length === 0
+        const puedeOcultarCero = puedeEditar && enReconteo && esCeroSinLineas
+
+        const headerInner = (
+          <>
+            <button
+              type="button"
+              onClick={() => toggleProductoExpand(grupo.producto_id)}
+              className={cn(
+                'shrink-0 rounded-lg p-1.5 transition-colors',
+                isExpanded
+                  ? 'bg-brand-100 text-brand-700'
+                  : 'text-slate-400 hover:bg-slate-200 hover:text-slate-700'
+              )}
+            >
+              {isExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+            </button>
+            <button
+              type="button"
+              onClick={() => toggleProductoExpand(grupo.producto_id)}
+              className="min-w-0 flex-1 text-left"
+            >
+              <span className="inline-flex rounded-md bg-slate-100 px-2 py-0.5 font-mono text-xs font-semibold text-slate-700">
+                {grupo.codigo}
+              </span>
+              <ScrollableProductName className="mt-1 text-sm font-semibold text-slate-900">
+                {grupo.nombre}
+              </ScrollableProductName>
+              {!isExpanded && grupo.lineas.length > 1 && (
+                <p className="mt-0.5 text-xs text-slate-500">{grupo.lineas.length} líneas</p>
+              )}
+            </button>
+            {puedeEditar && grupo.lineas.length > 0 && (
+              <button
+                type="button"
+                className={cn(
+                  'shrink-0 rounded-lg p-1.5 transition-colors',
+                  remapeandoProductoId === grupo.producto_id
+                    ? 'bg-amber-100 text-amber-800'
+                    : 'text-slate-400 hover:bg-brand-50 hover:text-brand-700'
+                )}
+                aria-label="Cambiar producto de todas las líneas"
+                title="Cambiar producto (todas las líneas)"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  empezarRemapearProductoGrupo(grupo)
+                }}
+              >
+                <Pencil className="h-4 w-4" />
+              </button>
+            )}
+            <span className="inline-flex shrink-0 items-center rounded-lg bg-brand-50 px-2.5 py-1.5 text-sm font-bold tabular-nums text-brand-700 ring-1 ring-brand-100">
+              {grupo.resumen}
+            </span>
+          </>
+        )
+
         return (
           <div
             key={grupo.producto_id}
@@ -1503,45 +1685,43 @@ export function InventarioOfflinePage() {
                 'border-l-[5px] border-l-emerald-600 bg-emerald-100 shadow-[inset_0_0_0_1px_rgba(5,150,105,0.45)]'
             )}
           >
-            <div
-              className={cn(
-                'flex items-center gap-3 px-4 py-3 transition-colors sm:px-5',
-                isExpanded && !isRevisado && 'bg-brand-50/50',
-                isRevisado && 'bg-emerald-100',
-                !isExpanded && !isRevisado && 'hover:bg-slate-50/80'
-              )}
-            >
-              <button
-                type="button"
-                onClick={() => toggleProductoExpand(grupo.producto_id)}
+            {puedeOcultarCero ? (
+              <ul className="m-0 list-none p-0">
+                <SwipeableConteoLinea
+                  disableEdit
+                  open={swipeOpenGrupoCeroId === grupo.producto_id}
+                  onOpenChange={(open) =>
+                    setSwipeOpenGrupoCeroId(open ? grupo.producto_id : null)
+                  }
+                  onDelete={() => ocultarProductoCero(grupo.producto_id)}
+                  leftAction={{
+                    onClick: () => ocultarProductoCero(grupo.producto_id),
+                    ariaLabel: 'Ocultar producto en cero',
+                    icon: <Trash2 className="h-5 w-5" />
+                  }}
+                  className="rounded-none border-0"
+                  contentClassName={cn(
+                    'gap-3 px-4 py-3 sm:px-5',
+                    isExpanded && !isRevisado && 'bg-brand-50/50',
+                    isRevisado && 'bg-emerald-100',
+                    !isExpanded && !isRevisado && 'bg-white hover:bg-slate-50/80'
+                  )}
+                >
+                  {headerInner}
+                </SwipeableConteoLinea>
+              </ul>
+            ) : (
+              <div
                 className={cn(
-                  'shrink-0 rounded-lg p-1.5 transition-colors',
-                  isExpanded
-                    ? 'bg-brand-100 text-brand-700'
-                    : 'text-slate-400 hover:bg-slate-200 hover:text-slate-700'
+                  'flex items-center gap-3 px-4 py-3 transition-colors sm:px-5',
+                  isExpanded && !isRevisado && 'bg-brand-50/50',
+                  isRevisado && 'bg-emerald-100',
+                  !isExpanded && !isRevisado && 'hover:bg-slate-50/80'
                 )}
               >
-                {isExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
-              </button>
-              <button
-                type="button"
-                onClick={() => toggleProductoExpand(grupo.producto_id)}
-                className="min-w-0 flex-1 text-left"
-              >
-                <span className="inline-flex rounded-md bg-slate-100 px-2 py-0.5 font-mono text-xs font-semibold text-slate-700">
-                  {grupo.codigo}
-                </span>
-                <ScrollableProductName className="mt-1 text-sm font-semibold text-slate-900">
-                  {grupo.nombre}
-                </ScrollableProductName>
-                {!isExpanded && grupo.lineas.length > 1 && (
-                  <p className="mt-0.5 text-xs text-slate-500">{grupo.lineas.length} líneas</p>
-                )}
-              </button>
-              <span className="inline-flex shrink-0 items-center rounded-lg bg-brand-50 px-2.5 py-1.5 text-sm font-bold tabular-nums text-brand-700 ring-1 ring-brand-100">
-                {grupo.resumen}
-              </span>
-            </div>
+                {headerInner}
+              </div>
+            )}
             {isExpanded && (
               <div
                 className={cn(
@@ -1654,7 +1834,7 @@ export function InventarioOfflinePage() {
       })
     )
 
-  const lineasListContent = renderGruposList(lineasPorProducto)
+  const lineasListContent = renderGruposList(lineasPorProductoVisibles)
 
   return (
     <div className={PAGE_SHELL}>
@@ -2342,6 +2522,42 @@ export function InventarioOfflinePage() {
             )}
 
             <div className="relative z-30 min-w-0">
+              {remapeandoProductoId != null && !selected && (
+                <div className="mb-2 flex flex-wrap items-center gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+                  <Pencil className="h-4 w-4 shrink-0 text-amber-700" aria-hidden />
+                  <span className="min-w-0 flex-1">
+                    {(() => {
+                      const g = lineasPorProducto.find((x) => x.producto_id === remapeandoProductoId)
+                      const n = g?.lineas.length ?? 0
+                      return n <= 1
+                        ? `Elegí el producto correcto para reemplazar ${g?.nombre ?? 'esta línea'}.`
+                        : `Elegí el producto correcto: se cambian las ${n} líneas de ${g?.nombre ?? 'este producto'}.`
+                    })()}
+                  </span>
+                  <button
+                    type="button"
+                    className="shrink-0 text-xs font-semibold text-amber-800 underline"
+                    onClick={cancelarLineaForm}
+                  >
+                    Cancelar
+                  </button>
+                </div>
+              )}
+              {editingLocalId && !selected && remapeandoProductoId == null && (
+                <div className="mb-2 flex flex-wrap items-center gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+                  <Pencil className="h-4 w-4 shrink-0 text-amber-700" aria-hidden />
+                  <span className="min-w-0 flex-1">
+                    Cambiá el producto: se mantienen las cantidades de la línea.
+                  </span>
+                  <button
+                    type="button"
+                    className="shrink-0 text-xs font-semibold text-amber-800 underline"
+                    onClick={cancelarLineaForm}
+                  >
+                    Cancelar edición
+                  </button>
+                </div>
+              )}
               <div className="relative rounded-xl border border-surface-border bg-white shadow-sm focus-within:border-brand-500 focus-within:ring-2 focus-within:ring-brand-500/20">
                 <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-brand-400" />
                 <input
@@ -2355,9 +2571,13 @@ export function InventarioOfflinePage() {
                   role="combobox"
                   aria-expanded={productosFiltrados.length > 0}
                   placeholder={
-                    tecladoNumerico
-                      ? 'Buscar por código (números y guion)'
-                      : 'Buscar producto — código o nombre'
+                    remapeandoProductoId != null && !selected
+                      ? 'Buscar el producto correcto (todas las líneas)…'
+                      : editingLocalId && !selected
+                        ? 'Buscar el producto correcto…'
+                        : tecladoNumerico
+                          ? 'Buscar por código (números y guion)'
+                          : 'Buscar producto — código o nombre'
                   }
                   value={productSearch}
                   onChange={(e) => {
@@ -2433,6 +2653,16 @@ export function InventarioOfflinePage() {
                   <ScrollableProductName className="mt-1 text-base font-semibold text-slate-900">
                     {selected.nombre}
                   </ScrollableProductName>
+                  {editingLocalId ? (
+                    <button
+                      type="button"
+                      className="mt-1.5 inline-flex items-center gap-1 text-xs font-semibold text-brand-700 hover:text-brand-800 hover:underline"
+                      onClick={empezarCambiarProductoLinea}
+                    >
+                      <Pencil className="h-3.5 w-3.5" aria-hidden />
+                      Cambiar producto
+                    </button>
+                  ) : null}
                 </div>
 
                 <form
@@ -2698,6 +2928,23 @@ export function InventarioOfflinePage() {
 
       {puedeEditar ? (
         <div ref={listScrollRef} className="relative z-0 min-h-0 flex-1 overflow-y-auto bg-white">
+          {cerosOcultosCount > 0 && (
+            <div className="sticky top-0 z-10 flex items-center justify-between gap-2 border-b border-amber-100 bg-amber-50/95 px-4 py-2 text-xs text-amber-900 backdrop-blur-sm sm:px-5">
+              <span>
+                {cerosOcultosCount === 1
+                  ? '1 producto en cero oculto'
+                  : `${cerosOcultosCount} productos en cero ocultos`}
+                <span className="text-amber-700/80"> · siguen contando 0</span>
+              </span>
+              <button
+                type="button"
+                className="shrink-0 font-semibold text-amber-800 underline"
+                onClick={() => setProductosCeroOcultos(new Set())}
+              >
+                Mostrar
+              </button>
+            </div>
+          )}
           {lineasListContent}
         </div>
       ) : null}

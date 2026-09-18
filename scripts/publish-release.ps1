@@ -1,5 +1,5 @@
 param(
-  [string]$Version = "0.3.70"
+  [string]$Version = "0.3.71"
 )
 
 $ErrorActionPreference = "Stop"
@@ -76,13 +76,12 @@ $notesPath = Join-Path $root "release\release-notes-$Version.md"
 @'
 ## ControlStock v{0}
 
-Inventario (reconteo): cambiar producto sin rearmar cantidades, y limpiar la pantalla ocultando productos en cero.
+Roturas y perdidas: el registro a medias se guarda como borrador (igual que planillas e ingresos).
 
 ### Cambios
-- Cambiar producto por linea (swipe > editar) o de todo el grupo (lapiz en el encabezado); se mantienen las cantidades.
-- Productos en cero: deslizar a la izquierda para ocultarlos; siguen contando 0 al finalizar / importar.
-- Fix servidor: el PUT de linea ahora persiste `producto_id`.
-- Online y offline (APK).
+- Borrador automatico al salir; boton Continuar registro en el listado.
+- Cancelar o empezar uno nuevo pide confirmacion y descarta el borrador.
+- Buscador de productos sin stock en 0 (igual que planillas).
 
 ### Instalacion
 1. Actualiza primero el PC servidor (Setup).

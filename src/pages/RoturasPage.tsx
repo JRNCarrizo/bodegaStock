@@ -40,6 +40,7 @@ import {
   todayIsoDate
 } from '@/lib/desglose'
 import { downloadApiFile } from '@/lib/downloadFile'
+import { clearDraft, readDraft, writeDraft } from '@/lib/draftStorage'
 import { isNativeApp } from '@/lib/nativeServer'
 import { searchDelayMs } from '@/lib/searchDelay'
 import { KB_HIGHLIGHT_ROW } from '@/lib/listKeyboardHighlight'
@@ -53,6 +54,7 @@ import type {
   Sector
 } from '@/types'
 import { useAuth } from '@/context/AuthContext'
+import { useConfirmDialog } from '@/context/ConfirmDialogContext'
 import { useMainLayoutFullHeight } from '@/context/MainLayoutContext'
 import { useEscHandler } from '@/hooks/useEscHandler'
 import { useProductoQuickSearch } from '@/hooks/useProductoQuickSearch'
@@ -67,8 +69,39 @@ function newTempId(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
 }
 
+const ROTURA_DRAFT_KEY = 'bodegaStock:roturaDraft:v1'
+
+type RoturaDraftStored = {
+  fecha: string
+  observacion: string
+  createPhase: 'datos' | 'carga'
+  lineas: RoturaLineaDraft[]
+}
+
+function readRoturaDraft(): RoturaDraftStored | null {
+  const parsed = readDraft<RoturaDraftStored>(ROTURA_DRAFT_KEY)
+  if (!parsed || !Array.isArray(parsed.lineas)) return null
+  return parsed
+}
+
+function writeRoturaDraft(draft: RoturaDraftStored): void {
+  writeDraft(ROTURA_DRAFT_KEY, draft)
+}
+
+function clearRoturaDraft(): void {
+  clearDraft(ROTURA_DRAFT_KEY)
+}
+
+function roturaDraftTieneContenido(d: {
+  observacion: string
+  lineas: RoturaLineaDraft[]
+}): boolean {
+  return d.lineas.length > 0 || !!d.observacion.trim()
+}
+
 export function RoturasPage() {
   const { hasPermiso } = useAuth()
+  const { confirm } = useConfirmDialog()
   const { setFlashId, flashClass } = useRegistroFlashHighlight()
   const location = useLocation()
   const [view, setView] = useState<'list' | 'create' | 'detail'>('list')
@@ -108,6 +141,8 @@ export function RoturasPage() {
   const [showScanner, setShowScanner] = useState(false)
   const [swipeOpenLineId, setSwipeOpenLineId] = useState<string | null>(null)
   const [editingLineaTempId, setEditingLineaTempId] = useState<string | null>(null)
+  const [tieneBorrador, setTieneBorrador] = useState(false)
+  const draftHydratedRef = useRef(false)
 
   const [showResumenDia, setShowResumenDia] = useState(false)
   const [resumenDia, setResumenDia] = useState<RoturaResumenDia | null>(null)
@@ -276,6 +311,38 @@ export function RoturasPage() {
     if (createPhase === 'carga' && lineas.length > 0) scrollListToBottom()
   }, [lineas.length, createPhase])
 
+  useEffect(() => {
+    if (draftHydratedRef.current) return
+    draftHydratedRef.current = true
+    const draft = readRoturaDraft()
+    if (!draft || !roturaDraftTieneContenido(draft)) {
+      setTieneBorrador(false)
+      return
+    }
+    setFecha(draft.fecha || todayIsoDate())
+    setObservacion(draft.observacion || '')
+    setLineas(draft.lineas || [])
+    setCreatePhase(draft.createPhase || (draft.lineas?.length ? 'carga' : 'datos'))
+    setTieneBorrador(true)
+  }, [])
+
+  useEffect(() => {
+    if (!draftHydratedRef.current) return
+    const payload = {
+      fecha,
+      observacion,
+      createPhase,
+      lineas
+    }
+    if (!roturaDraftTieneContenido(payload)) {
+      clearRoturaDraft()
+      setTieneBorrador(false)
+      return
+    }
+    writeRoturaDraft(payload)
+    setTieneBorrador(true)
+  }, [fecha, observacion, createPhase, lineas])
+
   function resetCreateForm() {
     setCreatePhase('datos')
     setFecha(todayIsoDate())
@@ -286,6 +353,7 @@ export function RoturasPage() {
     setCantidadCajas('')
     setLineSectorId('')
     setStockDisponible(null)
+    setStockPorSector({})
     setLineas([])
     setExpandedProductos(new Set())
     setShowScanner(false)
@@ -296,10 +364,18 @@ export function RoturasPage() {
   }
 
   function volverAlListado() {
-    resetCreateForm()
-    setDetalle(null)
+    setSelectedProduct(null)
+    setProductSearch('')
+    setProductResults([])
+    setCantidadCajas('')
+    setStockDisponible(null)
+    setStockPorSector({})
     setShowScanner(false)
+    setProductHighlightIndex(-1)
+    setEditingLineaTempId(null)
     setSwipeOpenLineId(null)
+    setError('')
+    setDetalle(null)
     setView('list')
   }
 
@@ -339,10 +415,70 @@ export function RoturasPage() {
     return true
   })
 
-  function abrirNuevoRegistro() {
+  async function abrirNuevoRegistro() {
+    if (tieneBorrador && roturaDraftTieneContenido({ observacion, lineas })) {
+      const ok = await confirm({
+        title: 'Registro en curso',
+        message: 'Hay un registro de rotura en curso. ¿Descartarlo y empezar uno nuevo?',
+        confirmLabel: 'Descartar y continuar',
+        tone: 'danger'
+      })
+      if (!ok) return
+    }
+    clearRoturaDraft()
+    setTieneBorrador(false)
     resetCreateForm()
     setView('create')
     setTimeout(() => focusField(fechaRef), 50)
+  }
+
+  function continuarBorrador() {
+    const draft = readRoturaDraft()
+    const phase: 'datos' | 'carga' =
+      draft && (draft.lineas?.length > 0 || draft.createPhase === 'carga')
+        ? 'carga'
+        : draft?.createPhase || 'datos'
+    if (draft) {
+      setFecha(draft.fecha || todayIsoDate())
+      setObservacion(draft.observacion || '')
+      setLineas(draft.lineas || [])
+      setCreatePhase(phase)
+      setTieneBorrador(true)
+    }
+    setSelectedProduct(null)
+    setProductSearch('')
+    setProductResults([])
+    setCantidadCajas('')
+    setStockDisponible(null)
+    setStockPorSector({})
+    setShowScanner(false)
+    setError('')
+    setView('create')
+    setTimeout(() => {
+      if (phase === 'carga') focusField(productSearchRef)
+      else focusField(fechaRef)
+    }, 50)
+  }
+
+  async function cancelarRoturaEnCurso() {
+    if (lineas.length > 0 || observacion.trim()) {
+      const ok = await confirm({
+        title: 'Cancelar registro',
+        message: '¿Cancelar el registro en curso? Se perderán las líneas cargadas.',
+        confirmLabel: 'Cancelar registro',
+        tone: 'danger'
+      })
+      if (!ok) return
+    }
+    clearRoturaDraft()
+    setTieneBorrador(false)
+    resetCreateForm()
+    volverAlListado()
+  }
+
+  function irACrearOContinuar() {
+    if (tieneBorrador) continuarBorrador()
+    else void abrirNuevoRegistro()
   }
 
   function validarDatos(): boolean {
@@ -592,6 +728,8 @@ export function RoturasPage() {
           }))
         })
       })
+      clearRoturaDraft()
+      setTieneBorrador(false)
       resetCreateForm()
       setDetalle(null)
       await loadRoturas()
@@ -621,7 +759,7 @@ export function RoturasPage() {
     items: roturasDelDia,
     listSearchRef,
     canCreate: hasPermiso('roturas.crear'),
-    onCreate: abrirNuevoRegistro,
+    onCreate: irACrearOContinuar,
     onOpenDetail: (r) => {
       void abrirDetalle(r.id)
     }
@@ -1234,7 +1372,7 @@ export function RoturasPage() {
                   <Button
                     variant="secondary"
                     className="h-11 rounded-xl"
-                    onClick={volverAlListado}
+                    onClick={() => void cancelarRoturaEnCurso()}
                     disabled={saving}
                   >
                     Cancelar
@@ -1294,9 +1432,18 @@ export function RoturasPage() {
             Roturas
           </h1>
           {hasPermiso('roturas.crear') && (
-            <Button className="h-10 shrink-0 rounded-xl px-3" onClick={abrirNuevoRegistro}>
-              <Plus className="h-4 w-4" />
-              Nuevo
+            <Button className="h-10 shrink-0 rounded-xl px-3" onClick={irACrearOContinuar}>
+              {tieneBorrador ? (
+                <>
+                  <List className="h-4 w-4" />
+                  Continuar
+                </>
+              ) : (
+                <>
+                  <Plus className="h-4 w-4" />
+                  Nuevo
+                </>
+              )}
             </Button>
           )}
         </div>
@@ -1316,9 +1463,18 @@ export function RoturasPage() {
           </div>
           {hasPermiso('roturas.crear') && (
             <div className="flex flex-wrap items-center gap-2">
-              <Button className="rounded-xl px-4" onClick={abrirNuevoRegistro}>
-                <Plus className="h-4 w-4" />
-                Nuevo registro
+              <Button className="rounded-xl px-4" onClick={irACrearOContinuar}>
+                {tieneBorrador ? (
+                  <>
+                    <List className="h-4 w-4" />
+                    Continuar registro
+                  </>
+                ) : (
+                  <>
+                    <Plus className="h-4 w-4" />
+                    Nuevo registro
+                  </>
+                )}
               </Button>
             </div>
           )}
@@ -1530,9 +1686,18 @@ export function RoturasPage() {
               {!(listSearch || listFechaDesde || listFechaHasta) &&
                 hasPermiso('roturas.crear') &&
                 !nativeApp && (
-                  <Button className="mt-4 rounded-xl" size="sm" onClick={abrirNuevoRegistro}>
-                    <Plus className="h-4 w-4" />
-                    Nuevo registro
+                  <Button className="mt-4 rounded-xl" size="sm" onClick={irACrearOContinuar}>
+                    {tieneBorrador ? (
+                      <>
+                        <List className="h-4 w-4" />
+                        Continuar registro
+                      </>
+                    ) : (
+                      <>
+                        <Plus className="h-4 w-4" />
+                        Nuevo registro
+                      </>
+                    )}
                   </Button>
                 )}
             </div>

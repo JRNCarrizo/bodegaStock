@@ -161,6 +161,7 @@ export const HELP_GUIDES: Record<string, SectionHelpGuide> = {
       }
     ],
     tips: [
+      'Podés salir y volver: el registro a medias se guarda como borrador.',
       'Si no alcanza el stock en el sector, el sistema no te deja agregar esa cantidad.',
       'La observación ayuda después a encontrar el registro (por ejemplo, buscando en la lista).',
       'En la lista principal buscás por producto u observación, y filtrás por día.'

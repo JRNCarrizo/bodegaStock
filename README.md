@@ -4,7 +4,7 @@ Sistema de gestión de stock para bodega con aplicación de escritorio (Electron
 
 ## Estado del proyecto
 
-**v0.3.70** — [Release en GitHub](https://github.com/JRNCarrizo/bodegaStock/releases/tag/v0.3.70)
+**v0.3.71** — [Release en GitHub](https://github.com/JRNCarrizo/bodegaStock/releases/tag/v0.3.71)
 
 | En planta hoy | Preparado para más adelante |
 |---------------|----------------------------|
@@ -16,6 +16,7 @@ Sistema de gestión de stock para bodega con aplicación de escritorio (Electron
 
 ### Reciente (resumen)
 
+- **v0.3.71:** roturas — borrador al salir (como planillas/ingresos); buscador sin productos en 0.
 - **v0.3.70:** inventario — cambiar producto en reconteo (línea o grupo); ocultar productos en cero con swipe (siguen contando 0); fix PUT `producto_id`.
 - **v0.3.69:** fix actualizar con rutas que tienen espacios (usuario Windows) — el Setup vuelve a abrirse bien.
 - **v0.3.68:** swipe editar/borrar en retornos y roturas; stock en buscador de roturas; ingresos con destino en la línea (como retornos); autostart Windows más robusto.
@@ -107,7 +108,7 @@ Genera `release/ControlStock-Setup-x.y.z.exe` y `release/latest.yml`.
 
 ```powershell
 gh auth login
-.\scripts\publish-release.ps1 -Version "0.3.70"
+.\scripts\publish-release.ps1 -Version "0.3.71"
 ```
 
 O tag + GitHub Actions: **Actions → Release → Run workflow**

@@ -24,6 +24,7 @@ import {
   getProductoDefaults,
   type LineaDesgloseInput
 } from '../utils/stock'
+import { getRetornosPerdidosDia } from '../utils/reportes'
 
 type EstadoCondicion = 'BUEN_ESTADO' | 'INCOMPLETA' | 'MAL_ESTADO'
 
@@ -204,6 +205,90 @@ export async function retornosRoutes(app: FastifyInstance): Promise<void> {
     `).get(logisticaId) as { count: number } | undefined
 
     return { count: row?.count ?? 0 }
+  })
+
+  app.get('/api/retornos/perdidos-dia', {
+    preHandler: requirePermiso('retornos.ver')
+  }, async (request, reply) => {
+    const { fecha } = request.query as { fecha?: string }
+    if (!fecha?.trim()) {
+      return reply.status(400).send({ error: 'Fecha requerida' })
+    }
+
+    const db = getDb()
+    const logisticaId = requireRequestLogistica(request)
+    const items = getRetornosPerdidosDia(db, fecha, fecha, logisticaId)
+    const total_cajas = items.reduce((s, i) => s + Number(i.cantidad_cajas || 0), 0)
+
+    return {
+      fecha,
+      total_cajas,
+      items
+    }
+  })
+
+  app.get('/api/retornos/perdidos-dia/export', {
+    preHandler: requirePermiso('retornos.ver')
+  }, async (request, reply) => {
+    const { fecha } = request.query as { fecha?: string }
+    if (!fecha?.trim()) {
+      return reply.status(400).send({ error: 'Fecha requerida' })
+    }
+
+    const db = getDb()
+    const logisticaId = requireRequestLogistica(request)
+    const items = getRetornosPerdidosDia(db, fecha, fecha, logisticaId)
+
+    const porCodigo = new Map<string, { nombre: string; cantidad: number }>()
+    for (const item of items) {
+      const codigo = String(item.codigo_interno || '').trim()
+      if (!codigo) continue
+      const prev = porCodigo.get(codigo)
+      const cantidad = Number(item.cantidad_cajas || 0)
+      if (prev) {
+        prev.cantidad += cantidad
+        if (!prev.nombre && item.nombre) prev.nombre = String(item.nombre)
+      } else {
+        porCodigo.set(codigo, {
+          nombre: String(item.nombre || ''),
+          cantidad
+        })
+      }
+    }
+
+    const rows = [...porCodigo.entries()]
+      .sort(([a], [b]) => a.localeCompare(b, 'es', { sensitivity: 'base', numeric: true }))
+      .map(([codigo_interno, { nombre, cantidad }]) => ({
+        codigo_interno,
+        nombre,
+        cantidad
+      }))
+
+    const total = rows.reduce((s, r) => s + r.cantidad, 0)
+
+    const buffer = await buildMultiSheetExcel([
+      resumenSheet('Resumen', [
+        ['Fecha', fecha],
+        ['Concepto', 'Incompletos / mal estado (no sumaron al stock)'],
+        ['Productos', rows.length],
+        ['Total cajas', total]
+      ]),
+      {
+        name: 'Auditoría',
+        columns: [
+          { header: 'Código producto', key: 'codigo_interno', width: 18 },
+          { header: 'Nombre', key: 'nombre', width: 36 },
+          { header: 'Cantidad', key: 'cantidad', width: 14 }
+        ],
+        rows: [...rows, { codigo_interno: 'TOTAL', nombre: '', cantidad: total }]
+      }
+    ])
+
+    return sendExcelFile(
+      reply,
+      buffer,
+      `retornos-mal-estado-${fecha}-${todayFileStamp()}.xlsx`
+    )
   })
 
   app.get('/api/retornos', {

@@ -184,6 +184,68 @@ export interface CamioneroForm {
   activo: boolean
 }
 
+export type ValeTipoPallet = 'NORMALIZADO' | 'DESCARTABLE'
+
+export interface ValeCliente {
+  id: number
+  codigo: string
+  nombre: string
+  direccion: string
+  activo: number
+  created_at: string
+  saldo_pallets: number
+}
+
+export interface ValeListItem {
+  id: number
+  cliente_id: number
+  fecha: string
+  vencimiento: string
+  cantidad_inicial: number
+  cantidad_restante: number
+  tipo_pallet: ValeTipoPallet
+  observacion: string | null
+  created_at: string
+  cliente_codigo: string
+  cliente_nombre: string
+  cliente_direccion: string
+}
+
+export interface ValeAlerta extends ValeListItem {
+  vencido: number
+}
+
+export interface ValeRetiroListItem {
+  id: number
+  cliente_id: number
+  fecha: string
+  cantidad: number
+  tipo_pallet: ValeTipoPallet
+  observacion: string | null
+  created_at: string
+  cliente_codigo: string
+  cliente_nombre: string
+  cliente_direccion: string
+}
+
+export interface ValeAplicacionItem {
+  id: number
+  vale_id: number
+  retiro_id: number
+  cantidad: number
+  fecha: string
+  observacion: string | null
+}
+
+export interface ValeSaldoRow {
+  cliente_id: number
+  cliente_codigo: string
+  cliente_nombre: string
+  cliente_direccion: string
+  tipo_pallet: ValeTipoPallet | null
+  saldo: number
+}
+
 export type AgendaTurnoEstado = 'SOLICITADO' | 'CONFIRMADO' | 'CANCELADO'
 export type AgendaTurnoUnidad = 'PALLETS' | 'CAJAS' | 'BULTOS'
 
@@ -547,6 +609,8 @@ export interface RoturaListItem {
   total_cajas: number
   lineas_count: number
   created_at: string
+  controlado: number
+  controlado_at: string | null
 }
 
 export interface RoturaDetalleLinea {

@@ -1,4 +1,4 @@
-import { useMemo, useState, type ReactNode } from 'react'
+import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { ChevronDown, ChevronLeft, ChevronRight, Package } from 'lucide-react'
 import {
   formatCantidad,
@@ -61,7 +61,8 @@ export function RegistroDetallePanel({
   despuesProductos,
   accionesTotal,
   productosContent,
-  productosCount
+  productosCount,
+  productosDesplegadosPorDefecto = false
 }: {
   onVolver: () => void
   titulo: string
@@ -88,6 +89,8 @@ export function RegistroDetallePanel({
   accionesTotal?: ReactNode
   productosContent?: ReactNode
   productosCount?: number
+  /** Si true, todos los productos arrancan desplegados */
+  productosDesplegadosPorDefecto?: boolean
 }) {
   const lineasLista = lineas ?? []
   const nativeApp = isNativeApp()
@@ -118,6 +121,11 @@ export function RegistroDetallePanel({
       }
     })
   }, [lineasLista])
+
+  useEffect(() => {
+    if (!productosDesplegadosPorDefecto) return
+    setExpandedProductos(new Set(lineasPorProducto.map((g) => g.producto.producto_id)))
+  }, [productosDesplegadosPorDefecto, lineasPorProducto])
 
   const cantidadProductos = productosCount ?? lineasPorProducto.length
   const totalCajasLabel = totalEtiqueta === 'Total' ? 'Total general' : totalEtiqueta

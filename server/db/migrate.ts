@@ -836,6 +836,85 @@ export function runMigrations(db: Database.Database): void {
   migrateProductosLogistica(db)
   migrateAgendaTurnos(db)
   migratePlanillasCamioneroNullable(db)
+  migrateValesPallets(db)
+  migrateRoturasControlado(db)
+}
+
+function migrateRoturasControlado(db: Database.Database): void {
+  if (!tableExists(db, 'roturas')) return
+  if (!columnExists(db, 'roturas', 'controlado')) {
+    db.exec(`ALTER TABLE roturas ADD COLUMN controlado INTEGER NOT NULL DEFAULT 0`)
+  }
+  if (!columnExists(db, 'roturas', 'controlado_at')) {
+    db.exec(`ALTER TABLE roturas ADD COLUMN controlado_at TEXT`)
+  }
+  if (!columnExists(db, 'roturas', 'controlado_por_id')) {
+    db.exec(`ALTER TABLE roturas ADD COLUMN controlado_por_id INTEGER REFERENCES usuarios(id)`)
+  }
+}
+
+function migrateValesPallets(db: Database.Database): void {
+  if (!tableExists(db, 'vale_clientes')) {
+    db.exec(`
+      CREATE TABLE vale_clientes (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        codigo TEXT NOT NULL,
+        nombre TEXT NOT NULL,
+        direccion TEXT NOT NULL DEFAULT '',
+        activo INTEGER NOT NULL DEFAULT 1,
+        logistica_id INTEGER REFERENCES logisticas(id),
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        UNIQUE (logistica_id, codigo)
+      )
+    `)
+  }
+
+  if (!tableExists(db, 'vales')) {
+    db.exec(`
+      CREATE TABLE vales (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        cliente_id INTEGER NOT NULL REFERENCES vale_clientes(id),
+        fecha TEXT NOT NULL,
+        vencimiento TEXT NOT NULL,
+        cantidad_inicial INTEGER NOT NULL CHECK (cantidad_inicial > 0),
+        cantidad_restante INTEGER NOT NULL CHECK (cantidad_restante >= 0),
+        tipo_pallet TEXT NOT NULL CHECK (tipo_pallet IN ('NORMALIZADO', 'DESCARTABLE')),
+        observacion TEXT,
+        usuario_id INTEGER REFERENCES usuarios(id),
+        logistica_id INTEGER REFERENCES logisticas(id),
+        created_at TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+      CREATE INDEX IF NOT EXISTS idx_vales_cliente ON vales(cliente_id);
+      CREATE INDEX IF NOT EXISTS idx_vales_vencimiento ON vales(vencimiento);
+    `)
+  }
+
+  if (!tableExists(db, 'vale_retiros')) {
+    db.exec(`
+      CREATE TABLE vale_retiros (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        cliente_id INTEGER NOT NULL REFERENCES vale_clientes(id),
+        fecha TEXT NOT NULL,
+        cantidad INTEGER NOT NULL CHECK (cantidad > 0),
+        tipo_pallet TEXT NOT NULL CHECK (tipo_pallet IN ('NORMALIZADO', 'DESCARTABLE')),
+        observacion TEXT,
+        usuario_id INTEGER REFERENCES usuarios(id),
+        logistica_id INTEGER REFERENCES logisticas(id),
+        created_at TEXT NOT NULL DEFAULT (datetime('now'))
+      )
+    `)
+  }
+
+  if (!tableExists(db, 'vale_retiro_aplicaciones')) {
+    db.exec(`
+      CREATE TABLE vale_retiro_aplicaciones (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        retiro_id INTEGER NOT NULL REFERENCES vale_retiros(id) ON DELETE CASCADE,
+        vale_id INTEGER NOT NULL REFERENCES vales(id),
+        cantidad INTEGER NOT NULL CHECK (cantidad > 0)
+      )
+    `)
+  }
 }
 
 function migratePlanillasCamioneroNullable(db: Database.Database): void {

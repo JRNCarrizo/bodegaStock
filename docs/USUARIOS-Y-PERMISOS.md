@@ -25,6 +25,7 @@ Cada permiso es una combinación de sección + acción.
 | `sectores` | `ver`, `crear`, `editar` |
 | `movimientos_internos` | `ver`, `crear` |
 | `camioneros` | `ver`, `crear`, `editar` |
+| `vales` | `ver`, `crear`, `editar` |
 | `reportes` | `ver`, `exportar` |
 | `inventario` | `ver`, `crear_sesion`, `contar`, `supervisar`, `cerrar` |
 | `agenda_turnos` | `ver`, `crear`, `editar` |

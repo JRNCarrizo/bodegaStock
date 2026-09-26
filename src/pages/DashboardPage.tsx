@@ -33,6 +33,7 @@ const MODULE_DESCRIPTIONS: Record<string, string> = {
   movimientos: 'Traslados y ajustes entre sectores',
   inventario: 'Conteo físico y cierre de inventario',
   camioneros: 'Transportistas, empresas y vehículos',
+  vales: 'Vales de pallets de mercados (normalizados / descartables)',
   usuarios: 'Cuentas, roles y permisos',
   reportes: 'Resumen de movimientos del día'
 }

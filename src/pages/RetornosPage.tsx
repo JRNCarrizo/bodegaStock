@@ -11,6 +11,7 @@ import {
   ChevronRight,
   ClipboardList,
   Download,
+  List,
   Loader2,
   Plus,
   RotateCcw,
@@ -54,6 +55,7 @@ import type {
   RetornoEstadoCondicion,
   RetornoLineaDraft,
   RetornoListItem,
+  RetornoPerdidoDiaItem,
   Sector
 } from '@/types'
 import { useAuth } from '@/context/AuthContext'
@@ -273,6 +275,14 @@ export function RetornosPage() {
   const [listFechaHasta, setListFechaHasta] = useState('')
   const [selectedDay, setSelectedDay] = useState(() => todayIsoDate())
   const [filtroEstado, setFiltroEstado] = useState<'TODOS' | 'PENDIENTE' | 'VERIFICADO'>('TODOS')
+  const [showPerdidosDia, setShowPerdidosDia] = useState(false)
+  const [loadingPerdidos, setLoadingPerdidos] = useState(false)
+  const [exportingPerdidos, setExportingPerdidos] = useState(false)
+  const [perdidosDia, setPerdidosDia] = useState<{
+    fecha: string
+    total_cajas: number
+    items: RetornoPerdidoDiaItem[]
+  } | null>(null)
 
   const [createPhase, setCreatePhase] = useState<'datos' | 'carga'>('datos')
   const [fecha, setFecha] = useState(todayIsoDate())
@@ -799,6 +809,29 @@ export function RetornosPage() {
     return true
   })
 
+  useEscHandler(showPerdidosDia, () => {
+    setShowPerdidosDia(false)
+    return true
+  })
+
+  async function abrirPerdidosDia() {
+    setLoadingPerdidos(true)
+    setError('')
+    try {
+      const data = await api<{
+        fecha: string
+        total_cajas: number
+        items: RetornoPerdidoDiaItem[]
+      }>(`/api/retornos/perdidos-dia?fecha=${encodeURIComponent(selectedDay)}`)
+      setPerdidosDia(data)
+      setShowPerdidosDia(true)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Error al cargar productos sin stock')
+    } finally {
+      setLoadingPerdidos(false)
+    }
+  }
+
   useEscHandler(view === 'create', () => {
     if (saving) return false
     if (showScanner) {
@@ -1095,6 +1128,21 @@ export function RetornosPage() {
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error al cargar retorno')
+    }
+  }
+
+  async function exportarPerdidosDia(fechaDia: string = selectedDay) {
+    setExportingPerdidos(true)
+    setError('')
+    try {
+      await downloadApiFile(
+        `/api/retornos/perdidos-dia/export?fecha=${encodeURIComponent(fechaDia)}`,
+        `retornos-mal-estado-${fechaDia}.xlsx`
+      )
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Error al exportar')
+    } finally {
+      setExportingPerdidos(false)
     }
   }
 
@@ -1620,6 +1668,7 @@ export function RetornosPage() {
         fecha={r.fecha}
         totalEtiqueta="Total"
         total={detalle.total_cajas}
+        productosDesplegadosPorDefecto
         encabezadoExtra={badgeEstadoRetorno(r.estado, nativeApp ? 'sm' : 'md', !!r.ingreso_directo)}
         encabezadoSubline={
           nativeApp ? (
@@ -1684,22 +1733,17 @@ export function RetornosPage() {
           nombre: l.nombre,
           etiqueta: l.etiqueta,
           cantidad: l.cantidad_efectiva,
-          ...(r.estado === 'VERIFICADO'
-            ? {
-                extra: l.sector_nombre,
-                extraKey: String(l.sector_id),
-                extraSoloDesglose: true
-              }
-            : {
-                extra: badgeCondicion(l.estado_efectivo),
-                extraKey: l.estado_efectivo,
-                desgloseExtra: (
-                  <span className="inline-flex items-center gap-1 text-xs text-slate-600">
-                    <Warehouse className="h-3 w-3 shrink-0 text-slate-400" />
-                    {l.sector_nombre}
-                  </span>
-                )
-              })
+          extra: badgeCondicion(l.estado_efectivo),
+          extraKey: `${l.estado_efectivo}|${l.sector_id}`,
+          desgloseExtra: (
+            <span className="inline-flex flex-wrap items-center justify-end gap-2">
+              {badgeCondicion(l.estado_efectivo)}
+              <span className="inline-flex items-center gap-1 text-xs text-slate-600">
+                <Warehouse className="h-3 w-3 shrink-0 text-slate-400" />
+                {l.sector_nombre}
+              </span>
+            </span>
+          )
         }))}
         despuesProductos={
           puedeVerificar ? (
@@ -2638,7 +2682,26 @@ export function RetornosPage() {
                 : `${retornosVisibles.length} retorno(s)`}
             </p>
           </div>
-          {loadingList && <Loader2 className="h-5 w-5 shrink-0 animate-spin text-brand-600" />}
+          <div className="flex shrink-0 items-center gap-2">
+            {loadingList && <Loader2 className="h-5 w-5 shrink-0 animate-spin text-brand-600" />}
+            {diasConRetornos.length > 0 && (
+              <Button
+                variant="secondary"
+                size="sm"
+                className={cn('rounded-lg', nativeApp && 'h-8 px-2.5 text-xs')}
+                disabled={loadingPerdidos}
+                onClick={() => void abrirPerdidosDia()}
+                title="Productos incompletos o mal estado del día"
+              >
+                {loadingPerdidos ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <List className="h-4 w-4" />
+                )}
+                Mal estado
+              </Button>
+            )}
+          </div>
         </div>
 
         <CardBody className={cn(nativeApp ? 'bg-surface-muted/35 p-2' : 'p-0')}>
@@ -2900,6 +2963,86 @@ export function RetornosPage() {
           )}
         </CardBody>
       </Card>
+
+      {showPerdidosDia && perdidosDia && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div
+            className="absolute inset-0 bg-slate-900/50"
+            onClick={() => setShowPerdidosDia(false)}
+          />
+          <div className="relative z-10 max-h-[85vh] w-full max-w-2xl overflow-auto rounded-xl border border-surface-border bg-white shadow-xl">
+            <div className="sticky top-0 flex items-start justify-between gap-3 border-b border-surface-border bg-white px-5 py-4">
+              <div>
+                <h3 className="font-semibold text-slate-900">
+                  Mal estado — {formatDayTabLabel(perdidosDia.fecha)}
+                </h3>
+                <p className="text-sm text-slate-500">
+                  Incompletos o mal estado (no sumaron al stock) ·{' '}
+                  {formatCantidad(perdidosDia.total_cajas)} cajas
+                </p>
+              </div>
+              <div className="flex shrink-0 items-center gap-2">
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  className="rounded-lg"
+                  disabled={exportingPerdidos || perdidosDia.items.length === 0}
+                  onClick={() => void exportarPerdidosDia(perdidosDia.fecha)}
+                >
+                  {exportingPerdidos ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Download className="h-4 w-4" />
+                  )}
+                  Excel
+                </Button>
+                <button
+                  type="button"
+                  onClick={() => setShowPerdidosDia(false)}
+                  className="rounded p-1 text-slate-400 hover:bg-slate-100"
+                  aria-label="Cerrar"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
+            </div>
+            <div className="p-5">
+              {perdidosDia.items.length === 0 ? (
+                <p className="text-sm text-slate-500">
+                  No hay productos incompletos o en mal estado en este día
+                </p>
+              ) : (
+                <ul className="divide-y divide-surface-border rounded-xl border border-surface-border">
+                  {perdidosDia.items.map((item, idx) => (
+                    <li
+                      key={`${item.retorno_id}-${item.codigo_interno}-${idx}`}
+                      className="flex flex-wrap items-center justify-between gap-2 px-4 py-3 text-sm"
+                    >
+                      <div className="min-w-0">
+                        <p className="font-semibold text-slate-900">
+                          <span className="mr-1.5 font-mono text-xs text-slate-500">
+                            {item.codigo_interno}
+                          </span>
+                          {item.nombre}
+                        </p>
+                        <p className="mt-0.5 text-xs text-slate-500">
+                          Retorno #{item.retorno_id}
+                        </p>
+                      </div>
+                      <div className="flex shrink-0 items-center gap-2">
+                        {badgeCondicion(item.estado as RetornoEstadoCondicion)}
+                        <span className="inline-flex min-w-[2.5rem] items-center justify-center rounded-lg bg-slate-100 px-2.5 py-1 text-sm font-bold tabular-nums text-slate-800">
+                          {formatCantidad(item.cantidad_cajas)}
+                        </span>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

@@ -12,6 +12,7 @@ import {
   Search,
   Settings,
   Truck,
+  Ticket,
   Users,
   Warehouse
 } from 'lucide-react'
@@ -45,6 +46,7 @@ export const NAV_ITEMS: NavItem[] = [
     group: 'Administración'
   },
   { id: 'camioneros', label: 'Camioneros', path: '/camioneros', permiso: 'camioneros.ver', group: 'Administración' },
+  { id: 'vales', label: 'Vales de pallets', path: '/vales', permiso: 'vales.ver', group: 'Administración' },
   { id: 'usuarios', label: 'Usuarios', path: '/usuarios', permiso: 'usuarios.ver', group: 'Administración' },
   { id: 'reportes', label: 'Movimientos del día', path: '/reportes', permiso: 'reportes.ver', group: 'Reportes' }
 ]
@@ -61,6 +63,7 @@ export const NAV_ICONS: Record<string, typeof LayoutDashboard> = {
   movimientos: ArrowLeftRight,
   inventario: ClipboardCheck,
   camioneros: Truck,
+  vales: Ticket,
   agenda_turnos: CalendarDays,
   reportes: BarChart3,
   usuarios: Users,

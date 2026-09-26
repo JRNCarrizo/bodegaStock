@@ -5,6 +5,7 @@ import { InventarioActivoProvider } from '@/context/InventarioActivoContext'
 import { PermisoRoute } from '@/components/PermisoRoute'
 import { AgendaTurnosPage } from '@/pages/AgendaTurnosPage'
 import { CamionerosPage } from '@/pages/CamionerosPage'
+import { ValesPage } from '@/pages/ValesPage'
 import { ConfiguracionPage } from '@/pages/ConfiguracionPage'
 import { ConsultaPage } from '@/pages/ConsultaPage'
 import { DashboardPage } from '@/pages/DashboardPage'
@@ -43,6 +44,7 @@ function AppRoutes() {
       <Route path="/productos" element={<PermisoRoute permiso="productos.ver"><ProductosPage /></PermisoRoute>} />
       <Route path="/sectores" element={<PermisoRoute permiso="sectores.ver"><SectoresPage /></PermisoRoute>} />
       <Route path="/camioneros" element={<PermisoRoute permiso="camioneros.ver"><CamionerosPage /></PermisoRoute>} />
+      <Route path="/vales" element={<PermisoRoute permiso="vales.ver"><ValesPage /></PermisoRoute>} />
       <Route
         path="/agenda-turnos"
         element={

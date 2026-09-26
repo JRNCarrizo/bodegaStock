@@ -1,8 +1,9 @@
-import type { FastifyInstance } from 'fastify'
+import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
 import { getDb } from '../db'
 import { requirePermiso } from '../plugins/auth'
 import { blockIfInventarioActivo } from '../utils/inventario-block'
 import { assertProductoActivoEnLogistica, assertSectorEnLogistica, requireRequestLogistica } from '../utils/logisticas'
+import { isAdministradorRol } from '../utils/secciones'
 import {
   buildMultiSheetExcel,
   resumenSheet,
@@ -106,6 +107,8 @@ export async function roturasRoutes(app: FastifyInstance): Promise<void> {
     let sql = `
       SELECT
         r.id, r.fecha, r.observacion, r.created_at,
+        COALESCE(r.controlado, 0) AS controlado,
+        r.controlado_at,
         u.nombre AS usuario_nombre,
         COALESCE((
           SELECT SUM(rl.cantidad_cajas) FROM rotura_lineas rl WHERE rl.rotura_id = r.id
@@ -317,6 +320,43 @@ export async function roturasRoutes(app: FastifyInstance): Promise<void> {
     }))
 
     return { sectores: rows }
+  })
+
+  app.patch('/api/roturas/:id/controlado', {
+    preHandler: requirePermiso('roturas.ver')
+  }, async (request, reply) => {
+    const user = request.user
+    if (!user) return reply.status(401).send({ error: 'No autorizado' })
+
+    const db = getDb()
+    if (!isAdministradorRol(db, user.rol_id)) {
+      return reply.status(403).send({ error: 'Solo el administrador puede marcar el control' })
+    }
+
+    const id = Number((request.params as { id: string }).id)
+    const body = (request.body ?? {}) as { controlado?: boolean }
+    const logisticaId = requireRequestLogistica(request)
+    const rotura = getRoturaHeader(db, id, logisticaId)
+    if (!rotura) {
+      return reply.status(404).send({ error: 'Registro no encontrado' })
+    }
+
+    const marcado = body.controlado === true
+    db.prepare(
+      `
+      UPDATE roturas
+      SET controlado = ?,
+          controlado_at = CASE WHEN ? = 1 THEN datetime('now') ELSE NULL END,
+          controlado_por_id = CASE WHEN ? = 1 THEN ? ELSE NULL END
+      WHERE id = ? AND logistica_id = ?
+    `
+    ).run(marcado ? 1 : 0, marcado ? 1 : 0, marcado ? 1 : 0, user.id, id, logisticaId)
+
+    return {
+      ok: true,
+      controlado: marcado ? 1 : 0,
+      controlado_at: marcado ? new Date().toISOString() : null
+    }
   })
 
   app.get('/api/roturas/:id', {

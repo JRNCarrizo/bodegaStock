@@ -29,6 +29,7 @@ import { usuariosRoutes } from './routes/usuarios'
 import { migracionRoutes } from './routes/migracion'
 import { logisticasRoutes } from './routes/logisticas'
 import { agendaTurnosRoutes } from './routes/agenda-turnos'
+import { valesRoutes } from './routes/vales'
 
 function resolveRendererDir(): string | null {
   const candidates = [
@@ -144,6 +145,7 @@ export async function startServer(options: StartServerOptions = {}): Promise<voi
   await server.register(migracionRoutes)
   await server.register(logisticasRoutes)
   await server.register(agendaTurnosRoutes)
+  await server.register(valesRoutes)
 
   const rendererDir = resolveRendererDir()
   if (rendererDir) {

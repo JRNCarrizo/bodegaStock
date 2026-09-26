@@ -38,6 +38,10 @@ export const MIGRATION_TABLES = [
   'inventario_reportes',
   'insumos_transportistas',
   'agenda_turnos',
+  'vale_clientes',
+  'vales',
+  'vale_retiros',
+  'vale_retiro_aplicaciones',
 ] as const
 
 export type MigrationTableName = (typeof MIGRATION_TABLES)[number]

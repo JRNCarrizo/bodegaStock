@@ -100,7 +100,8 @@ function roturaDraftTieneContenido(d: {
 }
 
 export function RoturasPage() {
-  const { hasPermiso } = useAuth()
+  const { hasPermiso, user } = useAuth()
+  const isAdmin = user?.es_admin === true
   const { confirm } = useConfirmDialog()
   const { setFlashId, flashClass } = useRegistroFlashHighlight()
   const location = useLocation()
@@ -110,6 +111,8 @@ export function RoturasPage() {
   const [loadingList, setLoadingList] = useState(true)
   const [error, setError] = useState('')
   const [saving, setSaving] = useState(false)
+  const [togglingControladoId, setTogglingControladoId] = useState<number | null>(null)
+  const markControlTimersRef = useRef(new Map<number, number>())
 
   const [listSearch, setListSearch] = useState('')
   const [listFechaDesde, setListFechaDesde] = useState('')
@@ -752,6 +755,97 @@ export function RoturasPage() {
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error al cargar detalle')
     }
+  }
+
+  async function setRoturaControlado(id: number, controlado: boolean) {
+    if (!isAdmin || togglingControladoId != null) return
+    setTogglingControladoId(id)
+    setError('')
+    const prev = roturas.find((r) => r.id === id)
+    setRoturas((list) =>
+      list.map((r) =>
+        r.id === id
+          ? {
+              ...r,
+              controlado: controlado ? 1 : 0,
+              controlado_at: controlado ? new Date().toISOString() : null
+            }
+          : r
+      )
+    )
+    try {
+      await api(`/api/roturas/${id}/controlado`, {
+        method: 'PATCH',
+        body: JSON.stringify({ controlado })
+      })
+    } catch (err) {
+      if (prev) {
+        setRoturas((list) => list.map((r) => (r.id === id ? prev : r)))
+      }
+      setError(err instanceof Error ? err.message : 'Error al actualizar control')
+    } finally {
+      setTogglingControladoId(null)
+    }
+  }
+
+  function onControladoClick(rotura: RoturaListItem) {
+    if (!isAdmin || rotura.controlado === 1) return
+    const prevTimer = markControlTimersRef.current.get(rotura.id)
+    if (prevTimer) window.clearTimeout(prevTimer)
+    const timer = window.setTimeout(() => {
+      markControlTimersRef.current.delete(rotura.id)
+      void setRoturaControlado(rotura.id, true)
+    }, 280)
+    markControlTimersRef.current.set(rotura.id, timer)
+  }
+
+  function onControladoDoubleClick(rotura: RoturaListItem) {
+    if (!isAdmin) return
+    const prevTimer = markControlTimersRef.current.get(rotura.id)
+    if (prevTimer) {
+      window.clearTimeout(prevTimer)
+      markControlTimersRef.current.delete(rotura.id)
+    }
+    if (rotura.controlado !== 1) return
+    void setRoturaControlado(rotura.id, false)
+  }
+
+  function ControladoCheck({ rotura }: { rotura: RoturaListItem }) {
+    if (!isAdmin) return null
+    const marcado = rotura.controlado === 1
+    const busy = togglingControladoId === rotura.id
+    return (
+      <button
+        type="button"
+        disabled={busy}
+        title={
+          marcado
+            ? 'Controlado — doble clic para destildar'
+            : 'Marcar como controlado'
+        }
+        aria-label={marcado ? 'Controlado' : 'Marcar controlado'}
+        aria-pressed={marcado}
+        className={cn(
+          'inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border transition-colors',
+          marcado
+            ? 'border-emerald-500 bg-emerald-500 text-white shadow-sm'
+            : 'border-slate-300 bg-white text-transparent hover:border-emerald-400 hover:bg-emerald-50',
+          busy && 'opacity-60'
+        )}
+        onClick={(e) => {
+          e.preventDefault()
+          e.stopPropagation()
+          onControladoClick(rotura)
+        }}
+        onDoubleClick={(e) => {
+          e.preventDefault()
+          e.stopPropagation()
+          onControladoDoubleClick(rotura)
+        }}
+      >
+        <Check className="h-4 w-4" />
+      </button>
+    )
   }
 
   const registroListKb = useRegistroListKeyboard({
@@ -1718,78 +1812,109 @@ export function RoturasPage() {
             </div>
           ) : nativeApp ? (
             <ul className="space-y-2">
-              {roturasDelDia.map((r, index) => (
+              {roturasDelDia.map((r, index) => {
+                const controlado = isAdmin && r.controlado === 1
+                return (
                 <li
                   key={r.id}
                   {...registroListKb.listItemProps(
                     index,
                     cn(
-                      'overflow-hidden rounded-xl border border-surface-border bg-white shadow-card border-l-4 border-l-red-400',
+                      'overflow-hidden rounded-xl border shadow-card border-l-4',
+                      controlado
+                        ? 'border-emerald-200 border-l-emerald-500 bg-emerald-50/80'
+                        : 'border-surface-border border-l-red-400 bg-white',
                       flashClass(r.id)
                     )
                   )}
                 >
-                  <button
-                    type="button"
-                    className="flex w-full items-start gap-3 px-3 py-3 text-left active:bg-slate-50"
-                    onClick={() => void abrirDetalle(r.id)}
-                  >
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate text-sm font-semibold text-slate-900">Rotura #{r.id}</p>
-                      {r.observacion?.trim() ? (
-                        <p className="mt-0.5 line-clamp-1 text-[11px] text-slate-500">{r.observacion}</p>
-                      ) : null}
-                      <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-slate-500">
-                        <span>
-                          {r.lineas_count} línea{r.lineas_count === 1 ? '' : 's'}
+                  <div className="flex w-full items-start gap-2 px-3 py-3">
+                    <ControladoCheck rotura={r} />
+                    <button
+                      type="button"
+                      className="flex min-w-0 flex-1 items-start gap-3 text-left active:bg-slate-50/50"
+                      onClick={() => void abrirDetalle(r.id)}
+                    >
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-sm font-semibold text-slate-900">Rotura #{r.id}</p>
+                        {r.observacion?.trim() ? (
+                          <p className="mt-0.5 line-clamp-1 text-[11px] text-slate-500">{r.observacion}</p>
+                        ) : null}
+                        <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-slate-500">
+                          <span>
+                            {r.lineas_count} línea{r.lineas_count === 1 ? '' : 's'}
+                          </span>
+                          <span>·</span>
+                          <span className="inline-flex items-center gap-1">
+                            <User className="h-3 w-3" />
+                            {r.usuario_nombre}
+                          </span>
+                          {controlado ? (
+                            <span className="font-medium text-emerald-700">· Controlado</span>
+                          ) : null}
+                        </div>
+                      </div>
+                      <div className="flex shrink-0 flex-col items-end justify-center">
+                        <span
+                          className={cn(
+                            'inline-flex items-center rounded-lg px-2.5 py-1 text-sm font-bold tabular-nums ring-1',
+                            controlado
+                              ? 'bg-emerald-100 text-emerald-800 ring-emerald-200'
+                              : 'bg-red-50 text-red-700 ring-red-100'
+                          )}
+                        >
+                          {formatCantidad(r.total_cajas)}
                         </span>
-                        <span>·</span>
+                      </div>
+                    </button>
+                  </div>
+                </li>
+                )
+              })}
+            </ul>
+          ) : (
+            <ul className="divide-y divide-surface-border">
+              {roturasDelDia.map((r, index) => {
+                const controlado = isAdmin && r.controlado === 1
+                return (
+                <li
+                  key={r.id}
+                  {...registroListKb.listItemProps(
+                    index,
+                    cn(
+                      'flex flex-col gap-3 px-4 py-4 transition-colors sm:flex-row sm:items-center sm:gap-4 sm:px-6',
+                      controlado ? 'bg-emerald-50/70 hover:bg-emerald-50' : 'hover:bg-slate-50/80',
+                      flashClass(r.id)
+                    )
+                  )}
+                >
+                  <div className="flex min-w-0 flex-1 items-start gap-3">
+                    <ControladoCheck rotura={r} />
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <p className="text-base font-semibold text-slate-900">Rotura #{r.id}</p>
+                        {controlado ? (
+                          <span className="inline-flex items-center rounded-full bg-emerald-100 px-2.5 py-0.5 text-xs font-medium text-emerald-800 ring-1 ring-emerald-200">
+                            Controlado
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center rounded-full bg-red-50 px-2.5 py-0.5 text-xs font-medium text-red-800 ring-1 ring-red-100">
+                            Descuento aplicado
+                          </span>
+                        )}
+                      </div>
+                      {r.observacion?.trim() ? (
+                        <p className="mt-1 line-clamp-2 text-xs text-slate-500">{r.observacion}</p>
+                      ) : (
+                        <p className="mt-1 text-xs text-slate-400">Sin observación</p>
+                      )}
+                      <div className="mt-2 flex flex-wrap items-center gap-3 text-xs text-slate-500">
+                        <span>{r.lineas_count} línea{r.lineas_count === 1 ? '' : 's'}</span>
                         <span className="inline-flex items-center gap-1">
                           <User className="h-3 w-3" />
                           {r.usuario_nombre}
                         </span>
                       </div>
-                    </div>
-                    <div className="flex shrink-0 flex-col items-end justify-center">
-                      <span className="inline-flex items-center rounded-lg bg-red-50 px-2.5 py-1 text-sm font-bold tabular-nums text-red-700 ring-1 ring-red-100">
-                        {formatCantidad(r.total_cajas)}
-                      </span>
-                    </div>
-                  </button>
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <ul className="divide-y divide-surface-border">
-              {roturasDelDia.map((r, index) => (
-                <li
-                  key={r.id}
-                  {...registroListKb.listItemProps(
-                    index,
-                    cn(
-                      'flex flex-col gap-3 px-4 py-4 transition-colors hover:bg-slate-50/80 sm:flex-row sm:items-center sm:gap-4 sm:px-6',
-                      flashClass(r.id)
-                    )
-                  )}
-                >
-                  <div className="min-w-0 flex-1">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <p className="text-base font-semibold text-slate-900">Rotura #{r.id}</p>
-                      <span className="inline-flex items-center rounded-full bg-red-50 px-2.5 py-0.5 text-xs font-medium text-red-800 ring-1 ring-red-100">
-                        Descuento aplicado
-                      </span>
-                    </div>
-                    {r.observacion?.trim() ? (
-                      <p className="mt-1 line-clamp-2 text-xs text-slate-500">{r.observacion}</p>
-                    ) : (
-                      <p className="mt-1 text-xs text-slate-400">Sin observación</p>
-                    )}
-                    <div className="mt-2 flex flex-wrap items-center gap-3 text-xs text-slate-500">
-                      <span>{r.lineas_count} línea{r.lineas_count === 1 ? '' : 's'}</span>
-                      <span className="inline-flex items-center gap-1">
-                        <User className="h-3 w-3" />
-                        {r.usuario_nombre}
-                      </span>
                     </div>
                   </div>
                   <div className="flex w-full shrink-0 items-center gap-1.5 sm:w-auto sm:gap-2">
@@ -1803,12 +1928,20 @@ export function RoturasPage() {
                     >
                       <Eye className="h-4 w-4" />
                     </Button>
-                    <span className="ml-auto inline-flex min-w-[3rem] items-center justify-center rounded-lg bg-red-50 px-2.5 py-1.5 text-sm font-bold tabular-nums text-red-700 ring-1 ring-red-100 sm:ml-2">
+                    <span
+                      className={cn(
+                        'ml-auto inline-flex min-w-[3rem] items-center justify-center rounded-lg px-2.5 py-1.5 text-sm font-bold tabular-nums ring-1 sm:ml-2',
+                        controlado
+                          ? 'bg-emerald-100 text-emerald-800 ring-emerald-200'
+                          : 'bg-red-50 text-red-700 ring-red-100'
+                      )}
+                    >
                       {formatCantidad(r.total_cajas)}
                     </span>
                   </div>
                 </li>
-              ))}
+                )
+              })}
             </ul>
           )}
         </CardBody>

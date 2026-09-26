@@ -239,6 +239,21 @@ export function assertCamioneroEnLogistica(
   }
 }
 
+export function assertValeClienteEnLogistica(
+  db: Database.Database,
+  clienteId: number,
+  logisticaId: number
+): void {
+  if (!columnExists(db, 'vale_clientes', 'logistica_id')) return
+  const row = db.prepare(`
+    SELECT logistica_id FROM vale_clientes WHERE id = ?
+  `).get(clienteId) as { logistica_id: number } | undefined
+  if (!row) throw new Error('Cliente de vale no encontrado')
+  if (row.logistica_id !== logisticaId) {
+    throw new Error('El cliente no pertenece a la logística activa')
+  }
+}
+
 export function assertProductoEnLogistica(
   db: Database.Database,
   productoId: number,

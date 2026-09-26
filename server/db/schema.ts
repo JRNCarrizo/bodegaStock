@@ -256,6 +256,9 @@ CREATE TABLE IF NOT EXISTS roturas (
   observacion TEXT,
   usuario_id INTEGER NOT NULL REFERENCES usuarios(id),
   logistica_id INTEGER REFERENCES logisticas(id),
+  controlado INTEGER NOT NULL DEFAULT 0,
+  controlado_at TEXT,
+  controlado_por_id INTEGER REFERENCES usuarios(id),
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
@@ -461,4 +464,52 @@ CREATE TABLE IF NOT EXISTS agenda_turnos (
 );
 
 CREATE INDEX IF NOT EXISTS idx_agenda_turnos_fecha ON agenda_turnos(fecha);
+
+-- Vales de pallets (mercados). Independiente del stock de productos.
+CREATE TABLE IF NOT EXISTS vale_clientes (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  codigo TEXT NOT NULL,
+  nombre TEXT NOT NULL,
+  direccion TEXT NOT NULL DEFAULT '',
+  activo INTEGER NOT NULL DEFAULT 1,
+  logistica_id INTEGER REFERENCES logisticas(id),
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  UNIQUE (logistica_id, codigo)
+);
+
+CREATE TABLE IF NOT EXISTS vales (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  cliente_id INTEGER NOT NULL REFERENCES vale_clientes(id),
+  fecha TEXT NOT NULL,
+  vencimiento TEXT NOT NULL,
+  cantidad_inicial INTEGER NOT NULL CHECK (cantidad_inicial > 0),
+  cantidad_restante INTEGER NOT NULL CHECK (cantidad_restante >= 0),
+  tipo_pallet TEXT NOT NULL CHECK (tipo_pallet IN ('NORMALIZADO', 'DESCARTABLE')),
+  observacion TEXT,
+  usuario_id INTEGER REFERENCES usuarios(id),
+  logistica_id INTEGER REFERENCES logisticas(id),
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_vales_cliente ON vales(cliente_id);
+CREATE INDEX IF NOT EXISTS idx_vales_vencimiento ON vales(vencimiento);
+
+CREATE TABLE IF NOT EXISTS vale_retiros (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  cliente_id INTEGER NOT NULL REFERENCES vale_clientes(id),
+  fecha TEXT NOT NULL,
+  cantidad INTEGER NOT NULL CHECK (cantidad > 0),
+  tipo_pallet TEXT NOT NULL CHECK (tipo_pallet IN ('NORMALIZADO', 'DESCARTABLE')),
+  observacion TEXT,
+  usuario_id INTEGER REFERENCES usuarios(id),
+  logistica_id INTEGER REFERENCES logisticas(id),
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS vale_retiro_aplicaciones (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  retiro_id INTEGER NOT NULL REFERENCES vale_retiros(id) ON DELETE CASCADE,
+  vale_id INTEGER NOT NULL REFERENCES vales(id),
+  cantidad INTEGER NOT NULL CHECK (cantidad > 0)
+);
 `

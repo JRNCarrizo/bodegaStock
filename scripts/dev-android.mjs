@@ -7,7 +7,7 @@
  *
  * Al generar APK: npm run cap:sync (sin CAP_SERVER_URL) → embebido, listo para instalar.
  *
- * Evita el menú interactivo de Capacitor (se traba en la terminal de Cursor):
+ * Evita el menú interactivo de Capacitor (puede trabarse en algunas terminales):
  * pasa --target automáticamente vía adb.
  * Fuerza JAVA_HOME al JBR de Android Studio (Java 25 del sistema rompe Gradle).
  */

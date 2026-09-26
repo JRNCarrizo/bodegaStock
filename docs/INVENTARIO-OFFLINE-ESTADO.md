@@ -138,7 +138,7 @@ cd android && .\gradlew.bat assembleRelease
 
 ---
 
-## 6. Reglas para no desviarse (futuros chats / agentes)
+## 6. Reglas de diseño (no desviarse)
 
 1. Mantener el flujo de la §1; sync principal = hotspot HTTP, no archivo.
 2. En **Doble**, Comparación A **antes** de importar; Comparación B solo en PC.

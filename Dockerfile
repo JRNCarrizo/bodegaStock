@@ -1,5 +1,4 @@
-# API ControlStock — Railway / Docker
-# Stage 1 (aprendizaje): SQLite en volumen. Postgres viene en la siguiente fase.
+# API ControlStock — Docker / Railway / cualquier host con contenedores
 
 FROM node:22-bookworm-slim
 

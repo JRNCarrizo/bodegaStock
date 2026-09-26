@@ -1,127 +1,157 @@
-# BodegaStock (ControlStock)
+# ControlStock (BodegaStock)
 
-Sistema de gestión de stock para bodega con aplicación de escritorio (Electron), clientes móviles (APK Android / navegador) y modo **servidor local (LAN)** como despliegue actual. Modo **nube (Railway + Postgres)** implementado en código, pendiente de uso productivo.
+Sistema de gestión de stock para bodega / distribuidora.
 
-## Estado del proyecto
+- **Escritorio:** Electron (Windows en planta; también se puede desarrollar en Linux/macOS)
+- **API:** Node.js + Fastify
+- **Clientes:** misma UI React en PC, navegador y APK Android (Capacitor)
+- **Datos hoy en planta:** SQLite en LAN
+- **Nube:** API en Docker + PostgreSQL (listo en código)
 
-**v0.3.71** — [Release en GitHub](https://github.com/JRNCarrizo/bodegaStock/releases/tag/v0.3.71)
+**Versión:** v0.3.71 — [Releases](https://github.com/JRNCarrizo/bodegaStock/releases)
 
-| En planta hoy | Preparado para más adelante |
-|---------------|----------------------------|
-| PC servidor + SQLite en LAN | API + Postgres en Railway |
-| APK + web en WiFi local | Migrador SQLite → nube |
-| Inventario offline probado | Mismo APK con modo Nube |
+---
 
-**Panorama global:** [docs/ESTADO-ACTUAL.md](docs/ESTADO-ACTUAL.md)
+## Requisitos
 
-### Reciente (resumen)
+- **Node.js 20+** (recomendado 22 LTS)
+- **npm** (incluido con Node)
+- Para app de escritorio: dependencias nativas de Electron / `better-sqlite3` (en Linux: herramientas de build, ej. `build-essential` / `python3`)
+- Para Android: Android Studio (SDK + platform-tools)
+- Para nube local con Postgres: Docker (opcional) o un Postgres accesible
 
-- **v0.3.71:** roturas — borrador al salir (como planillas/ingresos); buscador sin productos en 0.
-- **v0.3.70:** inventario — cambiar producto en reconteo (línea o grupo); ocultar productos en cero con swipe (siguen contando 0); fix PUT `producto_id`.
-- **v0.3.69:** fix actualizar con rutas que tienen espacios (usuario Windows) — el Setup vuelve a abrirse bien.
-- **v0.3.68:** swipe editar/borrar en retornos y roturas; stock en buscador de roturas; ingresos con destino en la línea (como retornos); autostart Windows más robusto.
-- **v0.3.67:** fix “Reiniciar e instalar” (el Setup no se abría al cerrar la app).
-- **v0.3.66:** PC servidor — iniciar con Windows y seguir en bandeja (segundo plano).
-- **v0.3.65:** planillas — buscador sin productos en 0 y cantidad de stock en el desplegable.
-- **v0.3.64:** layout de carga, ingresos con sueltas, planillas por vehículo y fix de actualizaciones.
-- **v0.3.57:** planillas y retornos con camionero opcional y búsqueda por vehículo; agenda de turnos con transportista opcional, visualización de notas, tarjetas compactas y eliminación de turnos cancelados.
-- **v0.3.56:** update más robusto — cierre forzado, Setup completo (sin diff), reintento de descarga.
-- **v0.3.55:** stock inicial continuo día a día (inicial D+1 = balance D) en Movimientos del día.
-- **v0.3.54:** balance final = inicial + movimientos (incl. ajustes); Setup completo.
-- **v0.3.53:** sin bloqueo falso de 30 min al actualizar; Setup cierra ControlStock de verdad.
-- **v0.3.52:** “hoy” en zona Argentina (local y Railway); Movimientos del día sin correr el día de noche.
-- **v0.3.51:** UI logística (tema Nakbe’), listas más limpias, totales pallets+cajas en ingresos, sin chips de tecleo.
-- **v0.3.50:** fix falso rate limit en updates; ingresos con botones solo icono.
-- **v0.3.47:** inventario APK — teclado numérico, operadores +−×÷, total pallets+cajas al tocar.
-- **v0.3.46:** verificación retornos (swipe, confirmar, sector en detalle); movimientos pallets+cajas; migrador nube Postgres estable.
-- **v0.3.45:** roturas sin palabra “cajas” en cantidad y total (igual que retornos).
-- **v0.3.44:** APK sin red/verificación en Config; roturas sector con menos stock; pulido retornos/consulta.
-- **v0.3.43:** cooldown ante rate limit de GitHub (429) al buscar updates / APK.
-- **v0.3.42:** agenda de turnos (insumos); update APK in-app; Descargar APK desde PC; Configuración plegable.
-- **v0.3.41:** instalador Windows visible al actualizar (Setup NSIS con progreso).
-- **v0.3.38:** permiso Configuración operativo; sector por defecto en ingresos; alias vehículo en planillas.
-- **v0.3.37:** fix importación inventario offline → PC local en APK; reconteo a cero online.
-- **v0.3.36:** guías de ayuda (`?`) en Ingresos, Planillas, Retornos, Roturas, Movimientos e Inventario; PDF descargable.
-- **v0.3.35:** búsqueda más rápida; iconos en formularios; teclado en ingresos/movimientos.
-- **v0.3.32–0.3.34:** modo nube Railway, migrador, APK firmada, conexión HTTPS.
-- **v0.3.30–0.3.31:** movimientos lista abierta; ingresos multi-destino y borradores; ajustes de stock.
+---
 
-## Documentación
+## Desarrollo — API (Linux / macOS / Windows)
 
-| Documento | Contenido |
-|-----------|-----------|
-| **[ESTADO-ACTUAL.md](docs/ESTADO-ACTUAL.md)** | **Panorama global** — leer primero |
-| [ESPECIFICACION.md](docs/ESPECIFICACION.md) | Visión general, arquitectura, módulos y reglas de negocio |
-| [MODELO-DE-DATOS.md](docs/MODELO-DE-DATOS.md) | Entidades, relaciones y tipos de movimiento |
-| [USUARIOS-Y-PERMISOS.md](docs/USUARIOS-Y-PERMISOS.md) | Roles, permisos por sección y reglas de acceso |
-| [INVENTARIO.md](docs/INVENTARIO.md) | Inventario: Simple/Doble, online/offline, reconteo |
-| [INVENTARIO-OFFLINE-ESTADO.md](docs/INVENTARIO-OFFLINE-ESTADO.md) | Flujo offline: idea, estado, archivos clave |
-| [DESGLOSE-DE-CANTIDADES.md](docs/DESGLOSE-DE-CANTIDADES.md) | Formato pallet × unidades + sueltos |
-| [APP-MOVIL.md](docs/APP-MOVIL.md) | APK Android, web móvil, roles, conexión local/nube |
-| [ANDROID-DEV.md](docs/ANDROID-DEV.md) | Live reload en celular y build de APK |
-| [SERVIDOR-CLOUD-RAILWAY-FUTURO.md](docs/SERVIDOR-CLOUD-RAILWAY-FUTURO.md) | Nube Railway + Postgres (implementado, no en planta) |
-| [PASOS-TRABAJO-CLOUD.txt](docs/PASOS-TRABAJO-CLOUD.txt) | Checklist operativo para activar la nube |
-| [PLANILLAS-OCR-FUTURO.md](docs/PLANILLAS-OCR-FUTURO.md) | Futuro: OCR de planilla impresa |
-| [MOVIMIENTOS-LISTA-ABIERTA-FUTURO.md](docs/MOVIMIENTOS-LISTA-ABIERTA-FUTURO.md) | Movimientos lista abierta (implementado) |
-| [FICHA-TECNICA-COTIZACION.md](docs/FICHA-TECNICA-COTIZACION.md) | Ficha para cotizar / pasar a terceros |
+Lo más útil si no usás Windows o si solo vas a tocar el backend / despliegue:
 
-## Desarrollo local
+```bash
+git clone https://github.com/JRNCarrizo/bodegaStock.git
+cd bodegaStock
+npm install
+
+# Si better-sqlite3 falló o se compiló para otro ABI:
+npm rebuild better-sqlite3
+
+cp .env.example .env   # opcional; ajustar JWT_SECRET / rutas
+npm run start:api      # o: npm run dev:api  (reload)
+```
+
+Health check:
+
+```text
+http://127.0.0.1:3847/api/health
+```
+
+Login inicial (base vacía): `admin` / `admin123`
+
+Sin `DATABASE_URL` usa **SQLite** en `BODEGA_DATA_DIR` (default `./data` o el de `.env`).  
+Con `DATABASE_URL` apunta a **PostgreSQL**.
+
+```bash
+# Ejemplo con Postgres local
+export DATABASE_URL=postgresql://user:pass@localhost:5432/bodegastock
+export JWT_SECRET=una-clave-larga-al-azar
+npm run start:api
+```
+
+---
+
+## Desarrollo — app completa (Electron + UI)
 
 ```bash
 npm install
 npm run dev
 ```
 
-Usuario inicial: `admin` / `admin123`
+Abre Electron con hot reload. En Linux/macOS sirve para desarrollar UI y API embebida; el instalador de producción actual es Windows (`npm run dist`).
 
-## App móvil (Capacitor / Android)
+---
 
-La web en `:3847` y la APK comparten la misma UI React.
-
-**Desarrollo (live reload):** [docs/ANDROID-DEV.md](docs/ANDROID-DEV.md)
+## Docker (igual que producción / Railway)
 
 ```bash
-npm run dev:android              # celular físico (misma WiFi)
-npm run dev:android:emulator     # emulador Android Studio
+docker build -t controlstock-api .
+docker run --rm -p 3847:3847 \
+  -e JWT_SECRET=una-clave-larga-al-azar \
+  -e BODEGA_DATA_DIR=/data \
+  -v controlstock-data:/data \
+  controlstock-api
 ```
 
-**APK de producción:**
+Con Postgres:
+
+```bash
+docker run --rm -p 3847:3847 \
+  -e JWT_SECRET=una-clave-larga-al-azar \
+  -e DATABASE_URL=postgresql://user:pass@host:5432/db \
+  -e BODEGA_DATA_DIR=/data \
+  -v controlstock-data:/data \
+  controlstock-api
+```
+
+Probar: `http://127.0.0.1:3847/api/health`
+
+Guía de despliegue en Railway: [docs/CONEXION-RAILWAY.md](docs/CONEXION-RAILWAY.md)  
+Ficha técnica para terceros: [docs/FICHA-TECNICA.md](docs/FICHA-TECNICA.md)
+
+---
+
+## App móvil (Android)
 
 ```bash
 npm run cap:sync
-# En Windows, si Gradle falla con Java 25, usar JDK de Android Studio:
-# $env:JAVA_HOME = "C:\Program Files\Android\Android Studio\jbr"
-cd android && .\gradlew.bat assembleRelease
+cd android && ./gradlew assembleRelease
 ```
 
-En el login de la APK: **Red local** → IP del PC (`3847`) o QR. Modo **Nube** disponible cuando migren a Railway.
-
-## Instalador (Windows)
+Live reload en dispositivo: [docs/ANDROID-DEV.md](docs/ANDROID-DEV.md)
 
 ```bash
-npm run dist
+npm run dev:android              # dispositivo físico (misma red)
+npm run dev:android:emulator     # emulador
 ```
 
-Genera `release/ControlStock-Setup-x.y.z.exe` y `release/latest.yml`.
+---
 
-## Publicar release en GitHub
+## Documentación
 
-```powershell
-gh auth login
-.\scripts\publish-release.ps1 -Version "0.3.71"
-```
+| Documento | Contenido |
+|-----------|-----------|
+| [docs/FICHA-TECNICA.md](docs/FICHA-TECNICA.md) | Ficha técnica (arquitectura, stack, despliegue) |
+| [docs/CONEXION-RAILWAY.md](docs/CONEXION-RAILWAY.md) | Pasos para conectar a Railway |
+| [docs/SERVIDOR-CLOUD-RAILWAY-FUTURO.md](docs/SERVIDOR-CLOUD-RAILWAY-FUTURO.md) | Detalle modo nube + Postgres |
+| [docs/ESTADO-ACTUAL.md](docs/ESTADO-ACTUAL.md) | Panorama del proyecto |
+| [docs/ESPECIFICACION.md](docs/ESPECIFICACION.md) | Visión, módulos, reglas de negocio |
+| [docs/MODELO-DE-DATOS.md](docs/MODELO-DE-DATOS.md) | Entidades y relaciones |
+| [docs/USUARIOS-Y-PERMISOS.md](docs/USUARIOS-Y-PERMISOS.md) | Roles y permisos |
+| [docs/INVENTARIO.md](docs/INVENTARIO.md) | Inventario online / offline |
+| [docs/INVENTARIO-OFFLINE-ESTADO.md](docs/INVENTARIO-OFFLINE-ESTADO.md) | Flujo offline y archivos clave |
+| [docs/DESGLOSE-DE-CANTIDADES.md](docs/DESGLOSE-DE-CANTIDADES.md) | Pallet / caja / suelto |
+| [docs/APP-MOVIL.md](docs/APP-MOVIL.md) | APK y conexión |
+| [docs/ANDROID-DEV.md](docs/ANDROID-DEV.md) | Live reload y build APK |
+| [docs/MULTI-LOGISTICA.md](docs/MULTI-LOGISTICA.md) | Multi-logística |
 
-O tag + GitHub Actions: **Actions → Release → Run workflow**
-
-## Repositorio
-
-[Código fuente en GitHub](https://github.com/JRNCarrizo/bodegaStock)
+---
 
 ## Stack
 
-- **Escritorio:** Electron + React + TypeScript
-- **Servidor:** Node.js / Fastify (API REST, puerto `3847`)
-- **Base local:** SQLite (`better-sqlite3`)
-- **Base nube (opcional):** PostgreSQL (`DATABASE_URL` + shim)
-- **Móvil:** Capacitor Android (misma UI; iOS más adelante)
-- **Exportaciones:** Excel (`exceljs`) por módulo
+- **API:** Node.js / Fastify (puerto `3847`)
+- **UI:** React + TypeScript + Tailwind
+- **Escritorio:** Electron
+- **Móvil:** Capacitor (Android)
+- **DB local:** SQLite · **DB nube:** PostgreSQL (`DATABASE_URL`)
+- **Export:** Excel (`exceljs`)
+
+---
+
+## Scripts útiles
+
+| Script | Uso |
+|--------|-----|
+| `npm run start:api` | API standalone (producción local) |
+| `npm run dev:api` | API con watch |
+| `npm run dev` | Electron + UI (desarrollo) |
+| `npm run build` | Build Electron |
+| `npm run dist` | Instalador Windows (NSIS) |
+| `npm run cap:sync` | Sync Capacitor / assets móvil |

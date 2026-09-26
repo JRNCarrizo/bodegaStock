@@ -1,19 +1,17 @@
 PASOS CONTROLSTOCK EN LA NUBE
 =============================
-Actualizado: agosto 2026 · v0.3.37
+Actualizado: septiembre 2026
 
 ESTADO EN PLANTA (hoy)
 ----------------------
-- Siguen en MODO LOCAL (PC servidor + SQLite + WiFi).
+- MODO LOCAL (PC servidor + SQLite + WiFi).
 - Modo nube: IMPLEMENTADO en la app, NO activado en producción.
-- Cuando terminen de testear local, usar sección B para migrar.
 
 Hay DOS partes:
-  A) Configurar Railway (servidor en internet)
+  A) Configurar el servidor en la nube (ej. Railway)
   B) Configurar la app (PC / APK) y migrar datos
 
-Tu URL de ejemplo (lab):
-https://bodegastock-production-d795.up.railway.app
+Guía corta: docs/CONEXION-RAILWAY.md
 
 
 ================================================================
@@ -25,7 +23,7 @@ A1. Entrar a Railway
 
 A2. Proyecto + código
 - New Project → Deploy from GitHub → repo bodegaStock
-- Rama: main (incluye API standalone + Postgres)
+- Rama: main
 - Railway construye con el Dockerfile del repo
 
 A3. Variables del servicio API (Settings → Variables)
@@ -54,10 +52,9 @@ B) APP — apuntar a la nube y migrar (cuando decidan el corte)
 
 IMPORTANTE
 - Migrar desde la PC que tiene la base buena (servidor local).
-- Fotos de productos aún no suben a la nube.
 - Hasta el corte pueden seguir en Red local sin problema.
 
-B1. PC servidor — Configuración → Nube (Railway)
+B1. PC servidor — Configuración → Nube
 B2. Pegar URL → Probar → Guardar
 B3. APK: login → Nube → misma URL o QR
 B4. Migrar datos (admin) → escribir MIGRAR
@@ -71,5 +68,5 @@ Si algo falla → volver a Red local (SQLite del PC no se borra)
 RESUMEN
 ================================================================
 Hoy: LOCAL (PC + SQLite + APK en WiFi)
-Mañana: NUBE (Railway + Postgres + misma app)
-Doc global: docs/ESTADO-ACTUAL.md
+Nube: API Docker + Postgres + misma app con URL HTTPS
+Doc: docs/FICHA-TECNICA.md · docs/CONEXION-RAILWAY.md

@@ -1,10 +1,9 @@
 # ControlStock — Estado actual del proyecto
 
-> **Snapshot global** — agosto 2026 · release **v0.3.47**  
-> Leer este archivo primero antes de pedir cambios nuevos o retomar el proyecto en otro chat.
+> **Snapshot global** — septiembre 2026 · release **v0.3.71**
 
 **Repositorio:** [github.com/JRNCarrizo/bodegaStock](https://github.com/JRNCarrizo/bodegaStock)  
-**Release publicada:** [v0.3.47](https://github.com/JRNCarrizo/bodegaStock/releases/tag/v0.3.47)
+**Release publicada:** [v0.3.71](https://github.com/JRNCarrizo/bodegaStock/releases/tag/v0.3.71)
 
 ---
 
@@ -173,8 +172,9 @@ Detalle: [SERVIDOR-CLOUD-RAILWAY-FUTURO.md](SERVIDOR-CLOUD-RAILWAY-FUTURO.md) ·
 | [USUARIOS-Y-PERMISOS.md](USUARIOS-Y-PERMISOS.md) | Roles y permisos |
 | [DESGLOSE-DE-CANTIDADES.md](DESGLOSE-DE-CANTIDADES.md) | Pallet × cajas + sueltos |
 | [SERVIDOR-CLOUD-RAILWAY-FUTURO.md](SERVIDOR-CLOUD-RAILWAY-FUTURO.md) | Nube Railway + Postgres |
+| [CONEXION-RAILWAY.md](CONEXION-RAILWAY.md) | Pasos cortos Railway |
 | [PASOS-TRABAJO-CLOUD.txt](PASOS-TRABAJO-CLOUD.txt) | Checklist operativo nube |
-| [FICHA-TECNICA-COTIZACION.md](FICHA-TECNICA-COTIZACION.md) | Cotización / terceros |
+| [FICHA-TECNICA.md](FICHA-TECNICA.md) | Ficha técnica para terceros |
 | [MULTI-LOGISTICA.md](MULTI-LOGISTICA.md) | Dos logísticas (Esmeralda / NAKBE) — implementado |
 | [MOVIMIENTOS-LISTA-ABIERTA-FUTURO.md](MOVIMIENTOS-LISTA-ABIERTA-FUTURO.md) | Lista abierta — implementado |
 | [PLANILLAS-OCR-FUTURO.md](PLANILLAS-OCR-FUTURO.md) | OCR planilla — futuro |
@@ -184,22 +184,19 @@ Detalle: [SERVIDOR-CLOUD-RAILWAY-FUTURO.md](SERVIDOR-CLOUD-RAILWAY-FUTURO.md) ·
 ## 8. Comandos útiles
 
 ```bash
-# Desarrollo escritorio
-npm install && npm run dev
+# API standalone (Linux / macOS / Windows)
+npm install && npm run start:api
+# → http://127.0.0.1:3847/api/health
+
+# Desarrollo escritorio (Electron)
+npm run dev
 
 # APK (producción)
 npm run cap:sync
-# Gradle (usar JDK 21 de Android Studio si Java 25 falla):
-# $env:JAVA_HOME = "C:\Program Files\Android\Android Studio\jbr"
-cd android && .\gradlew.bat assembleRelease
-# → copiar a release/ControlStock-x.y.z.apk
+cd android && ./gradlew assembleRelease
 
 # Instalador Windows
 npm run dist
-# → release/ControlStock-Setup-x.y.z.exe
-
-# Publicar GitHub
-.\scripts\publish-release.ps1 -Version "0.3.47"
 ```
 
 Login inicial (base vacía): **admin** / **admin123**

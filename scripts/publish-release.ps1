@@ -1,5 +1,5 @@
 param(
-  [string]$Version = "0.3.71"
+  [string]$Version = "0.3.72"
 )
 
 $ErrorActionPreference = "Stop"
@@ -76,12 +76,12 @@ $notesPath = Join-Path $root "release\release-notes-$Version.md"
 @'
 ## ControlStock v{0}
 
-Roturas y perdidas: el registro a medias se guarda como borrador (igual que planillas e ingresos).
+Vales de pallets, control de roturas para admin y mejoras en retornos.
 
 ### Cambios
-- Borrador automatico al salir; boton Continuar registro en el listado.
-- Cancelar o empezar uno nuevo pide confirmacion y descarta el borrador.
-- Buscador de productos sin stock en 0 (igual que planillas).
+- Nueva seccion Vales de pallets: clientes/mercados, vales, retiros FIFO, alertas por vencer y archivados.
+- Retornos: estado de linea en el detalle; boton Mal estado del dia con Excel (codigo, nombre, cantidad); productos desplegados al abrir.
+- Roturas: el administrador puede marcar registros como controlados (verde); doble clic para destildar.
 
 ### Instalacion
 1. Actualiza primero el PC servidor (Setup).
